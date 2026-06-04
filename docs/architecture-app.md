@@ -10,6 +10,7 @@ KiJi App is the Tauri-based successor to the Electron app. The current repositor
 src/
 ├── App.tsx
 └── lib/tauriClient/
+    ├── commandCatalog.ts
     ├── core.ts
     ├── dev.ts
     └── index.ts
@@ -22,6 +23,7 @@ src-tauri/
 ```
 
 - `src/App.tsx` is the renderer entry UI.
+- `src/lib/tauriClient/commandCatalog.ts` inventories the current Electron preload surface and maps each method/event to its planned Tauri command namespace so migration work stays grouped by domain instead of recreating one-off IPC names.
 - `src/lib/tauriClient/core.ts` owns the shared typed wrapper around `@tauri-apps/api/core` `invoke()`.
 - `src/lib/tauriClient/index.ts` is the renderer-facing client root; new command groups should be exported from here instead of calling `invoke()` directly in components.
 - `src/lib/tauriClient/dev.ts` is the first command domain and demonstrates the target pattern for future `feeds`, `articles`, `saved`, `settings`, and `system` domains.
