@@ -1,6 +1,6 @@
-# Tauri + React + Typescript
+# KiJi App
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+KiJi App is the new Tauri-based desktop app workspace for migrating the current Electron implementation.
 
 ## Recommended IDE Setup
 
