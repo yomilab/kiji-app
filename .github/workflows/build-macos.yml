@@ -55,7 +55,7 @@ jobs:
         run: npm run tauri build
 
       - name: Upload macOS bundles
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: kiji-app-macos
           path: src-tauri/target/release/bundle/**/*

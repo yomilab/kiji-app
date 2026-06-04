@@ -40,3 +40,4 @@ src-tauri/
 
 - `.github/workflows/build-macos.yml` is the current baseline validation flow.
 - The workflow is macOS-only for now, runs on `macos-14`, uses Node 24 plus stable Rust, runs `npx tsc --noEmit`, then runs `npm run tauri build`.
+- Artifact upload uses `actions/upload-artifact@v6` so the workflow stays on the Node 24-native action line and avoids the GitHub-hosted Node 20 deprecation warning.
