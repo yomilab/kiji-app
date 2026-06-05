@@ -267,13 +267,31 @@ export interface FeedFetchWithCacheResponse {
 export interface DialogResult {
   canceled: boolean;
   filePath?: FilePathString;
-  fileName?: string;
-  content?: string;
 }
 
 export interface FolderPickResult {
   canceled: boolean;
   folderPath?: FilePathString;
+}
+
+export interface FileDialogFilter {
+  name: string;
+  extensions: string[];
+}
+
+export interface OpenFileDialogRequest {
+  title?: string;
+  defaultPath?: FilePathString;
+  filters?: FileDialogFilter[];
+}
+
+export interface SaveFileDialogRequest extends OpenFileDialogRequest {
+  fileName?: string;
+}
+
+export interface PickFolderDialogRequest {
+  title?: string;
+  defaultPath?: FilePathString;
 }
 
 export interface SavedArticlesExportPreflight {
@@ -635,6 +653,18 @@ export interface ShellContract {
   openExternal: {
     request: { url: UrlString };
     response: void;
+  };
+  dialogOpenFile: {
+    request: OpenFileDialogRequest;
+    response: DialogResult;
+  };
+  dialogSaveFile: {
+    request: SaveFileDialogRequest;
+    response: DialogResult;
+  };
+  dialogPickFolder: {
+    request: PickFolderDialogRequest;
+    response: FolderPickResult;
   };
   openArticleWindow: {
     request: ArticleWindowPayload;

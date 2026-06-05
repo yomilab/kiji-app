@@ -13,6 +13,27 @@ export async function openExternal(
   return invokeContract<ShellContract["openExternal"]>("shell_links_open_external", request);
 }
 
+export const dialog = {
+  openFile(
+    request: ShellContract["dialogOpenFile"]["request"],
+  ): Promise<ShellContract["dialogOpenFile"]["response"]> {
+    return invokeContract<ShellContract["dialogOpenFile"]>("shell_dialog_open_file", request);
+  },
+  saveFile(
+    request: ShellContract["dialogSaveFile"]["request"],
+  ): Promise<ShellContract["dialogSaveFile"]["response"]> {
+    return invokeContract<ShellContract["dialogSaveFile"]>("shell_dialog_save_file", request);
+  },
+  pickFolder(
+    request: ShellContract["dialogPickFolder"]["request"],
+  ): Promise<ShellContract["dialogPickFolder"]["response"]> {
+    return invokeContract<ShellContract["dialogPickFolder"]>(
+      "shell_dialog_pick_folder",
+      request,
+    );
+  },
+};
+
 export async function openArticleWindow(
   request: ShellContract["openArticleWindow"]["request"],
 ): Promise<ShellContract["openArticleWindow"]["response"]> {

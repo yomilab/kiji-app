@@ -1,5 +1,8 @@
 mod db;
+mod net;
 mod settings;
+mod shell;
+mod system;
 
 use db::{
     articles_clean_old_across_feeds, articles_clean_old_by_feed, articles_count_by_feed,
@@ -15,7 +18,13 @@ use db::{
     saved_get_content, saved_insert_batch, saved_list_all, saved_query, saved_update_highlights,
     saved_update_last_read_at, saved_update_notes, DbState,
 };
+use net::{feeds_abort_request, feeds_fetch, feeds_fetch_with_cache};
 use settings::{settings_get, settings_reset, settings_update, SettingsState};
+use shell::{
+    shell_dialog_open_file, shell_dialog_pick_folder, shell_dialog_save_file,
+    shell_links_open_external,
+};
+use system::{system_clipboard_read_text, system_clipboard_write_text};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -47,9 +56,12 @@ pub fn run() {
             articles_update_read,
             articles_update_saved_state,
             db_get_status,
+            feeds_abort_request,
             feeds_count,
             feeds_create,
             feeds_delete,
+            feeds_fetch,
+            feeds_fetch_with_cache,
             feeds_get,
             feeds_get_by_url,
             feeds_list,
@@ -79,9 +91,15 @@ pub fn run() {
             saved_update_highlights,
             saved_update_last_read_at,
             saved_update_notes,
+            shell_dialog_open_file,
+            shell_dialog_pick_folder,
+            shell_dialog_save_file,
+            shell_links_open_external,
             settings_get,
             settings_update,
-            settings_reset
+            settings_reset,
+            system_clipboard_read_text,
+            system_clipboard_write_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
