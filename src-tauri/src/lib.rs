@@ -18,7 +18,7 @@ use db::{
     saved_get_content, saved_insert_batch, saved_list_all, saved_query, saved_update_highlights,
     saved_update_last_read_at, saved_update_notes, DbState,
 };
-use net::{feeds_abort_request, feeds_fetch, feeds_fetch_with_cache};
+use net::{feeds_abort_request, feeds_fetch, feeds_fetch_data_url, feeds_fetch_with_cache};
 use settings::{settings_get, settings_reset, settings_update, SettingsState};
 use shell::{
     shell_dialog_open_file, shell_dialog_pick_folder, shell_dialog_save_file,
@@ -61,6 +61,7 @@ pub fn run() {
             feeds_create,
             feeds_delete,
             feeds_fetch,
+            feeds_fetch_data_url,
             feeds_fetch_with_cache,
             feeds_get,
             feeds_get_by_url,

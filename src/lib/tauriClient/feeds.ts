@@ -13,6 +13,12 @@ export async function fetchWithCache(
   return invokeContract<FeedsContract["fetchWithCache"]>("feeds_fetch_with_cache", request);
 }
 
+export async function fetchDataUrl(
+  request: FeedsContract["fetchDataUrl"]["request"],
+): Promise<FeedsContract["fetchDataUrl"]["response"]> {
+  return invokeContract<FeedsContract["fetchDataUrl"]>("feeds_fetch_data_url", request);
+}
+
 export async function abortRequest(
   request: FeedsContract["abortRequest"]["request"],
 ): Promise<FeedsContract["abortRequest"]["response"]> {

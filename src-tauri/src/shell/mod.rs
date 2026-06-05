@@ -127,7 +127,11 @@ fn apply_filters(
         if filter.name.trim().is_empty() {
             return Err("Dialog filter name cannot be empty.".to_string());
         }
-        if filter.extensions.iter().any(|extension| extension.trim().is_empty()) {
+        if filter
+            .extensions
+            .iter()
+            .any(|extension| extension.trim().is_empty())
+        {
             return Err("Dialog filter extensions cannot be empty.".to_string());
         }
         let extensions = filter

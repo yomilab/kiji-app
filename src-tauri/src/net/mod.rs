@@ -2,7 +2,8 @@ use futures_util::future::{AbortHandle, Abortable};
 use once_cell::sync::Lazy;
 use reqwest::{
     header::{
-        HeaderMap, ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, CACHE_CONTROL, ETAG,
+        HeaderMap, HeaderValue, ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, CACHE_CONTROL,
+        CONTENT_TYPE, ETAG,
         IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED, PRAGMA, UPGRADE_INSECURE_REQUESTS,
         USER_AGENT,
     },
@@ -15,6 +16,7 @@ static ACTIVE_REQUESTS: Lazy<Mutex<HashMap<String, AbortHandle>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 const DEFAULT_TIMEOUT_MS: u64 = 15_000;
+const MAX_DATA_URL_BYTES: u64 = 1024 * 1024;
 const CHROME_LIKE_USER_AGENT: &str =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 KiJi/0.1";
 
@@ -35,6 +37,14 @@ pub struct FeedFetchWithCacheResponse {
     pub etag: Option<String>,
     pub last_modified: Option<String>,
     pub not_modified: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedFetchDataUrlResponse {
+    pub data_url: String,
+    pub content_type: String,
+    pub byte_length: usize,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -81,6 +91,15 @@ pub fn feeds_abort_request(request_id: String) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn feeds_fetch_data_url(
+    url: String,
+    request_id: Option<String>,
+    timeout: Option<u64>,
+) -> Result<FeedFetchDataUrlResponse, String> {
+    fetch_data_url(url, request_id, timeout).await
 }
 
 async fn fetch_with_cache(
@@ -240,6 +259,119 @@ fn chrome_like_headers() -> HeaderMap {
     headers
 }
 
+async fn fetch_data_url(
+    url: String,
+    request_id: Option<String>,
+    timeout: Option<u64>,
+) -> Result<FeedFetchDataUrlResponse, String> {
+    validate_http_url(&url)?;
+
+    let (abort_handle, abort_registration) = AbortHandle::new_pair();
+    if let Some(request_id) = &request_id {
+        ACTIVE_REQUESTS
+            .lock()
+            .map_err(|_| "Failed to lock feed request registry.".to_string())?
+            .insert(request_id.clone(), abort_handle);
+    }
+
+    let request_id_for_cleanup = request_id.clone();
+    let fetch_future = async move { execute_data_url_fetch(url, timeout).await };
+    let result = Abortable::new(fetch_future, abort_registration).await;
+
+    if let Some(request_id) = request_id_for_cleanup {
+        let _ = ACTIVE_REQUESTS
+            .lock()
+            .map(|mut requests| requests.remove(&request_id));
+    }
+
+    match result {
+        Ok(result) => result,
+        Err(_) => Err("Feed request was cancelled.".to_string()),
+    }
+}
+
+async fn execute_data_url_fetch(
+    url: String,
+    timeout: Option<u64>,
+) -> Result<FeedFetchDataUrlResponse, String> {
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .map_err(|error| format!("Failed to create HTTP client: {error}"))?;
+    let response = client
+        .get(&url)
+        .headers(chrome_like_headers())
+        .timeout(Duration::from_millis(timeout.unwrap_or(DEFAULT_TIMEOUT_MS)))
+        .send()
+        .await
+        .map_err(|error| format!("Failed to fetch URL: {error}"))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("HTTP request failed with status {status}."));
+    }
+
+    if let Some(content_length) = response.content_length() {
+        if content_length > MAX_DATA_URL_BYTES {
+            return Err("HTTP response is too large for a data URL.".to_string());
+        }
+    }
+
+    let content_type = content_type_from_headers(response.headers())
+        .unwrap_or_else(|| mime_type_from_url(&url));
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| format!("Failed to read HTTP response body: {error}"))?;
+
+    if bytes.len() as u64 > MAX_DATA_URL_BYTES {
+        return Err("HTTP response is too large for a data URL.".to_string());
+    }
+
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(FeedFetchDataUrlResponse {
+        data_url: format!("data:{content_type};base64,{encoded}"),
+        content_type,
+        byte_length: bytes.len(),
+    })
+}
+
+fn content_type_from_headers(headers: &HeaderMap<HeaderValue>) -> Option<String> {
+    headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn mime_type_from_url(url: &str) -> String {
+    let extension = reqwest::Url::parse(url)
+        .ok()
+        .and_then(|parsed| {
+            parsed
+                .path_segments()
+                .and_then(|mut segments| segments.next_back().map(ToOwned::to_owned))
+        })
+        .and_then(|file_name| {
+            file_name
+                .rsplit_once('.')
+                .map(|(_, extension)| extension.to_ascii_lowercase())
+        });
+
+    match extension.as_deref() {
+        Some("ico") => "image/x-icon",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("webp") => "image/webp",
+        _ => "image/png",
+    }
+    .to_string()
+}
+
 fn validate_http_url(url: &str) -> Result<(), String> {
     let parsed = reqwest::Url::parse(url).map_err(|error| format!("Invalid URL: {error}"))?;
     match parsed.scheme() {
@@ -264,5 +396,18 @@ mod tests {
         assert!(headers.contains_key(USER_AGENT));
         assert!(headers.contains_key("sec-ch-ua"));
         assert_eq!(headers.get(CACHE_CONTROL).unwrap(), "no-cache");
+    }
+
+    #[test]
+    fn derives_image_mime_type_from_url() {
+        assert_eq!(
+            mime_type_from_url("https://example.com/favicon.ico"),
+            "image/x-icon"
+        );
+        assert_eq!(
+            mime_type_from_url("https://example.com/icon.webp"),
+            "image/webp"
+        );
+        assert_eq!(mime_type_from_url("https://example.com/icon"), "image/png");
     }
 }

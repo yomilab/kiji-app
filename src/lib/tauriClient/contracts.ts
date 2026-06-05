@@ -264,6 +264,16 @@ export interface FeedFetchWithCacheResponse {
   notModified: boolean;
 }
 
+export interface FeedFetchDataUrlRequest extends FeedFetchRequest {
+  timeout?: number;
+}
+
+export interface FeedFetchDataUrlResponse {
+  dataUrl: DataUrlString;
+  contentType: string;
+  byteLength: number;
+}
+
 export interface DialogResult {
   canceled: boolean;
   filePath?: FilePathString;
@@ -443,6 +453,10 @@ export interface FeedsContract {
   fetchWithCache: {
     request: FeedFetchWithCacheRequest;
     response: FeedFetchWithCacheResponse;
+  };
+  fetchDataUrl: {
+    request: FeedFetchDataUrlRequest;
+    response: FeedFetchDataUrlResponse;
   };
   abortRequest: {
     request: { requestId: string };
