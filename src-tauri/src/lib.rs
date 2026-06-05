@@ -1,7 +1,20 @@
 mod db;
 mod settings;
 
-use db::{db_get_status, DbState};
+use db::{
+    articles_clean_old_across_feeds, articles_clean_old_by_feed, articles_count_by_feed,
+    articles_count_unread_by_feed, articles_delete_by_feed, articles_exists, articles_get,
+    articles_get_content, articles_insert_batch, articles_query, articles_toggle_starred,
+    articles_update_feed_meta, articles_update_last_read_at, articles_update_read,
+    articles_update_saved_state, db_get_status, feeds_count, feeds_create, feeds_delete, feeds_get,
+    feeds_get_by_url, feeds_list, feeds_tags_attach_feed, feeds_tags_delete,
+    feeds_tags_detach_feed, feeds_tags_list, feeds_tags_list_by_feed, feeds_tags_list_feed_ids,
+    feeds_tags_list_with_feed_ids, feeds_tags_rename, feeds_tags_update, feeds_tags_upsert,
+    feeds_update, feeds_update_article_count, feeds_update_last_fetched, feeds_update_unread_count,
+    saved_create, saved_delete, saved_get, saved_get_by_article_hash, saved_get_by_link,
+    saved_get_content, saved_insert_batch, saved_list_all, saved_query, saved_update_highlights,
+    saved_update_last_read_at, saved_update_notes, DbState,
+};
 use settings::{settings_get, settings_reset, settings_update, SettingsState};
 use tauri::Manager;
 
@@ -18,7 +31,54 @@ pub fn run() {
         })
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            articles_clean_old_across_feeds,
+            articles_clean_old_by_feed,
+            articles_count_by_feed,
+            articles_count_unread_by_feed,
+            articles_delete_by_feed,
+            articles_exists,
+            articles_get,
+            articles_get_content,
+            articles_insert_batch,
+            articles_query,
+            articles_toggle_starred,
+            articles_update_feed_meta,
+            articles_update_last_read_at,
+            articles_update_read,
+            articles_update_saved_state,
             db_get_status,
+            feeds_count,
+            feeds_create,
+            feeds_delete,
+            feeds_get,
+            feeds_get_by_url,
+            feeds_list,
+            feeds_tags_attach_feed,
+            feeds_tags_delete,
+            feeds_tags_detach_feed,
+            feeds_tags_list,
+            feeds_tags_list_by_feed,
+            feeds_tags_list_feed_ids,
+            feeds_tags_list_with_feed_ids,
+            feeds_tags_rename,
+            feeds_tags_update,
+            feeds_tags_upsert,
+            feeds_update,
+            feeds_update_article_count,
+            feeds_update_last_fetched,
+            feeds_update_unread_count,
+            saved_create,
+            saved_delete,
+            saved_get,
+            saved_get_by_article_hash,
+            saved_get_by_link,
+            saved_get_content,
+            saved_insert_batch,
+            saved_list_all,
+            saved_query,
+            saved_update_highlights,
+            saved_update_last_read_at,
+            saved_update_notes,
             settings_get,
             settings_update,
             settings_reset

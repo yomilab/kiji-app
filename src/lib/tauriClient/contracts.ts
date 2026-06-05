@@ -171,9 +171,17 @@ export interface ArticleQueryRequest {
   feedIds?: string[];
   unreadOnly?: boolean;
   savedOnly?: boolean;
+  read?: boolean;
+  starred?: boolean;
+  saved?: boolean;
+  sortField?: "published_date" | "fetched_date";
+  sortOrder?: "asc" | "desc";
   searchText?: string;
   limit?: number;
   offset?: number;
+  cursorDate?: ISODateString;
+  cursorHash?: string;
+  includeTotal?: boolean;
 }
 
 export interface ArticleQueryResponse {
