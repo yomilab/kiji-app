@@ -1,0 +1,134 @@
+/* Theme CSS Variables */
+:root {
+  /* Font Families - Configurable in settings */
+  --font-family-ui: 'Google Sans', system-ui, -apple-system, 'PingFang SC', sans-serif;
+  --font-family-article-title: 'Aktiv Grotesk', system-ui, -apple-system, 'PingFang SC', sans-serif;
+  --font-family-article-content: 'Aktiv Grotesk', system-ui, -apple-system, 'PingFang SC', sans-serif;
+  --font-family-article-no-ascii: 'Aktiv Grotesk', system-ui, -apple-system, 'PingFang SC', sans-serif;
+  --font-family-article-content-serif: 'Iowan Old Style', 'Charter', 'Georgia', serif;
+  --article-content-font-family: var(--font-family-article-content);
+
+  /* System accent color (macOS highlight color) - will be set dynamically */
+  --system-accent-color: #007AFF; /* Fallback color */
+
+  /* Layout */
+  --max-article-width: 750px;
+  --max-article-content-width: 720px;
+  --article-content-font-size: 18px;
+  --article-content-font-weight: 500;
+  --article-content-line-height: 1.8;
+  --article-content-letter-spacing: 0em;
+  --article-content-word-spacing: 0em;
+  --article-content-text-align: left;
+  --sidebar-item-min-height: 28px;
+  --sidebar-item-padding-y: 4px;
+  --sidebar-item-padding-x: 12px;
+  --sidebar-item-icon-size: 16px;
+  --leading-item-icon-size: 19px;
+  --scrolled-header-border-horizontal-inset: 5px;
+
+  /* Widget button styles */
+  --widget-button-icon-size: 18px;
+  --widget-button-padding: 6px;
+  --widget-button-border-radius: 6px;
+  --widget-button-border: none;
+  --widget-button-hover-bg: rgba(0, 0, 0, 0.08);
+  --widget-button-disabled-opacity: 0.5;
+  --widget-button-color: var(--theme-text-secondary);
+  --widget-button-gap: 10px;
+
+  /* Scrollbar styles */
+  --scrollbar-width: 8px;
+  --scrollbar-radius: 4px;
+  --scrollbar-track-color: transparent;
+  --scrollbar-thumb-color: rgba(0, 0, 0, 0.2);
+  --scrollbar-thumb-hover-color: rgba(0, 0, 0, 0.3);
+
+  /* Light theme (default) - Fully transparent for blur effect */
+  --theme-bg-primary: transparent;
+  --theme-bg-secondary: transparent;
+  --theme-bg-tertiary: transparent;
+  --theme-sidebar-bg: rgba(255, 255, 255, 0.45);
+  --theme-article-bg: #F7F6F4;
+  --theme-primary-color: #4A4A49;
+  --theme-article-content-color: #4A4A49;
+  --article-content-text-color: var(--theme-article-content-color);
+  --article-content-accent-color: var(--system-accent-color);
+  --theme-text-subdued: #949493;
+  --theme-timestamp-color: #ADA9A5;
+
+  --theme-text-primary: #363636;
+  --theme-text-secondary: #4a4a4a;
+  --theme-text-tertiary: #7a7a7a;
+  --theme-text-muted: #b5b5b5;
+  --article-content-text-primary: var(--theme-text-primary);
+  --article-content-text-secondary: var(--theme-text-secondary);
+  --article-content-code-bg-inline: rgba(31, 36, 43, 0.1);
+  --article-content-code-bg-strong: #1f242b;
+  --article-content-code-fg-strong: #e8edf2;
+
+  --theme-border: rgba(224, 224, 224, 0.5);
+  --theme-border-light: rgba(232, 232, 232, 0.5);
+  --theme-border-active: var(--system-accent-color);
+
+  --theme-primary: var(--system-accent-color);
+  --theme-primary-hover: var(--system-accent-color);
+  --theme-primary-light: color-mix(in srgb, var(--system-accent-color) 10%, white);
+
+  --theme-hover-overlay: rgba(0, 0, 0, 0.05);
+  --theme-hover-overlay-dark: rgba(0, 0, 0, 0.1);
+  --resize-handle-hover-bg: rgba(0, 0, 255, 0.1);
+  --resize-handle-drag-bg: rgba(0, 0, 255, 0.3);
+  --resize-handle-guide-bg: rgba(0, 0, 255, 0.35);
+
+  --theme-shadow: rgba(0, 0, 0, 0.1);
+}
+
+.article-text-non-ascii {
+  font-family: var(--font-family-article-no-ascii);
+}
+
+[data-theme="dark"] {
+  /* Dark theme - Fully transparent for blur effect */
+  --theme-bg-primary: transparent;
+  --theme-bg-secondary: transparent;
+  --theme-bg-tertiary: transparent;
+  --theme-sidebar-bg: rgba(28, 28, 30, 0.35);
+  --theme-article-bg: #1E1E1E;
+  --theme-primary-color: #ffffff;
+  --theme-article-content-color: #ddd;
+  --article-content-text-color: var(--theme-article-content-color);
+  --article-content-accent-color: var(--system-accent-color);
+  --theme-text-subdued: #808080;
+  --theme-timestamp-color: #808080;
+
+  --theme-text-primary: #ddd;
+  --theme-text-secondary: #b0b0b0;
+  --theme-text-tertiary: #808080;
+  --theme-text-muted: #606060;
+  --article-content-text-primary: var(--theme-text-primary);
+  --article-content-text-secondary: var(--theme-text-secondary);
+  --article-content-code-bg-inline: rgba(255, 255, 255, 0.12);
+  --article-content-code-bg-strong: #11161c;
+  --article-content-code-fg-strong: #e8edf2;
+
+  --theme-border: rgba(64, 64, 64, 0.5);
+  --theme-border-light: rgba(48, 48, 48, 0.5);
+  --theme-border-active: var(--system-accent-color);
+
+  --theme-primary: var(--system-accent-color);
+  --theme-primary-hover: color-mix(in srgb, var(--system-accent-color) 80%, white);
+  --theme-primary-light: color-mix(in srgb, var(--system-accent-color) 15%, rgba(26, 26, 26, 0.7));
+
+  --theme-hover-overlay: rgba(255, 255, 255, 0.05);
+  --theme-hover-overlay-dark: rgba(255, 255, 255, 0.1);
+
+  --theme-shadow: rgba(0, 0, 0, 0.3);
+
+  /* Widget button styles for dark theme */
+  --widget-button-hover-bg: rgba(255, 255, 255, 0.08);
+
+  /* Scrollbar styles for dark theme */
+  --scrollbar-thumb-color: rgba(255, 255, 255, 0.2);
+  --scrollbar-thumb-hover-color: rgba(255, 255, 255, 0.3);
+}

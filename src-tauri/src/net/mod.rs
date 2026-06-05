@@ -3,9 +3,8 @@ use once_cell::sync::Lazy;
 use reqwest::{
     header::{
         HeaderMap, HeaderValue, ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, CACHE_CONTROL,
-        CONTENT_TYPE, ETAG,
-        IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED, PRAGMA, UPGRADE_INSECURE_REQUESTS,
-        USER_AGENT,
+        CONTENT_TYPE, ETAG, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED, PRAGMA,
+        UPGRADE_INSECURE_REQUESTS, USER_AGENT,
     },
     StatusCode,
 };
@@ -317,8 +316,8 @@ async fn execute_data_url_fetch(
         }
     }
 
-    let content_type = content_type_from_headers(response.headers())
-        .unwrap_or_else(|| mime_type_from_url(&url));
+    let content_type =
+        content_type_from_headers(response.headers()).unwrap_or_else(|| mime_type_from_url(&url));
     let bytes = response
         .bytes()
         .await

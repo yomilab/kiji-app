@@ -12,9 +12,27 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "KiJi",
         "width": 800,
         "height": 600
+      },
+      {
+        "label": "settings",
+        "title": "KiJi Settings",
+        "url": "index.html?window=settings",
+        "width": 700,
+        "height": 660,
+        "visible": false,
+        "resizable": false
+      },
+      {
+        "label": "article",
+        "title": "KiJi Article",
+        "url": "index.html?window=article",
+        "width": 1000,
+        "height": 720,
+        "visible": false
       }
     ],
     "security": {

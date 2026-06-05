@@ -17,20 +17,34 @@ export interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
+function resolveTheme(theme: AppSettings["theme"]): "light" | "dark" {
+  if (theme === "light" || theme === "dark") {
+    return theme;
+  }
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(settings: AppSettings): void {
+  const resolvedTheme = resolveTheme(settings.theme);
+  document.documentElement.dataset.theme = resolvedTheme;
+  document.documentElement.style.colorScheme = resolvedTheme;
+  localStorage.setItem("user-settings", JSON.stringify(settings));
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<AppSettings["theme"]>("auto");
 
   useEffect(() => {
     void tauriClient.settings.get().then((settings) => {
       setThemeState(settings.theme);
-      document.documentElement.dataset.theme = settings.theme;
+      applyTheme(settings);
     });
   }, []);
 
   const setTheme = useCallback(async (nextTheme: AppSettings["theme"]) => {
     const settings = await tauriClient.settings.update({ theme: nextTheme });
     setThemeState(settings.theme);
-    document.documentElement.dataset.theme = settings.theme;
+    applyTheme(settings);
     await tauriClient.shell.updateMenuState({ theme: settings.theme });
   }, []);
 

@@ -1,0 +1,186 @@
+/* Semantic primitive wrappers to isolate framework-specific styles. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  border: var(--border) solid color-mix(in srgb, var(--color-base-300) 80%, transparent);
+  border-radius: var(--radius-selector);
+  background-color: var(--color-base-200);
+  color: var(--color-base-content);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.2;
+  text-decoration: none;
+  user-select: none;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+
+.button:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-base-content) 8%, transparent);
+}
+
+.button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.button.is-text {
+  background-color: transparent;
+  border-color: transparent;
+}
+
+.button.is-small {
+  font-size: 0.75rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.button.is-medium {
+  font-size: 1rem;
+}
+
+.button.is-large {
+  font-size: 1.25rem;
+}
+
+.button.is-primary {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-content);
+}
+
+.button.is-primary:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-primary) 85%, white);
+  border-color: color-mix(in srgb, var(--color-primary) 85%, white);
+}
+
+.button.is-link {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--color-primary);
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.button.is-link:hover:not(:disabled) {
+  color: color-mix(in srgb, var(--color-primary) 80%, white);
+}
+
+.modal-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.modal-input-row .modal-input {
+  flex: 1;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  border: var(--border) solid var(--framework-input-border);
+  border-radius: var(--radius-field);
+  background-color: var(--framework-input-bg);
+  color: var(--color-base-content);
+  outline: none;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+
+.modal-input::placeholder {
+  color: var(--framework-input-placeholder);
+}
+
+.modal-input:focus {
+  border-color: var(--color-primary);
+}
+
+.modal-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.modal-confirm-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 8px 14px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: var(--border) solid var(--color-primary);
+  border-radius: var(--radius-field);
+  background-color: var(--color-primary);
+  color: var(--color-primary-content);
+  cursor: pointer;
+  transition: opacity 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+  white-space: nowrap;
+}
+
+.modal-confirm-button:hover:not(:disabled) {
+  opacity: 0.92;
+}
+
+.modal-confirm-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modal-confirm-button-danger {
+  background-color: var(--color-error);
+  border-color: var(--color-error);
+  color: var(--color-error-content);
+}
+
+.modal-confirm-button-success {
+  background-color: var(--color-success);
+  border-color: var(--color-success);
+  color: #ffffff;
+}
+
+.modal-confirm-button-outline {
+  background-color: transparent;
+  border-color: var(--theme-text-primary);
+  color: var(--theme-text-primary);
+}
+
+.modal-confirm-button-outline:hover:not(:disabled) {
+  background-color: var(--theme-hover-overlay);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: calc(var(--radius-selector) * 2);
+  background-color: var(--theme-accent-bg);
+  color: var(--theme-accent-text);
+  font-size: 0.75rem;
+  line-height: 1.1;
+}
+
+.label {
+  color: var(--color-base-content);
+}
+
+.notification.is-danger {
+  background-color: var(--color-error);
+  color: var(--color-error-content);
+}
+
+.modal-background {
+  background-color: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+[data-theme="dark"] .modal-background {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-card-title {
+  color: var(--color-base-content);
+}

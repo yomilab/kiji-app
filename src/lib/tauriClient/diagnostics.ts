@@ -7,6 +7,10 @@ export async function logWriteEntry(
   return invokeContract<DiagnosticsContract["logWriteEntry"]>("diagnostics_log_write_entry", request);
 }
 
+export async function logGetPath(): Promise<DiagnosticsContract["logGetPath"]["response"]> {
+  return invokeContract<DiagnosticsContract["logGetPath"]>("diagnostics_log_get_path");
+}
+
 export async function performanceSnapshot(): Promise<
   DiagnosticsContract["performanceSnapshot"]["response"]
 > {

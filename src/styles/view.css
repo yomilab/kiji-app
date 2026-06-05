@@ -1,0 +1,230 @@
+/* Compatibility and utility classes */
+.is-flex {
+  display: flex;
+}
+
+.is-flex-direction-column {
+  flex-direction: column;
+}
+
+.is-overflow-hidden {
+  overflow: hidden;
+}
+
+.is-align-items-center {
+  align-items: center;
+}
+
+.is-gap-1 {
+  gap: 1rem;
+}
+
+.p-0 {
+  padding: 0 !important;
+}
+
+.m-0 {
+  margin: 0 !important;
+}
+
+.title {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.subtitle {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2em;
+  height: 1.2em;
+  line-height: 1;
+}
+
+.u-h-100vh {
+  height: 100vh;
+}
+
+.u-w-100vw {
+  width: 100vw;
+}
+
+.u-h-100 {
+  height: 100%;
+}
+
+/* Text utilities */
+.u-text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+/* Border utilities */
+.has-border-right {
+  border-right: 1px solid var(--theme-border);
+}
+
+.has-border-bottom {
+  border-bottom: 1px solid var(--theme-border);
+}
+
+.has-border-bottom-light {
+  border-bottom: 1px solid var(--theme-border-light);
+}
+
+.has-border-top {
+  border-top: 1px solid var(--theme-border);
+}
+
+.has-border-left-active {
+  border-left: 3px solid var(--theme-border-active);
+}
+
+/* Gap utility */
+.has-gap-1 {
+  gap: 1rem;
+}
+
+/* Container max-width override */
+.container-max-800 {
+  max-width: 800px;
+}
+
+/* Line height utility */
+.has-line-height-relaxed {
+  line-height: 1.7;
+}
+
+/* Modal utilities */
+.modal-card-max-500 {
+  max-width: 500px;
+}
+
+.modal-card-max-height {
+  max-height: 90vh;
+}
+
+/* Background utilities */
+.has-background-blue-light {
+  background-color: var(--theme-primary-light);
+}
+
+/* Keep columns gapless in legacy layouts */
+.columns.is-gapless {
+  margin-left: 0;
+  margin-right: 0;
+  margin-top: 0;
+}
+
+/* Window controls styling */
+.window-controls {
+  -webkit-app-region: no-drag;
+}
+
+.has-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.has-drag {
+  -webkit-app-region: drag;
+}
+
+.window-control-button {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0.25rem;
+  border-radius: 4px;
+}
+
+.window-control-button:hover {
+  background-color: var(--theme-hover-overlay-dark);
+}
+
+/* Theme-aware background classes */
+.sidebar-bg {
+  /* Removed backdrop-filter to allow native vibrancy to work */
+}
+
+.main-bg {
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+}
+
+/* Theme-aware text classes */
+.theme-text-primary {
+  color: var(--theme-text-primary);
+}
+
+.theme-text-secondary {
+  color: var(--theme-text-secondary);
+}
+
+.theme-text-tertiary {
+  color: var(--theme-text-tertiary);
+}
+
+.theme-text-muted {
+  color: var(--theme-text-muted);
+}
+
+/* Feed item hover effect */
+.feed-item:hover {
+  background-color: var(--theme-hover-overlay);
+}
+
+.feed-item-selected {
+  background-color: var(--theme-primary-light) !important;
+}
+
+/* Article content styling */
+.content {
+  color: var(--theme-text-primary);
+}
+
+.content a {
+  color: var(--theme-primary);
+}
+
+.content a:hover {
+  color: var(--theme-primary-hover);
+}
+
+/* Theme toggle button */
+.theme-toggle-button {
+  color: var(--theme-text-primary) !important;
+}
+
+.theme-toggle-button:hover {
+  background-color: var(--theme-hover-overlay) !important;
+}
+
+/* Title and heading colors */
+.title,
+.subtitle {
+  color: var(--theme-text-primary);
+}
+
+/* Link styling in article content */
+.content a {
+  color: var(--theme-primary);
+  text-decoration: underline;
+}
+
+.content a:hover {
+  color: var(--theme-primary-hover);
+}

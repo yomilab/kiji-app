@@ -1,4 +1,5 @@
 mod db;
+mod diagnostics;
 mod net;
 mod settings;
 mod shell;
@@ -18,6 +19,10 @@ use db::{
     saved_get_content, saved_insert_batch, saved_list_all, saved_query, saved_update_highlights,
     saved_update_last_read_at, saved_update_notes, DbState,
 };
+use diagnostics::{
+    diagnostics_export_bundle, diagnostics_log_get_path, diagnostics_log_write_entry,
+    diagnostics_performance_snapshot, DiagnosticsState,
+};
 use net::{feeds_abort_request, feeds_fetch, feeds_fetch_data_url, feeds_fetch_with_cache};
 use settings::{settings_get, settings_reset, settings_update, SettingsState};
 use shell::{
@@ -34,8 +39,11 @@ pub fn run() {
             let settings_state =
                 SettingsState::load(&app.handle()).map_err(std::io::Error::other)?;
             let db_state = DbState::load(&app.handle()).map_err(std::io::Error::other)?;
+            let diagnostics_state =
+                DiagnosticsState::load(&app.handle()).map_err(std::io::Error::other)?;
             app.manage(settings_state);
             app.manage(db_state);
+            app.manage(diagnostics_state);
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -56,6 +64,10 @@ pub fn run() {
             articles_update_read,
             articles_update_saved_state,
             db_get_status,
+            diagnostics_export_bundle,
+            diagnostics_log_get_path,
+            diagnostics_log_write_entry,
+            diagnostics_performance_snapshot,
             feeds_abort_request,
             feeds_count,
             feeds_create,

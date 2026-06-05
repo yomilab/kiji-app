@@ -372,11 +372,13 @@ export interface SystemAppIconState {
 
 export interface LogEntryInput {
   level: "debug" | "info" | "warn" | "error";
-  process: "renderer" | "main" | "native";
+  process: "renderer" | "main" | "native" | "worker";
   category: string;
-  event: string;
+  event?: string;
   message: string;
   context?: unknown;
+  error?: unknown;
+  timestamp?: ISODateString;
 }
 
 export interface PerformanceSnapshot {
@@ -707,6 +709,9 @@ export interface DiagnosticsContract {
   logWriteEntry: {
     request: LogEntryInput;
     response: void;
+  };
+  logGetPath: {
+    response: FilePathString;
   };
   performanceSnapshot: {
     response: PerformanceSnapshot;
