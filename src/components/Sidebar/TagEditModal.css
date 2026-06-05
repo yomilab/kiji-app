@@ -1,0 +1,109 @@
+.tag-edit-modal-body {
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tag-edit-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tag-edit-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--theme-text-primary);
+  margin: 0;
+}
+
+.tag-edit-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--theme-accent-bg);
+  color: var(--theme-accent-text);
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.tag-pill-remove {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+}
+
+.tag-pill-remove:hover {
+  transform: scale(1.2);
+}
+
+.tag-pill-remove:disabled {
+  cursor: not-allowed;
+}
+
+.tag-edit-input-group {
+  gap: 8px;
+}
+
+.tag-edit-input {
+  min-width: 0;
+}
+
+.tag-edit-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.tag-edit-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-edit-suggestion-btn {
+  padding: 6px 12px;
+  background-color: transparent;
+  color: var(--theme-text-primary);
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tag-edit-suggestion-btn:hover:not(:disabled) {
+  background-color: #f0f0f0;
+}
+
+.tag-edit-suggestion-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+[data-theme="dark"] .tag-edit-suggestion-btn {
+  border-color: #555;
+}
+
+[data-theme="dark"] .tag-edit-suggestion-btn:hover:not(:disabled) {
+  background-color: #3a3a3a;
+}

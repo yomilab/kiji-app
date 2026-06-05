@@ -1,0 +1,94 @@
+/* Traffic Lights Container */
+.traffic-lights {
+  position: fixed;
+  top: 15px;
+  left: 20px;
+  display: flex;
+  gap: 8px;
+  z-index: 10000;
+  -webkit-app-region: no-drag;
+}
+
+/* Individual Traffic Light Button */
+.traffic-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: filter 0.2s ease;
+}
+
+.traffic-light:hover {
+  filter: brightness(1.1);
+}
+
+.traffic-light:active {
+  filter: brightness(0.9);
+}
+
+/* Close Button - Red */
+.traffic-light-close {
+  background-color: #ff5f57;
+}
+
+.traffic-light-close:hover {
+  background-color: #ff5f57;
+}
+
+/* Minimize Button - Yellow */
+.traffic-light-minimize {
+  background-color: #ffbd2e;
+}
+
+.traffic-light-minimize:hover {
+  background-color: #ffbd2e;
+}
+
+/* Maximize Button - Green */
+.traffic-light-maximize {
+  background-color: #28c840;
+}
+
+.traffic-light-maximize:hover {
+  background-color: #28c840;
+}
+
+/* Icons that appear on hover */
+.traffic-light-icon {
+  position: absolute;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.6);
+  line-height: 1;
+  user-select: none;
+}
+
+/* Close icon */
+.traffic-light-close .traffic-light-icon {
+  font-size: 14px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Minimize icon */
+.traffic-light-minimize .traffic-light-icon {
+  font-size: 12px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Maximize icon */
+.traffic-light-maximize .traffic-light-icon {
+  font-size: 11px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}

@@ -1,0 +1,127 @@
+/* Sidebar component styles */
+
+.sidebar {
+  position: relative;
+  flex-shrink: 0;
+  background-color: var(--theme-sidebar-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  z-index: 1;
+  font-family: var(--font-family-ui);
+  user-select: none;
+}
+
+/* Widgets container - aligned with traffic lights */
+.sidebar-widgets-container {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px 8px 20px;
+}
+
+/* Title container - below traffic lights */
+.sidebar-title-container {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 20px 20px 20px;
+  margin-top: 16px;
+}
+
+.sidebar-title-container .title {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--theme-primary-color);
+}
+
+/* Resize handle for dragging */
+.sidebar-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  user-select: none;
+  background-color: transparent;
+  transition: background-color 0.2s;
+  z-index: 10;
+}
+
+.sidebar-resize-handle:hover {
+  background-color: var(--resize-handle-hover-bg);
+}
+
+.sidebar-resize-handle.is-dragging {
+  background-color: var(--resize-handle-drag-bg);
+  transition: none;
+}
+
+/* Sync indicator */
+.sync-indicator {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--theme-primary-color);
+  opacity: 0.7;
+  position: relative;
+  top: -2px;
+  letter-spacing: -0.01em;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.sync-indicator.is-syncing::after {
+  content: '';
+  animation: syncDots 1.5s steps(4, end) infinite;
+}
+
+@keyframes syncDots {
+  0%, 25% {
+    content: '.';
+  }
+  26%, 50% {
+    content: '..';
+  }
+  51%, 75% {
+    content: '...';
+  }
+  76%, 100% {
+    content: '';
+  }
+}
+
+/* Scrollable content area */
+.sidebar-content-scrollable {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  /* Keep sidebar scrolling available without showing a persistent visual scrollbar. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sidebar-content-scrollable::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.sidebar-content-scrollable::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+.sidebar-content-scrollable::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 0;
+}
+
+.sidebar-content-scrollable::-webkit-scrollbar-thumb:hover {
+  background-color: transparent;
+}

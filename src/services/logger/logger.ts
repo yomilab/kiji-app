@@ -121,11 +121,12 @@ class Logger {
     }
   }
 
-  async exportDiagnostics(): Promise<{ filePath: string } | null> {
+  async exportDiagnostics(): Promise<{ canceled: boolean; filePath?: string }> {
     try {
-      return await diagnostics.exportBundle();
+      const result = await diagnostics.exportBundle();
+      return { canceled: false, filePath: result.filePath };
     } catch {
-      return null;
+      return { canceled: true };
     }
   }
 

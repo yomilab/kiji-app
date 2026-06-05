@@ -1,27 +1,16 @@
-import { useEffect, useState } from "react";
-import {
-  feedRefreshActivityBus,
-  type FeedRefreshActivity,
-} from "../services/feeds/feedRefreshActivity";
+import { useSyncExternalStore } from 'react';
+import { feedRefreshActivity, type FeedRefreshActivitySnapshot } from '@/services/feeds/feedRefreshActivity';
 
-export function useFeedRefreshActivity(feedId?: string): FeedRefreshActivity[] {
-  const [activities, setActivities] = useState<FeedRefreshActivity[]>(() =>
-    filterActivities(feedRefreshActivityBus.getAll(), feedId),
+const EMPTY_SNAPSHOT: FeedRefreshActivitySnapshot = {
+  activeFeedCount: 0,
+  queuedFeedCount: 0,
+  displayFeedCount: 0,
+  isAnyFeedRefreshing: false,
+};
+
+export const useFeedRefreshActivity = () =>
+  useSyncExternalStore(
+    feedRefreshActivity.subscribe,
+    feedRefreshActivity.getSnapshot,
+    () => EMPTY_SNAPSHOT
   );
-
-  useEffect(() => {
-    setActivities(filterActivities(feedRefreshActivityBus.getAll(), feedId));
-    return feedRefreshActivityBus.subscribe(() => {
-      setActivities(filterActivities(feedRefreshActivityBus.getAll(), feedId));
-    });
-  }, [feedId]);
-
-  return activities;
-}
-
-function filterActivities(
-  activities: FeedRefreshActivity[],
-  feedId?: string,
-): FeedRefreshActivity[] {
-  return feedId ? activities.filter((activity) => activity.feedId === feedId) : activities;
-}

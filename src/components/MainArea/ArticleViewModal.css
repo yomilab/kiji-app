@@ -1,0 +1,156 @@
+/* Article View Modal - Slide in from right */
+.article-view-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 999;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.article-view-modal {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  background-color: transparent;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  animation: slideInFromRight 0.3s ease-out;
+  box-shadow: -4px 0 12px var(--theme-shadow);
+}
+
+.article-view-modal-header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--theme-border);
+  flex-shrink: 0;
+}
+
+.article-view-modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--theme-text-secondary);
+  transition: all 0.2s;
+}
+
+.article-view-modal-close:hover {
+  background-color: var(--theme-hover-overlay);
+  color: var(--theme-text-primary);
+}
+
+.article-view-modal-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 48px;
+}
+
+/* Article content styles (reused from ArticleView) */
+.article-view-article {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.article-view-header {
+  margin-bottom: 2rem;
+}
+
+.article-view-title {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin-bottom: 1rem;
+}
+
+.article-view-meta {
+  display: flex;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.article-view-author,
+.article-view-date {
+  color: var(--theme-text-secondary);
+}
+
+.article-view-content {
+  font-size: 1.05rem;
+  line-height: 1.8;
+  color: var(--theme-text-primary);
+}
+
+.article-view-content p {
+  margin-bottom: 1.5rem;
+}
+
+.article-view-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 1.5rem 0;
+}
+
+.article-view-content a {
+  color: var(--theme-primary);
+  text-decoration: none;
+  border-bottom: 1px solid var(--theme-primary);
+}
+
+.article-view-content a:hover {
+  border-bottom-width: 2px;
+}
+
+.article-view-footer {
+  padding-top: 2rem;
+  border-top: 1px solid var(--theme-border);
+  margin-top: 2rem;
+}
+
+.article-view-link {
+  color: var(--theme-primary);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: gap 0.2s;
+}
+
+.article-view-link:hover {
+  gap: 8px;
+}
+
+/* Animations */
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

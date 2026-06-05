@@ -1,0 +1,567 @@
+/* Article List Container */
+.article-list {
+  --article-list-horizontal-padding: 32px;
+  --article-list-bg: var(--theme-article-bg);
+  /* Keep aligned with HEADER_COMPACT_TRANSITION_MS in ArticleList.tsx. */
+  --article-list-header-transition-duration: 40ms;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 100%;
+  border-right: 1px solid var(--theme-border-color, var(--theme-text-primary));
+  position: relative;
+  background-color: var(--article-list-bg);
+}
+
+/* In 3-column mode, Article List has a fixed width and border-right */
+.main-area > .article-list {
+  flex-shrink: 0;
+}
+
+/* In 2-column mode (when alone), Article List takes full width and has no border-right */
+.main-area > .article-list:only-child {
+  flex: 1;
+  border-right: none;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+/* Article List Items Container */
+.article-list-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background-color: var(--article-list-bg);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb-color) var(--scrollbar-track-color);
+  -ms-overflow-style: scrollbar;
+}
+
+/* When no scrollbar is needed, still maintain the gutter for alignment */
+.article-list-items.no-scrollbar {
+  scrollbar-gutter: stable;
+}
+
+/* Force scrollbar to be visible */
+.article-list-items::-webkit-scrollbar {
+  display: block;
+  width: var(--scrollbar-width);
+  background-color: var(--scrollbar-track-color);
+}
+
+.article-list-items::-webkit-scrollbar-track {
+  background-color: var(--scrollbar-track-color);
+}
+
+.article-list-items::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb-color);
+  border-radius: var(--scrollbar-radius);
+}
+
+.article-list-items::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover-color);
+}
+
+.article-list-virtual-spacer {
+  position: relative;
+  width: 100%;
+  min-height: 100%;
+}
+
+.article-list-virtual-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+.article-list-bottom-spacer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+}
+
+/* Article List Title Section */
+.article-list-title-section {
+  padding: 32px 0 10px 0;
+  position: sticky;
+  top: 0;
+  background-color: var(--article-list-bg);
+  z-index: 10;
+  width: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  transition:
+    padding-top var(--article-list-header-transition-duration) ease-in-out,
+    background-color var(--article-list-header-transition-duration) ease-in-out;
+}
+
+.article-list-title-section-scrolled {
+  position: sticky;
+  padding-top: 20px;
+  background-color: color-mix(in srgb, var(--article-list-bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.article-list-title-section-scrolled::after {
+  content: '';
+  position: absolute;
+  left: var(--scrolled-header-border-horizontal-inset);
+  right: var(--scrolled-header-border-horizontal-inset);
+  bottom: 0;
+  border-bottom: 1px solid var(--theme-border);
+  border-bottom-width: 0.5px;
+  pointer-events: none;
+}
+
+.article-list-fixed-loader-shell {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  z-index: 14;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.article-list-fixed-loader {
+  /* Keep the floating header loader readable when title text passes behind it. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--theme-border) 82%, transparent);
+  background-color: color-mix(in srgb, var(--theme-article-bg) 78%, var(--theme-text-primary) 22%);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--theme-shadow) 50%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+/* Title content wrapper - centered with max-width */
+.article-list-title-content {
+  max-width: var(--max-article-width);
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 var(--article-list-horizontal-padding);
+  position: relative;
+}
+
+.article-list-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--theme-primary-color);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+  transition:
+    font-size var(--article-list-header-transition-duration) ease-in,
+    line-height var(--article-list-header-transition-duration) ease-in;
+}
+
+.article-list-subtitle {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.6);
+  letter-spacing: -0.01em;
+  transition:
+    font-size var(--article-list-header-transition-duration) ease-in,
+    margin-top var(--article-list-header-transition-duration) ease-in;
+}
+
+[data-theme="dark"] .article-list-subtitle {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.article-list-title-section-scrolled .article-list-title {
+  font-size: 16px;
+  line-height: 1.15;
+}
+
+.article-list-title-section-scrolled .article-list-subtitle {
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* Resize handle for dragging */
+.article-list-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  user-select: none;
+  background-color: transparent;
+  transition: background-color 0.2s;
+  z-index: 10;
+}
+
+.article-list-resize-handle:hover {
+  background-color: var(--resize-handle-hover-bg);
+}
+
+.article-list-resize-handle.is-dragging {
+  background-color: var(--resize-handle-drag-bg);
+  transition: none;
+}
+
+/* Individual Article Item */
+.article-list-item {
+  padding: 0 0;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 2px;
+  outline: none; /* Remove default focus outline */
+}
+
+/* Article item content wrapper - centered with max-width */
+.article-list-item-content {
+  max-width: var(--max-article-width);
+  width: 100%;
+  margin: 0 auto;
+  padding: 10px var(--article-list-horizontal-padding);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 6px;
+  transition:
+    background-color 0.2s,
+    transform 0.15s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.article-list-item-content:hover {
+  transform: scale(1.005);
+}
+
+.article-list-item:active .article-list-item-content {
+  transform: scale(0.995);
+}
+
+/* Skeleton Screens */
+.skeleton-placeholder {
+  background: var(--theme-hover-overlay);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+  opacity: 0.6;
+}
+
+.skeleton-placeholder::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.1) 20%,
+    rgba(255, 255, 255, 0.2) 60%,
+    rgba(255, 255, 255, 0)
+  );
+  animation: shimmer 2s infinite;
+}
+
+[data-theme="dark"] .skeleton-placeholder::after {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.08) 20%,
+    rgba(255, 255, 255, 0.16) 60%,
+    rgba(255, 255, 255, 0)
+  );
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.skeleton-source {
+  width: 120px;
+  height: 10px;
+}
+
+.skeleton-date {
+  width: 80px;
+  height: 10px;
+}
+
+.skeleton-title {
+  width: 85%;
+  height: 16px;
+  margin-bottom: 0;
+}
+
+.skeleton-description {
+  width: 95%;
+  height: 12px;
+  margin-top: 0;
+}
+
+.skeleton-description-short {
+  width: 60%;
+  height: 12px;
+  margin-top: 6px;
+}
+
+/* Skeleton spacing overrides to ensure equal gaps */
+.skeleton-item .article-list-item-source-wrapper {
+  margin-bottom: 6px;
+}
+
+.skeleton-item .article-list-item-header {
+  margin-bottom: 6px;
+}
+
+.skeleton-image {
+  width: 60px;
+  height: 60px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.skeleton-header-title {
+  width: 140px;
+  height: 18px;
+}
+
+.skeleton-header-subtitle {
+  width: 60px;
+  height: 12px;
+}
+
+/* Active state: article is highlighted (last clicked) */
+.article-list-item.is-active .article-list-item-content {
+  background-color: var(--theme-hover-overlay);
+}
+
+/* Use system accent tint only when runtime reports it is available. */
+.system-accent-color-available .article-list-item.is-active .article-list-item-content {
+  background-color: color-mix(in srgb, var(--system-accent-color) 8%, transparent);
+}
+
+.article-list-item:focus .article-list-item-content {
+  outline: 1px solid var(--theme-article-bg);
+  outline-offset: -1px;
+}
+
+/* Read/Unread States */
+.article-list-item.is-read .article-list-item-title {
+  color: var(--theme-text-subdued);
+}
+
+.article-list-item.is-unread {
+  /* Unread articles appear normally with full opacity */
+}
+
+/* Article Source Wrapper (flexbox container for source and date) */
+.article-list-item-source-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2px;
+  gap: 8px;
+}
+
+/* Article Source Left (relative container for favicon and text) */
+.article-list-item-source-left {
+  margin-left: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+
+/* Article Source Text (keeps original alignment) */
+.article-list-item-source-text {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--theme-text-secondary);
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+/* Article Item Header */
+.article-list-item-header {
+  position: relative;
+  display: block;
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+.article-list-item-header .favicon-container {
+  position: absolute;
+  left: calc(var(--leading-item-icon-size) * -1.2);
+  top: 0;
+  width: var(--leading-item-icon-size);
+  height: var(--leading-item-icon-size);
+  border-radius: 3px;
+  border-width: 1px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.article-list-item-header .favicon-icon {
+  color: var(--theme-text-subdued);
+}
+
+/* Article Title */
+.article-list-item-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--theme-primary-color);
+  line-height: 1.3;
+  word-break: break-word;
+  letter-spacing: -0.01em;
+  font-family: var(--font-family-article-title);
+}
+
+/* Unread indicator */
+.article-unread-indicator {
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--theme-accent-color, #0066ff);
+  font-size: 0.6rem;
+  vertical-align: middle;
+}
+
+/* Article Description */
+.article-list-item-description {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--theme-text-subdued);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  box-orient: vertical;
+  margin-bottom: 0;
+  letter-spacing: -0.01em;
+  font-family: var(--font-family-article-content);
+}
+
+.article-list-match-highlight {
+  background-color: color-mix(in srgb, var(--system-accent-color) 26%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.article-list-item-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.article-list-item-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.article-list-item-preview-image {
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  background-color: color-mix(in srgb, var(--theme-text-primary) 12%, transparent);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.article-list-item-preview-image-content {
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Article Meta (author + date) */
+.article-list-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--theme-text-tertiary);
+  letter-spacing: -0.01em;
+}
+
+/* Article Author */
+.article-list-item-author {
+  color: inherit;
+}
+
+/* Article Date */
+.article-list-item-date {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--theme-text-secondary);
+  opacity: 0.6;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Error State */
+.article-list-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+}
+
+/* Empty State */
+.article-list-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+}
+
+/* Infinite scroll loading indicator */
+.article-list-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 20px;
+}

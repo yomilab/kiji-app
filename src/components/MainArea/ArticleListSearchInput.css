@@ -1,0 +1,42 @@
+/* Search Input Container with Animation */
+.article-list-search-input-container {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.15s ease-out, opacity 0.1s ease-out, margin-bottom 0.15s ease-out;
+  margin-bottom: 0;
+  width: 100%;
+}
+
+.article-list-search-input-container.is-open {
+  max-height: 50px;
+  opacity: 1;
+  margin-bottom: 12px;
+}
+
+.article-list-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  background-color: var(--theme-bg-primary);
+  color: var(--theme-text-primary);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+  accent-color: auto;
+}
+
+.article-list-search-input::selection {
+  background-color: Highlight;
+  color: HighlightText;
+}
+
+.article-list-search-input:focus {
+  border-color: var(--theme-primary);
+}
+
+.article-list-search-input::placeholder {
+  color: var(--theme-text-muted);
+}

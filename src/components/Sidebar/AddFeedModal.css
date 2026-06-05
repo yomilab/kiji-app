@@ -1,0 +1,65 @@
+/* Add Feed Modal - Content Styles Only */
+.add-feed-modal-body {
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.add-feed-modal-input-row {
+  margin-bottom: 0;
+}
+
+.add-feed-modal-input {
+  min-width: 0;
+}
+
+.add-feed-modal-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background-color: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #dc2626;
+  font-size: 0.875rem;
+}
+
+.add-feed-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.add-feed-modal-button {
+  width: 100%;
+  min-height: 40px;
+}
+
+.add-feed-modal-button-import {
+  background-color: color-mix(in srgb, var(--color-warning) 78%, white);
+  border-color: color-mix(in srgb, var(--color-warning) 72%, white);
+  color: #7c3f00;
+}
+
+.add-feed-modal-button-import:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-warning) 84%, white);
+  border-color: color-mix(in srgb, var(--color-warning) 78%, white);
+}
+
+[data-theme="dark"] .add-feed-modal-button-import {
+  background-color: color-mix(in srgb, var(--color-warning) 32%, var(--theme-bg-secondary));
+  border-color: color-mix(in srgb, var(--color-warning) 42%, var(--theme-border));
+  color: #ffd8a8;
+}
+
+[data-theme="dark"] .add-feed-modal-button-import:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-warning) 38%, var(--theme-bg-secondary));
+  border-color: color-mix(in srgb, var(--color-warning) 48%, var(--theme-border));
+}
+
+[data-theme="dark"] .add-feed-modal-error {
+  background-color: rgba(220, 38, 38, 0.15);
+  border-color: rgba(220, 38, 38, 0.3);
+  color: #f87171;
+}

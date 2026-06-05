@@ -1,0 +1,74 @@
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  background-color: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  padding: 5px 2px;
+  min-width: 160px;
+  z-index: 1000;
+}
+
+.dropdown-menu-align-right {
+  right: 0;
+}
+
+.dropdown-menu-align-left {
+  left: 0;
+}
+
+[data-theme="dark"] .dropdown-menu {
+  background-color: rgba(40, 40, 40, 0.8);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.32);
+}
+
+.dropdown-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: system-ui, -apple-system, 'PingFang SC', sans-serif;
+  color: var(--theme-text-primary);
+  transition: background-color 0.15s ease;
+}
+
+.dropdown-menu-item:hover {
+  background-color: var(--theme-hover-overlay);
+}
+
+.dropdown-menu-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--theme-text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.dropdown-menu-option:hover {
+  background-color: var(--theme-hover-overlay);
+}
+
+.dropdown-menu-checkbox {
+  margin: 0;
+}
+
+.dropdown-menu-empty {
+  padding: 6px 12px;
+  color: var(--theme-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}

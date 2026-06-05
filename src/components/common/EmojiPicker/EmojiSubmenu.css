@@ -1,0 +1,35 @@
+.emoji-submenu {
+  background: var(--theme-article-bg);
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px var(--theme-shadow);
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 0.15s ease-out, transform 0.15s ease-out;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.emoji-submenu-open {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.emoji-submenu-picker-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.emoji-submenu-picker-wrapper em-emoji-picker {
+  --background-rgb: transparent;
+  --border-radius: 0;
+  --category-icon-size: 18px;
+  --font-family: var(--font-family-ui);
+  width: 100%;
+  max-width: 420px;
+  height: 400px;
+  border: none;
+  box-shadow: none;
+}

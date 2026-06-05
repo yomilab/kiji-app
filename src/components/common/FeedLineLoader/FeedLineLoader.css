@@ -1,0 +1,40 @@
+.feed-line-loader {
+  --feed-line-loader-size: 24px;
+  --feed-line-loader-color: color-mix(in srgb, var(--theme-text-primary) 72%, transparent);
+  width: var(--feed-line-loader-size);
+  height: var(--feed-line-loader-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--feed-line-loader-color);
+}
+
+.feed-line-loader[data-tone='muted'] {
+  --feed-line-loader-color: color-mix(in srgb, var(--theme-text-primary) 56%, transparent);
+}
+
+.feed-line-loader[data-tone='subtle'] {
+  --feed-line-loader-color: color-mix(in srgb, var(--theme-text-primary) 42%, transparent);
+}
+
+.feed-line-loader-icon {
+  width: 100%;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.feed-line-loader-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.feed-line-loader-icon .box5532 {
+  fill: currentColor;
+}
+
+[data-theme="dark"] .feed-line-loader {
+  --feed-line-loader-color: color-mix(in srgb, var(--theme-text-primary) 82%, transparent);
+}

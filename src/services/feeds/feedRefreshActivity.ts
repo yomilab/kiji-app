@@ -1,38 +1,142 @@
-export type FeedRefreshStatus = "queued" | "refreshing" | "success" | "notModified" | "failed" | "aborted";
-
-export interface FeedRefreshActivity {
-  feedId: string;
-  status: FeedRefreshStatus;
-  timestamp: string;
-  insertedCount?: number;
-  error?: string;
+export interface FeedRefreshActivitySnapshot {
+  activeFeedCount: number;
+  queuedFeedCount: number;
+  displayFeedCount: number;
+  isAnyFeedRefreshing: boolean;
 }
 
-type FeedRefreshActivityListener = (activity: FeedRefreshActivity) => void;
+type FeedRefreshActivityListener = () => void;
 
-class FeedRefreshActivityBus {
+export class FeedRefreshActivity {
+  private activeFeeds = new Map<string, number>();
+
+  private queuedFeeds = new Map<string, number>();
+
+  private queuedFeedTotal = 0;
+
   private listeners = new Set<FeedRefreshActivityListener>();
-  private latest = new Map<string, FeedRefreshActivity>();
 
-  subscribe(listener: FeedRefreshActivityListener): () => void {
+  private snapshot: FeedRefreshActivitySnapshot = {
+    activeFeedCount: 0,
+    queuedFeedCount: 0,
+    displayFeedCount: 0,
+    isAnyFeedRefreshing: false,
+  };
+
+  subscribe = (listener: FeedRefreshActivityListener): (() => void) => {
     this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  getSnapshot = (): FeedRefreshActivitySnapshot => this.snapshot;
+
+  beginQueuedFeeds(feedIds: string[]): (feedId?: string) => void {
+    const pendingFeedCounts = new Map<string, number>();
+
+    for (const feedId of feedIds) {
+      const currentCount = this.queuedFeeds.get(feedId) ?? 0;
+      this.queuedFeeds.set(feedId, currentCount + 1);
+      pendingFeedCounts.set(feedId, (pendingFeedCounts.get(feedId) ?? 0) + 1);
+      this.queuedFeedTotal += 1;
+    }
+
+    this.publishSnapshot();
+
+    const releaseFeed = (feedId: string): void => {
+      const pendingCount = pendingFeedCounts.get(feedId) ?? 0;
+      if (pendingCount <= 0) {
+        return;
+      }
+      if (pendingCount > 1) {
+        pendingFeedCounts.set(feedId, pendingCount - 1);
+      } else {
+        pendingFeedCounts.delete(feedId);
+      }
+
+      const nextCount = (this.queuedFeeds.get(feedId) ?? 1) - 1;
+      if (nextCount > 0) {
+        this.queuedFeeds.set(feedId, nextCount);
+      } else {
+        this.queuedFeeds.delete(feedId);
+      }
+      this.queuedFeedTotal = Math.max(0, this.queuedFeedTotal - 1);
+    };
+
+    return (feedId?: string) => {
+      if (feedId) {
+        releaseFeed(feedId);
+      } else {
+        for (const [pendingFeedId, pendingCount] of Array.from(pendingFeedCounts.entries())) {
+          for (let releaseCount = 0; releaseCount < pendingCount; releaseCount += 1) {
+            releaseFeed(pendingFeedId);
+          }
+        }
+      }
+
+      this.publishSnapshot();
+    };
   }
 
-  publish(activity: Omit<FeedRefreshActivity, "timestamp">): FeedRefreshActivity {
-    const snapshot = { ...activity, timestamp: new Date().toISOString() };
-    this.latest.set(activity.feedId, snapshot);
-    this.listeners.forEach((listener) => listener(snapshot));
-    return snapshot;
+  async track<T>(feedId: string, operation: () => Promise<T>): Promise<T> {
+    // Track live refresh work independently from any caller-specific loading
+    // state so UI surfaces can react to real feed network activity only.
+    const release = this.begin(feedId);
+
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
   }
 
-  getLatest(feedId: string): FeedRefreshActivity | undefined {
-    return this.latest.get(feedId);
+  private begin(feedId: string): () => void {
+    const currentCount = this.activeFeeds.get(feedId) ?? 0;
+    this.activeFeeds.set(feedId, currentCount + 1);
+    this.publishSnapshot();
+
+    let released = false;
+
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+
+      const nextCount = (this.activeFeeds.get(feedId) ?? 1) - 1;
+      if (nextCount > 0) {
+        this.activeFeeds.set(feedId, nextCount);
+      } else {
+        this.activeFeeds.delete(feedId);
+      }
+
+      this.publishSnapshot();
+    };
   }
 
-  getAll(): FeedRefreshActivity[] {
-    return Array.from(this.latest.values());
+  private publishSnapshot(): void {
+    const queuedFeedCount = this.queuedFeedTotal;
+    const displayFeedCount = queuedFeedCount > 0 ? queuedFeedCount : this.activeFeeds.size;
+    const nextSnapshot: FeedRefreshActivitySnapshot = {
+      activeFeedCount: this.activeFeeds.size,
+      queuedFeedCount,
+      displayFeedCount,
+      isAnyFeedRefreshing: displayFeedCount > 0,
+    };
+
+    if (
+      nextSnapshot.activeFeedCount === this.snapshot.activeFeedCount
+      && nextSnapshot.queuedFeedCount === this.snapshot.queuedFeedCount
+      && nextSnapshot.displayFeedCount === this.snapshot.displayFeedCount
+      && nextSnapshot.isAnyFeedRefreshing === this.snapshot.isAnyFeedRefreshing
+    ) {
+      return;
+    }
+
+    this.snapshot = nextSnapshot;
+    this.listeners.forEach((listener) => listener());
   }
 }
 
-export const feedRefreshActivityBus = new FeedRefreshActivityBus();
+export const feedRefreshActivity = new FeedRefreshActivity();

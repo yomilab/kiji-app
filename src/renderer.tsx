@@ -1,9 +1,14 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { App } from "./App";
+import { ArticleWindow } from "./components/ArticleWindow/ArticleWindow";
+import { SettingsWindow } from "./components/SettingsWindow/SettingsWindow";
 import { FeedProvider } from "./contexts/FeedContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { logger } from "./services/logger";
 import { applyFontFamiliesToRoot, applyReadingLayoutToRoot } from "./services/settings/styleVariables";
+import { installElectronApiCompat } from "./services/tauri/electronApiCompat";
+import type { Article } from "./types/article";
 import "./styles/google-sans.css";
 import "./styles/golos-text.css";
 import "./styles/aktiv-grotesk.css";
@@ -42,14 +47,30 @@ function getWindowType(): RendererWindowType {
   return windowType === "settings" || windowType === "article" ? windowType : "main";
 }
 
-function PlaceholderWindow({ title, body }: { title: string; body: string }) {
-  return (
-    <main className="tauri-window-placeholder">
-      <p className="eyebrow">KiJi Tauri migration</p>
-      <h1>{title}</h1>
-      <p>{body}</p>
-    </main>
-  );
+function ArticleWindowBranch() {
+  const [article, setArticle] = React.useState<Article | null>(null);
+
+  React.useEffect(() => {
+    let mounted = true;
+    void window.electronAPI?.getArticleWindowData()
+      .then((payload) => {
+        if (mounted) {
+          setArticle(payload);
+        }
+      })
+      .catch((error) => {
+        logger.error("Renderer", "Failed to load article window payload", { error });
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!article) {
+    return <main className="tauri-window-placeholder">Loading article...</main>;
+  }
+
+  return <ArticleWindow article={article} />;
 }
 
 function renderWindow(windowType: RendererWindowType): React.ReactElement {
@@ -57,10 +78,7 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
     return (
       <React.StrictMode>
         <ThemeProvider>
-          <PlaceholderWindow
-            title="Settings window bootstrap is ready."
-            body="The next window phase will copy the Electron SettingsWindow component and CSS into this renderer branch."
-          />
+          <SettingsWindow />
         </ThemeProvider>
       </React.StrictMode>
     );
@@ -70,10 +88,9 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
     return (
       <React.StrictMode>
         <ThemeProvider>
-          <PlaceholderWindow
-            title="Article window bootstrap is ready."
-            body="The standalone Electron ArticleWindow flow can now render through ?window=article once the component is copied."
-          />
+          <FeedProvider>
+            <ArticleWindowBranch />
+          </FeedProvider>
         </ThemeProvider>
       </React.StrictMode>
     );
@@ -83,10 +100,7 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
     <React.StrictMode>
       <ThemeProvider>
         <FeedProvider>
-          <PlaceholderWindow
-            title="Main window bootstrap is ready."
-            body="The next phase will copy the Electron App, Sidebar, MainArea, article list, article view, shared components, and co-located CSS into this renderer branch."
-          />
+          <App />
         </FeedProvider>
       </ThemeProvider>
     </React.StrictMode>
@@ -94,6 +108,7 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
 }
 
 const windowType = getWindowType();
+installElectronApiCompat();
 logger.installConsoleCapture(windowType === "main" ? "renderer" : "renderer");
 logger.installGlobalErrorHandlers("renderer");
 logger.info("Renderer", "Renderer bootstrap starting", { windowType });

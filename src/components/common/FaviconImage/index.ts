@@ -1,0 +1,1 @@
+export { FaviconImage } from './FaviconImage';

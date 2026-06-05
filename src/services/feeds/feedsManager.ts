@@ -4,10 +4,12 @@ import { convertFeedItemsToArticles } from "../articles/articleConverter";
 import { analyzeFaviconAppearance } from "../favicons/faviconTransparency";
 import { faviconFetcher } from "../favicons/faviconFetcher";
 import { tauriClient } from "../../lib/tauriClient";
-import { feedRefreshActivityBus } from "./feedRefreshActivity";
+import { feedRefreshActivity } from "./feedRefreshActivity";
 import { feedRefreshCoordinator } from "./feedRefreshCoordinator";
 import { feedsFetcher } from "./feedsFetcher";
 import type { Feed } from "./types";
+
+export type { Feed } from "./types";
 
 export interface AddFeedOptions {
   skipMetadataFetch?: boolean;
@@ -85,8 +87,8 @@ class FeedsManager {
     options: { signal?: AbortSignal; force?: boolean } = {},
   ): Promise<RefreshFeedResult> {
     return feedRefreshCoordinator.run(id, async () => {
+      return feedRefreshActivity.track(id, async () => {
       const feed = await this.requireFeed(id);
-      feedRefreshActivityBus.publish({ feedId: id, status: "refreshing" });
 
       try {
         const result = await feedsFetcher.fetchFeedWithCache(feed.url, {
@@ -103,7 +105,6 @@ class FeedsManager {
             consecutiveFailures: 0,
             lastFailedFetchAt: undefined,
           });
-          feedRefreshActivityBus.publish({ feedId: id, status: "notModified", insertedCount: 0 });
           return { feedId: id, notModified: true, insertedCount: 0 };
         }
 
@@ -127,7 +128,6 @@ class FeedsManager {
           unreadCount,
         });
 
-        feedRefreshActivityBus.publish({ feedId: id, status: "success", insertedCount });
         return { feedId: id, notModified: false, insertedCount };
       } catch (error) {
         const aborted = error instanceof Error && error.name === "AbortError";
@@ -137,13 +137,9 @@ class FeedsManager {
             consecutiveFailures: (feed.consecutiveFailures ?? 0) + 1,
           });
         }
-        feedRefreshActivityBus.publish({
-          feedId: id,
-          status: aborted ? "aborted" : "failed",
-          error: error instanceof Error ? error.message : String(error),
-        });
         throw error;
       }
+      });
     }, options);
   }
 

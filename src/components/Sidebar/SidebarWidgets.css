@@ -1,0 +1,53 @@
+/* Spinning animation for refresh icon */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.icon.is-spinning {
+  animation: spin 0.8s linear infinite;
+  transform-origin: center;
+  display: inline-flex;
+  will-change: transform;
+}
+
+/* Make icons bolder */
+.icon svg {
+  stroke-width: 0.5px;
+  stroke: currentColor;
+}
+
+/* Hover effect for widget buttons */
+.sidebar-widgets-container .button.is-text.is-small {
+  padding: var(--widget-button-padding);
+  border: var(--widget-button-border);
+  border-radius: var(--widget-button-border-radius);
+  color: var(--theme-primary-color);
+  transition: background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-widgets-container .button.is-text.is-small:hover:not(:disabled) {
+  background-color: var(--widget-button-hover-bg);
+  color: var(--theme-text-primary);
+}
+
+.sidebar-widgets-container .button.is-text.is-small:active:not(:disabled) {
+  background-color: var(--widget-button-hover-bg);
+  opacity: 0.7;
+}
+
+.sidebar-widgets-container .button.is-text.is-small:disabled {
+  opacity: var(--widget-button-disabled-opacity);
+  cursor: not-allowed;
+}

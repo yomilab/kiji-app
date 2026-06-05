@@ -1,0 +1,282 @@
+import { useCallback, useRef, useState, type RefObject } from 'react';
+
+import { articleMigration } from '@/services/migration/articleMigration';
+import { settingsManager } from '@/services/settings';
+import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
+import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
+import {
+  isClearConfigsShortcut,
+  isOpenFeedEditViewShortcut,
+  isOpenSettingsShortcut,
+  isRefreshCurrentFeedShortcut,
+  isResetSettingsShortcut,
+  keybindingService,
+} from '@/services/shortcuts/shortcutService';
+import { clearAllConfigs } from '@/utils/debugUtils';
+import type { ArticleViewOverlayPhase } from '@/contexts/FeedContext';
+import { ARTICLE_VIEW_OPENING_MS } from '@/constants';
+import {
+  useDependencyEffect,
+  useMountEffect,
+  useResizeObserverEffect,
+  useUnmountEffect,
+} from '@/hooks/useLifecycleEffects';
+import { logger } from '@/services/logger';
+
+export const useGlobalFetchLogging = (): void => {
+  useMountEffect(() => {
+    const originalFetch = window.fetch;
+    window.fetch = async (...args: Parameters<typeof fetch>) => {
+      const requestInfo = args[0];
+      const url = typeof requestInfo === 'string'
+        ? requestInfo
+        : requestInfo instanceof URL
+          ? requestInfo.toString()
+          : requestInfo.url;
+      console.log('[FETCH] 🌐 Request:', url);
+
+      try {
+        const response = await originalFetch(...args);
+        console.log('[FETCH] ✓ Response:', url, 'Status:', response.status);
+        return response;
+      } catch (error) {
+        console.error('[FETCH] ✗ Error:', url, (error as Error).message);
+        throw error;
+      }
+    };
+
+    return () => {
+      window.fetch = originalFetch;
+    };
+  });
+};
+
+export const useStartupMigration = (): void => {
+  useMountEffect(() => {
+    logger.info('Migration', 'Starting startup article migration check');
+    void (async () => {
+      try {
+        await articleMigration.migrateIfNeeded();
+        logger.info('Migration', 'Startup article migration check finished');
+      } catch (error) {
+        console.error('Migration failed:', error);
+        logger.error('Migration', 'Startup article migration failed', { error });
+      }
+    })();
+  });
+};
+
+export const useFeedSchedulerLifecycle = (enabled = true): void => {
+  useMountEffect(() => {
+    if (!enabled) {
+      logger.info('Scheduler', 'Skipping feed scheduler lifecycle for non-main window');
+      return;
+    }
+
+    logger.info('Scheduler', 'Starting feed scheduler lifecycle');
+    feedScheduler.start();
+
+    const handleSettingsChanged = async () => {
+      try {
+        const settings = await settingsManager.getSettings();
+        feedScheduler.reconfigure(settings.backgroundUpdate ?? 'every-15m');
+        logger.info('Scheduler', 'Reconfigured feed scheduler after settings change', {
+          backgroundUpdate: settings.backgroundUpdate ?? 'every-15m',
+        });
+      } catch (error) {
+        console.error('[Scheduler] Failed to reconfigure after settings change:', error);
+        logger.error('Scheduler', 'Failed to reconfigure after settings change', { error });
+      }
+    };
+
+    if (window.electronAPI?.onSettingsChanged) {
+      window.electronAPI.onSettingsChanged(handleSettingsChanged);
+    }
+
+    return () => {
+      feedScheduler.stop();
+      logger.info('Scheduler', 'Stopped feed scheduler lifecycle');
+    };
+  });
+};
+
+interface UseArticleDeckStateInput {
+  activeArticleHash: string | null;
+  articleOpenTrigger: number;
+  isArticleClosing: boolean;
+  setArticleViewOverlayPhase: (phase: ArticleViewOverlayPhase) => void;
+}
+
+export const useArticleDeckState = ({
+  activeArticleHash,
+  articleOpenTrigger,
+  isArticleClosing,
+  setArticleViewOverlayPhase,
+}: UseArticleDeckStateInput): boolean => {
+  const [isDeckOpen, setIsDeckOpen] = useState(false);
+  const prevArticleOpenTriggerRef = useRef(0);
+  const openPhaseTimerRef = useRef<number | null>(null);
+
+  useDependencyEffect(() => {
+    if (activeArticleHash && articleOpenTrigger > prevArticleOpenTriggerRef.current) {
+      setArticleViewOverlayPhase('opening');
+      setIsDeckOpen(true);
+      prevArticleOpenTriggerRef.current = articleOpenTrigger;
+
+      if (openPhaseTimerRef.current !== null) {
+        window.clearTimeout(openPhaseTimerRef.current);
+      }
+
+      openPhaseTimerRef.current = window.setTimeout(() => {
+        setArticleViewOverlayPhase('open');
+        openPhaseTimerRef.current = null;
+      }, ARTICLE_VIEW_OPENING_MS);
+    }
+  }, [activeArticleHash, articleOpenTrigger, setArticleViewOverlayPhase]);
+
+  useDependencyEffect(() => {
+    if (!isArticleClosing) return;
+
+    if (openPhaseTimerRef.current !== null) {
+      window.clearTimeout(openPhaseTimerRef.current);
+      openPhaseTimerRef.current = null;
+    }
+    setArticleViewOverlayPhase('closing');
+    setIsDeckOpen(false);
+  }, [isArticleClosing, setArticleViewOverlayPhase]);
+
+  useDependencyEffect(() => {
+    if (!isDeckOpen && !isArticleClosing) {
+      setArticleViewOverlayPhase('closed');
+    }
+  }, [isDeckOpen, isArticleClosing, setArticleViewOverlayPhase]);
+
+  useUnmountEffect(() => {
+    if (openPhaseTimerRef.current !== null) {
+      window.clearTimeout(openPhaseTimerRef.current);
+    }
+  });
+
+  return isDeckOpen;
+};
+
+export const useOpmlWorkflowListener = (): void => {
+  useMountEffect(() => {
+    opmlWorkflowService.attachFaviconTaskListener();
+    return () => {
+      void opmlWorkflowService.detachFaviconTaskListener();
+    };
+  });
+};
+
+export const useElementWidth = <T extends HTMLElement>(elementRef: RefObject<T>): number => {
+  const [width, setWidth] = useState(0);
+
+  const updateWidth = useCallback((element: T) => {
+    setWidth(element.getBoundingClientRect().width);
+  }, []);
+
+  useResizeObserverEffect(elementRef, updateWidth);
+
+  return width;
+};
+
+export const useTimedToast = (visibleMs: number): { message: string | null; showMessage: (message: string) => void } => {
+  const [message, setMessage] = useState<string | null>(null);
+  const timerRef = useRef<number | null>(null);
+
+  const showMessage = useCallback((nextMessage: string) => {
+    setMessage(nextMessage);
+
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+    }
+
+    timerRef.current = window.setTimeout(() => {
+      setMessage(null);
+      timerRef.current = null;
+    }, visibleMs);
+  }, [visibleMs]);
+
+  useUnmountEffect(() => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+    }
+  });
+
+  return { message, showMessage };
+};
+
+interface UseAppShortcutsInput {
+  refreshFeed: () => Promise<void>;
+  openFeedEditView: () => void;
+  isDeckOpen: boolean;
+  requestCloseArticle: () => void;
+}
+
+export const useAppShortcuts = ({
+  refreshFeed,
+  openFeedEditView,
+  isDeckOpen,
+  requestCloseArticle,
+}: UseAppShortcutsInput): void => {
+  useDependencyEffect(() => keybindingService.register({
+    type: 'keydown',
+    priority: 10,
+    handler: (event: KeyboardEvent) => {
+      const run = async () => {
+        if (isOpenSettingsShortcut(event)) {
+          event.preventDefault();
+          if (window.electronAPI) {
+            window.electronAPI.openSettings();
+          }
+        }
+
+        if (isResetSettingsShortcut(event)) {
+          event.preventDefault();
+          const confirmed = confirm(
+            'Reset all settings to defaults?\n\nThis will:\n- Reset all fonts to defaults\n- Reset theme preferences\n- Reset layout settings\n- Keep your feeds and articles\n\nThe app will reload after reset.'
+          );
+          if (confirmed) {
+            try {
+              await settingsManager.resetSettings();
+              window.location.reload();
+            } catch (error) {
+              console.error('Error resetting settings:', error);
+              alert('Failed to reset settings. Check console for details.');
+            }
+          }
+        }
+
+        if (isClearConfigsShortcut(event)) {
+          event.preventDefault();
+          clearAllConfigs();
+        }
+
+        if (isRefreshCurrentFeedShortcut(event)) {
+          if (
+            event.target instanceof HTMLInputElement
+            || event.target instanceof HTMLTextAreaElement
+            || event.target instanceof HTMLSelectElement
+            || (event.target instanceof HTMLElement && event.target.isContentEditable)
+          ) {
+            return;
+          }
+
+          event.preventDefault();
+          await refreshFeed();
+        }
+
+        if (isOpenFeedEditViewShortcut(event)) {
+          event.preventDefault();
+          if (isDeckOpen) {
+            requestCloseArticle();
+          }
+          openFeedEditView();
+        }
+      };
+
+      void run();
+    },
+  }), [refreshFeed, openFeedEditView, isDeckOpen, requestCloseArticle]);
+};

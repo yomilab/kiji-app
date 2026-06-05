@@ -1,0 +1,65 @@
+/* Article List Widgets Container */
+.article-list-widgets {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.article-list-widgets-buttons {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px; /* Increased gap to distinguish search from group */
+}
+
+.article-list-widgets-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.article-list-widgets-menu {
+  position: relative;
+}
+
+/* Base Widget Button Styles (shared by search, import, export) */
+.article-list-search-button,
+.article-list-widget-button {
+  background: transparent;
+  cursor: pointer;
+  padding: var(--widget-button-padding);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--theme-primary-color);
+  border: var(--widget-button-border);
+  border-radius: var(--widget-button-border-radius);
+  transition: background-color 0.2s, color 0.2s, opacity 0.2s;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+}
+
+.article-list-search-button:hover:not(:disabled),
+.article-list-widget-button:hover:not(:disabled) {
+  background-color: var(--widget-button-hover-bg);
+  color: var(--theme-text-primary);
+}
+
+.article-list-search-button:active:not(:disabled),
+.article-list-widget-button:active:not(:disabled) {
+  background-color: var(--widget-button-hover-bg);
+  opacity: 0.7;
+}
+
+.article-list-search-button:disabled,
+.article-list-widget-button:disabled {
+  opacity: var(--widget-button-disabled-opacity);
+  cursor: not-allowed;
+}

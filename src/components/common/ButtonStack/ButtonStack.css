@@ -1,0 +1,135 @@
+.button-stack {
+  --button-stack-button-size: 28px;
+  --button-stack-spacing: 28px;
+  --button-stack-count: 0;
+  --button-stack-expand-distance: calc(var(--button-stack-count) * var(--button-stack-spacing));
+  --button-stack-expanded-width: calc(var(--button-stack-button-size) + var(--button-stack-expand-distance));
+  --button-stack-expanded-height: calc(var(--button-stack-button-size) + var(--button-stack-expand-distance));
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--button-stack-button-size);
+  height: var(--button-stack-button-size);
+  overflow: visible;
+}
+
+.button-stack[data-layout-mode="push"] {
+  transition: width 0.18s ease, height 0.18s ease;
+}
+
+.button-stack[data-layout-mode="push"][data-direction="right"],
+.button-stack[data-layout-mode="push"][data-direction="left"] {
+  width: var(--button-stack-button-size);
+}
+
+.button-stack[data-layout-mode="push"][data-direction="right"][data-expanded="true"],
+.button-stack[data-layout-mode="push"][data-direction="left"][data-expanded="true"] {
+  width: var(--button-stack-expanded-width);
+}
+
+.button-stack[data-layout-mode="push"][data-direction="up"],
+.button-stack[data-layout-mode="push"][data-direction="down"] {
+  height: var(--button-stack-button-size);
+}
+
+.button-stack[data-layout-mode="push"][data-direction="up"][data-expanded="true"],
+.button-stack[data-layout-mode="push"][data-direction="down"][data-expanded="true"] {
+  height: var(--button-stack-expanded-height);
+}
+
+.button-stack[data-layout-mode="push"][data-direction="left"] {
+  justify-content: flex-end;
+}
+
+.button-stack[data-layout-mode="push"][data-direction="left"][data-expanded="true"] .button-stack-button,
+.button-stack[data-layout-mode="push"][data-direction="left"][data-expanded="true"] .button-stack-cover {
+  left: calc(var(--button-stack-expanded-width) - var(--button-stack-button-size));
+}
+
+.button-stack[data-layout-mode="push"][data-direction="up"] {
+  align-items: flex-end;
+}
+
+.button-stack[data-layout-mode="push"][data-direction="up"][data-expanded="true"] .button-stack-button,
+.button-stack[data-layout-mode="push"][data-direction="up"][data-expanded="true"] .button-stack-cover {
+  top: calc(var(--button-stack-expanded-height) - var(--button-stack-button-size));
+}
+
+.button-stack-cover {
+  background: none;
+  border: var(--widget-button-border);
+  cursor: pointer;
+  padding: var(--widget-button-padding);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--widget-button-border-radius);
+  color: var(--widget-button-color);
+  flex-shrink: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+  width: var(--button-stack-button-size);
+  height: var(--button-stack-button-size);
+  min-width: var(--button-stack-button-size);
+  min-height: var(--button-stack-button-size);
+}
+
+.button-stack-cover:hover {
+  background-color: var(--widget-button-hover-bg);
+  color: var(--theme-text-primary);
+}
+
+.button-stack-cover:active {
+  background-color: var(--widget-button-hover-bg);
+  opacity: 0.7;
+}
+
+.button-stack-button {
+  background: none;
+  border: var(--widget-button-border);
+  cursor: pointer;
+  padding: var(--widget-button-padding);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--widget-button-border-radius);
+  color: var(--widget-button-color);
+  flex-shrink: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+  width: var(--button-stack-button-size);
+  height: var(--button-stack-button-size);
+  min-width: var(--button-stack-button-size);
+  min-height: var(--button-stack-button-size);
+}
+
+.button-stack[data-expanded="false"] .button-stack-button {
+  pointer-events: none;
+}
+
+.button-stack-button:hover {
+  background-color: var(--widget-button-hover-bg);
+  color: var(--theme-text-primary);
+}
+
+.button-stack-button:active:not(:disabled) {
+  background-color: var(--widget-button-hover-bg);
+  opacity: 0.7;
+}
+
+.button-stack-button:disabled {
+  opacity: var(--widget-button-disabled-opacity);
+  cursor: not-allowed;
+}
+
+.button-stack-button:focus-visible,
+.button-stack-cover:focus-visible {
+  outline: 2px solid var(--theme-text-tertiary);
+  outline-offset: 2px;
+}
