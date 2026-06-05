@@ -1,7 +1,3 @@
 # KiJi App
 
-KiJi App is the new Tauri-based desktop app workspace for migrating the current Electron implementation.
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+KiJi App is a simple rss feed reader built with Tauri and React. It allows you to subscribe to your favorite rss feeds and read them in a clean and simple interface and store articles for offline reading. 

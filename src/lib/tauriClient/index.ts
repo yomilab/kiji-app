@@ -1,6 +1,6 @@
 export { tauriCommandCatalog } from "./commandCatalog";
-import * as dev from "./dev";
+import * as settings from "./settings";
 
 export const tauriClient = {
-  dev,
+  settings,
 };

@@ -108,12 +108,12 @@ export const tauriCommandCatalog: Record<
     { legacyMethod: "dbSavedUpdateLastReadAt", legacyChannel: "db-saved-update-last-read-at", kind: "invoke", targetCommand: "saved.updateLastReadAt" },
   ],
   settings: [
-    { legacyMethod: "storageGet", legacyChannel: "storage-get", kind: "invoke", targetCommand: "settings.storage.get" },
-    { legacyMethod: "storageSet", legacyChannel: "storage-set", kind: "invoke", targetCommand: "settings.storage.set" },
-    { legacyMethod: "storageRemove", legacyChannel: "storage-remove", kind: "invoke", targetCommand: "settings.storage.remove" },
-    { legacyMethod: "storageClear", legacyChannel: "storage-clear", kind: "invoke", targetCommand: "settings.storage.clear" },
-    { legacyMethod: "storageGetAllKeys", legacyChannel: "storage-get-all-keys", kind: "invoke", targetCommand: "settings.storage.listKeys" },
-    { legacyMethod: "notifySettingsChanged", legacyChannel: "notify-settings-changed", kind: "invoke", targetCommand: "settings.notifyChanged" },
+    { legacyMethod: "storageGet", legacyChannel: "storage-get", kind: "invoke", targetCommand: "settings.get", notes: "The Tauri app returns a normalized settings document instead of arbitrary key lookups." },
+    { legacyMethod: "storageSet", legacyChannel: "storage-set", kind: "invoke", targetCommand: "settings.update", notes: "The Tauri app applies structured settings patches instead of per-key string writes." },
+    { legacyMethod: "storageRemove", legacyChannel: "storage-remove", kind: "invoke", targetCommand: "settings.update", notes: "Nullable fields clear values through the same structured patch command." },
+    { legacyMethod: "storageClear", legacyChannel: "storage-clear", kind: "invoke", targetCommand: "settings.reset" },
+    { legacyMethod: "storageGetAllKeys", legacyChannel: "storage-get-all-keys", kind: "invoke", targetCommand: "settings.get", notes: "Migration work now treats settings as one document, so enumeration is replaced by full-snapshot reads." },
+    { legacyMethod: "notifySettingsChanged", legacyChannel: "notify-settings-changed", kind: "invoke", targetCommand: "settings.update", notes: "An explicit settings-changed event can be layered on top of the document store after more domains migrate." },
     { legacyMethod: "onSettingsChanged", legacyChannel: "settings-changed", kind: "event", targetCommand: "settings.onChanged" },
   ],
   system: [
