@@ -74,7 +74,7 @@ export const useFeedSchedulerLifecycle = (enabled = true): void => {
     }
 
     logger.info('Scheduler', 'Starting feed scheduler lifecycle');
-    feedScheduler.start();
+    void feedScheduler.start();
 
     const handleSettingsChanged = async () => {
       try {
@@ -89,11 +89,12 @@ export const useFeedSchedulerLifecycle = (enabled = true): void => {
       }
     };
 
-    if (window.electronAPI?.onSettingsChanged) {
-      window.electronAPI.onSettingsChanged(handleSettingsChanged);
-    }
+    const removeSettingsChangedListener = window.electronAPI?.onSettingsChanged?.(handleSettingsChanged);
 
     return () => {
+      if (typeof removeSettingsChangedListener === 'function') {
+        removeSettingsChangedListener();
+      }
       feedScheduler.stop();
       logger.info('Scheduler', 'Stopped feed scheduler lifecycle');
     };

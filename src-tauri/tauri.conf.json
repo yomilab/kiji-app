@@ -15,7 +15,11 @@
         "label": "main",
         "title": "KiJi",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "minWidth": 600,
+        "minHeight": 400,
+        "decorations": false,
+        "transparent": true
       },
       {
         "label": "settings",
@@ -24,7 +28,9 @@
         "width": 700,
         "height": 660,
         "visible": false,
-        "resizable": false
+        "resizable": false,
+        "decorations": false,
+        "transparent": true
       },
       {
         "label": "article",
@@ -32,7 +38,11 @@
         "url": "index.html?window=article",
         "width": 1000,
         "height": 720,
-        "visible": false
+        "visible": false,
+        "minWidth": 720,
+        "minHeight": 480,
+        "decorations": false,
+        "transparent": true
       }
     ],
     "security": {

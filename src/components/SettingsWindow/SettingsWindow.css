@@ -100,12 +100,16 @@ body {
   font-family: var(--font-family-ui);
   letter-spacing: -0.01em;
   text-align: left;
-  transition: background-color 0.2s, color 0.2s;
+  transition: background-color 0.2s, color 0.2s, transform 0.12s ease;
   border-radius: 4px;
 }
 
 .settings-nav-item:hover {
   background-color: var(--settings-nav-hover);
+}
+
+.settings-nav-item:active {
+  transform: translateY(1px);
 }
 
 .settings-nav-item.is-active {
@@ -383,12 +387,22 @@ body {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: border-color 0.2s, background-color 0.2s;
+  transition: border-color 0.2s, background-color 0.2s, transform 0.12s ease, box-shadow 0.2s ease;
 }
 
 .settings-action-button:hover:not(:disabled) {
   border-color: rgba(255, 255, 255, 0.1);
   background-color: color-mix(in srgb, var(--settings-control-bg) 92%, white 8%);
+}
+
+.settings-action-button:focus-visible:not(:disabled) {
+  outline: none;
+  border-color: color-mix(in srgb, var(--system-accent-color) 52%, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--system-accent-color) 22%, transparent);
+}
+
+.settings-action-button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .settings-action-button:disabled {
@@ -420,13 +434,23 @@ body {
   color: var(--settings-text-secondary);
   font-size: 18px;
   cursor: pointer;
-  transition: border-color 0.2s, color 0.2s, background-color 0.2s;
+  transition: border-color 0.2s, color 0.2s, background-color 0.2s, transform 0.12s ease, box-shadow 0.2s ease;
 }
 
 .settings-icon-button:hover:not(:disabled) {
   border-color: rgba(255, 255, 255, 0.14);
   color: var(--settings-text-primary);
   background-color: rgba(255, 255, 255, 0.04);
+}
+
+.settings-icon-button:focus-visible:not(:disabled) {
+  outline: none;
+  border-color: color-mix(in srgb, var(--system-accent-color) 52%, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--system-accent-color) 18%, transparent);
+}
+
+.settings-icon-button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .settings-icon-button:disabled {
@@ -476,16 +500,24 @@ body {
   color: var(--settings-text-primary);
   cursor: pointer;
   font-family: var(--font-family-ui);
-  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s, transform 0.12s ease;
 }
 
-.settings-app-icon-variant-option:hover:not(:disabled) {
+.settings-app-icon-variant-option:hover:not(:disabled),
+.settings-app-icon-variant-option:focus-visible:not(:disabled) {
+  outline: none;
   border-color: color-mix(in srgb, var(--system-accent-color) 48%, var(--settings-card-border));
   background: color-mix(in srgb, var(--settings-control-bg) 84%, var(--system-accent-color));
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--system-accent-color) 12%, transparent);
+}
+
+.settings-app-icon-variant-option:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .settings-app-icon-variant-option.is-selected {
   border-color: var(--system-accent-color);
+  background: color-mix(in srgb, var(--settings-control-bg) 76%, var(--system-accent-color));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--system-accent-color) 55%, transparent);
 }
 

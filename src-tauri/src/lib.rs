@@ -26,7 +26,7 @@ use diagnostics::{
 use net::{feeds_abort_request, feeds_fetch, feeds_fetch_data_url, feeds_fetch_with_cache};
 use settings::{settings_get, settings_reset, settings_update, SettingsState};
 use shell::{
-    shell_dialog_open_file, shell_dialog_pick_folder, shell_dialog_save_file,
+    shell_dialog_open_file, shell_dialog_pick_folder, shell_dialog_save_file, shell_file_read_text,
     shell_links_open_external,
 };
 use system::{system_clipboard_read_text, system_clipboard_write_text};
@@ -107,6 +107,7 @@ pub fn run() {
             shell_dialog_open_file,
             shell_dialog_pick_folder,
             shell_dialog_save_file,
+            shell_file_read_text,
             shell_links_open_external,
             settings_get,
             settings_update,

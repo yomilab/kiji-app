@@ -295,6 +295,10 @@ export interface OpenFileDialogRequest {
   filters?: FileDialogFilter[];
 }
 
+export interface ReadTextFileRequest {
+  path: FilePathString;
+}
+
 export interface SaveFileDialogRequest extends OpenFileDialogRequest {
   fileName?: string;
 }
@@ -673,6 +677,10 @@ export interface ShellContract {
   dialogOpenFile: {
     request: OpenFileDialogRequest;
     response: DialogResult;
+  };
+  readTextFile: {
+    request: ReadTextFileRequest;
+    response: string;
   };
   dialogSaveFile: {
     request: SaveFileDialogRequest;

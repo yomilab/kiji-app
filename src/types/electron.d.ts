@@ -74,7 +74,7 @@ export interface ElectronAPI {
   getSystemAccentColor: () => Promise<string | null>;
   onSystemAccentColorChanged: (callback: (color: string) => void) => void;
   notifySettingsChanged: () => Promise<void>;
-  onSettingsChanged: (callback: () => void) => void;
+  onSettingsChanged: (callback: () => void) => () => void;
   readClipboard: () => Promise<string>;
   writeClipboard: (text: string) => Promise<void>;
   openOpmlFile: () => Promise<{ canceled: boolean; filePath?: string; fileName?: string; content?: string }>;

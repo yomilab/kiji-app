@@ -1,6 +1,6 @@
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
 
@@ -46,6 +46,11 @@ pub fn shell_dialog_open_file(
         canceled: file_path.is_none(),
         file_path,
     })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn shell_file_read_text(path: String) -> Result<String, String> {
+    fs::read_to_string(&path).map_err(|error| format!("Failed to read text file: {error}"))
 }
 
 #[tauri::command(rename_all = "camelCase")]

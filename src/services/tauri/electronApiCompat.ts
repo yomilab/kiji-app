@@ -5,16 +5,57 @@ import type { ElectronAPI } from '@/types/electron';
 import type { AppMenuCommand } from '@/types/appMenu';
 
 const ARTICLE_WINDOW_PAYLOAD_KEY = 'kiji:tauri:article-window-payload';
+const SYSTEM_APP_ICON_STATE_KEY = 'kiji:tauri:system-app-icon-state';
 const settingsChangedListeners = new Set<() => void>();
 
 type SystemAppIconVariant = 'light' | 'dark';
+type SystemAppIconState = {
+  iconPath: string | null;
+  previewDataUrl: string | null;
+  hasCustomIcon: boolean;
+  iconVariant: SystemAppIconVariant;
+};
 
-const defaultIconState = (variant: SystemAppIconVariant = 'dark') => ({
+const defaultIconState = (variant: SystemAppIconVariant = 'dark'): SystemAppIconState => ({
   iconPath: null,
   previewDataUrl: null,
   hasCustomIcon: false,
   iconVariant: variant,
 });
+
+function normalizeSystemAppIconState(value: unknown): SystemAppIconState {
+  if (!value || typeof value !== 'object') {
+    return defaultIconState();
+  }
+
+  const candidate = value as Partial<SystemAppIconState>;
+  return {
+    iconPath: typeof candidate.iconPath === 'string' ? candidate.iconPath : null,
+    previewDataUrl: typeof candidate.previewDataUrl === 'string' ? candidate.previewDataUrl : null,
+    hasCustomIcon: Boolean(candidate.hasCustomIcon),
+    iconVariant: candidate.iconVariant === 'light' ? 'light' : 'dark',
+  };
+}
+
+function readStoredSystemAppIconState(): SystemAppIconState {
+  try {
+    const raw = localStorage.getItem(SYSTEM_APP_ICON_STATE_KEY);
+    return raw ? normalizeSystemAppIconState(JSON.parse(raw)) : defaultIconState();
+  } catch {
+    return defaultIconState();
+  }
+}
+
+function persistSystemAppIconState(state: SystemAppIconState): SystemAppIconState {
+  const normalized = normalizeSystemAppIconState(state);
+  localStorage.setItem(SYSTEM_APP_ICON_STATE_KEY, JSON.stringify(normalized));
+  return normalized;
+}
+
+function fileNameFromPath(path: string): string | undefined {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : undefined;
+}
 
 async function showWindow(label: string): Promise<void> {
   const window = await TauriWindow.getByLabel(label);
@@ -99,16 +140,20 @@ function installElectronApiCompat(): void {
       await tauriClient.shell.openExternal({ url });
     },
     async getSystemAppIconState() {
-      return defaultIconState();
+      return readStoredSystemAppIconState();
     },
     async setSystemAppIconVariant(variant) {
-      return defaultIconState(variant);
+      return persistSystemAppIconState({
+        ...defaultIconState(variant),
+        iconVariant: variant,
+      });
     },
     async pickSystemAppIcon() {
-      return { canceled: true, state: defaultIconState() };
+      return { canceled: true, state: readStoredSystemAppIconState() };
     },
     async resetSystemAppIcon() {
-      return defaultIconState();
+      const { iconVariant } = readStoredSystemAppIconState();
+      return persistSystemAppIconState(defaultIconState(iconVariant));
     },
     async relaunchApplication() {
       window.location.reload();
@@ -170,6 +215,9 @@ function installElectronApiCompat(): void {
     },
     onSettingsChanged(callback) {
       settingsChangedListeners.add(callback);
+      return () => {
+        settingsChangedListeners.delete(callback);
+      };
     },
     async readClipboard() {
       return tauriClient.system.clipboard.readText();
@@ -178,7 +226,21 @@ function installElectronApiCompat(): void {
       await tauriClient.system.clipboard.writeText({ text });
     },
     async openOpmlFile() {
-      return { canceled: true };
+      const result = await tauriClient.shell.dialog.openFile({
+        title: 'Import OPML',
+        filters: [{ name: 'OPML', extensions: ['opml', 'xml'] }],
+      });
+      if (result.canceled || !result.filePath) {
+        return { canceled: true };
+      }
+
+      const content = await tauriClient.shell.dialog.readTextFile({ path: result.filePath });
+      return {
+        canceled: false,
+        filePath: result.filePath,
+        fileName: fileNameFromPath(result.filePath),
+        content,
+      };
     },
     async saveOpmlFile(_content, suggestedName) {
       return tauriClient.shell.dialog.saveFile({
