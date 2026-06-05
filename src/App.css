@@ -163,6 +163,31 @@ body {
   font-size: 0.92rem;
 }
 
+.metadata-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.metadata-list div {
+  display: grid;
+  gap: 4px;
+}
+
+.metadata-list dt {
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.metadata-list dd {
+  margin: 0;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
 .actions-row {
   display: flex;
   flex-wrap: wrap;
@@ -224,6 +249,14 @@ body {
 
   .card-note {
     color: #94a3b8;
+  }
+
+  .metadata-list dt {
+    color: #94a3b8;
+  }
+
+  .metadata-list dd {
+    color: #e2e8f0;
   }
 
   .field input,

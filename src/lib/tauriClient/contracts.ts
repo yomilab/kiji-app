@@ -18,6 +18,12 @@ export interface DatabaseStatus {
   foreignKeysEnabled: boolean;
 }
 
+export interface DatabaseContract {
+  getStatus: {
+    response: DatabaseStatus;
+  };
+}
+
 export interface FeedRecord {
   id: string;
   title: string;
@@ -50,6 +56,29 @@ export interface FeedRecord {
   lastFaviconRefresh: ISODateString | null;
 }
 
+export interface FeedCreateRequest {
+  feed: FeedRecord;
+}
+
+export interface FeedUpdateRequest {
+  id: string;
+  updates: Partial<Omit<FeedRecord, "id">>;
+}
+
+export interface FeedDeleteRequest {
+  id: string;
+}
+
+export interface FeedCountUpdateRequest {
+  id: string;
+  count: number;
+}
+
+export interface FeedLastFetchedUpdateRequest {
+  id: string;
+  lastFetched: ISODateString;
+}
+
 export interface TagRecord {
   name: string;
   color: string | null;
@@ -57,6 +86,21 @@ export interface TagRecord {
   createdAt: ISODateString;
   sortOrder: number;
   feedIds?: string[];
+}
+
+export interface TagUpdateRequest {
+  name: string;
+  updates: Partial<Omit<TagRecord, "name">>;
+}
+
+export interface TagRenameRequest {
+  currentName: string;
+  nextName: string;
+}
+
+export interface FeedTagRequest {
+  feedId: string;
+  tagName: string;
 }
 
 export interface ArticleFeedMetadata {
@@ -85,6 +129,40 @@ export interface ArticleRecord extends ArticleFeedMetadata {
   savedArticleId: string | null;
   lastReadAt: ISODateString | null;
   metadata: unknown | null;
+}
+
+export interface ArticleInsertBatchRequest {
+  articles: ArticleRecord[];
+}
+
+export interface ArticleReadUpdateRequest {
+  hash: string;
+  read: boolean;
+}
+
+export interface ArticleLastReadAtUpdateRequest {
+  hash: string;
+  lastReadAt: ISODateString;
+}
+
+export interface ArticleSavedStateUpdateRequest {
+  hash: string;
+  saved: boolean;
+  savedArticleId?: string;
+}
+
+export interface ArticleCleanOldRequest {
+  feedId: string;
+  cutoffDate: ISODateString;
+}
+
+export interface ArticleCleanOldAcrossFeedsRequest {
+  cutoffDate: ISODateString;
+}
+
+export interface ArticleFeedMetaUpdateRequest {
+  feedId: string;
+  meta: Partial<ArticleFeedMetadata>;
 }
 
 export interface ArticleQueryRequest {
@@ -120,6 +198,33 @@ export interface SavedArticleRecord extends ArticleFeedMetadata {
   metadata: unknown | null;
   highlights: unknown[];
   notes: string | null;
+}
+
+export interface SavedArticleCreateRequest {
+  article: SavedArticleRecord;
+}
+
+export interface SavedArticleInsertBatchRequest {
+  articles: SavedArticleRecord[];
+}
+
+export interface SavedArticleDeleteRequest {
+  id: string;
+}
+
+export interface SavedArticleHighlightsUpdateRequest {
+  id: string;
+  highlights: unknown[];
+}
+
+export interface SavedArticleNotesUpdateRequest {
+  id: string;
+  notes: string;
+}
+
+export interface SavedArticleLastReadAtUpdateRequest {
+  id: string;
+  lastReadAt: ISODateString;
 }
 
 export interface SavedArticleQueryRequest {
@@ -304,12 +409,6 @@ export interface SettingsContract {
   };
 }
 
-export interface DatabaseContract {
-  getStatus: {
-    response: DatabaseStatus;
-  };
-}
-
 export interface FeedsContract {
   fetch: {
     request: FeedFetchRequest;
@@ -326,8 +425,78 @@ export interface FeedsContract {
   list: {
     response: FeedRecord[];
   };
+  get: {
+    request: { id: string };
+    response: FeedRecord | null;
+  };
+  getByUrl: {
+    request: { url: UrlString };
+    response: FeedRecord | null;
+  };
+  create: {
+    request: FeedCreateRequest;
+    response: void;
+  };
+  update: {
+    request: FeedUpdateRequest;
+    response: void;
+  };
+  delete: {
+    request: FeedDeleteRequest;
+    response: boolean;
+  };
+  updateUnreadCount: {
+    request: FeedCountUpdateRequest;
+    response: void;
+  };
+  updateArticleCount: {
+    request: FeedCountUpdateRequest;
+    response: void;
+  };
+  updateLastFetched: {
+    request: FeedLastFetchedUpdateRequest;
+    response: void;
+  };
+  count: {
+    response: number;
+  };
   tagsList: {
     response: TagRecord[];
+  };
+  tagsListWithFeedIds: {
+    response: Array<TagRecord & { feedIds: string[] }>;
+  };
+  tagsUpsert: {
+    request: { tag: TagRecord };
+    response: void;
+  };
+  tagsUpdate: {
+    request: TagUpdateRequest;
+    response: void;
+  };
+  tagsRename: {
+    request: TagRenameRequest;
+    response: void;
+  };
+  tagsDelete: {
+    request: { name: string };
+    response: void;
+  };
+  tagsAttachFeed: {
+    request: FeedTagRequest;
+    response: void;
+  };
+  tagsDetachFeed: {
+    request: FeedTagRequest;
+    response: void;
+  };
+  tagsListFeedIds: {
+    request: { tagName: string };
+    response: string[];
+  };
+  tagsListByFeed: {
+    request: { feedId: string };
+    response: string[];
   };
 }
 
@@ -344,12 +513,103 @@ export interface ArticlesContract {
     request: { hash: string };
     response: string | null;
   };
+  exists: {
+    request: { hash: string };
+    response: boolean;
+  };
+  insertBatch: {
+    request: ArticleInsertBatchRequest;
+    response: number;
+  };
+  updateRead: {
+    request: ArticleReadUpdateRequest;
+    response: void;
+  };
+  updateLastReadAt: {
+    request: ArticleLastReadAtUpdateRequest;
+    response: void;
+  };
+  toggleStarred: {
+    request: { hash: string };
+    response: boolean;
+  };
+  updateSavedState: {
+    request: ArticleSavedStateUpdateRequest;
+    response: void;
+  };
+  deleteByFeed: {
+    request: { feedId: string };
+    response: string[];
+  };
+  cleanOldByFeed: {
+    request: ArticleCleanOldRequest;
+    response: number;
+  };
+  cleanOldAcrossFeeds: {
+    request: ArticleCleanOldAcrossFeedsRequest;
+    response: number;
+  };
+  countUnreadByFeed: {
+    request: { feedId: string };
+    response: number;
+  };
+  countByFeed: {
+    request: { feedId: string };
+    response: number;
+  };
+  updateFeedMeta: {
+    request: ArticleFeedMetaUpdateRequest;
+    response: void;
+  };
 }
 
 export interface SavedContract {
   query: {
     request: SavedArticleQueryRequest;
     response: SavedArticleQueryResponse;
+  };
+  create: {
+    request: SavedArticleCreateRequest;
+    response: void;
+  };
+  insertBatch: {
+    request: SavedArticleInsertBatchRequest;
+    response: number;
+  };
+  delete: {
+    request: SavedArticleDeleteRequest;
+    response: void;
+  };
+  get: {
+    request: { id: string };
+    response: SavedArticleRecord | null;
+  };
+  getByArticleHash: {
+    request: { articleHash: string };
+    response: SavedArticleRecord | null;
+  };
+  getByLink: {
+    request: { link: UrlString };
+    response: SavedArticleRecord | null;
+  };
+  listAll: {
+    response: SavedArticleRecord[];
+  };
+  getContent: {
+    request: { id: string };
+    response: string | null;
+  };
+  updateHighlights: {
+    request: SavedArticleHighlightsUpdateRequest;
+    response: void;
+  };
+  updateNotes: {
+    request: SavedArticleNotesUpdateRequest;
+    response: void;
+  };
+  updateLastReadAt: {
+    request: SavedArticleLastReadAtUpdateRequest;
+    response: void;
   };
   exportStart: {
     request: SavedArticlesExportStartRequest;

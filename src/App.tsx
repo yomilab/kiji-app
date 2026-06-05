@@ -8,6 +8,7 @@ import {
   type AppSettings,
 } from "./lib/settings";
 import { tauriClient } from "./lib/tauriClient";
+import type { DatabaseStatus } from "./lib/tauriClient/contracts";
 import "./App.css";
 
 const getErrorMessage = (error: unknown): string =>
@@ -20,6 +21,8 @@ function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus | null>(null);
+  const [databaseError, setDatabaseError] = useState<string | null>(null);
 
   const hasUnsavedChanges = useMemo(() => {
     if (!persistedSettings) {
@@ -31,6 +34,7 @@ function App() {
 
   useEffect(() => {
     void loadSettings();
+    void loadDatabaseStatus();
   }, []);
 
   async function loadSettings() {
@@ -47,6 +51,17 @@ function App() {
       setStatus(null);
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function loadDatabaseStatus() {
+    setDatabaseError(null);
+
+    try {
+      setDatabaseStatus(await tauriClient.database.getStatus());
+    } catch (loadError) {
+      setDatabaseStatus(null);
+      setDatabaseError(getErrorMessage(loadError));
     }
   }
 
@@ -133,6 +148,39 @@ function App() {
         {isLoading ? <p className="status status--info">Loading settings...</p> : null}
         {!isLoading && status ? <p className="status status--success">{status}</p> : null}
         {error ? <p className="status status--error">{error}</p> : null}
+        {databaseError ? <p className="status status--error">{databaseError}</p> : null}
+      </section>
+
+      <section className="settings-card settings-card--wide">
+        <h2>Database foundation</h2>
+        {databaseStatus ? (
+          <dl className="metadata-list">
+            <div>
+              <dt>Path</dt>
+              <dd>{databaseStatus.path}</dd>
+            </div>
+            <div>
+              <dt>Migration ledger</dt>
+              <dd>
+                {databaseStatus.currentMigrationVersion} / {databaseStatus.schemaVersion}
+              </dd>
+            </div>
+            <div>
+              <dt>Journal mode</dt>
+              <dd>{databaseStatus.journalMode}</dd>
+            </div>
+            <div>
+              <dt>Foreign keys</dt>
+              <dd>{databaseStatus.foreignKeysEnabled ? "Enabled" : "Disabled"}</dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="card-note">Loading the Rust-owned database status...</p>
+        )}
+        <p className="card-note">
+          This opens the future KiJi SQLite database with WAL and foreign keys. Schema migrations and
+          repository commands are the next database slice.
+        </p>
       </section>
 
       <form className="settings-grid" onSubmit={handleSave}>
