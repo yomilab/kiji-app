@@ -25,6 +25,10 @@ import { logger } from '@/services/logger';
 
 export const useGlobalFetchLogging = (): void => {
   useMountEffect(() => {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+
     const originalFetch = window.fetch;
     window.fetch = async (...args: Parameters<typeof fetch>) => {
       const requestInfo = args[0];

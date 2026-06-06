@@ -1,10 +1,12 @@
 import type { DiagnosticsContract } from "./contracts";
-import { invokeContract } from "./core";
+import { invokeCommand, invokeContract } from "./core";
 
 export async function logWriteEntry(
   request: DiagnosticsContract["logWriteEntry"]["request"],
 ): Promise<DiagnosticsContract["logWriteEntry"]["response"]> {
-  return invokeContract<DiagnosticsContract["logWriteEntry"]>("diagnostics_log_write_entry", request);
+  return invokeCommand<DiagnosticsContract["logWriteEntry"]["response"]>("diagnostics_log_write_entry", {
+    entry: request,
+  });
 }
 
 export async function logGetPath(): Promise<DiagnosticsContract["logGetPath"]["response"]> {

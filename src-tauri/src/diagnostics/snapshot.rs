@@ -8,10 +8,11 @@ pub fn diagnostics_performance_snapshot() -> Result<PerformanceSnapshot, String>
 
 pub fn capture_performance_snapshot() -> PerformanceSnapshot {
     let pid = std::process::id();
+    let current_pid = Pid::from_u32(pid);
     let mut system = System::new();
-    system.refresh_processes(ProcessesToUpdate::All, true);
+    system.refresh_processes(ProcessesToUpdate::Some(&[current_pid]), true);
 
-    let current_process = system.process(Pid::from_u32(pid));
+    let current_process = system.process(current_pid);
     let rss_mb = current_process
         .map(|process| bytes_to_mb(process.memory()))
         .unwrap_or(0.0);

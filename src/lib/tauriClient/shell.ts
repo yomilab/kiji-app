@@ -1,10 +1,10 @@
 import type { ShellContract } from "./contracts";
-import { invokeContract } from "./core";
+import { invokeCommand, invokeContract } from "./core";
 
 export async function updateMenuState(
   request: ShellContract["updateMenuState"]["request"],
 ): Promise<ShellContract["updateMenuState"]["response"]> {
-  return invokeContract<ShellContract["updateMenuState"]>("shell_menu_update_state", request);
+  return invokeCommand<ShellContract["updateMenuState"]["response"]>("shell_menu_update_state", { patch: request });
 }
 
 export async function showImageContextMenu(
@@ -40,7 +40,7 @@ export const dialog = {
   writeTextFile(
     request: ShellContract["writeTextFile"]["request"],
   ): Promise<ShellContract["writeTextFile"]["response"]> {
-    return invokeContract<ShellContract["writeTextFile"]>("shell_file_write_text", request);
+    return invokeCommand<ShellContract["writeTextFile"]["response"]>("shell_file_write_text", { request });
   },
   saveFile(
     request: ShellContract["dialogSaveFile"]["request"],
@@ -66,11 +66,15 @@ export async function openArticleWindow(
 export async function share(
   request: ShellContract["share"]["request"],
 ): Promise<ShellContract["share"]["response"]> {
-  return invokeContract<ShellContract["share"]>("shell_share", request);
+  return invokeCommand<ShellContract["share"]["response"]>("shell_share", { request });
 }
 
 export async function shareToService(
   request: ShellContract["shareToService"]["request"],
 ): Promise<ShellContract["shareToService"]["response"]> {
-  return invokeContract<ShellContract["shareToService"]>("shell_share_to_service", request);
+  const { serviceId, ...shareRequest } = request;
+  return invokeCommand<ShellContract["shareToService"]["response"]>("shell_share_to_service", {
+    request: shareRequest,
+    serviceId,
+  });
 }

@@ -1,10 +1,10 @@
 import type { ArticlesContract } from "./contracts";
-import { invokeContract } from "./core";
+import { invokeCommand, invokeContract } from "./core";
 
 export async function query(
   request: ArticlesContract["query"]["request"],
 ): Promise<ArticlesContract["query"]["response"]> {
-  return invokeContract<ArticlesContract["query"]>("articles_query", request);
+  return invokeCommand<ArticlesContract["query"]["response"]>("articles_query", { request });
 }
 
 export async function get(

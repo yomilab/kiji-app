@@ -323,5 +323,5 @@ export async function invokeSavedArticlesSyncQueue(request: {
   savedArticleId: string;
   title: string | null;
 }): Promise<void> {
-  await invoke('saved_sync_queue', request);
+  await invoke('saved_sync_queue', { request });
 }

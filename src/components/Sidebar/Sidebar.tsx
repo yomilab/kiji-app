@@ -282,7 +282,6 @@ export const Sidebar: React.FC = () => {
         <div
           className="sidebar-widgets-container has-drag"
           data-component="sidebar-top-widgets"
-          data-tauri-drag-region
         >
           <SidebarWidgets onAddFeed={handleOpenAddModal} />
         </div>

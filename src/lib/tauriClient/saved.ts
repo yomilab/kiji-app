@@ -1,10 +1,10 @@
 import type { SavedContract } from "./contracts";
-import { invokeContract } from "./core";
+import { invokeCommand, invokeContract } from "./core";
 
 export async function query(
   request: SavedContract["query"]["request"],
 ): Promise<SavedContract["query"]["response"]> {
-  return invokeContract<SavedContract["query"]>("saved_query", request);
+  return invokeCommand<SavedContract["query"]["response"]>("saved_query", { request });
 }
 
 export async function create(

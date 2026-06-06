@@ -37,11 +37,12 @@ fn sample_once(
     last_logged_at_by_metric: &mut [u64; 4],
 ) -> Result<(), String> {
     let mut system = System::new();
-    system.refresh_processes(ProcessesToUpdate::All, true);
-
     let pid = std::process::id();
+    let current_pid = sysinfo::Pid::from_u32(pid);
+    system.refresh_processes(ProcessesToUpdate::Some(&[current_pid]), true);
+
     let current = system
-        .process(sysinfo::Pid::from_u32(pid))
+        .process(current_pid)
         .ok_or_else(|| "Failed to resolve the current process for resource monitoring.".to_string())?;
 
     let total_cpu_percent = f64::from(current.cpu_usage());

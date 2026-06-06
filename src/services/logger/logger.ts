@@ -47,6 +47,9 @@ class Logger {
         if (import.meta.env.DEV) {
           original(...args);
         }
+        if (!import.meta.env.DEV && (method === "log" || method === "info" || method === "debug")) {
+          return;
+        }
         const { message, context } = formatConsoleArgs(args);
         void this.send({
           level: levels[method],

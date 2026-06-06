@@ -50,6 +50,15 @@ const RECENT_INTERACTION_LIMIT = 30;
 const SUSPECTED_INTERACTION_LOOKBACK_MS = 1_000;
 const SUSPECTED_INTERACTION_LOOKAHEAD_MS = 200;
 const RECENT_INTERACTION_FALLBACK_WINDOW_MS = 4_000;
+const SLOW_INTERACTION_FRAME_MS = 120;
+const LOGGED_INTERACTION_EVENT_TYPES = new Set<RendererInteractionEventType>([
+  'pointerdown',
+  'click',
+  'keydown',
+  'input',
+  'drop',
+  'contextmenu',
+]);
 
 const RENDERER_FREEZE_THRESHOLDS_MS = {
   stutter: 500,
@@ -324,6 +333,56 @@ const buildInteractionRecord = (event: Event, nowMs: number): RendererInteractio
   return record;
 };
 
+const getInteractionLogTarget = (record: RendererInteractionRecord): SemanticTargetSegment | null => (
+  record.targetPath.find((segment) => Object.keys(segment.data).length > 0)
+  ?? record.targetPath[0]
+  ?? null
+);
+
+const logInteractionEvent = (record: RendererInteractionRecord): void => {
+  if (!LOGGED_INTERACTION_EVENT_TYPES.has(record.eventType)) {
+    return;
+  }
+
+  const loggedAtMs = performance.now();
+  const target = getInteractionLogTarget(record);
+
+  window.setTimeout(() => {
+    logger.info('InteractionEvent', 'Renderer interaction captured', {
+      event: 'interaction-captured',
+      windowRole,
+      interactionId: record.id,
+      eventType: record.eventType,
+      target,
+      key: record.key,
+      code: record.code,
+      repeat: record.repeat,
+      modifiers: record.modifiers,
+      button: record.button,
+      pointerType: record.pointerType,
+      inputValueLength: record.inputValueLength,
+    });
+  }, 0);
+
+  window.requestAnimationFrame(() => {
+    const frameDelayMs = performance.now() - loggedAtMs;
+    if (frameDelayMs < SLOW_INTERACTION_FRAME_MS) {
+      return;
+    }
+
+    logger.warn('InteractionEvent', 'Slow frame after interaction', {
+      event: 'interaction-frame-delayed',
+      windowRole,
+      interactionId: record.id,
+      eventType: record.eventType,
+      frameDelayMs: roundPerformanceValue(frameDelayMs),
+      target,
+      rendererHeap: getRendererHeapSnapshot(),
+      requiresDebugging: true,
+    });
+  });
+};
+
 const captureInteractionEvent = (event: Event): void => {
   const record = buildInteractionRecord(event, performance.now());
   if (!record) {
@@ -334,6 +393,8 @@ const captureInteractionEvent = (event: Event): void => {
   while (recentInteractions.length > RECENT_INTERACTION_LIMIT) {
     recentInteractions.shift();
   }
+
+  logInteractionEvent(record);
 };
 
 const reportRendererFreeze = async (stallDurationMs: number, detectedAtMs: number): Promise<void> => {
