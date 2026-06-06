@@ -70,13 +70,20 @@ pub fn shell_share(app: AppHandle, request: ShareRequest) -> Result<ShareRespons
             button_rect: request.button_rect,
         };
         app.run_on_main_thread(move || {
-            *share_result_for_thread.lock().expect("share result lock poisoned") =
-                Some(share_macos::present_share_sheet(&app_for_thread, &request_for_thread));
+            *share_result_for_thread
+                .lock()
+                .expect("share result lock poisoned") = Some(share_macos::present_share_sheet(
+                &app_for_thread,
+                &request_for_thread,
+            ));
         })
         .map_err(|error| format!("Failed to dispatch share sheet: {error}"))?;
 
         if matches!(
-            share_result.lock().expect("share result lock poisoned").take(),
+            share_result
+                .lock()
+                .expect("share result lock poisoned")
+                .take(),
             Some(Ok(()))
         ) {
             return Ok(ShareResponse { success: true });

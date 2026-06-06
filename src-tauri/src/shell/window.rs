@@ -3,11 +3,15 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tauri::{AppHandle, LogicalSize, Manager, WebviewWindow, WindowEvent};
+use tauri::{AppHandle, LogicalSize, Manager, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
+const SETTINGS_WINDOW_LABEL: &str = "settings";
 
-pub fn restore_main_window_bounds(app: &AppHandle, settings: Arc<SettingsState>) -> Result<(), String> {
+pub fn restore_main_window_bounds(
+    app: &AppHandle,
+    settings: Arc<SettingsState>,
+) -> Result<(), String> {
     let Some(main_window) = app.get_webview_window("main") else {
         return Ok(());
     };
@@ -25,11 +29,51 @@ pub fn restore_main_window_bounds(app: &AppHandle, settings: Arc<SettingsState>)
     Ok(())
 }
 
+pub fn open_settings_window(app: &AppHandle) -> Result<(), String> {
+    let settings_window = match app.get_webview_window(SETTINGS_WINDOW_LABEL) {
+        Some(window) => window,
+        None => {
+            let settings_config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|window| window.label == SETTINGS_WINDOW_LABEL)
+                .ok_or_else(|| "Settings window config was not found.".to_string())?;
+
+            WebviewWindowBuilder::from_config(app, settings_config)
+                .map_err(|error| format!("Failed to prepare settings window: {error}"))?
+                .build()
+                .map_err(|error| format!("Failed to create settings window: {error}"))?
+        }
+    };
+
+    let _ = settings_window.unminimize();
+    settings_window
+        .show()
+        .map_err(|error| format!("Failed to show settings window: {error}"))?;
+    settings_window
+        .set_focus()
+        .map_err(|error| format!("Failed to focus settings window: {error}"))
+}
+
+#[tauri::command]
+pub fn shell_settings_window_open(app: AppHandle) -> Result<(), String> {
+    open_settings_window(&app)
+}
+
 fn attach_main_window_bounds_listener(window: WebviewWindow, settings: Arc<SettingsState>) {
     let pending = Arc::new(Mutex::new(None::<tauri::async_runtime::JoinHandle<()>>));
     let window_for_events = window.clone();
+    let app_handle = window.app_handle().clone();
 
     window.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            app_handle.exit(0);
+            return;
+        }
+
         if !matches!(event, WindowEvent::Resized(_) | WindowEvent::Moved(_)) {
             return;
         }

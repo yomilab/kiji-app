@@ -28,7 +28,8 @@ pub fn start(state: Arc<DiagnosticsState>) {
         let mut last_reported_stall_ms = 0_u64;
         loop {
             std::thread::sleep(Duration::from_millis(HEARTBEAT_INTERVAL_MS));
-            let stall_duration_ms = now_ms().saturating_sub(LAST_HEARTBEAT_MS.load(Ordering::Relaxed));
+            let stall_duration_ms =
+                now_ms().saturating_sub(LAST_HEARTBEAT_MS.load(Ordering::Relaxed));
             let Some(severity) = classify_freeze_severity(stall_duration_ms) else {
                 last_reported_stall_ms = 0;
                 continue;

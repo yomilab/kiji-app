@@ -30,7 +30,12 @@ fn handle_navigation<R: Runtime>(webview: &Webview<R>, url: &Url) -> bool {
     let url_string = url.to_string();
 
     match app.opener().open_url(&url_string, None::<&str>) {
-        Ok(()) => write_guard_log(&app, &scope, "external-navigation-blocked", Some(&url_string)),
+        Ok(()) => write_guard_log(
+            &app,
+            &scope,
+            "external-navigation-blocked",
+            Some(&url_string),
+        ),
         Err(error) => write_guard_log(
             &app,
             &scope,
@@ -115,7 +120,9 @@ mod tests {
     #[test]
     fn internal_url_policy_allows_app_and_dev_origins() {
         assert!(is_internal_app_url(&Url::parse("about:blank").unwrap()));
-        assert!(is_internal_app_url(&Url::parse("tauri://localhost").unwrap()));
+        assert!(is_internal_app_url(
+            &Url::parse("tauri://localhost").unwrap()
+        ));
         assert!(is_internal_app_url(
             &Url::parse("http://localhost:1420/index.html").unwrap()
         ));

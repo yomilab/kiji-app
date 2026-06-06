@@ -1,4 +1,3 @@
-import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { tauriClient } from '@/lib/tauriClient';
 import type { SavedArticleRecord } from '@/lib/tauriClient/contracts';
@@ -300,22 +299,11 @@ export async function listenSavedArticlesExportEvents(
 }
 
 export async function invokeSavedArticlesExportPreflight(outputPath: string) {
-  return invoke<{
-    articleCount: number;
-    estimatedUncompressedBytes: number;
-    estimatedZipBytes: number;
-    freeBytes: number | null;
-    exceedsOneGb: boolean;
-    exceedsFreeSpace: boolean;
-  }>('saved_export_preflight', { outputPath });
+  return tauriClient.saved.exportPreflight({ outputPath });
 }
 
 export async function invokeSavedArticlesExportStart(outputPath: string) {
-  return invoke<{
-    started: boolean;
-    jobId?: string;
-    reason?: 'busy';
-  }>('saved_export_start', { outputPath });
+  return tauriClient.saved.exportStart({ outputPath });
 }
 
 export async function invokeSavedArticlesSyncQueue(request: {
@@ -323,5 +311,5 @@ export async function invokeSavedArticlesSyncQueue(request: {
   savedArticleId: string;
   title: string | null;
 }): Promise<void> {
-  await invoke('saved_sync_queue', { request });
+  await tauriClient.saved.syncQueue(request);
 }

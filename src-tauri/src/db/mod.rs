@@ -19,8 +19,8 @@ pub use feeds::{
     feeds_update_article_count, feeds_update_last_fetched, feeds_update_unread_count,
 };
 use migrations::{read_current_migration_version, run_migrations};
-use rusqlite::Connection;
 pub use models::SavedArticleRecord;
+use rusqlite::Connection;
 pub use saved::{
     get_saved_article_by_id, get_saved_articles_page, saved_create, saved_delete, saved_get,
     saved_get_by_article_hash, saved_get_by_link, saved_get_content, saved_insert_batch,
@@ -355,7 +355,10 @@ mod tests {
         use zip::ZipArchive;
 
         use super::{
-            articles::{get_article, get_article_content, insert_articles_batch, query_articles, ArticleQueryRequest},
+            articles::{
+                get_article, get_article_content, insert_articles_batch, query_articles,
+                ArticleQueryRequest,
+            },
             feeds::{insert_feed, list_feeds, update_feed, FeedUpdate},
             migrations::run_migrations,
             models::{ArticleRecord, FeedRecord, SavedArticleRecord},
@@ -367,8 +370,7 @@ mod tests {
 
         fn open_smoke_database(dir: &Path) -> Connection {
             let db_path = dir.join("kiji.db");
-            let mut connection =
-                Connection::open(&db_path).expect("open smoke database on disk");
+            let mut connection = Connection::open(&db_path).expect("open smoke database on disk");
             run_migrations(&mut connection).expect("run migrations");
             connection
                 .execute_batch(CREATE_SEARCH_INDEXES)
@@ -488,7 +490,8 @@ mod tests {
         assert_eq!(feeds.len(), 1);
         assert_eq!(feeds[0].url, "https://example.com/smoke-feed.xml");
 
-        let inserted = insert_articles_batch(&connection, &[sample_article()]).expect("refresh feed");
+        let inserted =
+            insert_articles_batch(&connection, &[sample_article()]).expect("refresh feed");
         assert_eq!(inserted, 1);
 
         update_feed(

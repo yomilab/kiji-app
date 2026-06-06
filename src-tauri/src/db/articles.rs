@@ -49,7 +49,7 @@ pub struct ArticleFeedMetaUpdate {
     pub feed_image: Option<Option<String>>,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_query(
     request: ArticleQueryRequest,
     state: State<'_, DbState>,
@@ -57,7 +57,7 @@ pub fn articles_query(
     state.with_connection(|connection| query_articles(connection, request))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_get(
     hash: String,
     state: State<'_, DbState>,
@@ -65,7 +65,7 @@ pub fn articles_get(
     state.with_connection(|connection| get_article(connection, &hash))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_get_content(
     hash: String,
     state: State<'_, DbState>,
@@ -73,7 +73,7 @@ pub fn articles_get_content(
     state.with_connection(|connection| get_article_content(connection, &hash))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_exists(hash: String, state: State<'_, DbState>) -> Result<bool, String> {
     state.with_connection(|connection| {
         connection
@@ -88,7 +88,7 @@ pub fn articles_exists(hash: String, state: State<'_, DbState>) -> Result<bool, 
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_insert_batch(
     articles: Vec<ArticleRecord>,
     state: State<'_, DbState>,
@@ -96,7 +96,7 @@ pub fn articles_insert_batch(
     state.with_connection(|connection| insert_articles_batch(connection, &articles))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_update_read(
     hash: String,
     read: bool,
@@ -113,7 +113,7 @@ pub fn articles_update_read(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_update_last_read_at(
     hash: String,
     last_read_at: String,
@@ -130,7 +130,7 @@ pub fn articles_update_last_read_at(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_toggle_starred(hash: String, state: State<'_, DbState>) -> Result<bool, String> {
     state.with_connection(|connection| {
         connection
@@ -144,7 +144,7 @@ pub fn articles_toggle_starred(hash: String, state: State<'_, DbState>) -> Resul
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_update_saved_state(
     hash: String,
     saved: bool,
@@ -162,7 +162,7 @@ pub fn articles_update_saved_state(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_delete_by_feed(
     feed_id: String,
     state: State<'_, DbState>,
@@ -170,7 +170,7 @@ pub fn articles_delete_by_feed(
     state.with_connection(|connection| delete_articles_by_feed(connection, &feed_id))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_clean_old_by_feed(
     feed_id: String,
     cutoff_date: String,
@@ -179,7 +179,7 @@ pub fn articles_clean_old_by_feed(
     state.with_connection(|connection| clean_old_articles(connection, Some(&feed_id), &cutoff_date))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_clean_old_across_feeds(
     cutoff_date: String,
     state: State<'_, DbState>,
@@ -187,7 +187,7 @@ pub fn articles_clean_old_across_feeds(
     state.with_connection(|connection| clean_old_articles(connection, None, &cutoff_date))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_count_unread_by_feed(
     feed_id: String,
     state: State<'_, DbState>,
@@ -203,7 +203,7 @@ pub fn articles_count_unread_by_feed(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_count_by_feed(feed_id: String, state: State<'_, DbState>) -> Result<i64, String> {
     state.with_connection(|connection| {
         connection
@@ -216,7 +216,7 @@ pub fn articles_count_by_feed(feed_id: String, state: State<'_, DbState>) -> Res
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn articles_update_feed_meta(
     feed_id: String,
     meta: ArticleFeedMetaUpdate,

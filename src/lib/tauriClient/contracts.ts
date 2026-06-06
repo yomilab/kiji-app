@@ -235,6 +235,12 @@ export interface SavedArticleLastReadAtUpdateRequest {
   lastReadAt: ISODateString;
 }
 
+export interface SavedArticleSyncQueueRequest {
+  type: "saved" | "unsaved";
+  savedArticleId: string;
+  title: string | null;
+}
+
 export interface SavedArticleQueryRequest {
   limit?: number;
   offset?: number;
@@ -314,25 +320,52 @@ export interface PickFolderDialogRequest {
 }
 
 export interface SavedArticlesExportPreflight {
+  articleCount: number;
+  estimatedUncompressedBytes: number;
+  estimatedZipBytes: number;
+  freeBytes: number | null;
+  exceedsOneGb: boolean;
+  exceedsFreeSpace: boolean;
+}
+
+export interface SavedArticlesExportCompletedPayload {
   outputPath: FilePathString;
   articleCount: number;
-  estimatedBytes: number;
-  warnings: string[];
+  writtenBytes: number;
+  durationMs: number;
 }
 
 export type SavedArticlesExportEvent =
-  | { type: "started"; exportId: string; total: number }
-  | { type: "progress"; exportId: string; completed: number; total: number }
-  | { type: "completed"; exportId: string; outputPath: FilePathString }
-  | { type: "failed"; exportId: string; error: string };
+  | {
+      jobId: string;
+      status: "progress";
+      phase: "starting" | "exporting" | "finalizing";
+      articleCount: number;
+      processedArticles: number;
+      writtenBytes?: number;
+      message: string;
+    }
+  | {
+      jobId: string;
+      status: "completed";
+      message: string;
+      result: SavedArticlesExportCompletedPayload;
+    }
+  | {
+      jobId: string;
+      status: "failed";
+      message: string;
+      error: string;
+    };
 
 export interface SavedArticlesExportStartRequest {
   outputPath: FilePathString;
 }
 
 export interface SavedArticlesExportStartResponse {
-  exportId: string;
   started: boolean;
+  jobId?: string;
+  reason?: "busy";
 }
 
 export type AppMenuLibraryView = "saved" | "unread" | "all" | null;
@@ -673,14 +706,25 @@ export interface SavedContract {
     request: SavedArticleLastReadAtUpdateRequest;
     response: void;
   };
+  exportPreflight: {
+    request: SavedArticlesExportStartRequest;
+    response: SavedArticlesExportPreflight;
+  };
   exportStart: {
     request: SavedArticlesExportStartRequest;
     response: SavedArticlesExportStartResponse;
     event: SavedArticlesExportEvent;
   };
+  syncQueue: {
+    request: SavedArticleSyncQueueRequest;
+    response: void;
+  };
 }
 
 export interface ShellContract {
+  openSettings: {
+    response: void;
+  };
   updateMenuState: {
     request: Partial<AppMenuState>;
     response: void;

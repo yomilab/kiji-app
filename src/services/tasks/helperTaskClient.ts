@@ -18,6 +18,14 @@ import {
 
 type TaskResultCallback = (event: HelperTaskResultEvent) => void;
 
+const createClientTaskId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
 class HelperTaskClient {
   private listeners = new Set<TaskResultCallback>();
   private isListenerRegistered = false;
@@ -44,11 +52,12 @@ class HelperTaskClient {
     request: HelperTaskAddRequest<K>,
   ): Promise<HelperTaskResultMap[K]> {
     this.ensureListener();
-    const added = await this.addTask(request);
+    const taskId = request.id ?? createClientTaskId();
+    let callback: TaskResultCallback;
 
-    return new Promise<HelperTaskResultMap[K]>((resolve, reject) => {
-      const callback: TaskResultCallback = (event) => {
-        if (event.taskId !== added.taskId) return;
+    const resultPromise = new Promise<HelperTaskResultMap[K]>((resolve, reject) => {
+      callback = (event) => {
+        if (event.taskId !== taskId) return;
 
         this.listeners.delete(callback);
 
@@ -67,6 +76,15 @@ class HelperTaskClient {
 
       this.listeners.add(callback);
     });
+
+    try {
+      await this.addTask({ ...request, id: taskId });
+    } catch (error) {
+      this.listeners.delete(callback!);
+      throw error;
+    }
+
+    return resultPromise;
   }
 
   async removeTask(taskId: string): Promise<HelperTaskRemoveResponse> {

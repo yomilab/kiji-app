@@ -1,5 +1,4 @@
 use chrono::{SecondsFormat, Utc};
-use tauri::Manager;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::{
@@ -9,6 +8,7 @@ use std::{
     sync::Mutex,
     time::{Duration, SystemTime},
 };
+use tauri::Manager;
 
 const LOG_RETENTION_DAYS: u64 = 2;
 const MAX_RECENT_ENTRIES: usize = 500;
@@ -154,7 +154,10 @@ impl DiagnosticsState {
         let formatted = format_entry(entry);
 
         if entry.level != "debug" {
-            append_log(&self.logs_dir.join(format!("app-{log_date}.log")), &formatted)?;
+            append_log(
+                &self.logs_dir.join(format!("app-{log_date}.log")),
+                &formatted,
+            )?;
         }
         if entry.level == "warn" || entry.level == "error" {
             append_log(

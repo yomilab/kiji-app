@@ -1,4 +1,4 @@
-use super::state::{MainProcessSnapshot, PerformanceSnapshot, ProcessSnapshot, timestamp};
+use super::state::{timestamp, MainProcessSnapshot, PerformanceSnapshot, ProcessSnapshot};
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
 #[tauri::command]

@@ -33,8 +33,7 @@ pub fn normalize_title(title: Option<&str>) -> String {
 
 pub fn sanitize_filename(name: &str) -> String {
     let normalized = normalize_title(Some(name));
-    let mut sanitized = normalized
-        .replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
+    let mut sanitized = normalized.replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
 
     sanitized.retain(|character| !character.is_control());
     sanitized = sanitized.trim().trim_end_matches('.').to_string();
@@ -103,9 +102,7 @@ pub fn build_saved_articles_index_markdown(entries: &[SavedArticleIndexEntry]) -
             .collect::<Vec<_>>()
             .join("/");
         let escaped_title = escape_markdown_link_text(&entry.title);
-        lines.push(format!(
-            "- [{escaped_title}](./articles/{encoded_path})"
-        ));
+        lines.push(format!("- [{escaped_title}](./articles/{encoded_path})"));
     }
 
     lines.push(String::new());
@@ -139,7 +136,10 @@ fn escape_markdown_link_text(value: &str) -> String {
 fn is_windows_reserved_name(name: &str) -> bool {
     matches!(
         name.to_uppercase().as_str(),
-        "CON" | "PRN" | "AUX" | "NUL"
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
             | "COM1"
             | "COM2"
             | "COM3"

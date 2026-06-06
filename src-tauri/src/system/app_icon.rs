@@ -6,7 +6,7 @@ use std::{
     io::Cursor,
     path::{Path, PathBuf},
 };
-use tauri::{AppHandle, Manager, image::Image, State};
+use tauri::{image::Image, AppHandle, Manager, State};
 
 const APP_ICON_STATE_FILE: &str = "app-icon-state.json";
 const CUSTOM_ICON_BASENAME: &str = "custom-app-icon";

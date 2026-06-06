@@ -200,7 +200,10 @@ impl SavedSyncWorker {
                 if pending.requires_full_reconcile {
                     pending.mutation_events.clear();
                     pending.requires_full_reconcile = false;
-                    let reason = pending.reason.take().unwrap_or_else(|| "unknown".to_string());
+                    let reason = pending
+                        .reason
+                        .take()
+                        .unwrap_or_else(|| "unknown".to_string());
                     SyncAction::Reconcile(reason)
                 } else if !pending.mutation_events.is_empty() {
                     let events = std::mem::take(&mut pending.mutation_events);
@@ -345,7 +348,10 @@ fn apply_mutations(
         let _ = fs::remove_file(articles_dir.join(&file_name));
     }
 
-    write_if_changed(&index_path, &build_saved_articles_index_markdown(&index_entries))?;
+    write_if_changed(
+        &index_path,
+        &build_saved_articles_index_markdown(&index_entries),
+    )?;
     Ok(())
 }
 
@@ -353,9 +359,7 @@ fn read_index_entries(index_path: &Path) -> Result<Vec<SavedArticleIndexEntry>, 
     let raw = match fs::read_to_string(index_path) {
         Ok(value) => value,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => {
-            return Err(format!("Failed to read saved articles sync index: {error}"))
-        }
+        Err(error) => return Err(format!("Failed to read saved articles sync index: {error}")),
     };
 
     let mut entries = Vec::new();
@@ -403,8 +407,13 @@ fn remove_stale_markdown_files(
         .map_err(|error| format!("Failed to read saved articles sync directory: {error}"))?;
 
     for entry in entries {
-        let entry = entry.map_err(|error| format!("Failed to read sync directory entry: {error}"))?;
-        if !entry.file_type().map(|value| value.is_file()).unwrap_or(false) {
+        let entry =
+            entry.map_err(|error| format!("Failed to read sync directory entry: {error}"))?;
+        if !entry
+            .file_type()
+            .map(|value| value.is_file())
+            .unwrap_or(false)
+        {
             continue;
         }
 

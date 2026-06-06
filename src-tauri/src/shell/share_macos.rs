@@ -20,9 +20,8 @@ pub fn present_share_sheet(app: &AppHandle, request: &ShareRequest) -> Result<()
     let share_item: Retained<AnyObject> = ns_url.into_super().into();
     let items = NSArray::<AnyObject>::from_retained_slice(&[share_item]);
 
-    let picker = unsafe {
-        NSSharingServicePicker::initWithItems(NSSharingServicePicker::alloc(), &*items)
-    };
+    let picker =
+        unsafe { NSSharingServicePicker::initWithItems(NSSharingServicePicker::alloc(), &*items) };
 
     let window = resolve_share_window(app)?;
     let ns_view_ptr = window

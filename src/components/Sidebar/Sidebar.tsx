@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { FeedList } from './FeedList';
 import { TagManager } from './TagManager';
 import { SmartViews } from './SmartViews';
@@ -203,6 +204,27 @@ export const Sidebar: React.FC = () => {
     setIsDragging(true);
   };
 
+  const isInteractiveDragBlockTarget = (target: EventTarget | null): boolean =>
+    target instanceof Element
+    && target.closest(
+      'button, a, input, textarea, select, option, [role="button"], [contenteditable="true"], .sidebar-resize-handle',
+    ) !== null;
+
+  const handleWindowDragMouseDown = (event: React.MouseEvent<HTMLElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    if (isInteractiveDragBlockTarget(event.target)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const currentWindow = getCurrentWindow();
+    void (event.detail === 2 ? currentWindow.toggleMaximize() : currentWindow.startDragging());
+  };
+
   const formatSyncTime = (date: Date | null): string => {
     if (!date) return '';
 
@@ -278,27 +300,32 @@ export const Sidebar: React.FC = () => {
       />
 
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        {/* Widgets aligned with traffic lights */}
         <div
-          className="sidebar-widgets-container has-drag"
-          data-component="sidebar-top-widgets"
+          className="sidebar-top-chrome"
+          onMouseDown={handleWindowDragMouseDown}
+          data-component="sidebar-top-chrome"
         >
-          <SidebarWidgets onAddFeed={handleOpenAddModal} />
-        </div>
-
-        {/* Feeds title section */}
-        <div
-          className="sidebar-title-container has-drag"
-          data-component="sidebar-title-section"
-          data-tauri-drag-region
-        >
-          <h1 className="title m-0 theme-text-primary" data-section="app-title" data-component="app-title">Feeds</h1>
-          <p
-            className={`sync-indicator ${showSyncing && !sidebarIndicatorText && !exportProgressText && !isAnyFeedRefreshing ? 'is-syncing' : ''}`}
-            data-component="sync-indicator"
+          {/* Widgets aligned with traffic lights */}
+          <div
+            className="sidebar-widgets-container"
+            data-component="sidebar-top-widgets"
           >
-            {syncText}
-          </p>
+            <SidebarWidgets onAddFeed={handleOpenAddModal} />
+          </div>
+
+          {/* Feeds title section */}
+          <div
+            className="sidebar-title-container"
+            data-component="sidebar-title-section"
+          >
+            <h1 className="title m-0 theme-text-primary" data-section="app-title" data-component="app-title">Feeds</h1>
+            <p
+              className={`sync-indicator ${showSyncing && !sidebarIndicatorText && !exportProgressText && !isAnyFeedRefreshing ? 'is-syncing' : ''}`}
+              data-component="sync-indicator"
+            >
+              {syncText}
+            </p>
+          </div>
         </div>
 
         {/* Scrollable content area */}

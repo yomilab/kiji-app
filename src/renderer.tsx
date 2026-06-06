@@ -1,5 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { App } from "./App";
 import { ArticleWindow } from "./components/ArticleWindow/ArticleWindow";
 import { SettingsWindow } from "./components/SettingsWindow/SettingsWindow";
@@ -8,6 +9,7 @@ import { FeedProvider } from "./contexts/FeedContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { logger } from "./services/logger";
 import { applyFontFamiliesToRoot, applyReadingLayoutToRoot } from "./services/settings/styleVariables";
+import { keybindingService } from "./services/shortcuts/shortcutService";
 import { installElectronApiCompat } from "./services/tauri/electronApiCompat";
 import { installInteractionFreezeWatchdog } from "./services/performance/interactionFreezeWatchdog";
 import type { Article } from "./types/article";
@@ -47,6 +49,27 @@ function initializeVisualSettings(): void {
 function getWindowType(): RendererWindowType {
   const windowType = new URLSearchParams(window.location.search).get("window");
   return windowType === "settings" || windowType === "article" ? windowType : "main";
+}
+
+function installWindowCloseShortcut(windowType: RendererWindowType): void {
+  if (windowType === "main") {
+    return;
+  }
+
+  keybindingService.register({
+    type: "keydown",
+    capture: true,
+    priority: 1000,
+    handler: (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "w") {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void getCurrentWindow().close();
+    },
+  });
 }
 
 function ArticleWindowBranch() {
@@ -131,6 +154,7 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
 
 const windowType = getWindowType();
 installElectronApiCompat();
+installWindowCloseShortcut(windowType);
 logger.installConsoleCapture(windowType === "main" ? "renderer" : "renderer");
 logger.installGlobalErrorHandlers("renderer");
 installInteractionFreezeWatchdog(windowType ?? "main");

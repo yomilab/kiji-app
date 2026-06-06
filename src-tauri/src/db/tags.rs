@@ -14,22 +14,22 @@ pub struct TagUpdate {
     pub sort_order: Option<i64>,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_tags_list(state: State<'_, DbState>) -> Result<Vec<TagRecord>, String> {
     state.with_connection(|connection| list_tags(connection))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_tags_list_with_feed_ids(state: State<'_, DbState>) -> Result<Vec<TagRecord>, String> {
     state.with_connection(|connection| list_tags_with_feed_ids(connection))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_tags_upsert(tag: TagRecord, state: State<'_, DbState>) -> Result<(), String> {
     state.with_connection(|connection| upsert_tag(connection, &tag))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_tags_update(
     name: String,
     updates: TagUpdate,
@@ -38,7 +38,7 @@ pub fn feeds_tags_update(
     state.with_connection(|connection| update_tag(connection, &name, updates))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_tags_rename(
     current_name: String,
     next_name: String,
@@ -47,12 +47,12 @@ pub fn feeds_tags_rename(
     state.with_connection(|connection| rename_tag(connection, &current_name, &next_name))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_tags_delete(name: String, state: State<'_, DbState>) -> Result<(), String> {
     state.with_connection(|connection| delete_tag(connection, &name))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_tags_attach_feed(
     feed_id: String,
     tag_name: String,
@@ -61,7 +61,7 @@ pub fn feeds_tags_attach_feed(
     state.with_connection(|connection| attach_feed(connection, &feed_id, &tag_name))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_tags_detach_feed(
     feed_id: String,
     tag_name: String,
@@ -70,7 +70,7 @@ pub fn feeds_tags_detach_feed(
     state.with_connection(|connection| detach_feed(connection, &feed_id, &tag_name))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_tags_list_feed_ids(
     tag_name: String,
     state: State<'_, DbState>,
@@ -78,7 +78,7 @@ pub fn feeds_tags_list_feed_ids(
     state.with_connection(|connection| feed_ids_by_tag(connection, &tag_name))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_tags_list_by_feed(
     feed_id: String,
     state: State<'_, DbState>,

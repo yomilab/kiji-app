@@ -28,9 +28,6 @@ export interface ElectronAPI {
   abortFeedRequest: (requestId: string) => Promise<void>;
   fetchFavicon: (url: string) => Promise<string>;
   fetchEnhancedFavicon: (url: string) => Promise<string | null>;
-  windowMinimize: () => Promise<void>;
-  windowMaximize: () => Promise<void>;
-  windowClose: () => Promise<void>;
   hideTrafficLights: () => Promise<void>;
   showTrafficLights: () => Promise<void>;
   openSettings: () => Promise<void>;

@@ -23,7 +23,7 @@ pub struct SavedArticleQueryResponse {
     pub total: i64,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn saved_query(
     request: SavedArticleQueryRequest,
     state: State<'_, DbState>,
@@ -31,12 +31,12 @@ pub fn saved_query(
     state.with_connection(|connection| query_saved_articles(connection, request))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn saved_create(article: SavedArticleRecord, state: State<'_, DbState>) -> Result<(), String> {
     state.with_connection(|connection| insert_saved_article(connection, &article))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn saved_insert_batch(
     articles: Vec<SavedArticleRecord>,
     state: State<'_, DbState>,
@@ -51,7 +51,7 @@ pub fn saved_insert_batch(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn saved_delete(id: String, state: State<'_, DbState>) -> Result<(), String> {
     state.with_connection(|connection| {
         connection
@@ -61,7 +61,7 @@ pub fn saved_delete(id: String, state: State<'_, DbState>) -> Result<(), String>
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn saved_get(
     id: String,
     state: State<'_, DbState>,
@@ -69,7 +69,7 @@ pub fn saved_get(
     state.with_connection(|connection| get_saved_article_by_id(connection, &id))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn saved_get_by_article_hash(
     article_hash: String,
     state: State<'_, DbState>,
@@ -77,7 +77,7 @@ pub fn saved_get_by_article_hash(
     state.with_connection(|connection| get_saved_article_by_hash(connection, &article_hash))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn saved_get_by_link(
     link: String,
     state: State<'_, DbState>,
@@ -85,12 +85,12 @@ pub fn saved_get_by_link(
     state.with_connection(|connection| get_saved_article_by_link(connection, &link))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn saved_list_all(state: State<'_, DbState>) -> Result<Vec<SavedArticleRecord>, String> {
     state.with_connection(|connection| list_saved_articles(connection))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn saved_get_content(id: String, state: State<'_, DbState>) -> Result<Option<String>, String> {
     state.with_connection(|connection| {
         connection
@@ -104,7 +104,7 @@ pub fn saved_get_content(id: String, state: State<'_, DbState>) -> Result<Option
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn saved_update_highlights(
     id: String,
     highlights: Vec<serde_json::Value>,
@@ -122,7 +122,7 @@ pub fn saved_update_highlights(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn saved_update_notes(
     id: String,
     notes: String,
@@ -139,7 +139,7 @@ pub fn saved_update_notes(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn saved_update_last_read_at(
     id: String,
     last_read_at: String,

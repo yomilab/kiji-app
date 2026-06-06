@@ -1,4 +1,4 @@
-import { getCurrentWindow, Window as TauriWindow } from '@tauri-apps/api/window';
+import { Window as TauriWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { tauriClient } from '@/lib/tauriClient';
 import {
@@ -30,6 +30,29 @@ import { trafficLightVisibilityBus } from '@/services/ui/trafficLightVisibilityB
 const ARTICLE_WINDOW_PAYLOAD_KEY = 'kiji:tauri:article-window-payload';
 const settingsChangedListeners = new Set<() => void>();
 
+function createDeferredUnsubscribe(unlistenPromise: Promise<() => void>): () => void {
+  let disposed = false;
+  let unlisten: (() => void) | null = null;
+
+  void unlistenPromise
+    .then((dispose) => {
+      if (disposed) {
+        dispose();
+        return;
+      }
+      unlisten = dispose;
+    })
+    .catch(() => {
+      // Listener setup failures are surfaced by the caller path when needed.
+    });
+
+  return () => {
+    disposed = true;
+    unlisten?.();
+    unlisten = null;
+  };
+}
+
 function fileNameFromPath(path: string): string | undefined {
   const parts = path.split(/[\\/]/).filter(Boolean);
   return parts.length > 0 ? parts[parts.length - 1] : undefined;
@@ -42,15 +65,6 @@ async function showWindow(label: string): Promise<void> {
   }
   await window.show();
   await window.setFocus();
-}
-
-async function toggleMaximize(): Promise<void> {
-  const currentWindow = getCurrentWindow();
-  if (await currentWindow.isMaximized()) {
-    await currentWindow.unmaximize();
-    return;
-  }
-  await currentWindow.maximize();
 }
 
 function readArticlePayload(): Article {
@@ -116,13 +130,6 @@ function installElectronApiCompat(): void {
         return null;
       }
     },
-    async windowMinimize() {
-      await getCurrentWindow().minimize();
-    },
-    windowMaximize: toggleMaximize,
-    async windowClose() {
-      await getCurrentWindow().close();
-    },
     async hideTrafficLights() {
       trafficLightVisibilityBus.setVisible(false);
     },
@@ -130,21 +137,15 @@ function installElectronApiCompat(): void {
       trafficLightVisibilityBus.setVisible(true);
     },
     async openSettings() {
-      await showWindow('settings');
+      await tauriClient.shell.openSettings();
     },
     async updateAppMenuState(state) {
       await tauriClient.shell.updateMenuState(state);
     },
     onAppMenuCommand(callback: (command: AppMenuCommand) => void) {
-      let unlisten: (() => void) | undefined;
-      void listen<AppMenuCommand>('app-menu:command', (event) => {
+      return createDeferredUnsubscribe(listen<AppMenuCommand>('app-menu:command', (event) => {
         callback(event.payload);
-      }).then((dispose) => {
-        unlisten = dispose;
-      });
-      return () => {
-        unlisten?.();
-      };
+      }));
     },
     async openExternal(url) {
       await tauriClient.shell.openExternal({ url });
@@ -224,15 +225,9 @@ function installElectronApiCompat(): void {
       return tauriClient.system.theme.getAccentColor();
     },
     onSystemAccentColorChanged(callback: (color: string) => void) {
-      let unlisten: (() => void) | undefined;
-      void listen<{ color: string }>('system-accent-color-changed', (event) => {
+      return createDeferredUnsubscribe(listen<{ color: string }>('system-accent-color-changed', (event) => {
         callback(event.payload.color);
-      }).then((dispose) => {
-        unlisten = dispose;
-      });
-      return () => {
-        unlisten?.();
-      };
+      }));
     },
     async notifySettingsChanged() {
       settingsChangedListeners.forEach((listener) => listener());
@@ -309,16 +304,9 @@ function installElectronApiCompat(): void {
       return invokeSavedArticlesExportStart(request.outputPath);
     },
     onSavedArticlesExportEvent(callback) {
-      let unlisten: (() => void) | null = null;
-      void listenSavedArticlesExportEvents((event) => {
+      return createDeferredUnsubscribe(listenSavedArticlesExportEvents((event) => {
         callback(event);
-      }).then((dispose) => {
-        unlisten = dispose;
-      });
-
-      return () => {
-        unlisten?.();
-      };
+      }));
     },
     async parseArticle(url, parser) {
       try {

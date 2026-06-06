@@ -169,7 +169,10 @@ pub fn saved_export_start(
     })
 }
 
-fn build_preflight(connection: &Connection, output_path: &str) -> Result<SavedArticlesExportPreflight, String> {
+fn build_preflight(
+    connection: &Connection,
+    output_path: &str,
+) -> Result<SavedArticlesExportPreflight, String> {
     let article_count = count_saved_articles(connection)?;
     let estimated_uncompressed_bytes = estimate_saved_articles_export_bytes(connection)?;
     let estimated_zip_bytes = std::cmp::max(
@@ -367,7 +370,9 @@ fn feed_tags_for_article(connection: &Connection, feed_id: Option<&str>) -> Resu
     };
 
     let mut statement = connection
-        .prepare("SELECT tag_name FROM feed_tags WHERE feed_id = ?1 ORDER BY tag_name COLLATE NOCASE")
+        .prepare(
+            "SELECT tag_name FROM feed_tags WHERE feed_id = ?1 ORDER BY tag_name COLLATE NOCASE",
+        )
         .map_err(|error| format!("Failed to prepare feed tag lookup: {error}"))?;
     let tags = statement
         .query_map([feed_id], |row| row.get::<_, String>(0))
@@ -389,14 +394,12 @@ fn saved_article_time_added(row: &SavedArticleRecord) -> i64 {
                 .and_then(|value| value.parse::<chrono::DateTime<chrono::Utc>>().ok())
         });
 
-    source
-        .map(|value| value.timestamp())
-        .unwrap_or_else(|| {
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|duration| duration.as_secs() as i64)
-                .unwrap_or(0)
-        })
+    source.map(|value| value.timestamp()).unwrap_or_else(|| {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs() as i64)
+            .unwrap_or(0)
+    })
 }
 
 fn get_free_bytes_for_path(_output_path: &str) -> Option<u64> {

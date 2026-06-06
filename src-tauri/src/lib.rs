@@ -34,8 +34,9 @@ use settings::{settings_get, settings_reset, settings_update, SettingsState};
 use shell::{
     restore_main_window_bounds, shell_context_menu_show_image, shell_dialog_open_file,
     shell_dialog_pick_folder, shell_dialog_save_file, shell_file_read_text, shell_file_write_text,
-    shell_links_open_external, shell_menu_update_state, shell_share, shell_share_list_services,
-    shell_share_to_service, window_guards_plugin, ApplicationMenu, ImageContextMenuState,
+    shell_links_open_external, shell_menu_update_state, shell_settings_window_open, shell_share,
+    shell_share_list_services, shell_share_to_service, window_guards_plugin, ApplicationMenu,
+    ImageContextMenuState,
 };
 use system::{
     start_accent_color_watch, system_app_icon_get_state, system_app_icon_pick,
@@ -49,20 +50,18 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let settings_state = Arc::new(
-                SettingsState::load(&app.handle()).map_err(std::io::Error::other)?,
-            );
+            let settings_state =
+                Arc::new(SettingsState::load(&app.handle()).map_err(std::io::Error::other)?);
             let db_state = DbState::load(&app.handle()).map_err(std::io::Error::other)?;
-            let sync_state = SavedSyncState::new(
-                db_state.database_path(),
-                Arc::clone(&settings_state),
-            );
+            let sync_state =
+                SavedSyncState::new(db_state.database_path(), Arc::clone(&settings_state));
             sync_state.schedule_startup_reconcile();
             let diagnostics_state =
                 DiagnosticsState::load(&app.handle()).map_err(std::io::Error::other)?;
             let diagnostics_arc = Arc::new(diagnostics_state);
             start_background_monitoring(Arc::clone(&diagnostics_arc));
-            let app_icon_state = AppIconState::load(&app.handle()).map_err(std::io::Error::other)?;
+            let app_icon_state =
+                AppIconState::load(&app.handle()).map_err(std::io::Error::other)?;
 
             ApplicationMenu::install(&app.handle()).map_err(std::io::Error::other)?;
             ImageContextMenuState::install(&app.handle()).map_err(std::io::Error::other)?;
@@ -152,6 +151,7 @@ pub fn run() {
             shell_file_write_text,
             shell_links_open_external,
             shell_menu_update_state,
+            shell_settings_window_open,
             shell_share,
             shell_share_list_services,
             shell_share_to_service,

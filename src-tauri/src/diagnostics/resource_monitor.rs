@@ -41,9 +41,9 @@ fn sample_once(
     let current_pid = sysinfo::Pid::from_u32(pid);
     system.refresh_processes(ProcessesToUpdate::Some(&[current_pid]), true);
 
-    let current = system
-        .process(current_pid)
-        .ok_or_else(|| "Failed to resolve the current process for resource monitoring.".to_string())?;
+    let current = system.process(current_pid).ok_or_else(|| {
+        "Failed to resolve the current process for resource monitoring.".to_string()
+    })?;
 
     let total_cpu_percent = f64::from(current.cpu_usage());
     let total_memory_mb = bytes_to_mb(current.memory());
@@ -226,7 +226,9 @@ impl DiagnosticsState {
     pub(crate) fn append_resource_usage_log(&self, line: &str) -> Result<(), String> {
         let log_date = super::state::timestamp();
         let log_date = log_date.get(0..10).unwrap_or("unknown");
-        let path = self.logs_dir().join(format!("resource-usage-{log_date}.log"));
+        let path = self
+            .logs_dir()
+            .join(format!("resource-usage-{log_date}.log"));
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)

@@ -100,7 +100,12 @@ fn write_zip_export(
     write_json_entry(&mut zip, "metadata.json", &metadata, options)?;
 
     let recent_payload = json!(recent_entries.iter().rev().take(200).collect::<Vec<_>>());
-    write_json_entry(&mut zip, "recent-log-entries.json", &recent_payload, options)?;
+    write_json_entry(
+        &mut zip,
+        "recent-log-entries.json",
+        &recent_payload,
+        options,
+    )?;
 
     zip.finish()
         .map_err(|error| format!("Failed to finalize diagnostics export ZIP: {error}"))?;
@@ -121,9 +126,7 @@ fn write_json_entry(
         .map_err(|error| format!("Failed to write ZIP entry for {name}: {error}"))
 }
 
-fn collect_recent_log_files(
-    logs_dir: &std::path::Path,
-) -> Result<Vec<fs::DirEntry>, String> {
+fn collect_recent_log_files(logs_dir: &std::path::Path) -> Result<Vec<fs::DirEntry>, String> {
     let mut files = fs::read_dir(logs_dir)
         .map_err(|error| format!("Failed to read logs directory: {error}"))?
         .filter_map(Result::ok)

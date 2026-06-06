@@ -7,6 +7,7 @@
   gap: 8px;
   z-index: 10000;
   -webkit-app-region: no-drag;
+  pointer-events: auto;
 }
 
 /* Individual Traffic Light Button */
@@ -22,6 +23,8 @@
   align-items: center;
   justify-content: center;
   transition: filter 0.2s ease;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 .traffic-light:hover {

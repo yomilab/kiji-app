@@ -71,8 +71,20 @@ export async function updateLastReadAt(
   return invokeContract<SavedContract["updateLastReadAt"]>("saved_update_last_read_at", request);
 }
 
+export async function exportPreflight(
+  request: SavedContract["exportPreflight"]["request"],
+): Promise<SavedContract["exportPreflight"]["response"]> {
+  return invokeContract<SavedContract["exportPreflight"]>("saved_export_preflight", request);
+}
+
 export async function exportStart(
   request: SavedContract["exportStart"]["request"],
 ): Promise<SavedContract["exportStart"]["response"]> {
   return invokeContract<SavedContract["exportStart"]>("saved_export_start", request);
+}
+
+export async function syncQueue(
+  request: SavedContract["syncQueue"]["request"],
+): Promise<SavedContract["syncQueue"]["response"]> {
+  return invokeCommand<SavedContract["syncQueue"]["response"]>("saved_sync_queue", { request });
 }

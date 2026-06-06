@@ -40,17 +40,17 @@ pub struct FeedUpdate {
     pub last_favicon_refresh: Option<Option<String>>,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_list(state: State<'_, DbState>) -> Result<Vec<FeedRecord>, String> {
     state.with_connection(|connection| list_feeds(connection))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_get(id: String, state: State<'_, DbState>) -> Result<Option<FeedRecord>, String> {
     state.with_connection(|connection| get_feed(connection, &id))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_get_by_url(
     url: String,
     state: State<'_, DbState>,
@@ -58,12 +58,12 @@ pub fn feeds_get_by_url(
     state.with_connection(|connection| get_feed_by_url(connection, &url))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_create(feed: FeedRecord, state: State<'_, DbState>) -> Result<(), String> {
     state.with_connection(|connection| insert_feed(connection, &feed))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_update(
     id: String,
     updates: FeedUpdate,
@@ -72,7 +72,7 @@ pub fn feeds_update(
     state.with_connection(|connection| update_feed(connection, &id, updates))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_delete(id: String, state: State<'_, DbState>) -> Result<bool, String> {
     state.with_connection(|connection| {
         connection
@@ -82,7 +82,7 @@ pub fn feeds_delete(id: String, state: State<'_, DbState>) -> Result<bool, Strin
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_update_unread_count(
     id: String,
     count: i64,
@@ -99,7 +99,7 @@ pub fn feeds_update_unread_count(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_update_article_count(
     id: String,
     count: i64,
@@ -116,7 +116,7 @@ pub fn feeds_update_article_count(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_update_last_fetched(
     id: String,
     last_fetched: String,
@@ -133,7 +133,7 @@ pub fn feeds_update_last_fetched(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn feeds_count(state: State<'_, DbState>) -> Result<i64, String> {
     state.with_connection(|connection| {
         connection

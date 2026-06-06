@@ -1,3 +1,4 @@
+use super::window::open_settings_window;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{
@@ -41,8 +42,12 @@ pub enum AppMenuCommand {
     ClearFeeds,
     ClearSavedArticles,
     ClearArticles,
-    ClearArticlesOlderThan { months: u8 },
-    SetTheme { theme: String },
+    ClearArticlesOlderThan {
+        months: u8,
+    },
+    SetTheme {
+        theme: String,
+    },
     SelectLibraryView {
         #[serde(rename = "libraryView")]
         library_view: String,
@@ -110,14 +115,9 @@ impl ApplicationMenu {
             library_all,
         };
 
-        let settings_item = MenuItem::with_id(
-            app,
-            MENU_SETTINGS,
-            "Settings...",
-            true,
-            Some("CmdOrCtrl+,"),
-        )
-        .map_err(menu_error)?;
+        let settings_item =
+            MenuItem::with_id(app, MENU_SETTINGS, "Settings...", true, Some("CmdOrCtrl+,"))
+                .map_err(menu_error)?;
 
         let app_submenu = if cfg!(target_os = "macos") {
             Submenu::with_items(
@@ -196,7 +196,11 @@ impl ApplicationMenu {
             app,
             "Theme",
             true,
-            &[&handles.theme_auto, &handles.theme_light, &handles.theme_dark],
+            &[
+                &handles.theme_auto,
+                &handles.theme_light,
+                &handles.theme_dark,
+            ],
         )
         .map_err(menu_error)?;
 
@@ -212,8 +216,9 @@ impl ApplicationMenu {
         )
         .map_err(menu_error)?;
 
-        let view_submenu = Submenu::with_items(app, "View", true, &[&theme_submenu, &library_submenu])
-            .map_err(menu_error)?;
+        let view_submenu =
+            Submenu::with_items(app, "View", true, &[&theme_submenu, &library_submenu])
+                .map_err(menu_error)?;
 
         let subscriptions_submenu = Submenu::with_items(
             app,
@@ -317,7 +322,7 @@ impl ApplicationMenu {
     fn handle_event(&self, app: &AppHandle, menu_id: &str) {
         match menu_id {
             MENU_SETTINGS => {
-                open_settings_window(app);
+                let _ = open_settings_window(app);
             }
             MENU_CHECK_UPDATES => {
                 emit_menu_command(app, AppMenuCommand::CheckUpdates);
@@ -335,15 +340,30 @@ impl ApplicationMenu {
             MENU_CLEAR_ALL_ARTICLES => emit_menu_command(app, AppMenuCommand::ClearArticles),
             MENU_THEME_AUTO => {
                 self.set_theme("auto");
-                emit_menu_command(app, AppMenuCommand::SetTheme { theme: "auto".into() });
+                emit_menu_command(
+                    app,
+                    AppMenuCommand::SetTheme {
+                        theme: "auto".into(),
+                    },
+                );
             }
             MENU_THEME_LIGHT => {
                 self.set_theme("light");
-                emit_menu_command(app, AppMenuCommand::SetTheme { theme: "light".into() });
+                emit_menu_command(
+                    app,
+                    AppMenuCommand::SetTheme {
+                        theme: "light".into(),
+                    },
+                );
             }
             MENU_THEME_DARK => {
                 self.set_theme("dark");
-                emit_menu_command(app, AppMenuCommand::SetTheme { theme: "dark".into() });
+                emit_menu_command(
+                    app,
+                    AppMenuCommand::SetTheme {
+                        theme: "dark".into(),
+                    },
+                );
             }
             MENU_LIBRARY_SAVED => {
                 self.set_library_view(Some("saved".into()));
@@ -442,15 +462,6 @@ fn emit_menu_command(app: &AppHandle, command: AppMenuCommand) {
     let _ = main_window.show();
     let _ = main_window.set_focus();
     let _ = main_window.emit("app-menu:command", command);
-}
-
-fn open_settings_window(app: &AppHandle) {
-    let Some(settings_window) = app.get_webview_window("settings") else {
-        return;
-    };
-
-    let _ = settings_window.show();
-    let _ = settings_window.set_focus();
 }
 
 fn menu_check(

@@ -1,6 +1,10 @@
 import type { ShellContract } from "./contracts";
 import { invokeCommand, invokeContract } from "./core";
 
+export async function openSettings(): Promise<ShellContract["openSettings"]["response"]> {
+  return invokeContract<ShellContract["openSettings"]>("shell_settings_window_open");
+}
+
 export async function updateMenuState(
   request: ShellContract["updateMenuState"]["request"],
 ): Promise<ShellContract["updateMenuState"]["response"]> {

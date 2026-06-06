@@ -18,6 +18,24 @@ const INVOKE_PATTERNS = [
   /invoke(?:<[^>]*>)?\(\s*['"]([a-z0-9_]+)['"]/g,
 ];
 
+const STRUCT_ARGUMENT_EXPECTATIONS = [
+  { command: "articles_query", argumentName: "request" },
+  { command: "saved_query", argumentName: "request" },
+  { command: "diagnostics_log_write_entry", argumentName: "entry" },
+  { command: "shell_menu_update_state", argumentName: "patch" },
+  { command: "shell_file_write_text", argumentName: "request" },
+  { command: "shell_share", argumentName: "request" },
+  { command: "shell_share_to_service", argumentName: "request" },
+  { command: "saved_sync_queue", argumentName: "request" },
+] as const;
+
+const DB_COMMAND_FILES = [
+  "src-tauri/src/db/articles.rs",
+  "src-tauri/src/db/saved.rs",
+  "src-tauri/src/db/feeds.rs",
+  "src-tauri/src/db/tags.rs",
+] as const;
+
 function readRegisteredRustCommands(): Set<string> {
   const libRs = readFileSync(join(process.cwd(), "src-tauri/src/lib.rs"), "utf8");
   const handlerBlock = libRs.match(/generate_handler!\[([\s\S]*?)\]\)/)?.[1] ?? "";
@@ -61,6 +79,17 @@ function readClientInvokeCommands(): Set<string> {
   return commands;
 }
 
+function readClientSource(): string {
+  const sourceRoot = join(process.cwd(), "src");
+  return collectSourceFiles(sourceRoot)
+    .map((file) => readFileSync(file, "utf8"))
+    .join("\n");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 describe("tauri command catalog", () => {
   it("keeps legacy method and channel identifiers unique", () => {
     const legacyMethods = new Set<string>();
@@ -94,5 +123,25 @@ describe("tauri command catalog", () => {
       .sort();
 
     expect(unmapped).toEqual([]);
+  });
+
+  it("wraps Rust struct-argument commands with the command parameter name", () => {
+    const source = readClientSource();
+
+    for (const { command, argumentName } of STRUCT_ARGUMENT_EXPECTATIONS) {
+      const pattern = new RegExp(
+        `[('"]${escapeRegExp(command)}[)'"][\\s\\S]{0,160}\\{\\s*${escapeRegExp(argumentName)}(?:\\s*:|\\s*[},])`,
+      );
+      expect(source, `${command} should pass { ${argumentName}: ... }`).toMatch(pattern);
+    }
+  });
+
+  it("keeps DB command arguments camelCase-compatible with TypeScript clients", () => {
+    for (const file of DB_COMMAND_FILES) {
+      const source = readFileSync(join(process.cwd(), file), "utf8");
+      expect(source, `${file} has plain #[tauri::command] attributes`).not.toMatch(
+        /#\[tauri::command\]\s*\npub fn /,
+      );
+    }
   });
 });

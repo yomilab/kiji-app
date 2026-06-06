@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { trafficLightVisibilityBus } from '@/services/ui/trafficLightVisibilityBus';
 import './TrafficLights.css';
 
@@ -18,22 +19,31 @@ export const TrafficLights: React.FC<TrafficLightsProps> = ({ visible: visiblePr
     setVisible(trafficLightVisibilityBus.getVisible() && visibleProp);
   }, [visibleProp]);
 
-  const handleClose = () => {
-    if (window.electronAPI) {
-      window.electronAPI.windowClose();
+  const handleClose = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.button !== 0) {
+      return;
     }
+    void getCurrentWindow().close();
   };
 
-  const handleMinimize = () => {
-    if (window.electronAPI) {
-      window.electronAPI.windowMinimize();
+  const handleMinimize = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.button !== 0) {
+      return;
     }
+    void getCurrentWindow().minimize();
   };
 
-  const handleMaximize = () => {
-    if (window.electronAPI) {
-      window.electronAPI.windowMaximize();
+  const handleMaximize = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.button !== 0) {
+      return;
     }
+    void getCurrentWindow().toggleMaximize();
   };
 
   if (!visible) {
@@ -47,22 +57,25 @@ export const TrafficLights: React.FC<TrafficLightsProps> = ({ visible: visiblePr
       onMouseLeave={() => setIsHovered(false)}
     >
       <button
+        type="button"
         className="traffic-light traffic-light-close"
-        onClick={handleClose}
+        onMouseDown={handleClose}
         aria-label="Close window"
       >
         {isHovered && <span className="traffic-light-icon">×</span>}
       </button>
       <button
+        type="button"
         className="traffic-light traffic-light-minimize"
-        onClick={handleMinimize}
+        onMouseDown={handleMinimize}
         aria-label="Minimize window"
       >
         {isHovered && <span className="traffic-light-icon">−</span>}
       </button>
       <button
+        type="button"
         className="traffic-light traffic-light-maximize"
-        onClick={handleMaximize}
+        onMouseDown={handleMaximize}
         aria-label="Maximize window"
       >
         {isHovered && <span className="traffic-light-icon">+</span>}

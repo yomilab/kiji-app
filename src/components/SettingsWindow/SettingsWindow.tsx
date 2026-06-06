@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { settingsManager, DEFAULT_SETTINGS } from '@/services/settings';
 import type { ContentParser } from '@/services/settings';
 import type { BackgroundUpdateMode } from '@/services/scheduler/types';
 import { CJK_FONT_OPTIONS, COMMON_FONT_OPTIONS } from '@/services/settings/fontFamilies';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useSystemAccentColor } from '@/hooks/useSystemAccentColor';
 import { SHORTCUT_LABELS, isCloseOnEscapeShortcut, keybindingService } from '@/services/shortcuts/shortcutService';
 import { logger } from '@/services/logger';
 import { APP_NAME, CONTACT_EMAIL_ADDRESS } from '@/config/appIdentity';
@@ -84,6 +86,7 @@ const createSteppedSliderTransform = (
 });
 
 export const SettingsWindow: React.FC = () => {
+  useSystemAccentColor();
   const [activeCategory, setActiveCategory] = useState<ConfigCategory>('general');
   const [backgroundUpdate, setBackgroundUpdate] = useState<BackgroundUpdateMode>('on-launch');
   const [contentParser, setContentParser] = useState<ContentParser>(DEFAULT_SETTINGS.contentParser);
@@ -387,9 +390,7 @@ export const SettingsWindow: React.FC = () => {
           return;
         }
 
-        if (window.electronAPI) {
-          window.electronAPI.windowClose();
-        }
+        void getCurrentWindow().close();
       },
     });
   }, []);
@@ -406,6 +407,26 @@ export const SettingsWindow: React.FC = () => {
         console.error('Error notifying settings change:', error);
       });
     }, 0);
+  };
+
+  const handleWindowDragMouseDown = (event: React.MouseEvent<HTMLElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    if (
+      event.target instanceof Element
+      && event.target.closest(
+        'button, a, input, textarea, select, option, [role="button"], [contenteditable="true"]',
+      ) !== null
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const currentWindow = getCurrentWindow();
+    void (event.detail === 2 ? currentWindow.toggleMaximize() : currentWindow.startDragging());
   };
 
   const handleBackgroundUpdateChange = async (mode: BackgroundUpdateMode) => {
@@ -1242,11 +1263,15 @@ export const SettingsWindow: React.FC = () => {
 
   return (
     <div className="settings-window">
-        <div className="settings-window-drag-region" data-tauri-drag-region />
         {/* Content Area */}
         <div className="settings-window-content">
           {/* Left Sidebar - Categories */}
           <div className="settings-sidebar">
+            <div
+              className="settings-sidebar-top-chrome"
+              onMouseDown={handleWindowDragMouseDown}
+              aria-hidden="true"
+            />
             <nav className="settings-nav">
             <button
               className={`settings-nav-item ${activeCategory === 'general' ? 'is-active' : ''}`}

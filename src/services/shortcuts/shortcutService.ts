@@ -145,7 +145,6 @@ export const SHORTCUT_LABELS = {
   OPEN_SETTINGS: 'Cmd + ,',
   OPEN_ARTICLE_IN_NEW_WINDOW: 'N',
   CLOSE_ARTICLE_VIEW: 'Esc',
-  CLOSE_ARTICLE_VIEW_ALT: 'Cmd + W',
   SAVE_ARTICLE: 'S',
   TOGGLE_READER_MODE: 'I',
   OPEN_IN_BROWSER: 'O',
@@ -159,7 +158,7 @@ export const SHORTCUT_LABELS = {
 } as const;
 
 export const SHORTCUT_HINTS = {
-  CLOSE_ARTICLE_VIEW: `${SHORTCUT_LABELS.CLOSE_ARTICLE_VIEW} or ${SHORTCUT_LABELS.CLOSE_ARTICLE_VIEW_ALT}`,
+  CLOSE_ARTICLE_VIEW: SHORTCUT_LABELS.CLOSE_ARTICLE_VIEW,
 } as const;
 
 export const withShortcutHint = (label: string, shortcut: string): string =>
@@ -183,17 +182,18 @@ export const isOpenAddFeedShortcut = (event: ShortcutKeyboardEvent): boolean =>
 export const isOpenFeedEditViewShortcut = (event: ShortcutKeyboardEvent): boolean =>
   isAppShortcutLayerActive() && isPrimaryModifierPressed(event) && normalizedKey(event) === 'e';
 
+export const isWindowCloseShortcut = (event: ShortcutKeyboardEvent): boolean =>
+  isPrimaryModifierPressed(event) && !event.altKey && !event.shiftKey && normalizedKey(event) === 'w';
+
 export const isCloseOnEscapeShortcut = (event: ShortcutKeyboardEvent): boolean =>
   isAppShortcutLayerActive() && event.key === 'Escape';
 
 export const isModalCloseShortcut = (event: ShortcutKeyboardEvent): boolean =>
-  event.key === 'Escape' || (isPrimaryModifierPressed(event) && normalizedKey(event) === 'w');
+  event.key === 'Escape';
 
 export const isCloseArticleViewShortcut = (event: ShortcutKeyboardEvent): boolean => {
   if (!isArticleShortcutLayerActive()) return false;
-  const isEscOrArrowLeft = event.key === 'Escape' || event.key === 'ArrowLeft';
-  const isCmdW = isPrimaryModifierPressed(event) && normalizedKey(event) === 'w';
-  return isEscOrArrowLeft || isCmdW;
+  return event.key === 'Escape' || event.key === 'ArrowLeft';
 };
 
 export const isOpenInBrowserShortcut = (event: ShortcutKeyboardEvent): boolean =>

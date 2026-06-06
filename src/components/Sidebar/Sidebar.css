@@ -11,7 +11,13 @@
   user-select: none;
 }
 
-/* Widgets container - aligned with traffic lights */
+.sidebar-top-chrome {
+  position: relative;
+  z-index: 3;
+  min-height: 96px;
+  cursor: default;
+}
+
 .sidebar-widgets-container {
   display: flex;
   justify-content: flex-end;

@@ -23,9 +23,6 @@ export const tauriCommandCatalog: Record<
   readonly TauriCommandCatalogEntry[]
 > = {
   shell: [
-    { legacyMethod: "windowMinimize", legacyChannel: "window-minimize", kind: "invoke", targetCommand: "shell.window.minimize" },
-    { legacyMethod: "windowMaximize", legacyChannel: "window-maximize", kind: "invoke", targetCommand: "shell.window.maximize" },
-    { legacyMethod: "windowClose", legacyChannel: "window-close", kind: "invoke", targetCommand: "shell.window.close" },
     { legacyMethod: "hideTrafficLights", legacyChannel: "hide-traffic-lights", kind: "invoke", targetCommand: "shell.window.hideTrafficLights" },
     { legacyMethod: "showTrafficLights", legacyChannel: "show-traffic-lights", kind: "invoke", targetCommand: "shell.window.showTrafficLights" },
     { legacyMethod: "openSettings", legacyChannel: "open-settings", kind: "invoke", targetCommand: "shell.window.openSettings" },

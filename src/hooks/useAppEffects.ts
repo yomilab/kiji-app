@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type RefObject } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { articleMigration } from '@/services/migration/articleMigration';
 import { settingsManager } from '@/services/settings';
@@ -10,6 +11,7 @@ import {
   isOpenSettingsShortcut,
   isRefreshCurrentFeedShortcut,
   isResetSettingsShortcut,
+  isWindowCloseShortcut,
   keybindingService,
 } from '@/services/shortcuts/shortcutService';
 import { clearAllConfigs } from '@/utils/debugUtils';
@@ -225,6 +227,27 @@ export const useAppShortcuts = ({
   isDeckOpen,
   requestCloseArticle,
 }: UseAppShortcutsInput): void => {
+  useDependencyEffect(() => keybindingService.register({
+    type: 'keydown',
+    capture: true,
+    priority: 1000,
+    handler: (event: KeyboardEvent) => {
+      if (!isWindowCloseShortcut(event)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      if (isDeckOpen) {
+        requestCloseArticle();
+        return;
+      }
+
+      void getCurrentWindow().close();
+    },
+  }), [isDeckOpen, requestCloseArticle]);
+
   useDependencyEffect(() => keybindingService.register({
     type: 'keydown',
     priority: 10,
