@@ -110,3 +110,35 @@ fn copy_share_url_to_clipboard(url: &str) -> Result<(), String> {
         .set_text(url)
         .map_err(|error| format!("Failed to copy share URL to clipboard: {error}"))
 }
+
+/// Convert a DOM `getBoundingClientRect()` (top-left origin) into an NSView
+/// anchor point at the button's bottom-right corner (bottom-left origin).
+pub(crate) fn dom_button_anchor_in_view(
+    button_rect: &ButtonRect,
+    view_height: f64,
+) -> (f64, f64) {
+    (
+        button_rect.x + button_rect.width,
+        view_height - button_rect.y - button_rect.height,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{dom_button_anchor_in_view, ButtonRect};
+
+    #[test]
+    fn dom_button_anchor_flips_y_for_nsview_coordinates() {
+        let button = ButtonRect {
+            x: 900.0,
+            y: 12.0,
+            width: 28.0,
+            height: 28.0,
+        };
+
+        let (anchor_x, anchor_y) = dom_button_anchor_in_view(&button, 800.0);
+
+        assert_eq!(anchor_x, 928.0);
+        assert_eq!(anchor_y, 760.0);
+    }
+}

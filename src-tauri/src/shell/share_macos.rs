@@ -28,7 +28,8 @@ pub fn present_share_sheet(app: &AppHandle, request: &ShareRequest) -> Result<()
         .ns_view()
         .map_err(|error| format!("Failed to resolve share anchor view: {error}"))?;
     let view = unsafe { &*ns_view_ptr.cast::<NSView>() };
-    let anchor = share_anchor_rect(request.button_rect.as_ref());
+    let view_height = view.bounds().size.height;
+    let anchor = share_anchor_rect(request.button_rect.as_ref(), view_height);
 
     picker.showRelativeToRect_ofView_preferredEdge(anchor, view, NSRectEdge::MinY);
     Ok(())
@@ -48,10 +49,11 @@ fn resolve_share_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .ok_or_else(|| "No webview window is available for the share sheet.".to_string())
 }
 
-fn share_anchor_rect(button_rect: Option<&ButtonRect>) -> NSRect {
+fn share_anchor_rect(button_rect: Option<&ButtonRect>, view_height: f64) -> NSRect {
     if let Some(rect) = button_rect {
+        let (anchor_x, anchor_y) = super::dom_button_anchor_in_view(rect, view_height);
         return NSRect::new(
-            NSPoint::new(rect.x + rect.width + 10.0, rect.y + rect.height + 13.0),
+            NSPoint::new(anchor_x, anchor_y),
             NSSize::new(1.0, 1.0),
         );
     }
