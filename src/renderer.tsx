@@ -9,9 +9,10 @@ import { FeedProvider } from "./contexts/FeedContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { logger } from "./services/logger";
 import { applyFontFamiliesToRoot, applyReadingLayoutToRoot } from "./services/settings/styleVariables";
+import { SETTINGS_STORAGE_KEYS } from "./services/settings/storageModel";
 import { keybindingService } from "./services/shortcuts/shortcutService";
 import { savedArticlesSyncBridge } from "./services/saved/sync/savedArticlesSyncBridge";
-import { syncNativeAppSettingsFromStorage } from "./services/settings/nativeSettingsSync";
+import { initializeAppSettings } from "./services/settings/nativeSettingsSync";
 import { installElectronApiCompat } from "./services/tauri/electronApiCompat";
 import { installInteractionFreezeWatchdog } from "./services/performance/interactionFreezeWatchdog";
 import type { Article } from "./types/article";
@@ -27,7 +28,9 @@ type RendererWindowType = "main" | "settings" | "article";
 
 function initializeVisualSettings(): void {
   try {
-    const settingsJson = localStorage.getItem("user-settings");
+    const settingsJson =
+      localStorage.getItem(SETTINGS_STORAGE_KEYS.renderer)
+      ?? localStorage.getItem(SETTINGS_STORAGE_KEYS.legacy);
     if (!settingsJson) {
       return;
     }
@@ -156,8 +159,8 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
 
 const windowType = getWindowType();
 installElectronApiCompat();
-void syncNativeAppSettingsFromStorage().catch((error: unknown) => {
-  logger.error("Renderer", "Failed to sync native app settings on bootstrap", { error });
+void initializeAppSettings().catch((error: unknown) => {
+  logger.error("Renderer", "Failed to initialize app settings on bootstrap", { error });
 });
 savedArticlesSyncBridge.start();
 installWindowCloseShortcut(windowType);

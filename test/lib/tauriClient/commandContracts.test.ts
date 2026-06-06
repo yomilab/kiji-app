@@ -136,6 +136,16 @@ describe("tauri command catalog", () => {
     }
   });
 
+  it("keeps saved_create request shape aligned with the Rust article argument", () => {
+    const contracts = readFileSync(join(process.cwd(), "src/lib/tauriClient/contracts.ts"), "utf8");
+    const savedClient = readFileSync(join(process.cwd(), "src/lib/tauriClient/saved.ts"), "utf8");
+    const rustSaved = readFileSync(join(process.cwd(), "src-tauri/src/db/saved.rs"), "utf8");
+
+    expect(contracts).toMatch(/interface SavedArticleCreateRequest[\s\S]*article:\s*SavedArticleRecord/);
+    expect(savedClient).toContain('"saved_create"');
+    expect(rustSaved).toMatch(/pub fn saved_create\(article: SavedArticleRecord/);
+  });
+
   it("keeps DB command arguments camelCase-compatible with TypeScript clients", () => {
     for (const file of DB_COMMAND_FILES) {
       const source = readFileSync(join(process.cwd(), file), "utf8");

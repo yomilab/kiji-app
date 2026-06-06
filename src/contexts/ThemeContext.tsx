@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { settingsManager, DEFAULT_SETTINGS } from '@/services/settings';
 import type { Theme, FontFamilySettings, ReadingLayoutSettings } from '@/services/settings';
 import { applyFontFamiliesToRoot, applyReadingLayoutToRoot } from '@/services/settings/styleVariables';
+import { SETTINGS_STORAGE_KEYS } from '@/services/settings/storageModel';
 import { loadFontsFromFamilyString } from '@/utils/googleFonts';
 
 interface ThemeContextType {
@@ -91,18 +92,17 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       }
     })();
 
-    // Mirror core appearance settings for next-launch synchronous bootstrap.
+    // Mirror renderer preferences for next-launch synchronous bootstrap.
     try {
-      const bootstrapSettingsRaw = localStorage.getItem('user-settings');
+      const bootstrapSettingsRaw = localStorage.getItem(SETTINGS_STORAGE_KEYS.renderer);
       const bootstrapSettings = bootstrapSettingsRaw ? JSON.parse(bootstrapSettingsRaw) : {};
-      localStorage.setItem('user-settings', JSON.stringify({
+      localStorage.setItem(SETTINGS_STORAGE_KEYS.renderer, JSON.stringify({
         ...bootstrapSettings,
-        theme,
         fontFamilies,
         readingLayout,
       }));
     } catch (error) {
-      console.error('Error saving bootstrap settings:', error);
+      console.error('Error saving bootstrap renderer preferences:', error);
     }
   }, [theme, effectiveTheme, fontFamilies, readingLayout, isInitialized]);
 

@@ -1,26 +1,30 @@
-import { tauriClient } from '@/lib/tauriClient';
-import type { AppSettingsPatch } from '@/lib/settings';
-import type { UserSettings } from './types';
 import { settingsManager } from './settingsManager';
+import type { UserSettings } from './types';
+import type { AppSettingsPatch } from '@/lib/settings';
+import {
+  toNativeAppSettingsPatch,
+} from './storageModel';
 
+export {
+  mergeUserSettings,
+  toNativeAppSettings,
+  toNativeAppSettingsPatch,
+  SETTINGS_STORAGE_KEYS,
+} from './storageModel';
+
+/** @deprecated Use toNativeAppSettingsPatch instead. */
 export function mapUserSettingsToNativePatch(settings: UserSettings): AppSettingsPatch {
-  return {
-    theme: settings.theme,
-    layout: settings.layout,
-    sidebarWidth: settings.sidebarWidth,
-    articleListWidth: settings.articleListWidth,
-    windowSize: settings.windowSize,
-    backgroundUpdate: settings.backgroundUpdate,
-    contentParser: settings.contentParser,
-    savedArticlesSyncFolder: settings.savedArticlesSyncFolder,
-  };
+  return toNativeAppSettingsPatch(settings);
 }
 
 /**
- * Push renderer-persisted settings into the Rust settings store so native
- * services like saved-article folder sync can read the configured folder path.
+ * Ensure native and renderer settings stores are loaded and legacy blobs migrated.
  */
+export async function initializeAppSettings(): Promise<UserSettings> {
+  return settingsManager.initialize();
+}
+
+/** @deprecated Use initializeAppSettings instead. */
 export async function syncNativeAppSettingsFromStorage(): Promise<void> {
-  const settings = await settingsManager.getSettings();
-  await tauriClient.settings.update(mapUserSettingsToNativePatch(settings));
+  await settingsManager.initialize();
 }

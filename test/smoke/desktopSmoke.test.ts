@@ -39,9 +39,10 @@ describe("Desktop smoke (todo 22)", () => {
   });
 
   it("refreshes a feed from fixture XML through the service layer", async () => {
-    if (!electronFixturesAreAvailable()) {
-      return;
-    }
+    expect(
+      electronFixturesAreAvailable(),
+      "Electron parity fixtures are required for feed refresh smoke coverage",
+    ).toBe(true);
 
     const fixtureXml = readElectronFixture("simon.xml");
     const parsedItems = parseFeed(fixtureXml, "https://example.com/simon.xml");

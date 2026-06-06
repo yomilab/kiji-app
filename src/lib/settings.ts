@@ -1,3 +1,11 @@
+/**
+ * Native app settings persisted by Rust in `user-settings.json`.
+ *
+ * Keep this file aligned with `src-tauri/src/settings.rs::AppSettings`.
+ * Renderer-only preferences (fonts, reading layout, smart views) live in
+ * localStorage under `user-settings-ui` — see `services/settings/storageModel.ts`.
+ */
+
 export type Theme = "auto" | "light" | "dark";
 
 export type LayoutType = "2-column" | "3-column";

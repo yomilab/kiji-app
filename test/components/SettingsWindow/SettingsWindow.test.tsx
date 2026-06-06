@@ -163,6 +163,7 @@ describe("SettingsWindow", () => {
   });
 
   it("does not wait for settings notification before updating saved article sync UI", async () => {
+    // Native settings sync is covered in electronApiCompat.settings.test.ts.
     window.electronAPI.notifySettingsChanged = vi.fn(
       () => new Promise<void>(() => undefined),
     ) as typeof window.electronAPI.notifySettingsChanged;

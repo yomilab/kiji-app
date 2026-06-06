@@ -1,7 +1,23 @@
 import { IStorage } from '../storage/storage';
 import { StorageFactory } from '../storage/storageFactory';
-import { UserSettings, Theme, LayoutType, WindowSize, DEFAULT_SETTINGS, isContentParser } from './types';
+import {
+  UserSettings,
+  Theme,
+  LayoutType,
+  WindowSize,
+  DEFAULT_SETTINGS,
+  isContentParser,
+} from './types';
 import { DEFAULT_SMART_VIEW_DEFINITIONS } from '@/constants';
+import {
+  SETTINGS_STORAGE_KEYS,
+  mergeUserSettings,
+  toNativeAppSettingsPatch,
+  toRendererPreferences,
+  extractNativeFieldsFromPartial,
+  type RendererPreferences,
+} from './storageModel';
+import { loadNativeAppSettings, saveNativeAppSettings } from './nativeSettingsBackend';
 
 const normalizeSmartViews = (smartViews: UserSettings['smartViews'] | undefined): UserSettings['smartViews'] => {
   const smartViewMap = new Map((smartViews ?? []).map((view) => [view.id, view]));
@@ -16,7 +32,23 @@ const normalizeSmartViews = (smartViews: UserSettings['smartViews'] | undefined)
   }).sort((a, b) => a.sortOrder - b.sortOrder);
 };
 
-// Rebuild persisted settings from known keys so removed fields do not leak back into storage.
+const normalizeRendererPreferences = (preferences: Partial<RendererPreferences>): RendererPreferences => ({
+  fontFamilies: {
+    ...DEFAULT_SETTINGS.fontFamilies,
+    ...preferences.fontFamilies,
+  },
+  readingLayout: {
+    ...DEFAULT_SETTINGS.readingLayout,
+    ...preferences.readingLayout,
+  },
+  sidebarLibrary: {
+    ...DEFAULT_SETTINGS.sidebarLibrary,
+    ...preferences.sidebarLibrary,
+  },
+  smartViews: normalizeSmartViews(preferences.smartViews),
+  windowPosition: preferences.windowPosition,
+});
+
 const normalizeSettings = (settings: Partial<UserSettings>): UserSettings => ({
   theme: settings.theme ?? DEFAULT_SETTINGS.theme,
   layout: settings.layout ?? DEFAULT_SETTINGS.layout,
@@ -35,7 +67,6 @@ const normalizeSettings = (settings: Partial<UserSettings>): UserSettings => ({
     ...settings.readingLayout,
   },
   backgroundUpdate: settings.backgroundUpdate ?? DEFAULT_SETTINGS.backgroundUpdate,
-  // Drop unknown stored values so a typo or downgrade can't pin the user to a missing parser.
   contentParser: isContentParser(settings.contentParser)
     ? settings.contentParser
     : DEFAULT_SETTINGS.contentParser,
@@ -48,14 +79,14 @@ const normalizeSettings = (settings: Partial<UserSettings>): UserSettings => ({
 });
 
 /**
- * Settings Manager Service
- *
- * Manages user settings including UI preferences like theme, sidebar width, and window size.
- * Uses the storage abstraction layer for persistence.
+ * Settings manager with explicit storage boundaries:
+ * - Native fields -> Rust `user-settings.json`
+ * - Renderer preferences -> localStorage `user-settings-ui`
  */
 class SettingsManager {
   private storage: IStorage;
-  private readonly SETTINGS_KEY = 'user-settings';
+
+  private migrationComplete = false;
 
   constructor() {
     this.storage = StorageFactory.getStorage();
@@ -73,260 +104,270 @@ class SettingsManager {
     return 'light';
   }
 
+  private async loadRendererPreferences(): Promise<RendererPreferences> {
+    const data = await this.storage.get(SETTINGS_STORAGE_KEYS.renderer);
+    if (!data) {
+      return normalizeRendererPreferences({});
+    }
+
+    try {
+      return normalizeRendererPreferences(JSON.parse(data) as Partial<RendererPreferences>);
+    } catch (error) {
+      console.error('Error loading renderer preferences:', error);
+      return normalizeRendererPreferences({});
+    }
+  }
+
+  private async saveRendererPreferences(preferences: RendererPreferences): Promise<void> {
+    await this.storage.set(
+      SETTINGS_STORAGE_KEYS.renderer,
+      JSON.stringify(normalizeRendererPreferences(preferences)),
+    );
+  }
+
+  private async migrateLegacySettingsIfNeeded(): Promise<void> {
+    if (this.migrationComplete) {
+      return;
+    }
+
+    this.migrationComplete = true;
+
+    const legacyRaw = await this.storage.get(SETTINGS_STORAGE_KEYS.legacy);
+    const rendererRaw = await this.storage.get(SETTINGS_STORAGE_KEYS.renderer);
+    if (!legacyRaw) {
+      return;
+    }
+
+    try {
+      const legacySettings = normalizeSettings(JSON.parse(legacyRaw) as Partial<UserSettings>);
+      const renderer = rendererRaw
+        ? normalizeRendererPreferences(JSON.parse(rendererRaw) as Partial<RendererPreferences>)
+        : toRendererPreferences(legacySettings);
+
+      await saveNativeAppSettings(toNativeAppSettingsPatch(legacySettings));
+      await this.saveRendererPreferences(renderer);
+      await this.storage.remove(SETTINGS_STORAGE_KEYS.legacy);
+    } catch (error) {
+      console.error('Error migrating legacy user settings:', error);
+    }
+  }
+
   /**
-   * Get all user settings
-   * Returns default settings if none are saved
+   * Load native + renderer stores and migrate any legacy Electron blob.
    */
+  async initialize(): Promise<UserSettings> {
+    await this.migrateLegacySettingsIfNeeded();
+    const native = await loadNativeAppSettings();
+    const renderer = await this.loadRendererPreferences();
+    return mergeUserSettings(native, renderer);
+  }
+
   async getSettings(): Promise<UserSettings> {
     try {
-      const data = await this.storage.get(this.SETTINGS_KEY);
-      if (!data) {
-        const initialSettings: UserSettings = {
-          ...DEFAULT_SETTINGS,
-          theme: this.getSystemTheme(),
-        };
-        await this.saveSettings(initialSettings);
-        return initialSettings;
-      }
-      const settings = JSON.parse(data) as Partial<UserSettings>;
-      return normalizeSettings(settings);
+      await this.migrateLegacySettingsIfNeeded();
+      const native = await loadNativeAppSettings();
+      const renderer = await this.loadRendererPreferences();
+      return mergeUserSettings(native, renderer);
     } catch (error) {
       console.error('Error loading settings:', error);
       return { ...DEFAULT_SETTINGS };
     }
   }
 
-  /**
-   * Save all user settings
-   */
   async saveSettings(settings: UserSettings): Promise<void> {
+    const normalized = normalizeSettings(settings);
+
     try {
-      await this.storage.set(this.SETTINGS_KEY, JSON.stringify(normalizeSettings(settings)));
+      await saveNativeAppSettings(toNativeAppSettingsPatch(normalized));
+      await this.saveRendererPreferences(toRendererPreferences(normalized));
     } catch (error) {
       console.error('Error saving settings:', error);
       throw new Error('Failed to save settings');
     }
   }
 
-  /**
-   * Get current theme
-   */
+  private async updateNativeSettings(patch: Partial<UserSettings>): Promise<void> {
+    const nativePatch = extractNativeFieldsFromPartial(patch);
+    if (Object.keys(nativePatch).length === 0) {
+      return;
+    }
+
+    await saveNativeAppSettings(nativePatch);
+  }
+
+  private async updateRendererPreferences(patch: Partial<RendererPreferences>): Promise<void> {
+    const current = await this.loadRendererPreferences();
+    await this.saveRendererPreferences({
+      ...current,
+      ...patch,
+      fontFamilies: patch.fontFamilies
+        ? { ...current.fontFamilies, ...patch.fontFamilies }
+        : current.fontFamilies,
+      readingLayout: patch.readingLayout
+        ? { ...current.readingLayout, ...patch.readingLayout }
+        : current.readingLayout,
+      sidebarLibrary: patch.sidebarLibrary
+        ? { ...current.sidebarLibrary, ...patch.sidebarLibrary }
+        : current.sidebarLibrary,
+      smartViews: patch.smartViews ?? current.smartViews,
+      windowPosition: patch.windowPosition ?? current.windowPosition,
+    });
+  }
+
   async getTheme(): Promise<Theme> {
     const settings = await this.getSettings();
     return settings.theme;
   }
 
-  /**
-   * Set theme preference
-   */
   async setTheme(theme: Theme): Promise<void> {
-    const settings = await this.getSettings();
-    settings.theme = theme;
-    await this.saveSettings(settings);
+    await this.updateNativeSettings({ theme });
   }
 
-  /**
-   * Get layout type
-   */
   async getLayout(): Promise<LayoutType> {
     const settings = await this.getSettings();
     return settings.layout;
   }
 
-  /**
-   * Set layout type
-   */
   async setLayout(layout: LayoutType): Promise<void> {
-    const settings = await this.getSettings();
-    settings.layout = layout;
-    await this.saveSettings(settings);
+    await this.updateNativeSettings({ layout });
   }
 
-  /**
-   * Get sidebar width
-   */
   async getSidebarWidth(): Promise<number> {
     const settings = await this.getSettings();
     return settings.sidebarWidth;
   }
 
-  /**
-   * Set sidebar width
-   */
   async setSidebarWidth(width: number): Promise<void> {
-    const settings = await this.getSettings();
-    settings.sidebarWidth = width;
-    await this.saveSettings(settings);
+    await this.updateNativeSettings({ sidebarWidth: width });
   }
 
-  /**
-   * Get article list width
-   */
   async getArticleListWidth(): Promise<number> {
     const settings = await this.getSettings();
     return settings.articleListWidth;
   }
 
-  /**
-   * Set article list width
-   */
   async setArticleListWidth(width: number): Promise<void> {
-    const settings = await this.getSettings();
-    settings.articleListWidth = width;
-    await this.saveSettings(settings);
+    await this.updateNativeSettings({ articleListWidth: width });
   }
 
-  /**
-   * Get window size
-   */
   async getWindowSize(): Promise<WindowSize> {
     const settings = await this.getSettings();
     return settings.windowSize;
   }
 
-  /**
-   * Set window size
-   */
   async setWindowSize(size: WindowSize): Promise<void> {
-    const settings = await this.getSettings();
-    settings.windowSize = size;
-    await this.saveSettings(settings);
+    await this.updateNativeSettings({
+      windowSize: {
+        width: size.width,
+        height: size.height,
+      },
+    });
+    await this.updateRendererPreferences({
+      windowPosition: {
+        x: size.x,
+        y: size.y,
+      },
+    });
   }
 
-  /**
-   * Get font families
-   */
   async getFontFamilies(): Promise<UserSettings['fontFamilies']> {
     const settings = await this.getSettings();
     return settings.fontFamilies;
   }
 
-  /**
-   * Get reading layout settings.
-   */
   async getReadingLayout(): Promise<UserSettings['readingLayout']> {
     const settings = await this.getSettings();
     return settings.readingLayout;
   }
 
-  /**
-   * Get the optional saved-articles sync folder path.
-   */
   async getSavedArticlesSyncFolder(): Promise<string | null> {
     const settings = await this.getSettings();
     return settings.savedArticlesSyncFolder;
   }
 
-  /**
-   * Set the optional saved-articles sync folder path.
-   */
   async setSavedArticlesSyncFolder(folderPath: string | null): Promise<void> {
-    const settings = await this.getSettings();
-    settings.savedArticlesSyncFolder = folderPath && folderPath.trim().length > 0
-      ? folderPath.trim()
-      : null;
-    await this.saveSettings(settings);
+    await this.updateNativeSettings({
+      savedArticlesSyncFolder: folderPath && folderPath.trim().length > 0
+        ? folderPath.trim()
+        : null,
+    });
   }
 
-  /**
-   * Get sidebar library settings.
-   */
   async getSidebarLibrary(): Promise<UserSettings['sidebarLibrary']> {
     const settings = await this.getSettings();
     return settings.sidebarLibrary;
   }
 
-  /**
-   * Update sidebar library settings.
-   */
   async setSidebarLibrary(sidebarLibrary: Partial<UserSettings['sidebarLibrary']>): Promise<void> {
-    const settings = await this.getSettings();
-    settings.sidebarLibrary = {
-      ...settings.sidebarLibrary,
-      ...sidebarLibrary,
-    };
-    await this.saveSettings(settings);
+    const current = await this.loadRendererPreferences();
+    await this.updateRendererPreferences({
+      sidebarLibrary: {
+        ...current.sidebarLibrary,
+        ...sidebarLibrary,
+      },
+    });
   }
 
-  /**
-   * Get smart view settings.
-   */
   async getSmartViews(): Promise<UserSettings['smartViews']> {
     const settings = await this.getSettings();
     return normalizeSmartViews(settings.smartViews);
   }
 
-  /**
-   * Update smart view settings.
-   */
   async setSmartViews(smartViews: UserSettings['smartViews']): Promise<void> {
-    const settings = await this.getSettings();
-    settings.smartViews = normalizeSmartViews(smartViews);
-    await this.saveSettings(settings);
+    await this.updateRendererPreferences({ smartViews: normalizeSmartViews(smartViews) });
   }
 
-  /**
-   * Set font families
-   */
   async setFontFamilies(fontFamilies: Partial<UserSettings['fontFamilies']>): Promise<void> {
-    const settings = await this.getSettings();
-    settings.fontFamilies = {
-      ...settings.fontFamilies,
-      ...fontFamilies,
-    };
-    await this.saveSettings(settings);
+    const current = await this.loadRendererPreferences();
+    await this.updateRendererPreferences({
+      fontFamilies: {
+        ...current.fontFamilies,
+        ...fontFamilies,
+      },
+    });
   }
 
-  /**
-   * Update reading layout settings.
-   */
   async setReadingLayout(readingLayout: Partial<UserSettings['readingLayout']>): Promise<void> {
-    const settings = await this.getSettings();
-    settings.readingLayout = {
-      ...settings.readingLayout,
-      ...readingLayout,
-    };
-    await this.saveSettings(settings);
+    const current = await this.loadRendererPreferences();
+    await this.updateRendererPreferences({
+      readingLayout: {
+        ...current.readingLayout,
+        ...readingLayout,
+      },
+    });
   }
 
-  /**
-   * Set UI font (sidebar, modals, UI elements)
-   */
   async setUiFont(font: string): Promise<void> {
     await this.setFontFamilies({ uiFont: font });
   }
 
-  /**
-   * Set article title font (article list titles and article-view header title)
-   */
   async setArticleTitleFont(font: string): Promise<void> {
     await this.setFontFamilies({ articleTitleFont: font });
   }
 
-  /**
-   * Set article content font (descriptions and all article body content)
-   */
   async setArticleContentFont(font: string): Promise<void> {
     await this.setFontFamilies({ articleContentFont: font });
   }
 
-  /**
-   * Set the dedicated non-ASCII reading font used in the article list and view.
-   */
   async setArticleNonAsciiFont(font: string): Promise<void> {
     await this.setFontFamilies({ articleNonAsciiFont: font });
   }
 
-  /**
-   * Reset all settings to defaults
-   */
+  async setBackgroundUpdate(mode: UserSettings['backgroundUpdate']): Promise<void> {
+    await this.updateNativeSettings({ backgroundUpdate: mode });
+  }
+
+  async setContentParser(parser: UserSettings['contentParser']): Promise<void> {
+    await this.updateNativeSettings({ contentParser: parser });
+  }
+
   async resetSettings(): Promise<void> {
-    await this.saveSettings({
+    const initialSettings: UserSettings = {
       ...DEFAULT_SETTINGS,
       theme: this.getSystemTheme(),
-    });
+    };
+    await this.saveSettings(initialSettings);
   }
 }
 
-// Export singleton instance
 export const settingsManager = new SettingsManager();
