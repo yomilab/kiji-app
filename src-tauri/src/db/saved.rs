@@ -301,6 +301,34 @@ pub fn insert_saved_article(
         .map_err(|error| format!("Failed to insert saved article: {error}"))
 }
 
+pub fn get_saved_articles_page(
+    connection: &Connection,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<SavedArticleRecord>, String> {
+    let mut statement = connection
+        .prepare(
+            r#"
+            SELECT
+              id, article_hash, title, description, content, link, author,
+              published_date, saved_date, last_read_at, feed_id, feed_url,
+              feed_title, feed_favicon, feed_favicon_has_transparency,
+              feed_favicon_bg_light, feed_favicon_bg_dark, preview_image,
+              metadata_json, highlights_json, notes
+            FROM saved_articles
+            ORDER BY saved_date DESC, id DESC
+            LIMIT ?1 OFFSET ?2
+            "#,
+        )
+        .map_err(|error| format!("Failed to prepare saved article page query: {error}"))?;
+    let rows = statement
+        .query_map(params![limit, offset], SavedArticleRecord::from_row)
+        .map_err(|error| format!("Failed to query saved article page: {error}"))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to read saved article row: {error}"))
+}
+
 pub fn list_saved_articles(connection: &Connection) -> Result<Vec<SavedArticleRecord>, String> {
     let mut statement = connection
         .prepare(

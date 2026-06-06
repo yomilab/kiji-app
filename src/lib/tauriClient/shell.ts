@@ -24,6 +24,11 @@ export const dialog = {
   ): Promise<ShellContract["readTextFile"]["response"]> {
     return invokeContract<ShellContract["readTextFile"]>("shell_file_read_text", request);
   },
+  writeTextFile(
+    request: ShellContract["writeTextFile"]["request"],
+  ): Promise<ShellContract["writeTextFile"]["response"]> {
+    return invokeContract<ShellContract["writeTextFile"]>("shell_file_write_text", request);
+  },
   saveFile(
     request: ShellContract["dialogSaveFile"]["request"],
   ): Promise<ShellContract["dialogSaveFile"]["response"]> {

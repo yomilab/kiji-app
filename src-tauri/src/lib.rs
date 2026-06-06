@@ -1,9 +1,12 @@
 mod db;
 mod diagnostics;
 mod net;
+mod saved;
 mod settings;
 mod shell;
 mod system;
+
+use std::sync::Arc;
 
 use db::{
     articles_clean_old_across_feeds, articles_clean_old_by_feed, articles_count_by_feed,
@@ -24,10 +27,13 @@ use diagnostics::{
     diagnostics_performance_snapshot, DiagnosticsState,
 };
 use net::{feeds_abort_request, feeds_fetch, feeds_fetch_data_url, feeds_fetch_with_cache};
+use saved::{
+    saved_export_preflight, saved_export_start, saved_sync_queue, SavedExportState, SavedSyncState,
+};
 use settings::{settings_get, settings_reset, settings_update, SettingsState};
 use shell::{
     shell_dialog_open_file, shell_dialog_pick_folder, shell_dialog_save_file, shell_file_read_text,
-    shell_links_open_external,
+    shell_file_write_text, shell_links_open_external,
 };
 use system::{system_clipboard_read_text, system_clipboard_write_text};
 use tauri::Manager;
@@ -36,13 +42,22 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let settings_state =
-                SettingsState::load(&app.handle()).map_err(std::io::Error::other)?;
-            let db_state = DbState::load(&app.handle()).map_err(std::io::Error::other)?;
+            let settings_state = Arc::new(
+                SettingsState::load(&app.handle()).map_err(std::io::Error::other)?,
+            );
+            let db_state =
+                DbState::load(&app.handle()).map_err(std::io::Error::other)?;
+            let sync_state = SavedSyncState::new(
+                db_state.database_path(),
+                Arc::clone(&settings_state),
+            );
+            sync_state.schedule_startup_reconcile();
             let diagnostics_state =
                 DiagnosticsState::load(&app.handle()).map_err(std::io::Error::other)?;
             app.manage(settings_state);
             app.manage(db_state);
+            app.manage(sync_state);
+            app.manage(SavedExportState::new());
             app.manage(diagnostics_state);
             Ok(())
         })
@@ -94,6 +109,8 @@ pub fn run() {
             feeds_update_unread_count,
             saved_create,
             saved_delete,
+            saved_export_preflight,
+            saved_export_start,
             saved_get,
             saved_get_by_article_hash,
             saved_get_by_link,
@@ -101,6 +118,7 @@ pub fn run() {
             saved_insert_batch,
             saved_list_all,
             saved_query,
+            saved_sync_queue,
             saved_update_highlights,
             saved_update_last_read_at,
             saved_update_notes,
@@ -108,6 +126,7 @@ pub fn run() {
             shell_dialog_pick_folder,
             shell_dialog_save_file,
             shell_file_read_text,
+            shell_file_write_text,
             shell_links_open_external,
             settings_get,
             settings_update,

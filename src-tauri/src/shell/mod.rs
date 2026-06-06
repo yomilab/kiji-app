@@ -53,6 +53,24 @@ pub fn shell_file_read_text(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|error| format!("Failed to read text file: {error}"))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteTextFileRequest {
+    pub path: String,
+    pub content: String,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn shell_file_write_text(request: WriteTextFileRequest) -> Result<(), String> {
+    if let Some(parent) = PathBuf::from(&request.path).parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create directory for text file: {error}"))?;
+    }
+
+    fs::write(&request.path, request.content)
+        .map_err(|error| format!("Failed to write text file: {error}"))
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub fn shell_dialog_save_file(
     title: Option<String>,

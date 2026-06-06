@@ -1,5 +1,11 @@
 import { getCurrentWindow, Window as TauriWindow } from '@tauri-apps/api/window';
 import { tauriClient } from '@/lib/tauriClient';
+import {
+  invokeSavedArticlesExportPreflight,
+  invokeSavedArticlesExportStart,
+  invokeSavedArticlesSyncQueue,
+  listenSavedArticlesExportEvents,
+} from '@/services/saved/savedArticlesIOService';
 import type { Article } from '@/types/article';
 import type { ElectronAPI } from '@/types/electron';
 import type { AppMenuCommand } from '@/types/appMenu';
@@ -242,12 +248,25 @@ function installElectronApiCompat(): void {
         content,
       };
     },
-    async saveOpmlFile(_content, suggestedName) {
-      return tauriClient.shell.dialog.saveFile({
+    async saveOpmlFile(content, suggestedName) {
+      const saveResult = await tauriClient.shell.dialog.saveFile({
         title: 'Export OPML',
         fileName: suggestedName ?? 'Feeds.opml',
         filters: [{ name: 'OPML', extensions: ['opml', 'xml'] }],
       });
+      if (saveResult.canceled || !saveResult.filePath) {
+        return { canceled: true };
+      }
+
+      await tauriClient.shell.dialog.writeTextFile({
+        path: saveResult.filePath,
+        content,
+      });
+
+      return {
+        canceled: false,
+        filePath: saveResult.filePath,
+      };
     },
     async pickSavedArticlesSyncFolder(defaultPath) {
       return tauriClient.shell.dialog.pickFolder({
@@ -255,7 +274,9 @@ function installElectronApiCompat(): void {
         defaultPath,
       });
     },
-    async queueSavedArticlesFolderSync() {},
+    async queueSavedArticlesFolderSync(event) {
+      await invokeSavedArticlesSyncQueue(event);
+    },
     async pickSavedArticlesExportPath() {
       return tauriClient.shell.dialog.saveFile({
         title: 'Export saved articles',
@@ -264,21 +285,22 @@ function installElectronApiCompat(): void {
       });
     },
     async getSavedArticlesExportPreflight(outputPath) {
-      void outputPath;
-      return {
-        articleCount: 0,
-        estimatedUncompressedBytes: 0,
-        estimatedZipBytes: 0,
-        freeBytes: null,
-        exceedsOneGb: false,
-        exceedsFreeSpace: false,
+      return invokeSavedArticlesExportPreflight(outputPath);
+    },
+    async startSavedArticlesExport(request) {
+      return invokeSavedArticlesExportStart(request.outputPath);
+    },
+    onSavedArticlesExportEvent(callback) {
+      let unlisten: (() => void) | null = null;
+      void listenSavedArticlesExportEvents((event) => {
+        callback(event);
+      }).then((dispose) => {
+        unlisten = dispose;
+      });
+
+      return () => {
+        unlisten?.();
       };
-    },
-    async startSavedArticlesExport() {
-      return { started: false };
-    },
-    onSavedArticlesExportEvent() {
-      return () => {};
     },
     async parseArticle(url) {
       return {

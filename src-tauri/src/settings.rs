@@ -3,7 +3,7 @@ use std::{
     fs,
     io::ErrorKind,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 use tauri::{AppHandle, Manager, State};
 
@@ -199,7 +199,7 @@ impl SettingsState {
         })
     }
 
-    fn snapshot(&self) -> Result<AppSettings, String> {
+    pub fn snapshot(&self) -> Result<AppSettings, String> {
         self.settings
             .lock()
             .map(|settings| settings.clone())
@@ -233,20 +233,26 @@ impl SettingsState {
 }
 
 #[tauri::command]
-pub fn settings_get(state: State<'_, SettingsState>) -> Result<AppSettings, String> {
+pub fn settings_get(state: State<'_, Arc<SettingsState>>) -> Result<AppSettings, String> {
     state.snapshot()
 }
 
 #[tauri::command]
 pub fn settings_update(
     patch: AppSettingsPatch,
-    state: State<'_, SettingsState>,
+    state: State<'_, Arc<SettingsState>>,
+    sync_state: State<'_, crate::saved::SavedSyncState>,
 ) -> Result<AppSettings, String> {
-    state.update(patch)
+    let previous_folder = state.snapshot()?.saved_articles_sync_folder.clone();
+    let updated = state.update(patch)?;
+    if updated.saved_articles_sync_folder != previous_folder {
+        sync_state.handle_settings_changed();
+    }
+    Ok(updated)
 }
 
 #[tauri::command]
-pub fn settings_reset(state: State<'_, SettingsState>) -> Result<AppSettings, String> {
+pub fn settings_reset(state: State<'_, Arc<SettingsState>>) -> Result<AppSettings, String> {
     state.reset()
 }
 

@@ -20,10 +20,12 @@ pub use feeds::{
 };
 use migrations::{read_current_migration_version, run_migrations};
 use rusqlite::Connection;
+pub use models::SavedArticleRecord;
 pub use saved::{
-    saved_create, saved_delete, saved_get, saved_get_by_article_hash, saved_get_by_link,
-    saved_get_content, saved_insert_batch, saved_list_all, saved_query, saved_update_highlights,
-    saved_update_last_read_at, saved_update_notes,
+    get_saved_article_by_id, get_saved_articles_page, saved_create, saved_delete, saved_get,
+    saved_get_by_article_hash, saved_get_by_link, saved_get_content, saved_insert_batch,
+    saved_list_all, saved_query, saved_update_highlights, saved_update_last_read_at,
+    saved_update_notes,
 };
 use schema::SCHEMA_VERSION;
 use serde::Serialize;
@@ -92,6 +94,10 @@ impl DbState {
             .lock()
             .map_err(|_| "Failed to lock the database connection.".to_string())?;
         action(&connection)
+    }
+
+    pub fn database_path(&self) -> PathBuf {
+        self.path.clone()
     }
 }
 
