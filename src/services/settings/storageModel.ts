@@ -50,6 +50,8 @@ export function toNativeAppSettings(settings: UserSettings): AppSettings {
     windowSize: {
       width: settings.windowSize.width,
       height: settings.windowSize.height,
+      ...(settings.windowSize.x !== undefined ? { x: settings.windowSize.x } : {}),
+      ...(settings.windowSize.y !== undefined ? { y: settings.windowSize.y } : {}),
     },
     backgroundUpdate: settings.backgroundUpdate,
     contentParser: settings.contentParser,
@@ -87,7 +89,14 @@ export function mergeUserSettings(
     windowSize: {
       width: native.windowSize.width,
       height: native.windowSize.height,
-      ...renderer.windowPosition,
+      ...(native.windowSize.x !== undefined ? { x: native.windowSize.x } : {}),
+      ...(native.windowSize.y !== undefined ? { y: native.windowSize.y } : {}),
+      ...(native.windowSize.x === undefined && renderer.windowPosition?.x !== undefined
+        ? { x: renderer.windowPosition.x }
+        : {}),
+      ...(native.windowSize.y === undefined && renderer.windowPosition?.y !== undefined
+        ? { y: renderer.windowPosition.y }
+        : {}),
     },
     backgroundUpdate: native.backgroundUpdate,
     contentParser: native.contentParser,
@@ -117,6 +126,8 @@ export function extractNativeFieldsFromPartial(
     patch.windowSize = {
       width: settings.windowSize.width,
       height: settings.windowSize.height,
+      ...(settings.windowSize.x !== undefined ? { x: settings.windowSize.x } : {}),
+      ...(settings.windowSize.y !== undefined ? { y: settings.windowSize.y } : {}),
     };
   }
 

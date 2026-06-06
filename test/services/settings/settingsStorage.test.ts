@@ -41,6 +41,55 @@ describe("settings storage model", () => {
     expect(merged.savedArticlesSyncFolder).toBe(DEFAULT_NATIVE_SETTINGS.savedArticlesSyncFolder);
   });
 
+  it("stores window position in native settings and falls back to legacy renderer windowPosition", () => {
+    const nativeWithPosition = {
+      ...DEFAULT_NATIVE_SETTINGS,
+      windowSize: {
+        width: 900,
+        height: 700,
+        x: 40,
+        y: 60,
+      },
+    };
+
+    expect(toNativeAppSettings({
+      ...DEFAULT_SETTINGS,
+      windowSize: {
+        width: 900,
+        height: 700,
+        x: 40,
+        y: 60,
+      },
+    }).windowSize).toEqual({
+      width: 900,
+      height: 700,
+      x: 40,
+      y: 60,
+    });
+
+    const mergedFromNative = mergeUserSettings(nativeWithPosition, toRendererPreferences(DEFAULT_SETTINGS));
+    expect(mergedFromNative.windowSize).toEqual({
+      width: 900,
+      height: 700,
+      x: 40,
+      y: 60,
+    });
+
+    const mergedFromRendererFallback = mergeUserSettings(
+      DEFAULT_NATIVE_SETTINGS,
+      {
+        ...toRendererPreferences(DEFAULT_SETTINGS),
+        windowPosition: { x: 12, y: 34 },
+      },
+    );
+    expect(mergedFromRendererFallback.windowSize).toEqual({
+      width: 800,
+      height: 600,
+      x: 12,
+      y: 34,
+    });
+  });
+
   it("uses dedicated storage keys for renderer preferences and legacy migration", () => {
     expect(SETTINGS_STORAGE_KEYS.renderer).toBe("user-settings-ui");
     expect(SETTINGS_STORAGE_KEYS.legacy).toBe("user-settings");

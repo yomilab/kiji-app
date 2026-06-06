@@ -59,6 +59,10 @@ pub enum ContentParser {
 pub struct WindowSize {
     pub width: u32,
     pub height: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y: Option<i32>,
 }
 
 impl Default for WindowSize {
@@ -66,6 +70,8 @@ impl Default for WindowSize {
         Self {
             width: 800,
             height: 600,
+            x: None,
+            y: None,
         }
     }
 }
@@ -80,6 +86,14 @@ impl WindowSize {
         if let Some(height) = patch.height {
             validate_positive_dimension("windowSize.height", height)?;
             self.height = height;
+        }
+
+        if let Some(x) = patch.x {
+            self.x = Some(x);
+        }
+
+        if let Some(y) = patch.y {
+            self.y = Some(y);
         }
 
         Ok(())
@@ -167,6 +181,8 @@ impl AppSettings {
 pub struct WindowSizePatch {
     pub width: Option<u32>,
     pub height: Option<u32>,
+    pub x: Option<i32>,
+    pub y: Option<i32>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -231,11 +247,19 @@ impl SettingsState {
         Ok(settings.clone())
     }
 
-    pub fn update_window_size(&self, width: u32, height: u32) -> Result<(), String> {
+    pub fn update_window_bounds(
+        &self,
+        width: u32,
+        height: u32,
+        x: Option<i32>,
+        y: Option<i32>,
+    ) -> Result<(), String> {
         self.update(AppSettingsPatch {
             window_size: Some(WindowSizePatch {
                 width: Some(width),
                 height: Some(height),
+                x,
+                y,
             }),
             ..Default::default()
         })?;
@@ -362,5 +386,24 @@ mod tests {
 
         parsed.validate().expect("round trip should validate");
         assert_eq!(parsed, settings);
+    }
+
+    #[test]
+    fn round_trips_window_position_fields() {
+        let settings = AppSettings {
+            window_size: WindowSize {
+                width: 1024,
+                height: 768,
+                x: Some(120),
+                y: Some(80),
+            },
+            ..AppSettings::default()
+        };
+
+        let raw = serde_json::to_string(&settings).expect("serialize settings");
+        let parsed: AppSettings = serde_json::from_str(&raw).expect("deserialize settings");
+
+        assert_eq!(parsed.window_size.x, Some(120));
+        assert_eq!(parsed.window_size.y, Some(80));
     }
 }

@@ -24,6 +24,8 @@ export type ContentParser = "defuddle" | "readability";
 export interface WindowSize {
   width: number;
   height: number;
+  x?: number;
+  y?: number;
 }
 
 export interface AppSettings {

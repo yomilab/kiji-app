@@ -89,6 +89,17 @@ function isSaveableHtmlContent(content?: string | null): boolean {
   return textOnly.length > 0 || hasEmbeddableMedia(trimmed);
 }
 
+function shouldUseSavedArticleSnapshot(
+  article: Article | null | undefined,
+  selectedSmartView: string | null,
+): boolean {
+  if (!article) {
+    return false;
+  }
+
+  return selectedSmartView === 'saved' || !!article.savedArticleId;
+}
+
 function isAudioEnclosure(articleEnclosure: ArticleEnclosure): boolean {
   return articleEnclosure.type.toLowerCase().startsWith('audio/')
     || AUDIO_EXTENSION_PATTERN.test(articleEnclosure.url);
@@ -237,6 +248,7 @@ function useStandaloneArticleBootstrap(params: {
 // Phase 1: bootstrap embedded article state as soon as a new article is opened.
 function useEmbeddedArticleOpenBootstrap(params: {
   standalone: boolean;
+  selectedSmartView: string | null;
   selectedArticle: Article | undefined;
   articleOpenTrigger: number;
   lastOpenTriggerRef: React.MutableRefObject<number>;
@@ -265,6 +277,7 @@ function useEmbeddedArticleOpenBootstrap(params: {
 }): void {
   const {
     standalone,
+    selectedSmartView,
     selectedArticle,
     articleOpenTrigger,
     lastOpenTriggerRef,
@@ -310,18 +323,20 @@ function useEmbeddedArticleOpenBootstrap(params: {
     // Ensure we have the full content if it's missing from the list item
     const bootstrapArticle = async () => {
       let fullArticle = selectedArticle;
-      if (!selectedArticle.content || selectedArticle.content.trim() === '') {
-        try {
-          const content = selectedArticle.savedArticleId
-            ? await articleStore.getSavedContent(selectedArticle.savedArticleId)
-            : await articleStore.getContent(selectedArticle.hash);
-            
+      try {
+        if (selectedArticle.savedArticleId) {
+          const savedContent = await articleStore.getSavedContent(selectedArticle.savedArticleId);
+          if (savedContent && currentArticleHashRef.current === selectedArticle.hash) {
+            fullArticle = { ...fullArticle, content: savedContent };
+          }
+        } else if (!selectedArticle.content || selectedArticle.content.trim() === '') {
+          const content = await articleStore.getContent(selectedArticle.hash);
           if (content && currentArticleHashRef.current === selectedArticle.hash) {
             fullArticle = { ...selectedArticle, content };
           }
-        } catch (error) {
-          console.error('Failed to fetch full article content:', error);
         }
+      } catch (error) {
+        console.error('Failed to fetch full article content:', error);
       }
       
       if (currentArticleHashRef.current === selectedArticle.hash) {
@@ -329,7 +344,10 @@ function useEmbeddedArticleOpenBootstrap(params: {
         
         // After we have the full content, run the rest of the bootstrap logic
         const selectedIsFeedLinked = fullArticle.isFeedLinked ?? (fullArticle.feedId !== 'clipboard' && fullArticle.feedId !== 'saved');
-        if (selectedIsFeedLinked) {
+        if (shouldUseSavedArticleSnapshot(fullArticle, selectedSmartView)) {
+          setArticleDisplayMode('basic');
+          setReaderLoading(false);
+        } else if (selectedIsFeedLinked) {
           const openRequestVersion = modeRequestVersionRef.current;
           const cachedMode = feedReaderModeCache.get(fullArticle.feedId);
           if (cachedMode !== undefined) {
@@ -390,6 +408,7 @@ function useEmbeddedArticleOpenBootstrap(params: {
     }
   }, [
     standalone,
+    selectedSmartView,
     selectedArticle,
     articleOpenTrigger,
     lastOpenTriggerRef,
@@ -1032,7 +1051,8 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   const canToggleReaderMode = selectedSmartView !== 'saved';
   const isReaderModeActive = articleDisplayMode === 'reader';
   const articleBodyBaseUrl = articleToShow?.link || articleToShow?.feedUrl;
-  const rawArticleBodyHtml = isReaderModeActive
+  const useSavedArticleSnapshot = shouldUseSavedArticleSnapshot(articleToShow, selectedSmartView);
+  const rawArticleBodyHtml = isReaderModeActive && !useSavedArticleSnapshot
     ? (readerContent?.content || '')
     : (articleToShow?.content || '');
   // Phase 1: sanitize immediately for first render so users never see raw
@@ -1189,6 +1209,13 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
           }
         }
 
+        if (!isSaveableHtmlContent(contentToSave)) {
+          const fallbackReaderContent = readerContent?.content?.trim() || '';
+          if (isSaveableHtmlContent(fallbackReaderContent)) {
+            contentToSave = fallbackReaderContent;
+          }
+        }
+
         const articleToSave = {
           ...articleToShow,
           content: contentToSave,
@@ -1207,8 +1234,8 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
         setIsSaved(true);
         const savedPayload = buildSavedListUpdatePayload(true, savedArticle.id);
 
-        // Update the article to show with the new savedArticleId
-        setArticleToShow({ ...articleToShow, ...savedPayload });
+        // Update the article to show with the new savedArticleId and persisted body.
+        setArticleToShow({ ...articleToShow, ...savedPayload, content: articleToSave.content });
 
         // Update the article in the list (only for non-temporary)
         if (!isTemporaryArticle && isFeedLinkedArticle) {
@@ -1444,7 +1471,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
 
   const configureReaderModeForArticle = useCallback(async (article: Article, isFeedLinked: boolean) => {
     // Phase 2 logic: Actually fetch reader content if mode is enabled
-    if (!isFeedLinked) {
+    if (!isFeedLinked || shouldUseSavedArticleSnapshot(article, selectedSmartView)) {
       setArticleDisplayMode('basic');
       setReaderLoading(false);
       return;
@@ -1466,7 +1493,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     } else {
       setReaderLoading(false);
     }
-  }, [ensureReaderContentForArticle]);
+  }, [ensureReaderContentForArticle, selectedSmartView]);
 
   const handleClipboardLoad = useCallback(async () => {
     if (!window.electronAPI) return;
@@ -1688,6 +1715,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   });
   useEmbeddedArticleOpenBootstrap({
     standalone,
+    selectedSmartView,
     selectedArticle: selectedArticle || undefined,
     articleOpenTrigger,
     lastOpenTriggerRef,

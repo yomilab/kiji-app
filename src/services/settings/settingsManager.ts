@@ -152,13 +152,43 @@ class SettingsManager {
     }
   }
 
+  private async migrateRendererWindowPositionToNative(
+    native: Awaited<ReturnType<typeof loadNativeAppSettings>>,
+    renderer: RendererPreferences,
+  ): Promise<Awaited<ReturnType<typeof loadNativeAppSettings>>> {
+    const hasNativePosition =
+      native.windowSize.x !== undefined && native.windowSize.y !== undefined;
+    const rendererPosition = renderer.windowPosition;
+
+    if (hasNativePosition || !rendererPosition) {
+      return native;
+    }
+
+    const { x, y } = rendererPosition;
+    if (x === undefined && y === undefined) {
+      return native;
+    }
+
+    await saveNativeAppSettings({
+      windowSize: {
+        width: native.windowSize.width,
+        height: native.windowSize.height,
+        ...(x !== undefined ? { x } : {}),
+        ...(y !== undefined ? { y } : {}),
+      },
+    });
+
+    return loadNativeAppSettings();
+  }
+
   /**
    * Load native + renderer stores and migrate any legacy Electron blob.
    */
   async initialize(): Promise<UserSettings> {
     await this.migrateLegacySettingsIfNeeded();
-    const native = await loadNativeAppSettings();
+    let native = await loadNativeAppSettings();
     const renderer = await this.loadRendererPreferences();
+    native = await this.migrateRendererWindowPositionToNative(native, renderer);
     return mergeUserSettings(native, renderer);
   }
 
@@ -260,12 +290,8 @@ class SettingsManager {
       windowSize: {
         width: size.width,
         height: size.height,
-      },
-    });
-    await this.updateRendererPreferences({
-      windowPosition: {
-        x: size.x,
-        y: size.y,
+        ...(size.x !== undefined ? { x: size.x } : {}),
+        ...(size.y !== undefined ? { y: size.y } : {}),
       },
     });
   }

@@ -13,6 +13,7 @@ import { SETTINGS_STORAGE_KEYS } from "./services/settings/storageModel";
 import { keybindingService } from "./services/shortcuts/shortcutService";
 import { savedArticlesSyncBridge } from "./services/saved/sync/savedArticlesSyncBridge";
 import { initializeAppSettings } from "./services/settings/nativeSettingsSync";
+import { invoke } from "@tauri-apps/api/core";
 import { installElectronApiCompat } from "./services/tauri/electronApiCompat";
 import { installInteractionFreezeWatchdog } from "./services/performance/interactionFreezeWatchdog";
 import type { Article } from "./types/article";
@@ -159,9 +160,21 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
 
 const windowType = getWindowType();
 installElectronApiCompat();
-void initializeAppSettings().catch((error: unknown) => {
-  logger.error("Renderer", "Failed to initialize app settings on bootstrap", { error });
-});
+void initializeAppSettings()
+  .then(async () => {
+    if (windowType !== "main") {
+      return;
+    }
+
+    try {
+      await invoke("shell_main_window_apply_saved_bounds");
+    } catch (error) {
+      logger.error("Renderer", "Failed to apply saved main window bounds", { error });
+    }
+  })
+  .catch((error: unknown) => {
+    logger.error("Renderer", "Failed to initialize app settings on bootstrap", { error });
+  });
 savedArticlesSyncBridge.start();
 installWindowCloseShortcut(windowType);
 logger.installConsoleCapture(windowType === "main" ? "renderer" : "renderer");

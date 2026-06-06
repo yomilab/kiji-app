@@ -84,11 +84,31 @@ pub fn create_saved_article_markdown(article: &SavedArticleRecord) -> String {
         .as_deref()
         .or(article.description.as_deref())
         .unwrap_or("");
+    let markdown_body = content_to_markdown_body(content);
 
     format!(
-        "# {title}\nSource: {}\n\n---\n\n{content}",
+        "# {title}\nSource: {}\n\n---\n\n{markdown_body}",
         article.link.as_deref().unwrap_or("unknown")
     )
+}
+
+/// Mirror Electron `savedArticlesExportFormat.createSavedArticleMarkdown`:
+/// convert stored HTML bodies to markdown before writing `.md` export/sync files.
+fn content_to_markdown_body(content: &str) -> String {
+    if content.is_empty() {
+        return String::new();
+    }
+
+    if content_looks_like_html(content) {
+        return html2md::parse_html(content);
+    }
+
+    content.to_string()
+}
+
+fn content_looks_like_html(content: &str) -> bool {
+    let trimmed = content.trim_start();
+    trimmed.starts_with('<') || trimmed.contains("</")
 }
 
 pub fn build_saved_articles_index_markdown(entries: &[SavedArticleIndexEntry]) -> String {
@@ -177,5 +197,71 @@ mod tests {
         let (_, second) = create_saved_article_markdown_file_name(Some("Title"), &mut used_names);
         assert_eq!(first, "Title.md");
         assert_eq!(second, "Title-2.md");
+    }
+
+    #[test]
+    fn converts_html_article_content_to_markdown() {
+        let article = SavedArticleRecord {
+            id: "saved-1".to_string(),
+            article_hash: "hash-1".to_string(),
+            title: Some("Sample".to_string()),
+            description: None,
+            content: Some("<p>Hello <strong>world</strong></p>".to_string()),
+            link: Some("https://example.com/post".to_string()),
+            author: None,
+            published_date: None,
+            saved_date: "2026-01-01T00:00:00.000Z".to_string(),
+            last_read_at: None,
+            feed_id: None,
+            feed_url: None,
+            feed_title: None,
+            feed_favicon: None,
+            feed_favicon_has_transparency: None,
+            feed_favicon_bg_light: None,
+            feed_favicon_bg_dark: None,
+            feed_image: None,
+            preview_image: None,
+            metadata: None,
+            highlights: Vec::new(),
+            notes: None,
+        };
+
+        let markdown = create_saved_article_markdown(&article);
+
+        assert!(markdown.contains("# Sample"));
+        assert!(markdown.contains("**world**"));
+        assert!(!markdown.contains("<p>"));
+        assert!(!markdown.contains("<strong>"));
+    }
+
+    #[test]
+    fn preserves_plain_text_article_content() {
+        let article = SavedArticleRecord {
+            id: "saved-2".to_string(),
+            article_hash: "hash-2".to_string(),
+            title: Some("Plain".to_string()),
+            description: None,
+            content: Some("Already plain text.".to_string()),
+            link: None,
+            author: None,
+            published_date: None,
+            saved_date: "2026-01-01T00:00:00.000Z".to_string(),
+            last_read_at: None,
+            feed_id: None,
+            feed_url: None,
+            feed_title: None,
+            feed_favicon: None,
+            feed_favicon_has_transparency: None,
+            feed_favicon_bg_light: None,
+            feed_favicon_bg_dark: None,
+            feed_image: None,
+            preview_image: None,
+            metadata: None,
+            highlights: Vec::new(),
+            notes: None,
+        };
+
+        let markdown = create_saved_article_markdown(&article);
+        assert!(markdown.ends_with("Already plain text."));
     }
 }

@@ -3,29 +3,35 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tauri::{AppHandle, LogicalSize, Manager, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, State, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
 const SETTINGS_WINDOW_LABEL: &str = "settings";
+const MAIN_WINDOW_LABEL: &str = "main";
 
 pub fn restore_main_window_bounds(
     app: &AppHandle,
     settings: Arc<SettingsState>,
 ) -> Result<(), String> {
-    let Some(main_window) = app.get_webview_window("main") else {
+    let Some(main_window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
         return Ok(());
     };
 
-    let snapshot = settings.snapshot()?;
-    let size = LogicalSize::new(
-        snapshot.window_size.width as f64,
-        snapshot.window_size.height as f64,
-    );
-    main_window
-        .set_size(size)
-        .map_err(|error| format!("Failed to restore the main window size: {error}"))?;
-
+    apply_main_window_bounds(&main_window, &settings)?;
     attach_main_window_bounds_listener(main_window, settings);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn shell_main_window_apply_saved_bounds(
+    app: AppHandle,
+    settings: State<'_, Arc<SettingsState>>,
+) -> Result<(), String> {
+    let Some(main_window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return Ok(());
+    };
+
+    apply_main_window_bounds(&main_window, settings.inner())?;
     Ok(())
 }
 
@@ -62,6 +68,28 @@ pub fn shell_settings_window_open(app: AppHandle) -> Result<(), String> {
     open_settings_window(&app)
 }
 
+fn apply_main_window_bounds(
+    main_window: &WebviewWindow,
+    settings: &SettingsState,
+) -> Result<(), String> {
+    let snapshot = settings.snapshot()?;
+    let size = LogicalSize::new(
+        snapshot.window_size.width as f64,
+        snapshot.window_size.height as f64,
+    );
+    main_window
+        .set_size(size)
+        .map_err(|error| format!("Failed to restore the main window size: {error}"))?;
+
+    if let (Some(x), Some(y)) = (snapshot.window_size.x, snapshot.window_size.y) {
+        main_window
+            .set_position(LogicalPosition::new(x as f64, y as f64))
+            .map_err(|error| format!("Failed to restore the main window position: {error}"))?;
+    }
+
+    Ok(())
+}
+
 fn attach_main_window_bounds_listener(window: WebviewWindow, settings: Arc<SettingsState>) {
     let pending = Arc::new(Mutex::new(None::<tauri::async_runtime::JoinHandle<()>>));
     let window_for_events = window.clone();
@@ -92,6 +120,7 @@ fn attach_main_window_bounds_listener(window: WebviewWindow, settings: Arc<Setti
 
         *guard = Some(tauri::async_runtime::spawn(async move {
             tokio::time::sleep(SAVE_DEBOUNCE).await;
+
             let Ok(size) = window.outer_size() else {
                 return;
             };
@@ -103,8 +132,18 @@ fn attach_main_window_bounds_listener(window: WebviewWindow, settings: Arc<Setti
             let scale_factor = window.scale_factor().unwrap_or(1.0);
             let logical_width = (size.width as f64 / scale_factor).round().max(1.0) as u32;
             let logical_height = (size.height as f64 / scale_factor).round().max(1.0) as u32;
+            let logical_position = window.inner_position().ok().map(|position| {
+                (
+                    (position.x as f64 / scale_factor).round() as i32,
+                    (position.y as f64 / scale_factor).round() as i32,
+                )
+            });
 
-            if let Err(error) = settings.update_window_size(logical_width, logical_height) {
+            let (x, y) = logical_position
+                .map(|(x, y)| (Some(x), Some(y)))
+                .unwrap_or((None, None));
+
+            if let Err(error) = settings.update_window_bounds(logical_width, logical_height, x, y) {
                 eprintln!("[WindowBounds] Failed to save main window bounds: {error}");
             }
         }));
