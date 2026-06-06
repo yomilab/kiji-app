@@ -11,6 +11,7 @@ import { logger } from "./services/logger";
 import { applyFontFamiliesToRoot, applyReadingLayoutToRoot } from "./services/settings/styleVariables";
 import { keybindingService } from "./services/shortcuts/shortcutService";
 import { savedArticlesSyncBridge } from "./services/saved/sync/savedArticlesSyncBridge";
+import { syncNativeAppSettingsFromStorage } from "./services/settings/nativeSettingsSync";
 import { installElectronApiCompat } from "./services/tauri/electronApiCompat";
 import { installInteractionFreezeWatchdog } from "./services/performance/interactionFreezeWatchdog";
 import type { Article } from "./types/article";
@@ -155,6 +156,9 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
 
 const windowType = getWindowType();
 installElectronApiCompat();
+void syncNativeAppSettingsFromStorage().catch((error: unknown) => {
+  logger.error("Renderer", "Failed to sync native app settings on bootstrap", { error });
+});
 savedArticlesSyncBridge.start();
 installWindowCloseShortcut(windowType);
 logger.installConsoleCapture(windowType === "main" ? "renderer" : "renderer");

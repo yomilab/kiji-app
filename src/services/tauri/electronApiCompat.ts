@@ -230,6 +230,8 @@ function installElectronApiCompat(): void {
       }));
     },
     async notifySettingsChanged() {
+      const { syncNativeAppSettingsFromStorage } = await import('@/services/settings/nativeSettingsSync');
+      await syncNativeAppSettingsFromStorage();
       settingsChangedListeners.forEach((listener) => listener());
     },
     onSettingsChanged(callback) {
