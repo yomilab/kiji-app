@@ -1,12 +1,22 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { trafficLightVisibilityBus } from '@/services/ui/trafficLightVisibilityBus';
 import './TrafficLights.css';
 
 interface TrafficLightsProps {
   visible?: boolean;
 }
 
-export const TrafficLights: React.FC<TrafficLightsProps> = ({ visible = true }) => {
+export const TrafficLights: React.FC<TrafficLightsProps> = ({ visible: visibleProp = true }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [visible, setVisible] = useState(() => trafficLightVisibilityBus.getVisible() && visibleProp);
+
+  useEffect(() => trafficLightVisibilityBus.subscribe((nextVisible) => {
+    setVisible(nextVisible && visibleProp);
+  }), [visibleProp]);
+
+  useEffect(() => {
+    setVisible(trafficLightVisibilityBus.getVisible() && visibleProp);
+  }, [visibleProp]);
 
   const handleClose = () => {
     if (window.electronAPI) {

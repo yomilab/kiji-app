@@ -1,24 +1,103 @@
-import { opmlImportService, parseOpmlEntries, type OpmlImportResult } from '@/services/feeds/opmlImportService';
+import { feedsManager } from '@/services/feeds/feedsManager';
+import { opmlImportService, type OpmlImportResult } from '@/services/feeds/opmlImportService';
+import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
+import { helperTaskClient } from '@/services/tasks/helperTaskClient';
+import {
+  HELPER_TASK_KIND,
+  type FaviconFetchTaskResult,
+  type HelperTaskResultEvent,
+} from '@/services/tasks/helperTaskContracts';
 import { sidebarIndicatorService } from '@/services/ui/sidebarIndicatorService';
 
 const pluralizeFeeds = (count: number): string => `${count} feed${count === 1 ? '' : 's'}`;
 
 class OpmlWorkflowService {
-  attachFaviconTaskListener(): void {}
+  private faviconTaskFeedMap = new Map<string, string>();
+  private unsubscribeTaskEvents: (() => void) | null = null;
 
-  async detachFaviconTaskListener(): Promise<void> {}
+  attachFaviconTaskListener(): void {
+    if (this.unsubscribeTaskEvents) return;
+
+    this.unsubscribeTaskEvents = helperTaskClient.onTaskResult((event) => {
+      void this.handleTaskResult(event);
+    });
+  }
+
+  async detachFaviconTaskListener(): Promise<void> {
+    this.unsubscribeTaskEvents?.();
+    this.unsubscribeTaskEvents = null;
+    this.faviconTaskFeedMap.clear();
+    await helperTaskClient.clearTasks();
+  }
 
   async importFromOpmlText(opmlText: string): Promise<OpmlImportResult> {
-    const entries = parseOpmlEntries(opmlText);
-    sidebarIndicatorService.show(`Importing ${pluralizeFeeds(entries.length)}`);
-    const result = await opmlImportService.importEntries(entries);
-    sidebarIndicatorService.show(
-      result.importedFeeds.length > 0
-        ? `Imported ${pluralizeFeeds(result.importedFeeds.length)}.`
-        : 'No new feeds to import',
-      { durationMs: 4000 },
-    );
-    return result;
+    await helperTaskClient.clearTasks();
+    this.faviconTaskFeedMap.clear();
+
+    const parsedOpml = await helperTaskClient.runTask({
+      kind: HELPER_TASK_KIND.OPML_PARSE,
+      priority: 'high',
+      payload: { opmlText },
+    });
+
+    sidebarIndicatorService.show(`Importing ${pluralizeFeeds(parsedOpml.entries.length)}`);
+
+    const importResult = await opmlImportService.importEntries(parsedOpml.entries);
+
+    if (importResult.importedFeeds.length > 0) {
+      sidebarIndicatorService.show(
+        `Imported ${pluralizeFeeds(importResult.importedFeeds.length)}. Fetching items and metadata`,
+        { durationMs: 4000 },
+      );
+    } else {
+      sidebarIndicatorService.show('No new feeds to import', { durationMs: 4000 });
+    }
+
+    if (importResult.importedFeeds.length > 0) {
+      feedScheduler.boostMany(importResult.importedFeeds.map((feed) => feed.id));
+    }
+
+    for (const feed of importResult.importedFeeds) {
+      try {
+        const task = await helperTaskClient.addTask({
+          kind: HELPER_TASK_KIND.FAVICON_FETCH,
+          priority: 'low',
+          payload: {
+            feedId: feed.id,
+            feedUrl: feed.url,
+          },
+        });
+        this.faviconTaskFeedMap.set(task.taskId, feed.id);
+      } catch {
+        await feedsManager.updateFeed(feed.id, { faviconFetchFailed: true });
+      }
+    }
+
+    return importResult;
+  }
+
+  private async handleTaskResult(event: HelperTaskResultEvent): Promise<void> {
+    if (event.kind !== HELPER_TASK_KIND.FAVICON_FETCH) {
+      return;
+    }
+
+    const feedId = this.faviconTaskFeedMap.get(event.taskId);
+    if (!feedId) {
+      return;
+    }
+
+    this.faviconTaskFeedMap.delete(event.taskId);
+
+    if (event.status !== 'completed') {
+      await feedsManager.updateFeed(feedId, { faviconFetchFailed: true });
+      return;
+    }
+
+    const result = event.result as FaviconFetchTaskResult;
+    await feedsManager.updateFeed(feedId, {
+      favicon: result.favicon || undefined,
+      faviconFetchFailed: !result.favicon,
+    });
   }
 }
 

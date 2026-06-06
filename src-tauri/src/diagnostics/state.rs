@@ -1,6 +1,7 @@
 use chrono::{SecondsFormat, Utc};
+use tauri::Manager;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
+use serde_json::Value as JsonValue;
 use std::{
     fs::{self, OpenOptions},
     io::Write,
@@ -8,7 +9,6 @@ use std::{
     sync::Mutex,
     time::{Duration, SystemTime},
 };
-use tauri::{AppHandle, Manager, State};
 
 const LOG_RETENTION_DAYS: u64 = 2;
 const MAX_RECENT_ENTRIES: usize = 500;
@@ -41,20 +41,25 @@ pub struct LogEntry {
 }
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ProcessSnapshot {
     pub pid: u32,
     #[serde(rename = "type")]
     pub process_type: String,
     pub cpu: f64,
+    #[serde(rename = "mem")]
     pub memory_mb: f64,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NativeSnapshot {
+pub struct MainProcessSnapshot {
     pub pid: u32,
     pub rss_mb: f64,
+    pub heap_used_mb: f64,
+    pub heap_total_mb: f64,
+    pub external_mb: f64,
+    pub handles: u32,
+    pub requests: u32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -62,13 +67,7 @@ pub struct NativeSnapshot {
 pub struct PerformanceSnapshot {
     pub timestamp: String,
     pub processes: Vec<ProcessSnapshot>,
-    pub native: NativeSnapshot,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiagnosticsExportResponse {
-    pub file_path: String,
+    pub main: MainProcessSnapshot,
 }
 
 pub struct DiagnosticsState {
@@ -77,7 +76,7 @@ pub struct DiagnosticsState {
 }
 
 impl DiagnosticsState {
-    pub fn load(app: &AppHandle) -> Result<Self, String> {
+    pub fn load(app: &tauri::AppHandle) -> Result<Self, String> {
         let logs_dir = app
             .path()
             .app_data_dir()
@@ -93,12 +92,53 @@ impl DiagnosticsState {
         })
     }
 
+    pub(crate) fn logs_dir(&self) -> &Path {
+        &self.logs_dir
+    }
+
     fn logs_path(&self) -> String {
         self.logs_dir.to_string_lossy().to_string()
     }
 
-    fn log(&self, entry_input: LogEntryInput) -> Result<(), String> {
+    pub fn log(&self, entry_input: LogEntryInput) -> Result<(), String> {
         let entry = normalize_log_entry(entry_input)?;
+        self.persist_entry(&entry)
+    }
+
+    pub(crate) fn log_internal(&self, payload: JsonValue) -> Result<(), String> {
+        let entry = normalize_log_entry(LogEntryInput {
+            level: payload
+                .get("level")
+                .and_then(JsonValue::as_str)
+                .unwrap_or("info")
+                .to_string(),
+            process: payload
+                .get("process")
+                .and_then(JsonValue::as_str)
+                .unwrap_or("native")
+                .to_string(),
+            category: payload
+                .get("category")
+                .and_then(JsonValue::as_str)
+                .unwrap_or("Diagnostics")
+                .to_string(),
+            message: payload
+                .get("message")
+                .and_then(JsonValue::as_str)
+                .unwrap_or("Diagnostics event")
+                .to_string(),
+            event: payload
+                .get("event")
+                .and_then(JsonValue::as_str)
+                .map(str::to_string),
+            context: payload.get("context").cloned(),
+            error: payload.get("error").cloned(),
+            timestamp: None,
+        })?;
+        self.persist_entry(&entry)
+    }
+
+    fn persist_entry(&self, entry: &LogEntry) -> Result<(), String> {
         {
             let mut recent_entries = self
                 .recent_entries
@@ -111,72 +151,50 @@ impl DiagnosticsState {
         }
 
         let log_date = entry.timestamp.get(0..10).unwrap_or("unknown");
-        let formatted = format_entry(&entry);
+        let formatted = format_entry(entry);
 
         if entry.level != "debug" {
             append_log(&self.logs_dir.join(format!("app-{log_date}.log")), &formatted)?;
         }
         if entry.level == "warn" || entry.level == "error" {
-            append_log(&self.logs_dir.join(format!("error-{log_date}.log")), &formatted)?;
+            append_log(
+                &self.logs_dir.join(format!("error-{log_date}.log")),
+                &formatted,
+            )?;
         }
-        append_log(&self.logs_dir.join(format!("debug-{log_date}.log")), &formatted)?;
+        append_log(
+            &self.logs_dir.join(format!("debug-{log_date}.log")),
+            &formatted,
+        )?;
 
         Ok(())
     }
 
-    fn export_bundle(&self) -> Result<DiagnosticsExportResponse, String> {
-        let timestamp = timestamp().replace([':', '.'], "-");
-        let file_path = self.logs_dir.join(format!("kiji-error-report-{timestamp}.json"));
-        let recent_entries = self
-            .recent_entries
+    pub fn recent_entries(&self) -> Result<Vec<LogEntry>, String> {
+        self.recent_entries
             .lock()
-            .map_err(|_| "Failed to lock diagnostics recent entries.".to_string())?
-            .clone();
-        let log_files = collect_recent_log_files(&self.logs_dir)?;
-        let payload = json!({
-            "generatedAt": timestamp,
-            "logsDir": self.logs_path(),
-            "performance": performance_snapshot(),
-            "recentEntries": recent_entries,
-            "logFiles": log_files,
-        });
-
-        fs::write(
-            &file_path,
-            serde_json::to_string_pretty(&payload)
-                .map_err(|error| format!("Failed to encode diagnostics export: {error}"))?,
-        )
-        .map_err(|error| format!("Failed to write diagnostics export: {error}"))?;
-
-        Ok(DiagnosticsExportResponse {
-            file_path: file_path.to_string_lossy().to_string(),
-        })
+            .map(|entries| entries.clone())
+            .map_err(|_| "Failed to lock diagnostics recent entries.".to_string())
     }
 }
 
 #[tauri::command]
 pub fn diagnostics_log_write_entry(
     entry: LogEntryInput,
-    state: State<'_, DiagnosticsState>,
+    state: tauri::State<'_, std::sync::Arc<DiagnosticsState>>,
 ) -> Result<(), String> {
     state.log(entry)
 }
 
 #[tauri::command]
-pub fn diagnostics_log_get_path(state: State<'_, DiagnosticsState>) -> Result<String, String> {
+pub fn diagnostics_log_get_path(
+    state: tauri::State<'_, std::sync::Arc<DiagnosticsState>>,
+) -> Result<String, String> {
     Ok(state.logs_path())
 }
 
-#[tauri::command]
-pub fn diagnostics_performance_snapshot() -> Result<PerformanceSnapshot, String> {
-    Ok(performance_snapshot())
-}
-
-#[tauri::command]
-pub fn diagnostics_export_bundle(
-    state: State<'_, DiagnosticsState>,
-) -> Result<DiagnosticsExportResponse, String> {
-    state.export_bundle()
+pub fn timestamp() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 fn normalize_log_entry(entry: LogEntryInput) -> Result<LogEntry, String> {
@@ -201,10 +219,6 @@ fn normalize_log_entry(entry: LogEntryInput) -> Result<LogEntry, String> {
         context: entry.context,
         error: entry.error,
     })
-}
-
-fn timestamp() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 fn append_log(path: &Path, formatted: &str) -> Result<(), String> {
@@ -268,40 +282,6 @@ fn cleanup_old_logs(logs_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn collect_recent_log_files(logs_dir: &Path) -> Result<Vec<JsonValue>, String> {
-    let mut files = fs::read_dir(logs_dir)
-        .map_err(|error| format!("Failed to read logs directory: {error}"))?
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().extension().and_then(|extension| extension.to_str()) == Some("log"))
-        .collect::<Vec<_>>();
-    files.sort_by_key(|entry| entry.file_name());
-    files.truncate(20);
-
-    files
-        .into_iter()
-        .map(|entry| {
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            let contents = fs::read_to_string(entry.path())
-                .map_err(|error| format!("Failed to read log file {file_name}: {error}"))?;
-            Ok(json!({ "fileName": file_name, "contents": contents }))
-        })
-        .collect()
-}
-
-fn performance_snapshot() -> PerformanceSnapshot {
-    let pid = std::process::id();
-    PerformanceSnapshot {
-        timestamp: timestamp(),
-        processes: vec![ProcessSnapshot {
-            pid,
-            process_type: "native".to_string(),
-            cpu: 0.0,
-            memory_mb: 0.0,
-        }],
-        native: NativeSnapshot { pid, rss_mb: 0.0 },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,7 +294,7 @@ mod tests {
             category: "Test".to_string(),
             message: "Something failed".to_string(),
             event: Some("unit".to_string()),
-            context: Some(json!({ "id": 1 })),
+            context: Some(serde_json::json!({ "id": 1 })),
             error: None,
             timestamp: None,
         })

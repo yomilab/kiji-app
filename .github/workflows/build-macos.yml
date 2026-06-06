@@ -51,8 +51,20 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      - name: Run frontend tests
+        run: npm test
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Run desktop smoke tests
+        run: npm run test:smoke
+
       - name: Build Tauri app
         run: npm run tauri build
+
+      - name: Desktop launch smoke
+        run: npm run test:smoke:launch
 
       - name: Upload macOS bundles
         uses: actions/upload-artifact@v6

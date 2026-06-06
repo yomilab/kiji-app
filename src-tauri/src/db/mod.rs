@@ -347,4 +347,247 @@ mod tests {
             )
             .expect("insert saved article");
     }
+
+    #[test]
+    fn desktop_smoke_workflow_exercises_feed_save_export_and_relaunch_persistence() {
+        use std::{fs, path::Path};
+        use uuid::Uuid;
+        use zip::ZipArchive;
+
+        use super::{
+            articles::{get_article, get_article_content, insert_articles_batch, query_articles, ArticleQueryRequest},
+            feeds::{insert_feed, list_feeds, update_feed, FeedUpdate},
+            migrations::run_migrations,
+            models::{ArticleRecord, FeedRecord, SavedArticleRecord},
+            saved::insert_saved_article,
+            schema::CREATE_SEARCH_INDEXES,
+        };
+        use crate::saved::export_saved_articles_to_zip;
+        use crate::settings::{AppSettings, BackgroundUpdateMode, Theme};
+
+        fn open_smoke_database(dir: &Path) -> Connection {
+            let db_path = dir.join("kiji.db");
+            let mut connection =
+                Connection::open(&db_path).expect("open smoke database on disk");
+            run_migrations(&mut connection).expect("run migrations");
+            connection
+                .execute_batch(CREATE_SEARCH_INDEXES)
+                .expect("create search indexes");
+            connection
+        }
+
+        fn sample_feed() -> FeedRecord {
+            FeedRecord {
+                id: "smoke-feed-1".to_string(),
+                title: "Smoke Feed".to_string(),
+                url: "https://example.com/smoke-feed.xml".to_string(),
+                created_at: "2026-06-06T00:00:00.000Z".to_string(),
+                description: Some("Desktop smoke fixture".to_string()),
+                last_fetched: None,
+                last_failed_fetch_at: None,
+                unread_count: 0,
+                article_count: 0,
+                tags: vec!["Smoke".to_string()],
+                favicon: None,
+                favicon_has_transparency: None,
+                favicon_dominant_color: None,
+                favicon_bg_light: None,
+                favicon_bg_dark: None,
+                favicon_fetch_failed: false,
+                emoji: None,
+                image: None,
+                categories: vec![],
+                language: Some("en".to_string()),
+                is_podcast: false,
+                podcast_metadata: None,
+                reader_mode_enabled: false,
+                etag: None,
+                last_modified_header: None,
+                sort_order: 0,
+                update_frequency_score: 0.0,
+                consecutive_failures: 0,
+                last_favicon_refresh: None,
+            }
+        }
+
+        fn sample_article() -> ArticleRecord {
+            ArticleRecord {
+                hash: "smoke-article-hash".to_string(),
+                feed_id: "smoke-feed-1".to_string(),
+                title: "Smoke Article".to_string(),
+                description: "Article inserted during refresh smoke".to_string(),
+                content: "<p>Smoke body</p>".to_string(),
+                link: Some("https://example.com/smoke-article".to_string()),
+                author: Some("Smoke Author".to_string()),
+                published_date: Some("2026-06-06T00:00:00.000Z".to_string()),
+                fetched_date: "2026-06-06T01:00:00.000Z".to_string(),
+                read: false,
+                starred: false,
+                saved: false,
+                saved_article_id: None,
+                last_read_at: None,
+                metadata: None,
+                feed_url: Some("https://example.com/smoke-feed.xml".to_string()),
+                feed_title: Some("Smoke Feed".to_string()),
+                feed_favicon: None,
+                feed_favicon_has_transparency: None,
+                feed_favicon_bg_light: None,
+                feed_favicon_bg_dark: None,
+                feed_image: None,
+            }
+        }
+
+        fn sample_saved_article() -> SavedArticleRecord {
+            SavedArticleRecord {
+                id: "smoke-saved-1".to_string(),
+                article_hash: "smoke-article-hash".to_string(),
+                title: Some("Smoke Article".to_string()),
+                description: Some("Saved during smoke workflow".to_string()),
+                content: Some("<p>Smoke body</p>".to_string()),
+                link: Some("https://example.com/smoke-article".to_string()),
+                author: Some("Smoke Author".to_string()),
+                published_date: Some("2026-06-06T00:00:00.000Z".to_string()),
+                saved_date: "2026-06-06T02:00:00.000Z".to_string(),
+                last_read_at: None,
+                feed_id: Some("smoke-feed-1".to_string()),
+                feed_url: Some("https://example.com/smoke-feed.xml".to_string()),
+                feed_title: Some("Smoke Feed".to_string()),
+                feed_favicon: None,
+                feed_favicon_has_transparency: None,
+                feed_favicon_bg_light: None,
+                feed_favicon_bg_dark: None,
+                feed_image: None,
+                preview_image: None,
+                metadata: None,
+                highlights: vec![],
+                notes: None,
+            }
+        }
+
+        fn read_zip_entry_names(archive_path: &Path) -> Vec<String> {
+            let file = fs::File::open(archive_path).expect("open export zip");
+            let mut archive = ZipArchive::new(file).expect("read export zip");
+            (0..archive.len())
+                .map(|index| {
+                    archive
+                        .by_index(index)
+                        .expect("read zip entry")
+                        .name()
+                        .to_string()
+                })
+                .collect()
+        }
+
+        let temp_root = std::env::temp_dir().join(format!("kiji-smoke-{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_root).expect("create smoke temp dir");
+
+        let connection = open_smoke_database(&temp_root);
+
+        insert_feed(&connection, &sample_feed()).expect("add feed");
+        let feeds = list_feeds(&connection).expect("list feeds");
+        assert_eq!(feeds.len(), 1);
+        assert_eq!(feeds[0].url, "https://example.com/smoke-feed.xml");
+
+        let inserted = insert_articles_batch(&connection, &[sample_article()]).expect("refresh feed");
+        assert_eq!(inserted, 1);
+
+        update_feed(
+            &connection,
+            "smoke-feed-1",
+            FeedUpdate {
+                title: None,
+                url: None,
+                created_at: None,
+                description: None,
+                last_fetched: Some(Some("2026-06-06T01:00:00.000Z".to_string())),
+                last_failed_fetch_at: None,
+                unread_count: Some(1),
+                article_count: Some(1),
+                tags: None,
+                favicon: None,
+                favicon_has_transparency: None,
+                favicon_dominant_color: None,
+                favicon_bg_light: None,
+                favicon_bg_dark: None,
+                favicon_fetch_failed: None,
+                emoji: None,
+                image: None,
+                categories: None,
+                language: None,
+                is_podcast: None,
+                podcast_metadata: None,
+                reader_mode_enabled: None,
+                etag: None,
+                last_modified_header: None,
+                sort_order: None,
+                update_frequency_score: None,
+                consecutive_failures: None,
+                last_favicon_refresh: None,
+            },
+        )
+        .expect("update feed counts");
+
+        let opened = get_article(&connection, "smoke-article-hash")
+            .expect("open article")
+            .expect("article exists");
+        assert_eq!(opened.title, "Smoke Article");
+        let content = get_article_content(&connection, "smoke-article-hash")
+            .expect("read article content")
+            .expect("content exists");
+        assert!(content.contains("Smoke body"));
+
+        let page = query_articles(
+            &connection,
+            ArticleQueryRequest {
+                feed_id: Some("smoke-feed-1".to_string()),
+                feed_ids: None,
+                tag_name: None,
+                unread_only: None,
+                saved_only: None,
+                read: None,
+                starred: None,
+                saved: None,
+                sort_field: None,
+                sort_order: None,
+                search_text: None,
+                limit: Some(10),
+                offset: None,
+                cursor_date: None,
+                cursor_hash: None,
+                include_total: None,
+            },
+        )
+        .expect("query articles");
+        assert_eq!(page.total, 1);
+
+        insert_saved_article(&connection, &sample_saved_article()).expect("save article");
+
+        let export_path = temp_root.join("saved-export.zip");
+        let (exported_count, written_bytes) =
+            export_saved_articles_to_zip(&connection, &export_path).expect("export saved articles");
+        assert_eq!(exported_count, 1);
+        assert!(written_bytes > 0);
+
+        let entry_names = read_zip_entry_names(&export_path);
+        assert!(entry_names.iter().any(|name| name == "pocket.csv"));
+        assert!(entry_names.iter().any(|name| name == "articles.md"));
+        assert!(entry_names.iter().any(|name| name.starts_with("articles/")));
+
+        let settings_path = temp_root.join("user-settings.json");
+        let mut settings = AppSettings::default();
+        settings.theme = Theme::Dark;
+        settings.background_update = BackgroundUpdateMode::OnLaunch;
+        settings.sidebar_width = 280;
+        let raw = serde_json::to_string_pretty(&settings).expect("serialize settings");
+        fs::write(&settings_path, raw).expect("write settings snapshot");
+
+        let reloaded_raw = fs::read_to_string(&settings_path).expect("reload settings snapshot");
+        let reloaded: AppSettings =
+            serde_json::from_str(&reloaded_raw).expect("parse reloaded settings");
+        assert_eq!(reloaded.theme, Theme::Dark);
+        assert_eq!(reloaded.background_update, BackgroundUpdateMode::OnLaunch);
+        assert_eq!(reloaded.sidebar_width, 280);
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
 }

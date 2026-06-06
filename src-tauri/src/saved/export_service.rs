@@ -191,6 +191,76 @@ fn build_preflight(connection: &Connection, output_path: &str) -> Result<SavedAr
     })
 }
 
+pub(crate) fn export_saved_articles_to_zip(
+    connection: &Connection,
+    output_path: &Path,
+) -> Result<(i64, u64), String> {
+    let article_count = count_saved_articles(connection)?;
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create export directory: {error}"))?;
+    }
+
+    let file = File::create(output_path)
+        .map_err(|error| format!("Failed to create export archive: {error}"))?;
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+    let mut csv_body = String::from("title,url,time_added,tags\n");
+    let mut used_names = std::collections::HashMap::new();
+    let mut exported_index = Vec::<SavedArticleIndexEntry>::new();
+    let mut offset = 0_i64;
+
+    while offset < article_count {
+        let rows = get_saved_articles_page(connection, PAGE_SIZE, offset)?;
+        for row in rows {
+            let (normalized_title, file_name) =
+                create_saved_article_markdown_file_name(row.title.as_deref(), &mut used_names);
+            let time_added = saved_article_time_added(&row);
+            let tags = feed_tags_for_article(connection, row.feed_id.as_deref())?;
+            csv_body.push_str(&format!(
+                "{},{},{time_added},{}\n",
+                format_csv_value(&normalized_title),
+                format_csv_value(row.link.as_deref().unwrap_or("")),
+                format_csv_value(&tags),
+            ));
+
+            let markdown = create_saved_article_markdown(&row);
+            let archive_path = format!("articles/{file_name}");
+            zip.start_file(&archive_path, options)
+                .map_err(|error| format!("Failed to start ZIP entry: {error}"))?;
+            zip.write_all(markdown.as_bytes())
+                .map_err(|error| format!("Failed to write ZIP entry: {error}"))?;
+
+            exported_index.push(SavedArticleIndexEntry {
+                title: normalized_title,
+                file_name,
+            });
+        }
+        offset += PAGE_SIZE;
+    }
+
+    zip.start_file("pocket.csv", options)
+        .map_err(|error| format!("Failed to start pocket.csv entry: {error}"))?;
+    zip.write_all(csv_body.as_bytes())
+        .map_err(|error| format!("Failed to write pocket.csv: {error}"))?;
+
+    let index_markdown = build_saved_articles_index_markdown(&exported_index);
+    zip.start_file("articles.md", options)
+        .map_err(|error| format!("Failed to start articles.md entry: {error}"))?;
+    zip.write_all(index_markdown.as_bytes())
+        .map_err(|error| format!("Failed to write articles.md: {error}"))?;
+
+    let written_bytes = zip
+        .finish()
+        .map_err(|error| format!("Failed to finalize export archive: {error}"))?
+        .metadata()
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
+
+    Ok((article_count, written_bytes))
+}
+
 fn run_export_job(
     app: &AppHandle,
     db_path: &Path,
@@ -212,91 +282,18 @@ fn run_export_job(
         format!("Preparing export ({article_count})"),
     )?;
 
-    if let Some(parent) = Path::new(output_path).parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("Failed to create export directory: {error}"))?;
-    }
-
-    let file = File::create(output_path)
-        .map_err(|error| format!("Failed to create export archive: {error}"))?;
-    let mut zip = ZipWriter::new(file);
-    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-
-    let mut csv_body = String::from("title,url,time_added,tags\n");
-    let mut used_names = std::collections::HashMap::new();
-    let mut exported_index = Vec::<SavedArticleIndexEntry>::new();
-    let mut processed_articles = 0_i64;
-    let mut offset = 0_i64;
-
-    while offset < article_count {
-        let rows = get_saved_articles_page(&connection, PAGE_SIZE, offset)?;
-        for row in rows {
-            let (normalized_title, file_name) =
-                create_saved_article_markdown_file_name(row.title.as_deref(), &mut used_names);
-            let time_added = saved_article_time_added(&row);
-            let tags = feed_tags_for_article(&connection, row.feed_id.as_deref())?;
-            csv_body.push_str(&format!(
-                "{},{},{time_added},{}\n",
-                format_csv_value(&normalized_title),
-                format_csv_value(row.link.as_deref().unwrap_or("")),
-                format_csv_value(&tags),
-            ));
-
-            let markdown = create_saved_article_markdown(&row);
-            let archive_path = format!("articles/{file_name}");
-            zip.start_file(&archive_path, options)
-                .map_err(|error| format!("Failed to start ZIP entry: {error}"))?;
-            zip.write_all(markdown.as_bytes())
-                .map_err(|error| format!("Failed to write ZIP entry: {error}"))?;
-
-            exported_index.push(SavedArticleIndexEntry {
-                title: normalized_title,
-                file_name,
-            });
-            processed_articles += 1;
-
-            if processed_articles % 25 == 0 || processed_articles == article_count {
-                emit_progress(
-                    app,
-                    job_id,
-                    "exporting",
-                    article_count,
-                    processed_articles,
-                    Some(processed_articles as u64 * 1024),
-                    format!("Exporting {processed_articles}/{article_count}"),
-                )?;
-            }
-        }
-        offset += PAGE_SIZE;
-    }
+    let (article_count, written_bytes) =
+        export_saved_articles_to_zip(&connection, Path::new(output_path))?;
 
     emit_progress(
         app,
         job_id,
         "finalizing",
         article_count,
-        processed_articles,
+        article_count,
         None,
         "Finalizing export".to_string(),
     )?;
-
-    zip.start_file("pocket.csv", options)
-        .map_err(|error| format!("Failed to start pocket.csv entry: {error}"))?;
-    zip.write_all(csv_body.as_bytes())
-        .map_err(|error| format!("Failed to write pocket.csv: {error}"))?;
-
-    let index_markdown = build_saved_articles_index_markdown(&exported_index);
-    zip.start_file("articles.md", options)
-        .map_err(|error| format!("Failed to start articles.md entry: {error}"))?;
-    zip.write_all(index_markdown.as_bytes())
-        .map_err(|error| format!("Failed to write articles.md: {error}"))?;
-
-    let written_bytes = zip
-        .finish()
-        .map_err(|error| format!("Failed to finalize export archive: {error}"))?
-        .metadata()
-        .map(|metadata| metadata.len())
-        .unwrap_or(0);
 
     let _ = app.emit(
         EXPORT_EVENT,

@@ -3,11 +3,13 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { ArticleWindow } from "./components/ArticleWindow/ArticleWindow";
 import { SettingsWindow } from "./components/SettingsWindow/SettingsWindow";
+import { TrafficLights } from "./components/TrafficLights/TrafficLights";
 import { FeedProvider } from "./contexts/FeedContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { logger } from "./services/logger";
 import { applyFontFamiliesToRoot, applyReadingLayoutToRoot } from "./services/settings/styleVariables";
 import { installElectronApiCompat } from "./services/tauri/electronApiCompat";
+import { installInteractionFreezeWatchdog } from "./services/performance/interactionFreezeWatchdog";
 import type { Article } from "./types/article";
 import "./styles/google-sans.css";
 import "./styles/golos-text.css";
@@ -49,6 +51,7 @@ function getWindowType(): RendererWindowType {
 
 function ArticleWindowBranch() {
   const [article, setArticle] = React.useState<Article | null>(null);
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let mounted = true;
@@ -58,16 +61,34 @@ function ArticleWindowBranch() {
           setArticle(payload);
         }
       })
-      .catch((error) => {
-        logger.error("Renderer", "Failed to load article window payload", { error });
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error("Renderer", "Failed to load article window payload", { error: message });
+        if (mounted) {
+          setErrorMessage(message);
+        }
       });
     return () => {
       mounted = false;
     };
   }, []);
 
+  if (errorMessage) {
+    return (
+      <main className="tauri-window-placeholder">
+        <h1>Failed to load article</h1>
+        <p>{errorMessage}</p>
+      </main>
+    );
+  }
+
   if (!article) {
-    return <main className="tauri-window-placeholder">Loading article...</main>;
+    return (
+      <main className="tauri-window-placeholder">
+        <h1>Loading article</h1>
+        <p>Fetching article data…</p>
+      </main>
+    );
   }
 
   return <ArticleWindow article={article} />;
@@ -78,6 +99,7 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
     return (
       <React.StrictMode>
         <ThemeProvider>
+          <TrafficLights />
           <SettingsWindow />
         </ThemeProvider>
       </React.StrictMode>
@@ -88,9 +110,8 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
     return (
       <React.StrictMode>
         <ThemeProvider>
-          <FeedProvider>
-            <ArticleWindowBranch />
-          </FeedProvider>
+          <TrafficLights />
+          <ArticleWindowBranch />
         </ThemeProvider>
       </React.StrictMode>
     );
@@ -100,6 +121,7 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
     <React.StrictMode>
       <ThemeProvider>
         <FeedProvider>
+          <TrafficLights />
           <App />
         </FeedProvider>
       </ThemeProvider>
@@ -111,6 +133,7 @@ const windowType = getWindowType();
 installElectronApiCompat();
 logger.installConsoleCapture(windowType === "main" ? "renderer" : "renderer");
 logger.installGlobalErrorHandlers("renderer");
+installInteractionFreezeWatchdog(windowType ?? "main");
 logger.info("Renderer", "Renderer bootstrap starting", { windowType });
 
 initializeVisualSettings();

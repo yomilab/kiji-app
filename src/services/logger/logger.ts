@@ -124,6 +124,9 @@ class Logger {
   async exportDiagnostics(): Promise<{ canceled: boolean; filePath?: string }> {
     try {
       const result = await diagnostics.exportBundle();
+      if (result.canceled || !result.filePath) {
+        return { canceled: true };
+      }
       return { canceled: false, filePath: result.filePath };
     } catch {
       return { canceled: true };

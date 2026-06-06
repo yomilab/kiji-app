@@ -7,6 +7,15 @@ import type {
   SavedArticlesExportStartRequest,
   SavedArticlesExportStartResponse,
 } from '@/services/saved/export/shared';
+import type {
+  HelperTaskAddRequest,
+  HelperTaskAddResponse,
+  HelperTaskClearResponse,
+  HelperTaskQueueSizeSnapshot,
+  HelperTaskRemoveRequest,
+  HelperTaskRemoveResponse,
+  HelperTaskResultEvent,
+} from '@/services/tasks/helperTaskContracts';
 
 type SystemAppIconVariant = 'light' | 'dark';
 
@@ -107,11 +116,11 @@ export interface ElectronAPI {
     contentType: string;
     html?: string;
   }>;
-  helperTaskAdd: (request: unknown) => Promise<unknown>;
-  helperTaskRemove: (request: unknown) => Promise<unknown>;
-  helperTaskClear: () => Promise<unknown>;
-  helperTaskGetQueueSnapshot: () => Promise<unknown>;
-  onHelperTaskResult: (callback: (event: unknown) => void) => () => void;
+  helperTaskAdd: (request: HelperTaskAddRequest) => Promise<HelperTaskAddResponse>;
+  helperTaskRemove: (request: HelperTaskRemoveRequest) => Promise<HelperTaskRemoveResponse>;
+  helperTaskClear: () => Promise<HelperTaskClearResponse>;
+  helperTaskGetQueueSnapshot: () => Promise<HelperTaskQueueSizeSnapshot>;
+  onHelperTaskResult: (callback: (event: HelperTaskResultEvent) => void) => () => void;
 }
 
 declare global {

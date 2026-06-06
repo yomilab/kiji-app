@@ -1,6 +1,8 @@
 import type { Author, Enclosure, MediaThumbnail } from "../../types/article";
 import { tauriClient } from "../../lib/tauriClient";
 import { normalizePublishedDate } from "../articles/publishedDateNormalizer";
+import { logger } from "../logger/logger";
+import { parseFeedWithFeedsmith } from "./feedsmithAdapter";
 
 export type { Author, Enclosure, MediaThumbnail };
 
@@ -95,6 +97,15 @@ export function parseFeed(rawText: string, feedUrl: string): FeedItem[] {
   const trimmed = rawText.trim();
   if (!trimmed) {
     throw new Error("Received empty response from feed URL");
+  }
+
+  try {
+    return assertItems(parseFeedWithFeedsmith(trimmed, feedUrl));
+  } catch (feedsmithError) {
+    logger.warn("FeedsFetcher", "Feedsmith parsing failed, using fallback parser", {
+      feedUrl,
+      error: feedsmithError,
+    });
   }
 
   if (trimmed.startsWith("{")) {

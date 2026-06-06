@@ -1,3 +1,5 @@
+import type { CheerioAPI } from 'cheerio';
+
 const BLOCKED_STYLE_PROPERTIES = [
   /^color$/i,
   /^background(?:-.+)?$/i,
@@ -106,5 +108,32 @@ export const sanitizeArticleHtmlStyles = (html: string): string => {
   } catch {
     return html;
   }
+};
+
+export const sanitizeArticleStylesWithCheerio = ($: CheerioAPI): void => {
+  $('style').remove();
+
+  $('*[style]').each((_, element) => {
+    const node = $(element);
+    const sanitizedStyle = sanitizeInlineStyle(node.attr('style'));
+    if (!sanitizedStyle) {
+      node.removeAttr('style');
+      return;
+    }
+    node.attr('style', sanitizedStyle);
+  });
+
+  $('*').each((_, element) => {
+    const node = $(element);
+    PRESENTATIONAL_ATTRIBUTES.forEach((attribute) => {
+      node.removeAttr(attribute);
+    });
+  });
+
+  $(WIDTH_HEIGHT_ATTRIBUTE_SELECTORS.join(',')).each((_, element) => {
+    const node = $(element);
+    node.removeAttr('width');
+    node.removeAttr('height');
+  });
 };
 

@@ -1,8 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { tauriClient } from '@/lib/tauriClient';
+import type { SavedArticleRecord } from '@/lib/tauriClient/contracts';
+import { normalizePublishedDate } from '@/services/articles/publishedDateNormalizer';
 import { logger } from '@/services/logger';
+import { settingsManager } from '@/services/settings';
 import { userMessageBus } from '@/services/ui/userMessageBus';
 import type { SavedArticlesExportEvent } from '@/services/saved/export/shared';
+import { helperTaskClient } from '@/services/tasks/helperTaskClient';
+import { HELPER_TASK_KIND } from '@/services/tasks/helperTaskContracts';
 
 class SavedArticlesIOService {
   private activeExportJobId: string | null = null;
@@ -69,13 +75,139 @@ class SavedArticlesIOService {
   }
 
   /**
-   * Import saved articles from a ZIP or CSV file.
-   * URL extraction/import still depends on helper-task parity tracked in migration todo 16.
+   * Import saved articles from a ZIP or CSV file using background helper tasks.
    */
-  async importSavedArticles(file?: File): Promise<void> {
-    logger.info('SavedArticlesIO', 'Saved article import still requires helper-task parity in Tauri', {
-      fileName: file?.name,
-    });
+  async importSavedArticles(file: File): Promise<void> {
+    const fileName = file.name.toLowerCase();
+    const isCsv = fileName.endsWith('.csv');
+    const isZip = fileName.endsWith('.zip');
+
+    if (!isCsv && !isZip) {
+      logger.error('SavedArticlesIO', 'Unsupported file format for import. Please use .zip or .csv');
+      return;
+    }
+
+    try {
+      if (isZip) {
+        const buffer = await file.arrayBuffer();
+        const uint8Array = new Uint8Array(buffer);
+
+        const result = await helperTaskClient.runTask({
+          kind: HELPER_TASK_KIND.SAVED_ARTICLES_IMPORT,
+          payload: { zipArrayBuffer: uint8Array },
+        });
+
+        if (result.articles.length === 0) {
+          logger.warn('SavedArticlesIO', 'No articles found in import file');
+          return;
+        }
+
+        const rows: SavedArticleRecord[] = result.articles.map((article): SavedArticleRecord => ({
+          id: `saved-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          articleHash: article.url,
+          title: article.title || null,
+          description: article.content ? null : 'Imported article',
+          content: article.content || null,
+          link: article.url || null,
+          author: null,
+          publishedDate: new Date(article.timeAdded * 1000).toISOString(),
+          savedDate: new Date(article.timeAdded * 1000).toISOString(),
+          lastReadAt: null,
+          feedId: 'saved',
+          feedUrl: article.url || null,
+          feedTitle: null,
+          feedFavicon: null,
+          feedFaviconHasTransparency: null,
+          feedFaviconBgLight: null,
+          feedFaviconBgDark: null,
+          feedImage: null,
+          previewImage: null,
+          metadata: null,
+          highlights: [],
+          notes: null,
+        }));
+
+        await tauriClient.saved.insertBatch({ articles: rows });
+        logger.info('SavedArticlesIO', `Successfully imported ${rows.length} articles from ZIP`);
+      } else if (isCsv) {
+        const csvText = await file.text();
+        const { urls } = await helperTaskClient.runTask({
+          kind: HELPER_TASK_KIND.SAVED_ARTICLES_CSV_PARSE,
+          payload: { csvText },
+        });
+
+        if (urls.length === 0) {
+          logger.warn('SavedArticlesIO', 'No valid URLs found in CSV');
+          return;
+        }
+
+        logger.info('SavedArticlesIO', `Importing ${urls.length} URLs in chunks`);
+
+        let parser: import('@/services/articles/extractors/types').ContentParser | undefined;
+        try {
+          parser = (await settingsManager.getSettings()).contentParser;
+        } catch (error) {
+          logger.warn('SavedArticlesIO', 'Failed to read content parser preference; using default', { error });
+        }
+
+        const chunkSize = 20;
+        for (let index = 0; index < urls.length; index += chunkSize) {
+          const chunk = urls.slice(index, index + chunkSize);
+          await this.importUrlChunk(chunk, parser);
+        }
+      }
+    } catch (error) {
+      logger.error('SavedArticlesIO', 'Failed to import saved articles', { error });
+    }
+  }
+
+  private async importUrlChunk(
+    urls: string[],
+    parser?: import('@/services/articles/extractors/types').ContentParser,
+  ): Promise<void> {
+    try {
+      const { results } = await helperTaskClient.runTask({
+        kind: HELPER_TASK_KIND.SAVED_ARTICLES_BULK_URL_FETCH,
+        priority: 'low',
+        payload: { urls, concurrency: 3, parser },
+      });
+
+      if (results.length === 0) return;
+
+      const rows: SavedArticleRecord[] = results.map((metadata): SavedArticleRecord => {
+        const now = new Date();
+        const nowIso = now.toISOString();
+        return {
+          id: `saved-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          articleHash: metadata.url,
+          title: metadata.title || metadata.url,
+          description: metadata.excerpt || null,
+          content: metadata.content || null,
+          link: metadata.url || null,
+          author: metadata.author || null,
+          publishedDate: normalizePublishedDate(metadata.datePublished || undefined, { now }) || nowIso,
+          savedDate: nowIso,
+          lastReadAt: null,
+          feedId: 'saved',
+          feedUrl: metadata.url || null,
+          feedTitle: metadata.domain || null,
+          feedFavicon: null,
+          feedFaviconHasTransparency: null,
+          feedFaviconBgLight: null,
+          feedFaviconBgDark: null,
+          feedImage: null,
+          previewImage: metadata.leadImageUrl || null,
+          metadata: null,
+          highlights: [],
+          notes: null,
+        };
+      });
+
+      await tauriClient.saved.insertBatch({ articles: rows });
+      logger.info('SavedArticlesIO', `Successfully imported chunk of ${rows.length} URLs`);
+    } catch (error) {
+      logger.error('SavedArticlesIO', 'Failed to background import URL chunk', { error });
+    }
   }
 
   async chooseSyncFolder(defaultPath?: string): Promise<string | null> {

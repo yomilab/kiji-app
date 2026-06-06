@@ -24,7 +24,7 @@ use db::{
 };
 use diagnostics::{
     diagnostics_export_bundle, diagnostics_log_get_path, diagnostics_log_write_entry,
-    diagnostics_performance_snapshot, DiagnosticsState,
+    diagnostics_performance_snapshot, start_background_monitoring, DiagnosticsState,
 };
 use net::{feeds_abort_request, feeds_fetch, feeds_fetch_data_url, feeds_fetch_with_cache};
 use saved::{
@@ -32,10 +32,17 @@ use saved::{
 };
 use settings::{settings_get, settings_reset, settings_update, SettingsState};
 use shell::{
-    shell_dialog_open_file, shell_dialog_pick_folder, shell_dialog_save_file, shell_file_read_text,
-    shell_file_write_text, shell_links_open_external,
+    restore_main_window_bounds, shell_context_menu_show_image, shell_dialog_open_file,
+    shell_dialog_pick_folder, shell_dialog_save_file, shell_file_read_text, shell_file_write_text,
+    shell_links_open_external, shell_menu_update_state, shell_share, shell_share_list_services,
+    shell_share_to_service, window_guards_plugin, ApplicationMenu, ImageContextMenuState,
 };
-use system::{system_clipboard_read_text, system_clipboard_write_text};
+use system::{
+    start_accent_color_watch, system_app_icon_get_state, system_app_icon_pick,
+    system_app_icon_reset, system_app_icon_set_variant, system_app_relaunch,
+    system_clipboard_read_text, system_clipboard_write_text, system_theme_get_accent_color,
+    AppIconState,
+};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -45,8 +52,7 @@ pub fn run() {
             let settings_state = Arc::new(
                 SettingsState::load(&app.handle()).map_err(std::io::Error::other)?,
             );
-            let db_state =
-                DbState::load(&app.handle()).map_err(std::io::Error::other)?;
+            let db_state = DbState::load(&app.handle()).map_err(std::io::Error::other)?;
             let sync_state = SavedSyncState::new(
                 db_state.database_path(),
                 Arc::clone(&settings_state),
@@ -54,14 +60,30 @@ pub fn run() {
             sync_state.schedule_startup_reconcile();
             let diagnostics_state =
                 DiagnosticsState::load(&app.handle()).map_err(std::io::Error::other)?;
+            let diagnostics_arc = Arc::new(diagnostics_state);
+            start_background_monitoring(Arc::clone(&diagnostics_arc));
+            let app_icon_state = AppIconState::load(&app.handle()).map_err(std::io::Error::other)?;
+
+            ApplicationMenu::install(&app.handle()).map_err(std::io::Error::other)?;
+            ImageContextMenuState::install(&app.handle()).map_err(std::io::Error::other)?;
+            restore_main_window_bounds(&app.handle(), Arc::clone(&settings_state))
+                .map_err(std::io::Error::other)?;
+            app_icon_state
+                .apply_configured_icon(&app.handle())
+                .map_err(std::io::Error::other)?;
+            start_accent_color_watch(&app.handle()).map_err(std::io::Error::other)?;
+
             app.manage(settings_state);
             app.manage(db_state);
             app.manage(sync_state);
             app.manage(SavedExportState::new());
-            app.manage(diagnostics_state);
+            app.manage(diagnostics_arc);
+            app.manage(app_icon_state);
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(window_guards_plugin())
         .invoke_handler(tauri::generate_handler![
             articles_clean_old_across_feeds,
             articles_clean_old_by_feed,
@@ -122,17 +144,28 @@ pub fn run() {
             saved_update_highlights,
             saved_update_last_read_at,
             saved_update_notes,
+            shell_context_menu_show_image,
             shell_dialog_open_file,
             shell_dialog_pick_folder,
             shell_dialog_save_file,
             shell_file_read_text,
             shell_file_write_text,
             shell_links_open_external,
+            shell_menu_update_state,
+            shell_share,
+            shell_share_list_services,
+            shell_share_to_service,
             settings_get,
             settings_update,
             settings_reset,
+            system_app_icon_get_state,
+            system_app_icon_pick,
+            system_app_icon_reset,
+            system_app_icon_set_variant,
+            system_app_relaunch,
             system_clipboard_read_text,
-            system_clipboard_write_text
+            system_clipboard_write_text,
+            system_theme_get_accent_color,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

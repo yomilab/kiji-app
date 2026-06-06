@@ -10,6 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -19,7 +20,12 @@
         "minWidth": 600,
         "minHeight": 400,
         "decorations": false,
-        "transparent": true
+        "transparent": true,
+        "windowEffects": {
+          "effects": ["sidebar"],
+          "state": "active",
+          "radius": 14
+        }
       },
       {
         "label": "settings",
@@ -28,9 +34,14 @@
         "width": 700,
         "height": 660,
         "visible": false,
-        "resizable": false,
+        "resizable": true,
         "decorations": false,
-        "transparent": true
+        "transparent": true,
+        "windowEffects": {
+          "effects": ["underWindowBackground"],
+          "state": "active",
+          "radius": 14
+        }
       },
       {
         "label": "article",
@@ -42,7 +53,12 @@
         "minWidth": 720,
         "minHeight": 480,
         "decorations": false,
-        "transparent": true
+        "transparent": true,
+        "windowEffects": {
+          "effects": ["underWindowBackground"],
+          "state": "active",
+          "radius": 14
+        }
       }
     ],
     "security": {

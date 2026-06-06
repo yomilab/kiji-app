@@ -1,4 +1,5 @@
 import { getCurrentWindow, Window as TauriWindow } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
 import { tauriClient } from '@/lib/tauriClient';
 import {
   invokeSavedArticlesExportPreflight,
@@ -6,57 +7,28 @@ import {
   invokeSavedArticlesSyncQueue,
   listenSavedArticlesExportEvents,
 } from '@/services/saved/savedArticlesIOService';
+import {
+  helperTaskAdd,
+  helperTaskClear,
+  helperTaskGetQueueSnapshot,
+  helperTaskRemove,
+  installHelperTaskService,
+  onHelperTaskResult,
+} from '@/services/tasks/helperTaskService';
+import type {
+  HelperTaskAddRequest,
+  HelperTaskRemoveRequest,
+  HelperTaskResultEvent,
+} from '@/services/tasks/helperTaskContracts';
+import { extractArticleContentFromHtml } from '@/services/articles/articleExtractionService';
+import { isContentParser } from '@/services/settings/types';
 import type { Article } from '@/types/article';
 import type { ElectronAPI } from '@/types/electron';
 import type { AppMenuCommand } from '@/types/appMenu';
+import { trafficLightVisibilityBus } from '@/services/ui/trafficLightVisibilityBus';
 
 const ARTICLE_WINDOW_PAYLOAD_KEY = 'kiji:tauri:article-window-payload';
-const SYSTEM_APP_ICON_STATE_KEY = 'kiji:tauri:system-app-icon-state';
 const settingsChangedListeners = new Set<() => void>();
-
-type SystemAppIconVariant = 'light' | 'dark';
-type SystemAppIconState = {
-  iconPath: string | null;
-  previewDataUrl: string | null;
-  hasCustomIcon: boolean;
-  iconVariant: SystemAppIconVariant;
-};
-
-const defaultIconState = (variant: SystemAppIconVariant = 'dark'): SystemAppIconState => ({
-  iconPath: null,
-  previewDataUrl: null,
-  hasCustomIcon: false,
-  iconVariant: variant,
-});
-
-function normalizeSystemAppIconState(value: unknown): SystemAppIconState {
-  if (!value || typeof value !== 'object') {
-    return defaultIconState();
-  }
-
-  const candidate = value as Partial<SystemAppIconState>;
-  return {
-    iconPath: typeof candidate.iconPath === 'string' ? candidate.iconPath : null,
-    previewDataUrl: typeof candidate.previewDataUrl === 'string' ? candidate.previewDataUrl : null,
-    hasCustomIcon: Boolean(candidate.hasCustomIcon),
-    iconVariant: candidate.iconVariant === 'light' ? 'light' : 'dark',
-  };
-}
-
-function readStoredSystemAppIconState(): SystemAppIconState {
-  try {
-    const raw = localStorage.getItem(SYSTEM_APP_ICON_STATE_KEY);
-    return raw ? normalizeSystemAppIconState(JSON.parse(raw)) : defaultIconState();
-  } catch {
-    return defaultIconState();
-  }
-}
-
-function persistSystemAppIconState(state: SystemAppIconState): SystemAppIconState {
-  const normalized = normalizeSystemAppIconState(state);
-  localStorage.setItem(SYSTEM_APP_ICON_STATE_KEY, JSON.stringify(normalized));
-  return normalized;
-}
 
 function fileNameFromPath(path: string): string | undefined {
   const parts = path.split(/[\\/]/).filter(Boolean);
@@ -93,6 +65,24 @@ function installElectronApiCompat(): void {
   if (window.electronAPI) {
     return;
   }
+
+  installHelperTaskService();
+
+  let helperTaskListenerInstalled = false;
+  const helperTaskListeners = new Set<(event: HelperTaskResultEvent) => void>();
+
+  const ensureHelperTaskListener = (): void => {
+    if (helperTaskListenerInstalled) {
+      return;
+    }
+
+    onHelperTaskResult((event) => {
+      for (const listener of helperTaskListeners) {
+        listener(event);
+      }
+    });
+    helperTaskListenerInstalled = true;
+  };
 
   const api: ElectronAPI = {
     async fetchFeed(url, options) {
@@ -133,36 +123,46 @@ function installElectronApiCompat(): void {
     async windowClose() {
       await getCurrentWindow().close();
     },
-    async hideTrafficLights() {},
-    async showTrafficLights() {},
+    async hideTrafficLights() {
+      trafficLightVisibilityBus.setVisible(false);
+    },
+    async showTrafficLights() {
+      trafficLightVisibilityBus.setVisible(true);
+    },
     async openSettings() {
       await showWindow('settings');
     },
-    async updateAppMenuState() {},
-    onAppMenuCommand(_callback: (command: AppMenuCommand) => void) {
-      return () => {};
+    async updateAppMenuState(state) {
+      await tauriClient.shell.updateMenuState(state);
+    },
+    onAppMenuCommand(callback: (command: AppMenuCommand) => void) {
+      let unlisten: (() => void) | undefined;
+      void listen<AppMenuCommand>('app-menu:command', (event) => {
+        callback(event.payload);
+      }).then((dispose) => {
+        unlisten = dispose;
+      });
+      return () => {
+        unlisten?.();
+      };
     },
     async openExternal(url) {
       await tauriClient.shell.openExternal({ url });
     },
     async getSystemAppIconState() {
-      return readStoredSystemAppIconState();
+      return tauriClient.system.appIcon.getState();
     },
     async setSystemAppIconVariant(variant) {
-      return persistSystemAppIconState({
-        ...defaultIconState(variant),
-        iconVariant: variant,
-      });
+      return tauriClient.system.appIcon.setVariant({ variant });
     },
     async pickSystemAppIcon() {
-      return { canceled: true, state: readStoredSystemAppIconState() };
+      return tauriClient.system.appIcon.pick();
     },
     async resetSystemAppIcon() {
-      const { iconVariant } = readStoredSystemAppIconState();
-      return persistSystemAppIconState(defaultIconState(iconVariant));
+      return tauriClient.system.appIcon.reset();
     },
     async relaunchApplication() {
-      window.location.reload();
+      await tauriClient.system.app.relaunch();
     },
     async openArticleWindow(articleData) {
       localStorage.setItem(ARTICLE_WINDOW_PAYLOAD_KEY, JSON.stringify(articleData.article));
@@ -172,16 +172,21 @@ function installElectronApiCompat(): void {
       return readArticlePayload();
     },
     async showShareSheet(shareData) {
-      if (shareData.url) {
-        await tauriClient.system.clipboard.writeText({ text: shareData.url });
-      }
+      await tauriClient.shell.share(shareData);
     },
-    async showImageContextMenu() {},
+    async showImageContextMenu(src) {
+      await tauriClient.shell.showImageContextMenu({ src });
+    },
     async getShareServices() {
-      return [];
+      const services = await tauriClient.shell.listShareServices();
+      return services.map((service) => ({
+        id: service.id,
+        name: service.name,
+        icon: service.icon ?? 'share',
+      }));
     },
-    async shareToService() {
-      return { success: false };
+    async shareToService(serviceId, shareData) {
+      return tauriClient.shell.shareToService({ ...shareData, serviceId });
     },
     async storageGet(key) {
       return localStorage.getItem(key);
@@ -210,12 +215,25 @@ function installElectronApiCompat(): void {
     },
     async exportDiagnostics() {
       const result = await tauriClient.diagnostics.exportBundle();
-      return { canceled: false, filePath: result.filePath };
+      return {
+        canceled: result.canceled,
+        filePath: result.filePath ?? undefined,
+      };
     },
     async getSystemAccentColor() {
-      return null;
+      return tauriClient.system.theme.getAccentColor();
     },
-    onSystemAccentColorChanged() {},
+    onSystemAccentColorChanged(callback: (color: string) => void) {
+      let unlisten: (() => void) | undefined;
+      void listen<{ color: string }>('system-accent-color-changed', (event) => {
+        callback(event.payload.color);
+      }).then((dispose) => {
+        unlisten = dispose;
+      });
+      return () => {
+        unlisten?.();
+      };
+    },
     async notifySettingsChanged() {
       settingsChangedListeners.forEach((listener) => listener());
     },
@@ -302,31 +320,71 @@ function installElectronApiCompat(): void {
         unlisten?.();
       };
     },
-    async parseArticle(url) {
-      return {
-        success: false,
-        resourceType: 'unsupported',
-        error: `Article parsing is not yet implemented in the Tauri compatibility layer for ${url}.`,
-      };
+    async parseArticle(url, parser) {
+      try {
+        const fetchResult = await api.fetchHtmlSafe(url);
+        if (fetchResult.resourceType !== 'html') {
+          return {
+            success: false,
+            resourceType: fetchResult.resourceType,
+            error: `Non-HTML content type: ${fetchResult.contentType}`,
+          };
+        }
+
+        const html = fetchResult.html;
+        if (!html) {
+          return {
+            success: false,
+            error: 'Failed to fetch article HTML',
+          };
+        }
+
+        const content = await extractArticleContentFromHtml(
+          url,
+          html,
+          isContentParser(parser) ? parser : undefined,
+        );
+
+        if (!content) {
+          return {
+            success: false,
+            error: 'Failed to parse article',
+          };
+        }
+
+        return {
+          success: true,
+          content,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
     },
     async fetchHtmlSafe(url) {
       const html = await tauriClient.feeds.fetch({ url });
       return { resourceType: 'html', contentType: 'text/html', html };
     },
-    async helperTaskAdd() {
-      return { accepted: false };
+    async helperTaskAdd(request: HelperTaskAddRequest) {
+      return helperTaskAdd(request);
     },
-    async helperTaskRemove() {
-      return { removed: false };
+    async helperTaskRemove(request: HelperTaskRemoveRequest) {
+      return helperTaskRemove(request);
     },
     async helperTaskClear() {
-      return { cleared: true };
+      return helperTaskClear();
     },
     async helperTaskGetQueueSnapshot() {
-      return { pending: 0, running: 0 };
+      return helperTaskGetQueueSnapshot();
     },
-    onHelperTaskResult() {
-      return () => {};
+    onHelperTaskResult(callback: (event: HelperTaskResultEvent) => void) {
+      ensureHelperTaskListener();
+      helperTaskListeners.add(callback);
+      return () => {
+        helperTaskListeners.delete(callback);
+      };
     },
   };
 

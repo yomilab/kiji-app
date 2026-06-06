@@ -7,6 +7,19 @@ export async function updateMenuState(
   return invokeContract<ShellContract["updateMenuState"]>("shell_menu_update_state", request);
 }
 
+export async function showImageContextMenu(
+  request: ShellContract["showImageContextMenu"]["request"],
+): Promise<ShellContract["showImageContextMenu"]["response"]> {
+  return invokeContract<ShellContract["showImageContextMenu"]>(
+    "shell_context_menu_show_image",
+    request,
+  );
+}
+
+export async function listShareServices(): Promise<ShellContract["listShareServices"]["response"]> {
+  return invokeContract<ShellContract["listShareServices"]>("shell_share_list_services");
+}
+
 export async function openExternal(
   request: ShellContract["openExternal"]["request"],
 ): Promise<ShellContract["openExternal"]["response"]> {
@@ -54,4 +67,10 @@ export async function share(
   request: ShellContract["share"]["request"],
 ): Promise<ShellContract["share"]["response"]> {
   return invokeContract<ShellContract["share"]>("shell_share", request);
+}
+
+export async function shareToService(
+  request: ShellContract["shareToService"]["request"],
+): Promise<ShellContract["shareToService"]["response"]> {
+  return invokeContract<ShellContract["shareToService"]>("shell_share_to_service", request);
 }

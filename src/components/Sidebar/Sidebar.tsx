@@ -279,12 +279,20 @@ export const Sidebar: React.FC = () => {
 
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* Widgets aligned with traffic lights */}
-        <div className="sidebar-widgets-container has-drag" data-component="sidebar-top-widgets">
+        <div
+          className="sidebar-widgets-container has-drag"
+          data-component="sidebar-top-widgets"
+          data-tauri-drag-region
+        >
           <SidebarWidgets onAddFeed={handleOpenAddModal} />
         </div>
 
         {/* Feeds title section */}
-        <div className="sidebar-title-container has-drag" data-component="sidebar-title-section">
+        <div
+          className="sidebar-title-container has-drag"
+          data-component="sidebar-title-section"
+          data-tauri-drag-region
+        >
           <h1 className="title m-0 theme-text-primary" data-section="app-title" data-component="app-title">Feeds</h1>
           <p
             className={`sync-indicator ${showSyncing && !sidebarIndicatorText && !exportProgressText && !isAnyFeedRefreshing ? 'is-syncing' : ''}`}

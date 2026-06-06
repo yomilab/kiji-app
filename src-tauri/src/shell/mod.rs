@@ -1,3 +1,17 @@
+mod context_menu;
+mod menu;
+mod share;
+mod window;
+mod window_guards;
+
+pub use context_menu::{
+    shell_context_menu_show_image, ImageContextMenuState,
+};
+pub use menu::{shell_menu_update_state, ApplicationMenu};
+pub use share::{shell_share, shell_share_list_services, shell_share_to_service};
+pub use window::restore_main_window_bounds;
+pub use window_guards::init as window_guards_plugin;
+
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};

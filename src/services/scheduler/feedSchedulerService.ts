@@ -73,6 +73,22 @@ class FeedSchedulerService {
     this.scheduleNext(lifecycleId);
   }
 
+  boostMany(feedIds: string[]): void {
+    if (feedIds.length === 0) {
+      return;
+    }
+
+    logger.info('Scheduler', 'Refreshing imported feeds after OPML import', {
+      feedCount: feedIds.length,
+    });
+
+    for (const feedId of feedIds) {
+      void feedsManager.refreshFeed(feedId).catch((error) => {
+        logger.warn('Scheduler', 'Failed to refresh imported feed', { feedId, error });
+      });
+    }
+  }
+
   private clearTimerAndAbort(): void {
     if (this.timer !== null) {
       window.clearTimeout(this.timer);

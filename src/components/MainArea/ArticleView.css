@@ -11,6 +11,7 @@
   flex-direction: column;
   overflow: hidden;
   background-color: var(--theme-article-bg);
+  border-radius: var(--app-window-radius, 14px);
   z-index: 1000;
   -webkit-app-region: no-drag;
   will-change: transform, opacity;

@@ -362,6 +362,12 @@ export interface ArticleWindowPayload {
 export interface ShareRequest {
   title: string;
   url: UrlString;
+  buttonRect?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
 }
 
 export interface ShareService {
@@ -396,11 +402,16 @@ export interface PerformanceSnapshot {
     pid: number;
     type: string;
     cpu: number;
-    memoryMb: number;
+    mem: number;
   }>;
-  native: {
+  main: {
     pid: number;
     rssMb: number;
+    heapUsedMb: number;
+    heapTotalMb: number;
+    externalMb: number;
+    handles: number;
+    requests: number;
   };
 }
 
@@ -673,7 +684,17 @@ export interface ShellContract {
   updateMenuState: {
     request: Partial<AppMenuState>;
     response: void;
-    event: AppMenuCommand;
+  };
+  showImageContextMenu: {
+    request: { src: UrlString };
+    response: { shown: boolean };
+  };
+  listShareServices: {
+    response: ShareService[];
+  };
+  shareToService: {
+    request: ShareRequest & { serviceId: string };
+    response: { success: boolean };
   };
   openExternal: {
     request: { url: UrlString };
@@ -711,7 +732,31 @@ export interface ShellContract {
 
 export interface SystemContract {
   appIconGetState: {
-    response: SystemAppIconState;
+    response: {
+      iconPath: FilePathString | null;
+      previewDataUrl: DataUrlString | null;
+      hasCustomIcon: boolean;
+      iconVariant: "light" | "dark";
+    };
+  };
+  appIconSetVariant: {
+    request: { variant: "light" | "dark" };
+    response: SystemContract["appIconGetState"]["response"];
+  };
+  appIconPick: {
+    response: {
+      canceled: boolean;
+      state: SystemContract["appIconGetState"]["response"];
+    };
+  };
+  appIconReset: {
+    response: SystemContract["appIconGetState"]["response"];
+  };
+  appRelaunch: {
+    response: void;
+  };
+  themeGetAccentColor: {
+    response: string | null;
   };
   clipboardReadText: {
     response: string;
@@ -734,7 +779,7 @@ export interface DiagnosticsContract {
     response: PerformanceSnapshot;
   };
   exportBundle: {
-    response: { filePath: FilePathString };
+    response: { canceled: boolean; filePath: FilePathString | null };
   };
 }
 

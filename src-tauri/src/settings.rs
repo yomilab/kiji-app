@@ -230,6 +230,17 @@ impl SettingsState {
 
         Ok(settings.clone())
     }
+
+    pub fn update_window_size(&self, width: u32, height: u32) -> Result<(), String> {
+        self.update(AppSettingsPatch {
+            window_size: Some(WindowSizePatch {
+                width: Some(width),
+                height: Some(height),
+            }),
+            ..Default::default()
+        })?;
+        Ok(())
+    }
 }
 
 #[tauri::command]
@@ -307,4 +318,49 @@ fn normalize_optional_string(value: Option<String>) -> Option<String> {
             Some(trimmed.to_string())
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_settings_are_valid() {
+        AppSettings::default()
+            .validate()
+            .expect("default settings should validate");
+    }
+
+    #[test]
+    fn rejects_zero_sidebar_width_patch() {
+        let mut settings = AppSettings::default();
+        let patch = AppSettingsPatch {
+            sidebar_width: Some(0),
+            ..Default::default()
+        };
+
+        assert!(settings.apply_patch(patch).is_err());
+    }
+
+    #[test]
+    fn normalizes_blank_sync_folder_to_none() {
+        let mut settings = AppSettings::default();
+        let patch = AppSettingsPatch {
+            saved_articles_sync_folder: Some(Some("   ".to_string())),
+            ..Default::default()
+        };
+
+        settings.apply_patch(patch).expect("patch should apply");
+        assert_eq!(settings.saved_articles_sync_folder, None);
+    }
+
+    #[test]
+    fn round_trips_json_snapshot() {
+        let settings = AppSettings::default();
+        let raw = serde_json::to_string(&settings).expect("serialize settings");
+        let parsed: AppSettings = serde_json::from_str(&raw).expect("deserialize settings");
+
+        parsed.validate().expect("round trip should validate");
+        assert_eq!(parsed, settings);
+    }
 }

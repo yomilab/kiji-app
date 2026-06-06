@@ -26,8 +26,7 @@
 }
 
 /* Draggable area for macOS traffic lights */
-.settings-window::before {
-  content: '';
+.settings-window-drag-region {
   position: absolute;
   top: 0;
   left: 0;

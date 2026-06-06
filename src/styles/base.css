@@ -11,6 +11,7 @@
 }
 
 html {
+  --app-window-radius: 14px;
   background-color: transparent !important;
   background: transparent !important;
   scrollbar-width: none;
@@ -35,6 +36,8 @@ body {
   width: 100vw;
   background-color: transparent !important;
   background: transparent !important;
+  border-radius: var(--app-window-radius);
+  overflow: hidden;
 }
 
 .app-container {
@@ -44,6 +47,7 @@ body {
   overflow: hidden;
   background-color: transparent !important;
   background: transparent !important;
+  border-radius: var(--app-window-radius);
 }
 
 .app-deck-root {
@@ -52,6 +56,7 @@ body {
   height: 100%;
   width: 100%;
   overflow: hidden;
+  border-radius: inherit;
 }
 
 .app-layer {
@@ -144,6 +149,8 @@ button svg {
   background: var(--theme-article-bg);
   color: var(--theme-text-primary);
   font-family: var(--font-family-ui);
+  border-radius: var(--app-window-radius);
+  overflow: hidden;
 }
 
 .tauri-window-placeholder h1 {

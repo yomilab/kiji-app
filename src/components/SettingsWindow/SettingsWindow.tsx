@@ -1242,6 +1242,7 @@ export const SettingsWindow: React.FC = () => {
 
   return (
     <div className="settings-window">
+        <div className="settings-window-drag-region" data-tauri-drag-region />
         {/* Content Area */}
         <div className="settings-window-content">
           {/* Left Sidebar - Categories */}

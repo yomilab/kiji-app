@@ -9,7 +9,15 @@
     "dev:tauri": "tauri dev",
     "build:tauri": "tauri build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:parity": "vitest run test/parity",
+    "test:parity:db": "cargo test --manifest-path src-tauri/Cargo.toml synthetic_v13 synthetic_v15",
+    "test:smoke": "vitest run test/smoke",
+    "test:smoke:launch": "node scripts/smoke-launch.mjs",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "verify": "node scripts/verify.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
@@ -22,6 +30,7 @@
     "@tanstack/react-virtual": "^3.14.2",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
+    "cheerio": "^1.2.0",
     "chroma-js": "^3.2.0",
     "colorthief": "^2.7.0",
     "defuddle": "^0.18.1",
@@ -47,8 +56,13 @@
     "@types/prismjs": "^1.26.6",
     "@types/react": "^18.3.30",
     "@types/react-dom": "^18.3.7",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@vitejs/plugin-react": "^4.6.0",
+    "jsdom": "^26.1.0",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^3.2.4"
   }
 }

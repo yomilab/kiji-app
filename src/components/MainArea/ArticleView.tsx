@@ -2039,6 +2039,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
           className={`article-view-header-bar ${hasScrollOffset ? 'article-view-header-bar-scrolled' : ''}`}
           data-section="article-view-header"
           data-component="article-header-bar"
+          data-tauri-drag-region
         >
           <motion.div
             className="article-view-header-chrome"
