@@ -73,6 +73,8 @@ vi.mock("@/services/settings", () => ({
     }),
     setReadTrackingAlgorithm: vi.fn().mockResolvedValue(undefined),
     setSavedArticlesSyncFolder: vi.fn().mockResolvedValue(undefined),
+    setBackgroundUpdate: vi.fn().mockResolvedValue(undefined),
+    setContentParser: vi.fn().mockResolvedValue(undefined),
     saveSettings: vi.fn().mockResolvedValue(undefined),
   },
 }));

@@ -1,8 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from 'react';
 import { settingsManager, DEFAULT_SETTINGS } from '@/services/settings';
 import type { Theme, FontFamilySettings, ReadingLayoutSettings } from '@/services/settings';
 import { applyFontFamiliesToRoot, applyReadingLayoutToRoot } from '@/services/settings/styleVariables';
-import { SETTINGS_STORAGE_KEYS } from '@/services/settings/storageModel';
 import { loadFontsFromFamilyString } from '@/utils/googleFonts';
 
 interface ThemeContextType {
@@ -33,6 +32,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const [readingLayout, setReadingLayout] = useState<ReadingLayoutSettings>(
     DEFAULT_SETTINGS.readingLayout
   );
+  const skipInitialThemePersistRef = useRef(true);
 
   const getSystemTheme = (): 'light' | 'dark' => (
     window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
@@ -79,32 +79,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   useEffect(() => {
     if (!isInitialized) return;
 
-    // Apply effective theme to document
     document.documentElement.setAttribute('data-theme', effectiveTheme);
     document.documentElement.style.colorScheme = effectiveTheme;
-
-    // Save theme mode to settings
-    (async () => {
-      try {
-        await settingsManager.setTheme(theme);
-      } catch (error) {
-        console.error('Error saving theme to settings:', error);
-      }
-    })();
-
-    // Mirror renderer preferences for next-launch synchronous bootstrap.
-    try {
-      const bootstrapSettingsRaw = localStorage.getItem(SETTINGS_STORAGE_KEYS.renderer);
-      const bootstrapSettings = bootstrapSettingsRaw ? JSON.parse(bootstrapSettingsRaw) : {};
-      localStorage.setItem(SETTINGS_STORAGE_KEYS.renderer, JSON.stringify({
-        ...bootstrapSettings,
-        fontFamilies,
-        readingLayout,
-      }));
-    } catch (error) {
-      console.error('Error saving bootstrap renderer preferences:', error);
-    }
-  }, [theme, effectiveTheme, fontFamilies, readingLayout, isInitialized]);
+  }, [effectiveTheme, isInitialized]);
 
   // Apply font families to CSS variables (load Google Fonts first)
   useEffect(() => {
@@ -161,17 +138,32 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     }
   };
 
-  const toggleTheme = () => {
-    setThemeState((prevTheme) => {
-      if (prevTheme === 'auto') return 'light';
-      if (prevTheme === 'light') return 'dark';
-      return 'auto';
-    });
-  };
+  const persistTheme = useCallback(async (nextTheme: Theme) => {
+    try {
+      await settingsManager.setTheme(nextTheme);
+    } catch (error) {
+      console.error('Error saving theme to settings:', error);
+    }
+  }, []);
 
-  const setTheme = (newTheme: Theme) => {
+  const setTheme = useCallback((newTheme: Theme) => {
     setThemeState(newTheme);
-  };
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setThemeState((prevTheme) => (
+      prevTheme === 'auto' ? 'light' : prevTheme === 'light' ? 'dark' : 'auto'
+    ));
+  }, []);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    if (skipInitialThemePersistRef.current) {
+      skipInitialThemePersistRef.current = false;
+      return;
+    }
+    void persistTheme(theme);
+  }, [theme, isInitialized, persistTheme]);
 
   // Listen for system theme changes while in auto mode
   useEffect(() => {
@@ -193,8 +185,11 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     const handleSettingsChanged = async () => {
       try {
         console.log('[ThemeContext] Settings changed, reloading appearance settings...');
+        const updatedTheme = await settingsManager.getTheme();
         const updatedFonts = await settingsManager.getFontFamilies();
         const updatedReadingLayout = await settingsManager.getReadingLayout();
+        setThemeState(updatedTheme);
+        setEffectiveTheme(resolveTheme(updatedTheme));
         setFontFamilies(updatedFonts);
         setReadingLayout(updatedReadingLayout);
       } catch (error) {

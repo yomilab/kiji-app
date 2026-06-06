@@ -88,7 +88,9 @@ const createSteppedSliderTransform = (
 export const SettingsWindow: React.FC = () => {
   useSystemAccentColor();
   const [activeCategory, setActiveCategory] = useState<ConfigCategory>('general');
-  const [backgroundUpdate, setBackgroundUpdate] = useState<BackgroundUpdateMode>('on-launch');
+  const [backgroundUpdate, setBackgroundUpdate] = useState<BackgroundUpdateMode>(
+    DEFAULT_SETTINGS.backgroundUpdate,
+  );
   const [contentParser, setContentParser] = useState<ContentParser>(DEFAULT_SETTINGS.contentParser);
   const [savedArticlesSyncFolder, setSavedArticlesSyncFolder] = useState<string | null>(null);
   const isSavedArticlesSyncEnabled = savedArticlesSyncFolder !== null;
@@ -124,12 +126,18 @@ export const SettingsWindow: React.FC = () => {
     logger.info('SettingsWindow', 'Settings window mounted');
   });
 
-  // Load settings on mount
+  // Load persisted settings on mount and whenever the settings window is shown again.
   useEffect(() => {
+    let disposed = false;
+
     const loadSettings = async () => {
       try {
         const settings = await settingsManager.getSettings();
-        setBackgroundUpdate(settings.backgroundUpdate ?? 'on-launch');
+        if (disposed) {
+          return;
+        }
+
+        setBackgroundUpdate(settings.backgroundUpdate ?? DEFAULT_SETTINGS.backgroundUpdate);
         setContentParser(settings.contentParser ?? DEFAULT_SETTINGS.contentParser);
         setSavedArticlesSyncFolder(settings.savedArticlesSyncFolder ?? null);
 
@@ -140,7 +148,42 @@ export const SettingsWindow: React.FC = () => {
         console.error('Error loading settings:', error);
       }
     };
-    loadSettings();
+
+    void loadSettings();
+
+    const reloadFromPersistedSettings = () => {
+      void loadSettings();
+    };
+
+    const removeSettingsChangedListener = window.electronAPI?.onSettingsChanged?.(reloadFromPersistedSettings);
+
+    let unlistenFocus: (() => void) | null = null;
+    if ('__TAURI_INTERNALS__' in window) {
+      void getCurrentWindow()
+        .onFocusChanged(({ payload: focused }) => {
+          if (focused) {
+            void loadSettings();
+          }
+        })
+        .then((unlisten) => {
+          if (disposed) {
+            unlisten();
+            return;
+          }
+          unlistenFocus = unlisten;
+        })
+        .catch((error) => {
+          console.error('Error subscribing to settings window focus changes:', error);
+        });
+    }
+
+    return () => {
+      disposed = true;
+      if (typeof removeSettingsChangedListener === 'function') {
+        removeSettingsChangedListener();
+      }
+      unlistenFocus?.();
+    };
   }, []);
 
   // Sync local fonts with context when fontFamilies change
@@ -431,9 +474,7 @@ export const SettingsWindow: React.FC = () => {
 
   const handleBackgroundUpdateChange = async (mode: BackgroundUpdateMode) => {
     try {
-      const settings = await settingsManager.getSettings();
-      settings.backgroundUpdate = mode;
-      await settingsManager.saveSettings(settings);
+      await settingsManager.setBackgroundUpdate(mode);
       setBackgroundUpdate(mode);
 
       // Notify main window to reconfigure scheduler
@@ -445,10 +486,9 @@ export const SettingsWindow: React.FC = () => {
 
   const handleContentParserChange = async (parser: ContentParser) => {
     try {
-      const settings = await settingsManager.getSettings();
-      settings.contentParser = parser;
-      await settingsManager.saveSettings(settings);
+      await settingsManager.setContentParser(parser);
       setContentParser(parser);
+      notifySettingsChanged();
     } catch (error) {
       console.error('Error saving content parser:', error);
     }

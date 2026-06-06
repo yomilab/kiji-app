@@ -5,7 +5,14 @@ import { DEFAULT_SETTINGS as DEFAULT_NATIVE_SETTINGS } from '@/lib/settings';
 let cachedNativeSettings: AppSettings | null = null;
 
 function isTauriRuntime(): boolean {
-  return typeof import.meta.env.TAURI_ENV_PLATFORM === 'string';
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  // `TAURI_ENV_PLATFORM` is a CLI hook env var and is not injected into the Vite
+  // client bundle, so runtime detection must use the Tauri internals marker.
+  return '__TAURI_INTERNALS__' in window
+    || typeof import.meta.env.TAURI_ENV_PLATFORM === 'string';
 }
 
 export async function loadNativeAppSettings(): Promise<AppSettings> {

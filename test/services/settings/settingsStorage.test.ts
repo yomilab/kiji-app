@@ -101,10 +101,38 @@ describe("settingsManager storage boundaries", () => {
     localStorage.clear();
     vi.resetModules();
     vi.stubEnv("TAURI_ENV_PLATFORM", "macos");
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      configurable: true,
+    });
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  });
+
+  it("writes native fields to Rust when only __TAURI_INTERNALS__ is present", async () => {
+    vi.unstubAllEnvs();
+    const updateMock = vi.fn().mockResolvedValue({
+      ...DEFAULT_NATIVE_SETTINGS,
+      backgroundUpdate: "every-30m",
+    });
+
+    vi.doMock("@/lib/tauriClient", () => ({
+      tauriClient: {
+        settings: {
+          get: vi.fn().mockResolvedValue(DEFAULT_NATIVE_SETTINGS),
+          update: updateMock,
+        },
+      },
+    }));
+
+    const { settingsManager } = await import("@/services/settings/settingsManager");
+
+    await settingsManager.setBackgroundUpdate("every-30m");
+
+    expect(updateMock).toHaveBeenCalledWith({ backgroundUpdate: "every-30m" });
   });
 
   it("writes native fields to Rust and renderer fields to localStorage", async () => {

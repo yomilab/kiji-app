@@ -158,36 +158,38 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
   );
 }
 
-const windowType = getWindowType();
-installElectronApiCompat();
-void initializeAppSettings()
-  .then(async () => {
-    if (windowType !== "main") {
-      return;
-    }
+async function bootstrapRenderer(): Promise<void> {
+  const windowType = getWindowType();
+  installElectronApiCompat();
+  logger.info("Renderer", "Renderer bootstrap starting", { windowType });
 
-    try {
-      await invoke("shell_main_window_apply_saved_bounds");
-    } catch (error) {
-      logger.error("Renderer", "Failed to apply saved main window bounds", { error });
+  try {
+    await initializeAppSettings();
+    if (windowType === "main") {
+      try {
+        await invoke("shell_main_window_apply_saved_bounds");
+      } catch (error) {
+        logger.error("Renderer", "Failed to apply saved main window bounds", { error });
+      }
     }
-  })
-  .catch((error: unknown) => {
+  } catch (error: unknown) {
     logger.error("Renderer", "Failed to initialize app settings on bootstrap", { error });
-  });
-savedArticlesSyncBridge.start();
-installWindowCloseShortcut(windowType);
-logger.installConsoleCapture(windowType === "main" ? "renderer" : "renderer");
-logger.installGlobalErrorHandlers("renderer");
-installInteractionFreezeWatchdog(windowType ?? "main");
-logger.info("Renderer", "Renderer bootstrap starting", { windowType });
+  }
 
-initializeVisualSettings();
+  savedArticlesSyncBridge.start();
+  installWindowCloseShortcut(windowType);
+  logger.installConsoleCapture(windowType === "main" ? "renderer" : "renderer");
+  logger.installGlobalErrorHandlers("renderer");
+  installInteractionFreezeWatchdog(windowType ?? "main");
+  initializeVisualSettings();
 
-const container = document.getElementById("root");
-if (!container) {
-  logger.error("Renderer", "Root element not found");
-  throw new Error("Root element not found");
+  const container = document.getElementById("root");
+  if (!container) {
+    logger.error("Renderer", "Root element not found");
+    throw new Error("Root element not found");
+  }
+
+  createRoot(container).render(renderWindow(windowType));
 }
 
-createRoot(container).render(renderWindow(windowType));
+void bootstrapRenderer();

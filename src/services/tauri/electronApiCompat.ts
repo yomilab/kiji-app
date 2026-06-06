@@ -1,5 +1,5 @@
 import { Window as TauriWindow } from '@tauri-apps/api/window';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { tauriClient } from '@/lib/tauriClient';
 import {
   invokeSavedArticlesExportPreflight,
@@ -28,7 +28,6 @@ import type { AppMenuCommand } from '@/types/appMenu';
 import { trafficLightVisibilityBus } from '@/services/ui/trafficLightVisibilityBus';
 
 const ARTICLE_WINDOW_PAYLOAD_KEY = 'kiji:tauri:article-window-payload';
-const settingsChangedListeners = new Set<() => void>();
 
 function createDeferredUnsubscribe(unlistenPromise: Promise<() => void>): () => void {
   let disposed = false;
@@ -230,13 +229,16 @@ function installElectronApiCompat(): void {
       }));
     },
     async notifySettingsChanged() {
-      settingsChangedListeners.forEach((listener) => listener());
+      try {
+        await emit('settings-changed');
+      } catch {
+        // Non-Tauri test environments do not expose the event bus.
+      }
     },
     onSettingsChanged(callback) {
-      settingsChangedListeners.add(callback);
-      return () => {
-        settingsChangedListeners.delete(callback);
-      };
+      return createDeferredUnsubscribe(
+        listen('settings-changed', () => callback()),
+      );
     },
     async readClipboard() {
       return tauriClient.system.clipboard.readText();

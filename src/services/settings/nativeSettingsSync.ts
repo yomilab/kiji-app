@@ -1,7 +1,9 @@
 import { settingsManager } from './settingsManager';
 import type { UserSettings } from './types';
 import type { AppSettingsPatch } from '@/lib/settings';
+import { primeNativeAppSettingsCache } from './nativeSettingsBackend';
 import {
+  toNativeAppSettings,
   toNativeAppSettingsPatch,
 } from './storageModel';
 
@@ -21,7 +23,9 @@ export function mapUserSettingsToNativePatch(settings: UserSettings): AppSetting
  * Ensure native and renderer settings stores are loaded and legacy blobs migrated.
  */
 export async function initializeAppSettings(): Promise<UserSettings> {
-  return settingsManager.initialize();
+  const settings = await settingsManager.initialize();
+  primeNativeAppSettingsCache(toNativeAppSettings(settings));
+  return settings;
 }
 
 /** @deprecated Use initializeAppSettings instead. */

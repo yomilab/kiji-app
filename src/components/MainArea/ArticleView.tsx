@@ -90,14 +90,12 @@ function isSaveableHtmlContent(content?: string | null): boolean {
 }
 
 function shouldUseSavedArticleSnapshot(
-  article: Article | null | undefined,
+  _article: Article | null | undefined,
   selectedSmartView: string | null,
 ): boolean {
-  if (!article) {
-    return false;
-  }
-
-  return selectedSmartView === 'saved' || !!article.savedArticleId;
+  // Saved snapshot mode applies only in the Saved smart view. A feed-linked
+  // article that happens to be saved must still follow reader/basic toggles.
+  return selectedSmartView === 'saved';
 }
 
 function isAudioEnclosure(articleEnclosure: ArticleEnclosure): boolean {
@@ -324,7 +322,7 @@ function useEmbeddedArticleOpenBootstrap(params: {
     const bootstrapArticle = async () => {
       let fullArticle = selectedArticle;
       try {
-        if (selectedArticle.savedArticleId) {
+        if (selectedSmartView === 'saved' && selectedArticle.savedArticleId) {
           const savedContent = await articleStore.getSavedContent(selectedArticle.savedArticleId);
           if (savedContent && currentArticleHashRef.current === selectedArticle.hash) {
             fullArticle = { ...fullArticle, content: savedContent };
@@ -1234,8 +1232,8 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
         setIsSaved(true);
         const savedPayload = buildSavedListUpdatePayload(true, savedArticle.id);
 
-        // Update the article to show with the new savedArticleId and persisted body.
-        setArticleToShow({ ...articleToShow, ...savedPayload, content: articleToSave.content });
+        // Keep the live feed body for reader/basic toggles; only attach saved metadata.
+        setArticleToShow({ ...articleToShow, ...savedPayload });
 
         // Update the article in the list (only for non-temporary)
         if (!isTemporaryArticle && isFeedLinkedArticle) {

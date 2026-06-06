@@ -13,6 +13,11 @@ export default defineConfig(async () => ({
     },
   },
 
+  build: {
+    // Main renderer bundle includes React, MUI, parsers, and article UI; splitting would add complexity for little gain in a desktop Tauri app.
+    chunkSizeWarningLimit: 2500,
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
