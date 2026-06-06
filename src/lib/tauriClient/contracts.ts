@@ -768,6 +768,9 @@ export interface ShellContract {
     request: ArticleWindowPayload;
     response: void;
   };
+  getArticleWindowData: {
+    response: ArticleRecord;
+  };
   share: {
     request: ShareRequest;
     response: { success: boolean };

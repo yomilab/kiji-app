@@ -45,6 +45,7 @@
       },
       {
         "label": "article",
+        "create": false,
         "title": "KiJi Article",
         "url": "index.html?window=article",
         "width": 1000,

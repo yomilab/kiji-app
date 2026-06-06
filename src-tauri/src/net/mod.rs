@@ -1,3 +1,6 @@
+mod errors;
+
+use errors::{feed_http_status_error, feed_network_error, feed_request_cancelled_error};
 use futures_util::future::{AbortHandle, Abortable};
 use once_cell::sync::Lazy;
 use reqwest::{
@@ -126,7 +129,7 @@ async fn fetch_with_cache(
 
     match result {
         Ok(result) => result,
-        Err(_) => Err("Feed request was cancelled.".to_string()),
+        Err(_) => Err(feed_request_cancelled_error()),
     }
 }
 
@@ -154,7 +157,7 @@ async fn execute_fetch(
     let response = request_builder
         .send()
         .await
-        .map_err(|error| format!("Failed to fetch URL: {error}"))?;
+        .map_err(feed_network_error)?;
     let status = response.status();
     let headers = response.headers().clone();
     let etag = headers
@@ -176,7 +179,7 @@ async fn execute_fetch(
     }
 
     if !status.is_success() {
-        return Err(format!("HTTP request failed with status {status}."));
+        return Err(feed_http_status_error(status));
     }
 
     let data = response
@@ -285,7 +288,7 @@ async fn fetch_data_url(
 
     match result {
         Ok(result) => result,
-        Err(_) => Err("Feed request was cancelled.".to_string()),
+        Err(_) => Err(feed_request_cancelled_error()),
     }
 }
 
@@ -303,11 +306,11 @@ async fn execute_data_url_fetch(
         .timeout(Duration::from_millis(timeout.unwrap_or(DEFAULT_TIMEOUT_MS)))
         .send()
         .await
-        .map_err(|error| format!("Failed to fetch URL: {error}"))?;
+        .map_err(feed_network_error)?;
 
     let status = response.status();
     if !status.is_success() {
-        return Err(format!("HTTP request failed with status {status}."));
+        return Err(feed_http_status_error(status));
     }
 
     if let Some(content_length) = response.content_length() {

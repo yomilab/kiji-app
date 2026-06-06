@@ -13,8 +13,10 @@ import { SETTINGS_STORAGE_KEYS } from "./services/settings/storageModel";
 import { keybindingService } from "./services/shortcuts/shortcutService";
 import { savedArticlesSyncBridge } from "./services/saved/sync/savedArticlesSyncBridge";
 import { initializeAppSettings } from "./services/settings/nativeSettingsSync";
+import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { installElectronApiCompat } from "./services/tauri/electronApiCompat";
+import { createDeferredUnsubscribe } from "./services/tauri/tauriEventSubscription";
 import { installInteractionFreezeWatchdog } from "./services/performance/interactionFreezeWatchdog";
 import type { Article } from "./types/article";
 import "./styles/google-sans.css";
@@ -78,27 +80,43 @@ function installWindowCloseShortcut(windowType: RendererWindowType): void {
   });
 }
 
+const ARTICLE_WINDOW_OPEN_EVENT = "article-window:open";
+
 function ArticleWindowBranch() {
   const [article, setArticle] = React.useState<Article | null>(null);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let mounted = true;
-    void window.electronAPI?.getArticleWindowData()
-      .then((payload) => {
-        if (mounted) {
-          setArticle(payload);
-        }
-      })
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.error("Renderer", "Failed to load article window payload", { error: message });
-        if (mounted) {
-          setErrorMessage(message);
-        }
-      });
+
+    const loadArticlePayload = () => {
+      setErrorMessage(null);
+      void window.electronAPI?.getArticleWindowData()
+        .then((payload) => {
+          if (mounted) {
+            setArticle(payload);
+          }
+        })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          logger.error("Renderer", "Failed to load article window payload", { error: message });
+          if (mounted) {
+            setArticle(null);
+            setErrorMessage(message);
+          }
+        });
+    };
+
+    loadArticlePayload();
+    const removeOpenListener = createDeferredUnsubscribe(
+      listen(ARTICLE_WINDOW_OPEN_EVENT, () => {
+        loadArticlePayload();
+      }),
+    );
+
     return () => {
       mounted = false;
+      removeOpenListener();
     };
   }, []);
 

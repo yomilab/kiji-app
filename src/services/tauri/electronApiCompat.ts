@@ -1,6 +1,6 @@
-import { Window as TauriWindow } from '@tauri-apps/api/window';
 import { emit, listen } from '@tauri-apps/api/event';
 import { tauriClient } from '@/lib/tauriClient';
+import { createDeferredUnsubscribe } from '@/services/tauri/tauriEventSubscription';
 import {
   invokeSavedArticlesExportPreflight,
   invokeSavedArticlesExportStart,
@@ -20,58 +20,16 @@ import type {
   HelperTaskRemoveRequest,
   HelperTaskResultEvent,
 } from '@/services/tasks/helperTaskContracts';
+import { articleToRecord, recordToArticle } from '@/stores/articleStore';
 import { extractArticleContentFromHtml } from '@/services/articles/articleExtractionService';
 import { isContentParser } from '@/services/settings/types';
-import type { Article } from '@/types/article';
 import type { ElectronAPI } from '@/types/electron';
 import type { AppMenuCommand } from '@/types/appMenu';
 import { trafficLightVisibilityBus } from '@/services/ui/trafficLightVisibilityBus';
 
-const ARTICLE_WINDOW_PAYLOAD_KEY = 'kiji:tauri:article-window-payload';
-
-function createDeferredUnsubscribe(unlistenPromise: Promise<() => void>): () => void {
-  let disposed = false;
-  let unlisten: (() => void) | null = null;
-
-  void unlistenPromise
-    .then((dispose) => {
-      if (disposed) {
-        dispose();
-        return;
-      }
-      unlisten = dispose;
-    })
-    .catch(() => {
-      // Listener setup failures are surfaced by the caller path when needed.
-    });
-
-  return () => {
-    disposed = true;
-    unlisten?.();
-    unlisten = null;
-  };
-}
-
 function fileNameFromPath(path: string): string | undefined {
   const parts = path.split(/[\\/]/).filter(Boolean);
   return parts.length > 0 ? parts[parts.length - 1] : undefined;
-}
-
-async function showWindow(label: string): Promise<void> {
-  const window = await TauriWindow.getByLabel(label);
-  if (!window) {
-    throw new Error(`Tauri window not found: ${label}`);
-  }
-  await window.show();
-  await window.setFocus();
-}
-
-function readArticlePayload(): Article {
-  const serialized = localStorage.getItem(ARTICLE_WINDOW_PAYLOAD_KEY);
-  if (!serialized) {
-    throw new Error('No article payload was provided for the Tauri article window.');
-  }
-  return JSON.parse(serialized) as Article;
 }
 
 function installElectronApiCompat(): void {
@@ -165,11 +123,18 @@ function installElectronApiCompat(): void {
       await tauriClient.system.app.relaunch();
     },
     async openArticleWindow(articleData) {
-      localStorage.setItem(ARTICLE_WINDOW_PAYLOAD_KEY, JSON.stringify(articleData.article));
-      await showWindow('article');
+      await tauriClient.shell.openArticleWindow({
+        article: articleToRecord(articleData.article),
+      });
+      try {
+        await emit('article-window:open');
+      } catch {
+        // Non-Tauri test environments do not expose the event bus.
+      }
     },
     async getArticleWindowData() {
-      return readArticlePayload();
+      const record = await tauriClient.shell.getArticleWindowData();
+      return recordToArticle(record);
     },
     async showShareSheet(shareData) {
       await tauriClient.shell.share(shareData);
@@ -381,4 +346,4 @@ function installElectronApiCompat(): void {
   window.electronAPI = api;
 }
 
-export { installElectronApiCompat, ARTICLE_WINDOW_PAYLOAD_KEY };
+export { installElectronApiCompat };

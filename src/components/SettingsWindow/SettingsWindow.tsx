@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { subscribeToWindowFocus } from '@/services/tauri/tauriEventSubscription';
 import { settingsManager, DEFAULT_SETTINGS } from '@/services/settings';
 import type { ContentParser } from '@/services/settings';
 import type { BackgroundUpdateMode } from '@/services/scheduler/types';
@@ -156,33 +157,16 @@ export const SettingsWindow: React.FC = () => {
     };
 
     const removeSettingsChangedListener = window.electronAPI?.onSettingsChanged?.(reloadFromPersistedSettings);
-
-    let unlistenFocus: (() => void) | null = null;
-    if ('__TAURI_INTERNALS__' in window) {
-      void getCurrentWindow()
-        .onFocusChanged(({ payload: focused }) => {
-          if (focused) {
-            void loadSettings();
-          }
-        })
-        .then((unlisten) => {
-          if (disposed) {
-            unlisten();
-            return;
-          }
-          unlistenFocus = unlisten;
-        })
-        .catch((error) => {
-          console.error('Error subscribing to settings window focus changes:', error);
-        });
-    }
+    const removeFocusListener = subscribeToWindowFocus(() => {
+      void loadSettings();
+    });
 
     return () => {
       disposed = true;
       if (typeof removeSettingsChangedListener === 'function') {
         removeSettingsChangedListener();
       }
-      unlistenFocus?.();
+      removeFocusListener();
     };
   }, []);
 

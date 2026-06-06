@@ -397,7 +397,13 @@ const captureInteractionEvent = (event: Event): void => {
   logInteractionEvent(record);
 };
 
+const shouldMonitorRendererFreeze = (): boolean => document.visibilityState === 'visible';
+
 const reportRendererFreeze = async (stallDurationMs: number, detectedAtMs: number): Promise<void> => {
+  if (!shouldMonitorRendererFreeze()) {
+    return;
+  }
+
   const severity = getRendererFreezeSeverity(stallDurationMs);
   if (!severity || reportingFreeze) {
     return;
@@ -442,7 +448,7 @@ const handleHeartbeat = (): void => {
   const stallDurationMs = nowMs - lastHeartbeatAtMs - RENDERER_FREEZE_HEARTBEAT_INTERVAL_MS;
   lastHeartbeatAtMs = nowMs;
 
-  if (getRendererFreezeSeverity(stallDurationMs)) {
+  if (shouldMonitorRendererFreeze() && getRendererFreezeSeverity(stallDurationMs)) {
     void reportRendererFreeze(stallDurationMs, nowMs);
   }
 };
@@ -459,6 +465,10 @@ const installLongTaskObserver = (): void => {
   }
 
   longTaskObserver = new PerformanceObserver((entryList) => {
+    if (!shouldMonitorRendererFreeze()) {
+      return;
+    }
+
     for (const entry of entryList.getEntries()) {
       const severity = getRendererFreezeSeverity(entry.duration);
       if (!severity) {

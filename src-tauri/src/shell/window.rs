@@ -1,4 +1,5 @@
 use crate::settings::SettingsState;
+use serde_json::Value as JsonValue;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -7,7 +8,39 @@ use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, State, WebviewWind
 
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
 const SETTINGS_WINDOW_LABEL: &str = "settings";
+const ARTICLE_WINDOW_LABEL: &str = "article";
 const MAIN_WINDOW_LABEL: &str = "main";
+
+pub struct ArticleWindowState {
+    payload: Mutex<Option<JsonValue>>,
+}
+
+impl ArticleWindowState {
+    pub fn new() -> Self {
+        Self {
+            payload: Mutex::new(None),
+        }
+    }
+
+    pub fn set_payload(&self, article: JsonValue) -> Result<(), String> {
+        let mut guard = self
+            .payload
+            .lock()
+            .map_err(|_| "Article window state lock poisoned.".to_string())?;
+        *guard = Some(article);
+        Ok(())
+    }
+
+    pub fn clone_payload(&self) -> Result<JsonValue, String> {
+        let guard = self
+            .payload
+            .lock()
+            .map_err(|_| "Article window state lock poisoned.".to_string())?;
+        guard
+            .clone()
+            .ok_or_else(|| "No article payload was provided for the Tauri article window.".to_string())
+    }
+}
 
 pub fn restore_main_window_bounds(
     app: &AppHandle,
@@ -66,6 +99,58 @@ pub fn open_settings_window(app: &AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn shell_settings_window_open(app: AppHandle) -> Result<(), String> {
     open_settings_window(&app)
+}
+
+pub fn open_article_window(app: &AppHandle) -> Result<(), String> {
+    let article_window = match app.get_webview_window(ARTICLE_WINDOW_LABEL) {
+        Some(window) => window,
+        None => {
+            let article_config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|window| window.label == ARTICLE_WINDOW_LABEL)
+                .ok_or_else(|| "Article window config was not found.".to_string())?;
+
+            WebviewWindowBuilder::from_config(app, article_config)
+                .map_err(|error| format!("Failed to prepare article window: {error}"))?
+                .build()
+                .map_err(|error| format!("Failed to create article window: {error}"))?
+        }
+    };
+
+    let _ = article_window.unminimize();
+    article_window
+        .show()
+        .map_err(|error| format!("Failed to show article window: {error}"))?;
+    article_window
+        .set_focus()
+        .map_err(|error| format!("Failed to focus article window: {error}"))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn shell_article_window_open(
+    app: AppHandle,
+    article: JsonValue,
+    state: State<'_, Arc<ArticleWindowState>>,
+) -> Result<(), String> {
+    state.set_payload(article)?;
+    open_article_window(&app)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn shell_article_window_get_data(
+    window: WebviewWindow,
+    state: State<'_, Arc<ArticleWindowState>>,
+) -> Result<JsonValue, String> {
+    if window.label() != ARTICLE_WINDOW_LABEL {
+        return Err(format!(
+            "Article window payload can only be read from the article webview (got {}).",
+            window.label()
+        ));
+    }
+    state.clone_payload()
 }
 
 fn apply_main_window_bounds(
@@ -148,4 +233,35 @@ fn attach_main_window_bounds_listener(window: WebviewWindow, settings: Arc<Setti
             }
         }));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn article_window_state_stores_and_clones_payload() {
+        let state = ArticleWindowState::new();
+        let article = json!({ "hash": "abc", "title": "Example" });
+
+        state.set_payload(article.clone()).expect("payload should store");
+        let first = state.clone_payload().expect("payload should load");
+        let second = state.clone_payload().expect("payload should load again");
+        assert_eq!(first, article);
+        assert_eq!(second, article);
+    }
+
+    #[test]
+    fn article_window_state_reopen_replaces_payload() {
+        let state = ArticleWindowState::new();
+        let first = json!({ "hash": "first", "title": "First" });
+        let second = json!({ "hash": "second", "title": "Second" });
+
+        state.set_payload(first).expect("first payload should store");
+        assert_eq!(state.clone_payload().unwrap()["hash"], "first");
+
+        state.set_payload(second.clone()).expect("second payload should store");
+        assert_eq!(state.clone_payload().unwrap(), second);
+    }
 }

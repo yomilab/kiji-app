@@ -9,8 +9,6 @@ const CLIENT_INVOKE_ALLOWLIST = new Set([
   "tasks_helper_remove",
   "tasks_helper_clear",
   "tasks_helper_get_queue_snapshot",
-  // Article window payload still uses renderer-local storage until a native bridge lands.
-  "shell_article_window_open",
 ]);
 
 const INVOKE_PATTERNS = [
@@ -91,6 +89,39 @@ function escapeRegExp(value: string): string {
 }
 
 describe("tauri command catalog", () => {
+  it("maps invoke catalog entries to registered Rust commands", () => {
+    const registered = readRegisteredRustCommands();
+    const missing: string[] = [];
+
+    for (const entries of Object.values(tauriCommandCatalog)) {
+      for (const entry of entries) {
+        if (entry.kind !== "invoke" || !entry.rustCommand) {
+          continue;
+        }
+
+        if (!registered.has(entry.rustCommand)) {
+          missing.push(`${entry.legacyMethod} -> ${entry.rustCommand}`);
+        }
+      }
+    }
+
+    expect(missing).toEqual([]);
+  });
+
+  it("requires rustCommand on invoke catalog entries", () => {
+    const missing: string[] = [];
+
+    for (const entries of Object.values(tauriCommandCatalog)) {
+      for (const entry of entries) {
+        if (entry.kind === "invoke" && !entry.rustCommand) {
+          missing.push(entry.legacyMethod);
+        }
+      }
+    }
+
+    expect(missing).toEqual([]);
+  });
+
   it("keeps legacy method and channel identifiers unique", () => {
     const legacyMethods = new Set<string>();
     const legacyChannels = new Set<string>();

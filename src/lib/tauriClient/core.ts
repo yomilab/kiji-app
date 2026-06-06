@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isExpectedFeedCommandFailure } from "./commandError";
 
 export interface CommandPayload extends Record<string, unknown> {}
 
@@ -24,6 +25,10 @@ export async function invokeCommand<TResponse>(
   }
 }
 
+function resolveCommandFailureLevel(command: string, error: unknown): "error" | "warn" {
+  return isExpectedFeedCommandFailure(command, error) ? "warn" : "error";
+}
+
 async function logCommandFailure(
   command: string,
   payload: CommandPayload | undefined,
@@ -33,10 +38,12 @@ async function logCommandFailure(
     return;
   }
 
+  const level = resolveCommandFailureLevel(command, error);
+
   try {
     await invoke("diagnostics_log_write_entry", {
       entry: {
-        level: "error",
+        level,
         process: "renderer",
         category: "TauriCommand",
         event: "invoke-failed",

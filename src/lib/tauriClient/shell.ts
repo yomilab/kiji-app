@@ -67,6 +67,10 @@ export async function openArticleWindow(
   return invokeContract<ShellContract["openArticleWindow"]>("shell_article_window_open", request);
 }
 
+export async function getArticleWindowData(): Promise<ShellContract["getArticleWindowData"]["response"]> {
+  return invokeContract<ShellContract["getArticleWindowData"]>("shell_article_window_get_data");
+}
+
 export async function share(
   request: ShellContract["share"]["request"],
 ): Promise<ShellContract["share"]["response"]> {
