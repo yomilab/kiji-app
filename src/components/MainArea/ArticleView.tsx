@@ -5,7 +5,6 @@ import ArchiveIcon from '@mui/icons-material/Archive';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import ArticleIcon from '@mui/icons-material/Article';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
-import WebAssetIcon from '@mui/icons-material/WebAsset';
 import { motion, AnimatePresence } from 'motion/react';
 import { useFeedNavigation, useFeedCollection, useFeedOverlay, type ArticleListUpdatePayload } from '@/contexts/FeedContext';
 import * as articleStore from '@/stores/articleStore';
@@ -2090,20 +2089,6 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
                 data-widget="save-article"
                 data-action={isSaved ? "unsave-article" : "save-article"}
               />
-              {!standalone && (
-                <button
-                  onClick={handleOpenInNewWindow}
-                  className="button is-text is-small article-view-action-button"
-                  aria-label={withShortcutHint(TOOLTIPS.articleView.openNewWindow, SHORTCUT_LABELS.OPEN_ARTICLE_IN_NEW_WINDOW)}
-                  title={withShortcutHint(TOOLTIPS.articleView.openNewWindow, SHORTCUT_LABELS.OPEN_ARTICLE_IN_NEW_WINDOW)}
-                  data-widget="open-new-window"
-                  data-action="open-standalone"
-                >
-                  <span className="icon">
-                    <WebAssetIcon sx={{ fontSize: 'var(--widget-button-icon-size)' }} />
-                  </span>
-                </button>
-              )}
               <button
                 ref={shareButtonRef}
                 onClick={handleShareClick}
