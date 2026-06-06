@@ -61,7 +61,9 @@ pub struct DbState {
 impl DbState {
     pub fn load(app: &AppHandle) -> Result<Self, String> {
         let path = resolve_database_path(app)?;
+        remove_stale_wal_sidecars(&path)?;
         let mut connection = open_connection(&path)?;
+        verify_database_integrity(&connection, &path)?;
         run_migrations(&mut connection)?;
 
         Ok(Self {
@@ -118,9 +120,56 @@ fn resolve_database_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(data_dir.join(DATABASE_FILE_NAME))
 }
 
+fn remove_stale_wal_sidecars(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    for extension in ["-wal", "-shm"] {
+        let sidecar_path = path.with_extension(format!(
+            "{}{extension}",
+            path.extension()
+                .and_then(|value| value.to_str())
+                .unwrap_or("db")
+        ));
+        if !sidecar_path.exists() {
+            continue;
+        }
+
+        fs::remove_file(&sidecar_path).map_err(|error| {
+            format!(
+                "Failed to remove stale database sidecar {}: {error}",
+                sidecar_path.display()
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+fn verify_database_integrity(connection: &Connection, path: &Path) -> Result<(), String> {
+    let result = connection
+        .query_row("PRAGMA quick_check", [], |row| row.get::<_, String>(0))
+        .map_err(|error| format!("Failed to verify KiJi database integrity: {error}"))?;
+
+    if result == "ok" {
+        return Ok(());
+    }
+
+    Err(format!(
+        "KiJi database at {} failed integrity check: {result}. If you replaced kiji.db manually, copy it with `sqlite3 source.db \".backup 'dest.db'\"` while the source app is closed, then remove any stale kiji.db-wal and kiji.db-shm files.",
+        path.display()
+    ))
+}
+
 fn open_connection(path: &Path) -> Result<Connection, String> {
     let connection = Connection::open(path)
-        .map_err(|error| format!("Failed to open the KiJi database: {error}"))?;
+        .map_err(|error| {
+            format!(
+                "Failed to open the KiJi database at {}: {error}. If you replaced kiji.db manually, use `sqlite3 source.db \".backup 'dest.db'\"` while the source app is closed and remove stale kiji.db-wal and kiji.db-shm files.",
+                path.display()
+            )
+        })?;
 
     connection
         .pragma_update(None, "journal_mode", "WAL")

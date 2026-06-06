@@ -52,7 +52,10 @@ pub fn run() {
         .setup(|app| {
             let settings_state =
                 Arc::new(SettingsState::load(&app.handle()).map_err(std::io::Error::other)?);
-            let db_state = DbState::load(&app.handle()).map_err(std::io::Error::other)?;
+            let db_state = DbState::load(&app.handle()).map_err(|error| {
+                eprintln!("[KiJi] Database startup failed: {error}");
+                std::io::Error::other(error)
+            })?;
             let sync_state =
                 SavedSyncState::new(db_state.database_path(), Arc::clone(&settings_state));
             sync_state.schedule_startup_reconcile();
