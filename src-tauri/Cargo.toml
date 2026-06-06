@@ -35,7 +35,7 @@ uuid = { version = "1.18.1", features = ["v4"] }
 zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
 sysinfo = "0.37.2"
 tauri-plugin-process = "2"
-image = { version = "0.25.9", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "ico"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.3"

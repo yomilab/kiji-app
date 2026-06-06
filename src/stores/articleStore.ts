@@ -117,8 +117,8 @@ export async function getContent(hash: string): Promise<string | null> {
   return tauriClient.articles.getContent({ hash });
 }
 
-export async function getSavedContent(hash: string): Promise<string | null> {
-  return getContent(hash);
+export async function getSavedContent(id: string): Promise<string | null> {
+  return tauriClient.saved.getContent({ id });
 }
 
 export async function exists(hash: string): Promise<boolean> {

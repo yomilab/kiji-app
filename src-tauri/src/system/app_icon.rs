@@ -10,6 +10,9 @@ use tauri::{image::Image, AppHandle, Manager, State};
 
 const APP_ICON_STATE_FILE: &str = "app-icon-state.json";
 const CUSTOM_ICON_BASENAME: &str = "custom-app-icon";
+const LIGHT_ICON_RESOURCE_DIR: &str = "icons";
+const DARK_ICON_RESOURCE_DIR: &str = "icons-dark";
+const RUNTIME_ICON_FILE_NAME: &str = "icon.png";
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -90,7 +93,7 @@ impl AppIconState {
         app: &AppHandle,
         variant: SystemAppIconVariant,
     ) -> Result<SystemAppIconState, String> {
-        let icon_path = resolve_built_in_icon_path(app, variant)?;
+        let icon_path = resolve_built_in_runtime_icon_path(app, variant)?;
         apply_runtime_icon(app, &icon_path)?;
         self.clear_custom_icons(None)?;
         self.write_stored(&StoredAppIconState {
@@ -127,7 +130,7 @@ impl AppIconState {
     pub fn reset(&self, app: &AppHandle) -> Result<SystemAppIconState, String> {
         let stored = self.read_stored()?;
         self.clear_custom_icons(None)?;
-        let icon_path = resolve_built_in_icon_path(app, stored.icon_variant)?;
+        let icon_path = resolve_built_in_runtime_icon_path(app, stored.icon_variant)?;
         apply_runtime_icon(app, &icon_path)?;
         self.write_stored(&StoredAppIconState {
             icon_path: None,
@@ -143,7 +146,7 @@ impl AppIconState {
             .as_deref()
             .map(PathBuf::from)
             .filter(|path| path.exists())
-            .or_else(|| resolve_built_in_icon_path(app, stored.icon_variant).ok());
+            .or_else(|| resolve_built_in_runtime_icon_path(app, stored.icon_variant).ok());
 
         let Some(icon_path) = icon_path else {
             return Ok(());
@@ -254,7 +257,7 @@ fn build_public_state(
         .as_deref()
         .map(Path::new)
         .map(|path| path.to_path_buf())
-        .or_else(|| resolve_built_in_icon_path(app, stored.icon_variant).ok());
+        .or_else(|| resolve_built_in_runtime_icon_path(app, stored.icon_variant).ok());
 
     Ok(SystemAppIconState {
         icon_path: icon_path.clone(),
@@ -277,39 +280,57 @@ fn resolve_appearance_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(appearance_dir)
 }
 
-fn resolve_built_in_icon_path(
+fn resolve_built_in_runtime_icon_path(
     app: &AppHandle,
     variant: SystemAppIconVariant,
+) -> Result<PathBuf, String> {
+    resolve_built_in_icon_resource(app, variant, RUNTIME_ICON_FILE_NAME)
+}
+
+fn resolve_built_in_icon_resource(
+    app: &AppHandle,
+    variant: SystemAppIconVariant,
+    file_name: &str,
 ) -> Result<PathBuf, String> {
     let resource_dir = app
         .path()
         .resource_dir()
         .map_err(|error| format!("Failed to resolve resource directory: {error}"))?;
 
-    let folder = match variant {
-        SystemAppIconVariant::Light => "icons",
-        SystemAppIconVariant::Dark => "icons-dark",
-    };
-
-    let file_name = if cfg!(target_os = "macos") {
-        "icon.icns"
-    } else if cfg!(target_os = "windows") {
-        "icon.ico"
-    } else {
-        "icon.png"
-    };
+    let folder = built_in_icon_folder(variant);
 
     let candidate = resource_dir.join(folder).join(file_name);
     if candidate.exists() {
         return Ok(candidate);
     }
 
-    let fallback = resource_dir.join("icons").join(file_name);
+    let fallback = resource_dir.join(LIGHT_ICON_RESOURCE_DIR).join(file_name);
     if fallback.exists() {
         return Ok(fallback);
     }
 
+    let dev_candidate = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(folder)
+        .join(file_name);
+    if dev_candidate.exists() {
+        return Ok(dev_candidate);
+    }
+
+    let dev_fallback = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(LIGHT_ICON_RESOURCE_DIR)
+        .join(file_name);
+    if dev_fallback.exists() {
+        return Ok(dev_fallback);
+    }
+
     Err(format!("Built-in {variant:?} app icon asset is missing."))
+}
+
+fn built_in_icon_folder(variant: SystemAppIconVariant) -> &'static str {
+    match variant {
+        SystemAppIconVariant::Light => LIGHT_ICON_RESOURCE_DIR,
+        SystemAppIconVariant::Dark => DARK_ICON_RESOURCE_DIR,
+    }
 }
 
 fn validate_icon_extension(source_path: &str) -> Result<String, String> {
@@ -339,9 +360,18 @@ fn validate_icon_extension(source_path: &str) -> Result<String, String> {
 }
 
 fn apply_runtime_icon(app: &AppHandle, icon_path: &Path) -> Result<(), String> {
-    if cfg!(target_os = "macos")
-        && icon_path.extension().and_then(|value| value.to_str()) == Some("icns")
+    #[cfg(target_os = "macos")]
     {
+        apply_macos_application_icon(app, icon_path)?;
+    }
+
+    let extension = icon_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if extension == "icns" {
         return Ok(());
     }
 
@@ -362,6 +392,28 @@ fn apply_runtime_icon(app: &AppHandle, icon_path: &Path) -> Result<(), String> {
                 .map_err(|error| format!("Failed to apply app icon to {label}: {error}"))?;
         }
     }
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn apply_macos_application_icon(app: &AppHandle, icon_path: &Path) -> Result<(), String> {
+    use objc2::{AllocAnyThread, MainThreadMarker};
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::NSData;
+
+    let icon_bytes = fs::read(icon_path)
+        .map_err(|error| format!("Failed to read app icon image: {error}"))?;
+
+    app.run_on_main_thread(move || unsafe {
+        let mtm = MainThreadMarker::new_unchecked();
+        let application = NSApplication::sharedApplication(mtm);
+        let data = NSData::with_bytes(&icon_bytes);
+        if let Some(app_icon) = NSImage::initWithData(NSImage::alloc(), &data) {
+            application.setApplicationIconImage(Some(&app_icon));
+        }
+    })
+    .map_err(|error| format!("Failed to schedule macOS app icon update: {error}"))?;
 
     Ok(())
 }

@@ -10,6 +10,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { logger } from "./services/logger";
 import { applyFontFamiliesToRoot, applyReadingLayoutToRoot } from "./services/settings/styleVariables";
 import { keybindingService } from "./services/shortcuts/shortcutService";
+import { savedArticlesSyncBridge } from "./services/saved/sync/savedArticlesSyncBridge";
 import { installElectronApiCompat } from "./services/tauri/electronApiCompat";
 import { installInteractionFreezeWatchdog } from "./services/performance/interactionFreezeWatchdog";
 import type { Article } from "./types/article";
@@ -154,6 +155,7 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
 
 const windowType = getWindowType();
 installElectronApiCompat();
+savedArticlesSyncBridge.start();
 installWindowCloseShortcut(windowType);
 logger.installConsoleCapture(windowType === "main" ? "renderer" : "renderer");
 logger.installGlobalErrorHandlers("renderer");

@@ -61,14 +61,34 @@ pub struct DbState {
 impl DbState {
     pub fn load(app: &AppHandle) -> Result<Self, String> {
         let path = resolve_database_path(app)?;
-        remove_stale_wal_sidecars(&path)?;
-        let mut connection = open_connection(&path)?;
-        verify_database_integrity(&connection, &path)?;
-        run_migrations(&mut connection)?;
+        remove_orphaned_wal_sidecars(&path)?;
+
+        let connection = match open_and_initialize(&path) {
+            Ok(connection) => connection,
+            Err(first_error) => {
+                remove_wal_sidecars(&path)?;
+                open_and_initialize(&path).map_err(|retry_error| format!(
+                    "{first_error} Attempted WAL recovery by removing sidecars, but reopen failed: {retry_error}"
+                ))?
+            }
+        };
 
         Ok(Self {
             path,
             connection: Mutex::new(connection),
+        })
+    }
+
+    pub fn checkpoint_wal(&self) -> Result<(), String> {
+        self.with_connection(|connection| {
+            connection
+                .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                    let _busy: i64 = row.get(0)?;
+                    let _log: i64 = row.get(1)?;
+                    let _checkpointed: i64 = row.get(2)?;
+                    Ok(())
+                })
+                .map_err(|error| format!("Failed to checkpoint database WAL: {error}"))
         })
     }
 
@@ -120,25 +140,40 @@ fn resolve_database_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(data_dir.join(DATABASE_FILE_NAME))
 }
 
-fn remove_stale_wal_sidecars(path: &Path) -> Result<(), String> {
-    if !path.exists() {
+fn open_and_initialize(path: &Path) -> Result<Connection, String> {
+    let mut connection = open_connection(path)?;
+    verify_database_integrity(&connection, path)?;
+    run_migrations(&mut connection)?;
+    Ok(connection)
+}
+
+fn wal_sidecar_path(path: &Path, extension: &str) -> PathBuf {
+    path.with_extension(format!(
+        "{}{extension}",
+        path.extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("db")
+    ))
+}
+
+fn remove_orphaned_wal_sidecars(path: &Path) -> Result<(), String> {
+    if path.exists() {
         return Ok(());
     }
 
+    remove_wal_sidecars(path)
+}
+
+fn remove_wal_sidecars(path: &Path) -> Result<(), String> {
     for extension in ["-wal", "-shm"] {
-        let sidecar_path = path.with_extension(format!(
-            "{}{extension}",
-            path.extension()
-                .and_then(|value| value.to_str())
-                .unwrap_or("db")
-        ));
+        let sidecar_path = wal_sidecar_path(path, extension);
         if !sidecar_path.exists() {
             continue;
         }
 
         fs::remove_file(&sidecar_path).map_err(|error| {
             format!(
-                "Failed to remove stale database sidecar {}: {error}",
+                "Failed to remove database sidecar {}: {error}",
                 sidecar_path.display()
             )
         })?;
@@ -204,6 +239,7 @@ mod tests {
         schema::{CREATE_SEARCH_INDEXES, CREATE_TABLES, SCHEMA_VERSION},
         tags::list_tags_with_feed_ids,
     };
+    use crate::db::models::SavedArticleRecord;
     use rusqlite::{params, Connection};
 
     #[test]
@@ -272,6 +308,86 @@ mod tests {
         .expect("query saved");
         assert_eq!(saved_page.total, 1);
         assert_eq!(saved_page.articles[0].article_hash, "article-hash-1");
+    }
+
+    #[test]
+    fn saved_articles_survive_reopen_without_deleting_wal_sidecars() {
+        use std::fs;
+        use uuid::Uuid;
+
+        use super::{open_and_initialize, open_connection};
+        use crate::db::{
+            migrations::run_migrations,
+            saved::{get_saved_article_by_hash, insert_saved_article},
+            schema::CREATE_SEARCH_INDEXES,
+        };
+
+        let temp_root = std::env::temp_dir().join(format!("kiji-wal-persist-{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_root).expect("create temp dir");
+        let db_path = temp_root.join("kiji.db");
+
+        {
+            let mut connection = open_connection(&db_path).expect("open database");
+            run_migrations(&mut connection).expect("run migrations");
+            connection
+                .execute_batch(CREATE_SEARCH_INDEXES)
+                .expect("create search indexes");
+            insert_saved_article(&connection, &wal_persist_saved_fixture()).expect("insert saved article");
+        }
+
+        let reopened = open_and_initialize(&db_path).expect("reopen database without deleting WAL sidecars");
+        let saved = get_saved_article_by_hash(&reopened, "persist-hash")
+            .expect("query saved article")
+            .expect("saved article should survive reopen");
+        assert_eq!(saved.id, "persist-saved-1");
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn remove_orphaned_wal_sidecars_only_when_main_database_is_missing() {
+        use std::fs;
+        use uuid::Uuid;
+
+        use super::{remove_orphaned_wal_sidecars, wal_sidecar_path};
+
+        let temp_root = std::env::temp_dir().join(format!("kiji-wal-orphan-{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_root).expect("create temp dir");
+        let db_path = temp_root.join("kiji.db");
+        let wal_path = wal_sidecar_path(&db_path, "-wal");
+        fs::write(&wal_path, b"orphaned-wal").expect("write orphaned wal sidecar");
+
+        remove_orphaned_wal_sidecars(&db_path).expect("remove orphaned wal sidecars");
+        assert!(!wal_path.exists(), "orphaned WAL sidecar should be removed");
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    fn wal_persist_saved_fixture() -> SavedArticleRecord {
+        SavedArticleRecord {
+            id: "persist-saved-1".to_string(),
+            article_hash: "persist-hash".to_string(),
+            title: Some("Persisted Save".to_string()),
+            description: None,
+            content: Some("<p>Body</p>".to_string()),
+            link: None,
+            author: None,
+            published_date: None,
+            saved_date: "2026-06-06T00:00:00.000Z".to_string(),
+            last_read_at: None,
+            feed_id: None,
+            feed_url: None,
+            feed_title: None,
+            feed_favicon: None,
+            feed_favicon_has_transparency: None,
+            feed_favicon_bg_light: None,
+            feed_favicon_bg_dark: None,
+            feed_image: None,
+            preview_image: None,
+            metadata: None,
+            highlights: vec![],
+            notes: None,
+        }
     }
 
     #[test]

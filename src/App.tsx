@@ -41,7 +41,6 @@ import {
   ARTICLE_LAYER_TRANSITION_MS,
 } from './constants';
 import { logger } from './services/logger';
-import { savedArticlesSyncBridge } from './services/saved/sync/savedArticlesSyncBridge';
 
 const ACCEPTED_XML_MIME_TYPES = new Set([
   'text/xml',
@@ -76,8 +75,6 @@ export const App: React.FC = () => {
     logger.info('AppLifecycle', 'App component loaded', {
       search: window.location.search,
     });
-
-    savedArticlesSyncBridge.start();
   });
 
   // Otherwise render the main app

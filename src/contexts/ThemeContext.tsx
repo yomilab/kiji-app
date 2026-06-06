@@ -202,7 +202,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       }
     };
 
-    window.electronAPI.onSettingsChanged(handleSettingsChanged);
+    return window.electronAPI.onSettingsChanged(handleSettingsChanged);
   }, []);
 
   return (

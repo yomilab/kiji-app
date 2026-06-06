@@ -22,7 +22,7 @@ use super::export_format::{
 
 const PAGE_SIZE: i64 = 50;
 const SETTINGS_CHANGE_DELAY_MS: u64 = 5000;
-const SAVED_ARTICLE_EVENT_DELAY_MS: u64 = 12000;
+const SAVED_ARTICLE_EVENT_DELAY_MS: u64 = 500;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

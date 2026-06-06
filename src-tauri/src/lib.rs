@@ -44,7 +44,7 @@ use system::{
     system_clipboard_read_text, system_clipboard_write_text, system_theme_get_accent_color,
     AppIconState,
 };
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -170,6 +170,15 @@ pub fn run() {
             system_clipboard_write_text,
             system_theme_get_accent_color,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let RunEvent::Exit = event {
+                if let Some(db_state) = app_handle.try_state::<DbState>() {
+                    if let Err(error) = db_state.checkpoint_wal() {
+                        eprintln!("[KiJi] Failed to checkpoint database WAL on exit: {error}");
+                    }
+                }
+            }
+        });
 }

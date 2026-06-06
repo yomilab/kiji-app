@@ -47,7 +47,7 @@ export const useSystemAccentColor = () => {
 
     // Listen for accent color changes
     if (window.electronAPI?.onSystemAccentColorChanged) {
-      window.electronAPI.onSystemAccentColorChanged((color: string) => {
+      return window.electronAPI.onSystemAccentColorChanged((color: string) => {
         applyAccentColor(color);
         console.log('🎨 System accent color changed:', color);
       });
