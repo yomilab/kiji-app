@@ -1,0 +1,57 @@
+---
+description: End completed tasks with a conventional-commit summary; never auto-commit
+alwaysApply: true
+---
+
+# Task Commit Summary
+
+After completing a task that changed files, end the response with a short summary the user can paste into `git commit -m`.
+
+## When to include it
+
+- Include after implementation, fixes, refactors, or doc updates that touched the repo.
+- Skip for question-only answers, reviews with no edits, or blocked tasks with no changes.
+
+## Format (Conventional Commits / git-flow style)
+
+- Start with a type keyword and colon: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`, `style:`.
+- Optional scope in parentheses when helpful: `feat(tauri):`, `fix(sidebar):`, `docs(changelog):`.
+- Subject after the prefix: imperative mood, lowercase (except proper nouns), ~50–72 characters total when possible.
+- Optional second line only if scope spans multiple repos or needs one critical detail.
+- Focus on **why** or user-visible outcome, not a file list.
+- Do **not** wrap in a code block unless the user asks for copy-paste formatting.
+
+### Type guide
+
+| Type | Use when |
+|------|----------|
+| `feat` | New user-facing behavior or capability |
+| `fix` | Bug fix or broken behavior restored |
+| `docs` | Documentation, changelog, or AI guidance only |
+| `chore` | Tooling, rules, CI, deps, housekeeping |
+| `refactor` | Internal restructure without behavior change |
+| `test` | Tests only |
+| `style` | UI/copy/visual polish without logic change |
+
+## Git safety
+
+- **Never** run `git commit`, `git add`, `git push`, or other source-control writes unless the user explicitly asks.
+- The summary is for the user to commit manually.
+
+## Examples
+
+**Good**
+
+> **Suggested commit:** fix(tauri): use native confirm for clear-menu actions
+
+**Good**
+
+> **Suggested commit:** style(sidebar): shorten indicator copy for narrow layout
+
+**Good (multi-repo)**
+
+> **Suggested commit:** chore: add post-task conventional commit summary rule
+
+**Avoid**
+
+> Updated useApplicationMenuCommands.ts, batchSidebarProgress.ts, and CHANGELOG.md

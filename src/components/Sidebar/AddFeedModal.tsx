@@ -268,7 +268,7 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
             {activeAction === 'adding' ? 'Loading...' : 'Add Feed'}
           </button>
           <button
-            className="modal-confirm-button add-feed-modal-button add-feed-modal-button-import"
+            className="modal-confirm-button modal-confirm-button-outline add-feed-modal-button"
             onClick={handleImportFeeds}
             disabled={isLoading}
             type="button"

@@ -36,28 +36,6 @@
   min-height: 40px;
 }
 
-.add-feed-modal-button-import {
-  background-color: color-mix(in srgb, var(--color-warning) 78%, white);
-  border-color: color-mix(in srgb, var(--color-warning) 72%, white);
-  color: #7c3f00;
-}
-
-.add-feed-modal-button-import:hover:not(:disabled) {
-  background-color: color-mix(in srgb, var(--color-warning) 84%, white);
-  border-color: color-mix(in srgb, var(--color-warning) 78%, white);
-}
-
-[data-theme="dark"] .add-feed-modal-button-import {
-  background-color: color-mix(in srgb, var(--color-warning) 32%, var(--theme-bg-secondary));
-  border-color: color-mix(in srgb, var(--color-warning) 42%, var(--theme-border));
-  color: #ffd8a8;
-}
-
-[data-theme="dark"] .add-feed-modal-button-import:hover:not(:disabled) {
-  background-color: color-mix(in srgb, var(--color-warning) 38%, var(--theme-bg-secondary));
-  border-color: color-mix(in srgb, var(--color-warning) 48%, var(--theme-border));
-}
-
 [data-theme="dark"] .add-feed-modal-error {
   background-color: rgba(220, 38, 38, 0.15);
   border-color: rgba(220, 38, 38, 0.3);
