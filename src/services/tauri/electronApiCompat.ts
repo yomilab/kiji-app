@@ -319,8 +319,7 @@ function installElectronApiCompat(): void {
       }
     },
     async fetchHtmlSafe(url) {
-      const html = await tauriClient.feeds.fetch({ url });
-      return { resourceType: 'html', contentType: 'text/html', html };
+      return tauriClient.feeds.fetchHtmlSafe({ url });
     },
     async helperTaskAdd(request: HelperTaskAddRequest) {
       return helperTaskAdd(request);

@@ -26,7 +26,10 @@ use diagnostics::{
     diagnostics_export_bundle, diagnostics_log_get_path, diagnostics_log_write_entry,
     diagnostics_performance_snapshot, start_background_monitoring, DiagnosticsState,
 };
-use net::{feeds_abort_request, feeds_fetch, feeds_fetch_data_url, feeds_fetch_with_cache};
+use net::{
+    feeds_abort_request, feeds_fetch, feeds_fetch_data_url, feeds_fetch_html_safe,
+    feeds_fetch_with_cache,
+};
 use saved::{
     saved_export_preflight, saved_export_start, saved_sync_queue, SavedExportState, SavedSyncState,
 };
@@ -115,6 +118,7 @@ pub fn run() {
             feeds_delete,
             feeds_fetch,
             feeds_fetch_data_url,
+            feeds_fetch_html_safe,
             feeds_fetch_with_cache,
             feeds_get,
             feeds_get_by_url,

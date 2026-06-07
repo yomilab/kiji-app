@@ -21,6 +21,10 @@ import { hasEmbeddableMedia, selectArticleHtmlContent } from '@/utils/articleCon
 import { createTemporaryArticleFromPostlight } from '@/utils/temporaryArticleFactory';
 import { buildYouTubeEmbedHtml } from '@/utils/youtubeEmbed';
 import { injectLeadImage } from '@/utils/articleLeadImage';
+import {
+  getLinkOnlySavedContent,
+  shouldSaveLinkOnlyContent,
+} from '@/utils/articleContentSave';
 import { normalizePublishedDate } from '@/services/articles/publishedDateNormalizer';
 import { renderTextWithNonAsciiFont } from '@/utils/nonAsciiTypography';
 import { StatefulButtonGroup, type ButtonState } from '@/components/common/StatefulButtonGroup';
@@ -1187,27 +1191,35 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
         }
       } else {
         // Save the article
-        let contentToSave = getBasicModeContentForSave(articleToShow);
+        let contentToSave = shouldSaveLinkOnlyContent(articleResourceType, articleToShow.link)
+          ? getLinkOnlySavedContent()
+          : getBasicModeContentForSave(articleToShow);
         const youtubeEmbedHtmlFromLink = articleToShow.link
           ? buildYouTubeEmbedHtml(articleToShow.link, articleToShow.title)
           : null;
         const readerContentValue = readerContent?.content?.trim() || '';
 
-        if (articleDisplayMode === 'reader') {
+        if (!shouldSaveLinkOnlyContent(articleResourceType, articleToShow.link)
+          && articleDisplayMode === 'reader') {
           if (!readerError && isSaveableHtmlContent(readerContentValue)) {
             contentToSave = readerContentValue;
           } else if (youtubeEmbedHtmlFromLink) {
             contentToSave = youtubeEmbedHtmlFromLink;
           } else if (articleToShow.link) {
             const readerResult = await readerModeService.fetchAndParse(articleToShow.link);
-            const fetchedReaderHtml = readerResult.content?.content?.trim() || '';
-            if (readerResult.success && isSaveableHtmlContent(fetchedReaderHtml)) {
-              contentToSave = fetchedReaderHtml;
+            if (readerResult.resourceType === 'pdf' || readerResult.resourceType === 'unsupported') {
+              contentToSave = getLinkOnlySavedContent();
+            } else {
+              const fetchedReaderHtml = readerResult.content?.content?.trim() || '';
+              if (readerResult.success && isSaveableHtmlContent(fetchedReaderHtml)) {
+                contentToSave = fetchedReaderHtml;
+              }
             }
           }
         }
 
-        if (!isSaveableHtmlContent(contentToSave)) {
+        if (!shouldSaveLinkOnlyContent(articleResourceType, articleToShow.link)
+          && !isSaveableHtmlContent(contentToSave)) {
           const fallbackReaderContent = readerContent?.content?.trim() || '';
           if (isSaveableHtmlContent(fallbackReaderContent)) {
             contentToSave = fallbackReaderContent;
@@ -1247,6 +1259,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     }
   }, [
     articleDisplayMode,
+    articleResourceType,
     articleToShow,
     buildSavedListUpdatePayload,
     isFeedLinkedArticle,
@@ -1525,11 +1538,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
         // Keep original URL if parsing fails
       }
 
-      // Parse URL with Postlight for metadata and reader mode for media-aware HTML.
-      const [postlightResult, readerResult] = await Promise.all([
-        postlightParserService.parseUrl(url),
-        readerModeService.fetchAndParse(url),
-      ]);
+      const readerResult = await readerModeService.fetchAndParse(url);
 
       // Check for non-HTML resource types from reader result
       if (readerResult.resourceType && readerResult.resourceType !== 'html') {
@@ -1555,6 +1564,8 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
         setLoadingDate('');
         return;
       }
+
+      const postlightResult = await postlightParserService.parseUrl(url);
 
       if (!postlightResult.success || !postlightResult.content) {
         setClipboardError(postlightResult.error || 'Could not extract article content');

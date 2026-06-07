@@ -500,10 +500,22 @@ export interface SettingsContract {
   };
 }
 
+export type ArticleResourceType = "html" | "pdf" | "unsupported";
+
+export interface FetchHtmlSafeResponse {
+  resourceType: ArticleResourceType;
+  contentType: string;
+  html?: string;
+}
+
 export interface FeedsContract {
   fetch: {
     request: FeedFetchRequest;
     response: string;
+  };
+  fetchHtmlSafe: {
+    request: { url: UrlString; timeout?: number };
+    response: FetchHtmlSafeResponse;
   };
   fetchWithCache: {
     request: FeedFetchWithCacheRequest;

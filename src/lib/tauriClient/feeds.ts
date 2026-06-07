@@ -7,6 +7,12 @@ export async function fetch(
   return invokeContract<FeedsContract["fetch"]>("feeds_fetch", request);
 }
 
+export async function fetchHtmlSafe(
+  request: FeedsContract["fetchHtmlSafe"]["request"],
+): Promise<FeedsContract["fetchHtmlSafe"]["response"]> {
+  return invokeContract<FeedsContract["fetchHtmlSafe"]>("feeds_fetch_html_safe", request);
+}
+
 export async function fetchWithCache(
   request: FeedsContract["fetchWithCache"]["request"],
 ): Promise<FeedsContract["fetchWithCache"]["response"]> {

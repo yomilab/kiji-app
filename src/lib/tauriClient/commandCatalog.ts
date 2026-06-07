@@ -70,7 +70,7 @@ export const tauriCommandCatalog: Record<
   ],
   articles: [
     { legacyMethod: "parseArticle", legacyChannel: "parse-article", kind: "renderer", targetCommand: "articles.parse", notes: "Renderer composes feeds_fetch plus article extraction." },
-    { legacyMethod: "fetchHtmlSafe", legacyChannel: "fetch-html-safe", kind: "invoke", targetCommand: "articles.fetchHtmlSafe", rustCommand: "feeds_fetch" },
+    { legacyMethod: "fetchHtmlSafe", legacyChannel: "fetch-html-safe", kind: "invoke", targetCommand: "articles.fetchHtmlSafe", rustCommand: "feeds_fetch_html_safe" },
     { legacyMethod: "dbArticlesQuery", legacyChannel: "db-articles-query", kind: "invoke", targetCommand: "articles.query", rustCommand: "articles_query" },
     { legacyMethod: "dbArticlesGet", legacyChannel: "db-articles-get", kind: "invoke", targetCommand: "articles.get", rustCommand: "articles_get" },
     { legacyMethod: "dbArticlesGetContent", legacyChannel: "db-articles-get-content", kind: "invoke", targetCommand: "articles.getContent", rustCommand: "articles_get_content" },

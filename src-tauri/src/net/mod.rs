@@ -1,7 +1,7 @@
 mod errors;
 
 use errors::{feed_http_status_error, feed_network_error, feed_request_cancelled_error};
-use futures_util::future::{AbortHandle, Abortable};
+use futures_util::{future::{AbortHandle, Abortable}, StreamExt};
 use once_cell::sync::Lazy;
 use reqwest::{
     header::{
@@ -19,6 +19,7 @@ static ACTIVE_REQUESTS: Lazy<Mutex<HashMap<String, AbortHandle>>> =
 
 const DEFAULT_TIMEOUT_MS: u64 = 15_000;
 const MAX_DATA_URL_BYTES: u64 = 1024 * 1024;
+const PDF_MAGIC: &[u8] = b"%PDF-";
 const CHROME_LIKE_USER_AGENT: &str =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 KiJi/0.1";
 
@@ -47,6 +48,23 @@ pub struct FeedFetchDataUrlResponse {
     pub data_url: String,
     pub content_type: String,
     pub byte_length: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ResourceType {
+    Html,
+    Pdf,
+    Unsupported,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchHtmlSafeResponse {
+    pub resource_type: ResourceType,
+    pub content_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -102,6 +120,166 @@ pub async fn feeds_fetch_data_url(
     timeout: Option<u64>,
 ) -> Result<FeedFetchDataUrlResponse, String> {
     fetch_data_url(url, request_id, timeout).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn feeds_fetch_html_safe(
+    url: String,
+    timeout: Option<u64>,
+) -> Result<FetchHtmlSafeResponse, String> {
+    fetch_html_safe(url, timeout).await
+}
+
+fn categorize_content_type(content_type: &str) -> ResourceType {
+    let content_type = content_type.to_lowercase();
+    if content_type.contains("text/html")
+        || content_type.contains("application/xhtml")
+        || content_type.contains("text/xml")
+        || content_type.contains("application/xml")
+    {
+        return ResourceType::Html;
+    }
+    if content_type.contains("application/pdf") {
+        return ResourceType::Pdf;
+    }
+    ResourceType::Unsupported
+}
+
+fn url_suggests_pdf(url: &str) -> bool {
+    reqwest::Url::parse(url)
+        .ok()
+        .and_then(|parsed| {
+            parsed
+                .path_segments()
+                .and_then(|mut segments| segments.next_back())
+                .map(|segment| segment.to_ascii_lowercase())
+        })
+        .is_some_and(|file_name| file_name.ends_with(".pdf"))
+}
+
+fn resolve_resource_type(content_type: &str, url: &str) -> ResourceType {
+    if content_type.is_empty() {
+        if url_suggests_pdf(url) {
+            return ResourceType::Pdf;
+        }
+        return ResourceType::Html;
+    }
+
+    let categorized = categorize_content_type(content_type);
+    if categorized == ResourceType::Unsupported {
+        let lowered = content_type.to_ascii_lowercase();
+        if (lowered.contains("octet-stream") || lowered.contains("binary"))
+            && url_suggests_pdf(url)
+        {
+            return ResourceType::Pdf;
+        }
+    }
+    categorized
+}
+
+async fn drain_response_body(response: reqwest::Response) -> Result<(), String> {
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        chunk.map_err(|error| format!("Failed to drain HTTP response body: {error}"))?;
+    }
+    Ok(())
+}
+
+async fn read_html_safe_body(response: reqwest::Response) -> Result<(ResourceType, String), String> {
+    let mut stream = response.bytes_stream();
+    let mut body = Vec::new();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| format!("Failed to read HTTP response body: {error}"))?;
+        if body.is_empty() && chunk.len() >= PDF_MAGIC.len() && chunk.starts_with(PDF_MAGIC) {
+            while let Some(rest) = stream.next().await {
+                let _ = rest.map_err(|error| format!("Failed to drain HTTP response body: {error}"))?;
+            }
+            return Ok((ResourceType::Pdf, String::new()));
+        }
+        body.extend_from_slice(&chunk);
+    }
+
+    let html = String::from_utf8(body)
+        .map_err(|error| format!("Failed to decode HTML response body: {error}"))?;
+    Ok((ResourceType::Html, html))
+}
+
+fn html_fetch_headers() -> HeaderMap {
+    let mut headers = chrome_like_headers();
+    headers.insert(
+        ACCEPT,
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            .parse()
+            .expect("static html accept header is valid"),
+    );
+    headers
+}
+
+async fn fetch_html_safe(url: String, timeout: Option<u64>) -> Result<FetchHtmlSafeResponse, String> {
+    validate_http_url(&url)?;
+
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .map_err(|error| format!("Failed to create HTTP client: {error}"))?;
+
+    let response = client
+        .get(&url)
+        .headers(html_fetch_headers())
+        .timeout(Duration::from_millis(timeout.unwrap_or(DEFAULT_TIMEOUT_MS)))
+        .send()
+        .await
+        .map_err(feed_network_error)?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(feed_http_status_error(status));
+    }
+
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_default();
+
+    let resource_type = resolve_resource_type(&content_type, &url);
+
+    if resource_type != ResourceType::Html {
+        drain_response_body(response).await?;
+        return Ok(FetchHtmlSafeResponse {
+            resource_type,
+            content_type,
+            html: None,
+        });
+    }
+
+    if content_type.is_empty() {
+        let (resolved, html) = read_html_safe_body(response).await?;
+        return Ok(FetchHtmlSafeResponse {
+            resource_type: resolved,
+            content_type,
+            html: if resolved == ResourceType::Html {
+                Some(html)
+            } else {
+                None
+            },
+        });
+    }
+
+    let html = response
+        .text()
+        .await
+        .map_err(|error| format!("Failed to read HTTP response body: {error}"))?;
+
+    Ok(FetchHtmlSafeResponse {
+        resource_type: ResourceType::Html,
+        content_type,
+        html: Some(html),
+    })
 }
 
 async fn fetch_with_cache(
@@ -398,6 +576,54 @@ mod tests {
         assert!(headers.contains_key(USER_AGENT));
         assert!(headers.contains_key("sec-ch-ua"));
         assert_eq!(headers.get(CACHE_CONTROL).unwrap(), "no-cache");
+    }
+
+    #[test]
+    fn categorizes_html_and_pdf_content_types() {
+        assert_eq!(
+            categorize_content_type("text/html; charset=utf-8"),
+            ResourceType::Html
+        );
+        assert_eq!(
+            categorize_content_type("application/pdf"),
+            ResourceType::Pdf
+        );
+        assert_eq!(
+            categorize_content_type("application/zip"),
+            ResourceType::Unsupported
+        );
+        assert_eq!(categorize_content_type(""), ResourceType::Unsupported);
+    }
+
+    #[test]
+    fn url_suggests_pdf_from_path_extension() {
+        assert!(url_suggests_pdf(
+            "https://example.com/files/system-card.pdf"
+        ));
+        assert!(!url_suggests_pdf("https://example.com/article"));
+    }
+
+    #[test]
+    fn resolve_resource_type_handles_missing_and_octet_stream_pdf_urls() {
+        assert_eq!(
+            resolve_resource_type("", "https://example.com/doc.pdf"),
+            ResourceType::Pdf
+        );
+        assert_eq!(
+            resolve_resource_type("", "https://example.com/article"),
+            ResourceType::Html
+        );
+        assert_eq!(
+            resolve_resource_type(
+                "application/octet-stream",
+                "https://example.com/report.pdf"
+            ),
+            ResourceType::Pdf
+        );
+        assert_eq!(
+            resolve_resource_type("application/zip", "https://example.com/report.pdf"),
+            ResourceType::Unsupported
+        );
     }
 
     #[test]
