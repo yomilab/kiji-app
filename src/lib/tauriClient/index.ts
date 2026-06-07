@@ -4,6 +4,7 @@ import * as database from "./database";
 import * as diagnostics from "./diagnostics";
 import * as feeds from "./feeds";
 import * as saved from "./saved";
+import * as scheduler from "./scheduler";
 import * as settings from "./settings";
 import * as shell from "./shell";
 import * as system from "./system";
@@ -15,6 +16,7 @@ export const tauriClient = {
   diagnostics,
   feeds,
   saved,
+  scheduler,
   settings,
   shell,
   system,

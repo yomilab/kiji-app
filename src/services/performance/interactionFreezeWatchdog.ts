@@ -46,6 +46,7 @@ export interface RendererInteractionRecord {
 }
 
 const RENDERER_FREEZE_HEARTBEAT_INTERVAL_MS = 250;
+export const RENDERER_SUSPEND_STALL_THRESHOLD_MS = 30_000;
 const RECENT_INTERACTION_LIMIT = 30;
 const SUSPECTED_INTERACTION_LOOKBACK_MS = 1_000;
 const SUSPECTED_INTERACTION_LOOKAHEAD_MS = 200;
@@ -399,6 +400,14 @@ const captureInteractionEvent = (event: Event): void => {
 
 const shouldMonitorRendererFreeze = (): boolean => document.visibilityState === 'visible';
 
+export const shouldSuppressRendererSuspendStall = (stallDurationMs: number): boolean => (
+  stallDurationMs >= RENDERER_SUSPEND_STALL_THRESHOLD_MS
+  && document.visibilityState !== 'visible'
+);
+
+/** @deprecated Use shouldSuppressRendererSuspendStall */
+export const isRendererSuspendStall = shouldSuppressRendererSuspendStall;
+
 const reportRendererFreeze = async (stallDurationMs: number, detectedAtMs: number): Promise<void> => {
   if (!shouldMonitorRendererFreeze()) {
     return;
@@ -447,6 +456,10 @@ const handleHeartbeat = (): void => {
   const nowMs = performance.now();
   const stallDurationMs = nowMs - lastHeartbeatAtMs - RENDERER_FREEZE_HEARTBEAT_INTERVAL_MS;
   lastHeartbeatAtMs = nowMs;
+
+  if (shouldSuppressRendererSuspendStall(stallDurationMs)) {
+    return;
+  }
 
   if (shouldMonitorRendererFreeze() && getRendererFreezeSeverity(stallDurationMs)) {
     void reportRendererFreeze(stallDurationMs, nowMs);

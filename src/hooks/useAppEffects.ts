@@ -24,6 +24,7 @@ import {
   useUnmountEffect,
 } from '@/hooks/useLifecycleEffects';
 import { logger } from '@/services/logger';
+import { isMainRendererWindow } from '@/utils/rendererWindow';
 
 export const useGlobalFetchLogging = (): void => {
   useMountEffect(() => {
@@ -74,18 +75,20 @@ export const useStartupMigration = (): void => {
 
 export const useFeedSchedulerLifecycle = (enabled = true): void => {
   useMountEffect(() => {
-    if (!enabled) {
-      logger.info('Scheduler', 'Skipping feed scheduler lifecycle for non-main window');
+    if (!enabled || !isMainRendererWindow()) {
+      logger.info('Scheduler', 'Skipping feed scheduler lifecycle for non-main window', {
+        enabled,
+        windowType: new URLSearchParams(window.location.search).get('window') ?? 'main',
+      });
       return;
     }
 
-    logger.info('Scheduler', 'Starting feed scheduler lifecycle');
     void feedScheduler.start();
 
     const handleSettingsChanged = async () => {
       try {
         const settings = await settingsManager.getSettings();
-        feedScheduler.reconfigure(settings.backgroundUpdate ?? 'every-15m');
+        await feedScheduler.reconfigure(settings.backgroundUpdate ?? 'every-15m');
         logger.info('Scheduler', 'Reconfigured feed scheduler after settings change', {
           backgroundUpdate: settings.backgroundUpdate ?? 'every-15m',
         });
@@ -101,8 +104,7 @@ export const useFeedSchedulerLifecycle = (enabled = true): void => {
       if (typeof removeSettingsChangedListener === 'function') {
         removeSettingsChangedListener();
       }
-      feedScheduler.stop();
-      logger.info('Scheduler', 'Stopped feed scheduler lifecycle');
+      void feedScheduler.stop();
     };
   });
 };

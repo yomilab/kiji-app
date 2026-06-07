@@ -19,6 +19,7 @@ import { installElectronApiCompat } from "./services/tauri/electronApiCompat";
 import { createDeferredUnsubscribe } from "./services/tauri/tauriEventSubscription";
 import { installInteractionFreezeWatchdog } from "./services/performance/interactionFreezeWatchdog";
 import type { Article } from "./types/article";
+import { getRendererWindowType, type RendererWindowType } from "./utils/rendererWindow";
 import "./styles/google-sans.css";
 import "./styles/golos-text.css";
 import "./styles/aktiv-grotesk.css";
@@ -26,8 +27,6 @@ import "./styles/theme.css";
 import "./styles/framework/index.css";
 import "./styles/base.css";
 import "./styles/view.css";
-
-type RendererWindowType = "main" | "settings" | "article";
 
 function initializeVisualSettings(): void {
   try {
@@ -52,11 +51,6 @@ function initializeVisualSettings(): void {
   } catch (error) {
     console.error("Error initializing visual settings:", error);
   }
-}
-
-function getWindowType(): RendererWindowType {
-  const windowType = new URLSearchParams(window.location.search).get("window");
-  return windowType === "settings" || windowType === "article" ? windowType : "main";
 }
 
 function installWindowCloseShortcut(windowType: RendererWindowType): void {
@@ -177,7 +171,7 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
 }
 
 async function bootstrapRenderer(): Promise<void> {
-  const windowType = getWindowType();
+  const windowType = getRendererWindowType();
   installElectronApiCompat();
   logger.info("Renderer", "Renderer bootstrap starting", { windowType });
 

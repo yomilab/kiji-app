@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildSemanticTargetPath,
   getRecentInteractionsForFreeze,
   getRendererFreezeSeverity,
   getSafeKeyboardMetadata,
+  shouldSuppressRendererSuspendStall,
   selectSuspectedInteraction,
   type RendererInteractionRecord,
 } from "@/services/performance/interactionFreezeWatchdog";
@@ -31,6 +32,29 @@ const createRecord = (id: number, monotonicTimeMs: number): RendererInteractionR
 });
 
 describe("interactionFreezeWatchdog helpers", () => {
+  afterEach(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+  });
+
+  it("suppresses only long hidden-webview stalls, not visible freezes", () => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    expect(shouldSuppressRendererSuspendStall(29_999)).toBe(false);
+    expect(shouldSuppressRendererSuspendStall(30_000)).toBe(true);
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    expect(shouldSuppressRendererSuspendStall(30_000)).toBe(false);
+    expect(shouldSuppressRendererSuspendStall(900_000)).toBe(false);
+  });
+
   it("classifies event-loop stalls by visible freeze severity", () => {
     expect(getRendererFreezeSeverity(499)).toBeNull();
     expect(getRendererFreezeSeverity(500)).toBe("stutter");

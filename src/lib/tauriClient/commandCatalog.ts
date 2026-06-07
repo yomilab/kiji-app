@@ -3,6 +3,7 @@ export type TauriCommandDomain =
   | "diagnostics"
   | "feeds"
   | "saved"
+  | "scheduler"
   | "settings"
   | "shell"
   | "system"
@@ -106,6 +107,12 @@ export const tauriCommandCatalog: Record<
     { legacyMethod: "dbSavedUpdateHighlights", legacyChannel: "db-saved-update-highlights", kind: "invoke", targetCommand: "saved.updateHighlights", rustCommand: "saved_update_highlights" },
     { legacyMethod: "dbSavedUpdateNotes", legacyChannel: "db-saved-update-notes", kind: "invoke", targetCommand: "saved.updateNotes", rustCommand: "saved_update_notes" },
     { legacyMethod: "dbSavedUpdateLastReadAt", legacyChannel: "db-saved-update-last-read-at", kind: "invoke", targetCommand: "saved.updateLastReadAt", rustCommand: "saved_update_last_read_at" },
+  ],
+  scheduler: [
+    { legacyMethod: "startFeedScheduler", legacyChannel: "scheduler-start", kind: "invoke", targetCommand: "scheduler.start", rustCommand: "scheduler_start" },
+    { legacyMethod: "stopFeedScheduler", legacyChannel: "scheduler-stop", kind: "invoke", targetCommand: "scheduler.stop", rustCommand: "scheduler_stop" },
+    { legacyMethod: "reconfigureFeedScheduler", legacyChannel: "scheduler-reconfigure", kind: "invoke", targetCommand: "scheduler.reconfigure", rustCommand: "scheduler_reconfigure" },
+    { legacyMethod: "onSchedulerCycleTick", legacyChannel: "scheduler:cycle-tick", kind: "event", targetCommand: "scheduler.onCycleTick" },
   ],
   settings: [
     { legacyMethod: "storageGet", legacyChannel: "storage-get", kind: "invoke", targetCommand: "settings.get", rustCommand: "settings_get", notes: "The Tauri app returns a normalized settings document instead of arbitrary key lookups." },

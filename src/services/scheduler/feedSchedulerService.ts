@@ -1,25 +1,20 @@
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { tauriClient } from '@/lib/tauriClient';
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { settingsManager } from '@/services/settings';
 import { logger } from '@/services/logger';
 import type { BackgroundUpdateMode, SchedulerEvent } from './types';
 
-const MODE_INTERVAL_MS: Record<BackgroundUpdateMode, number | null> = {
-  'on-launch': null,
-  'every-5m': 5 * 60_000,
-  'every-10m': 10 * 60_000,
-  'every-15m': 15 * 60_000,
-  'every-30m': 30 * 60_000,
-  'every-1h': 60 * 60_000,
-  never: null,
-};
+const SCHEDULER_CYCLE_TICK_EVENT = 'scheduler:cycle-tick';
 
 class FeedSchedulerService {
-  private timer: number | null = null;
-  private mode: BackgroundUpdateMode = 'on-launch';
   private cycleInProgress = false;
   private abortController: AbortController | null = null;
   private lifecycleId = 0;
   private listeners = new Set<(event: SchedulerEvent) => void>();
+  private mode: BackgroundUpdateMode = 'every-15m';
+  private nativeDriverActive = false;
+  private nativeTickUnlisten: UnlistenFn | null = null;
 
   on(listener: (event: SchedulerEvent) => void): () => void {
     this.listeners.add(listener);
@@ -29,7 +24,7 @@ class FeedSchedulerService {
   }
 
   async start(): Promise<void> {
-    this.clearTimerAndAbort();
+    this.clearAbort();
     const lifecycleId = ++this.lifecycleId;
 
     try {
@@ -39,38 +34,76 @@ class FeedSchedulerService {
       }
 
       this.mode = settings.backgroundUpdate ?? 'every-15m';
-      logger.info('Scheduler', 'Starting feed scheduler lifecycle', { mode: this.mode });
+      await this.ensureNativeTickListener(lifecycleId);
 
-      if (this.mode === 'never') {
+      if (!this.isCurrentLifecycle(lifecycleId)) {
         return;
       }
 
-      if (this.mode === 'on-launch') {
-        void this.refreshAllFeeds(lifecycleId).finally(() => {
-          this.scheduleNext(lifecycleId);
-        });
+      if (this.nativeDriverActive) {
+        await tauriClient.scheduler.reconfigure({ mode: this.mode });
+        await this.abortStaleLifecycle(lifecycleId);
+        if (!this.isCurrentLifecycle(lifecycleId)) {
+          return;
+        }
+        logger.info('Scheduler', 'Reconfigured native feed scheduler driver', { mode: this.mode });
         return;
       }
 
-      this.scheduleNext(lifecycleId);
+      const result = await tauriClient.scheduler.start({ mode: this.mode });
+      await this.abortStaleLifecycle(lifecycleId);
+      if (!this.isCurrentLifecycle(lifecycleId)) {
+        return;
+      }
+
+      this.nativeDriverActive = true;
+      logger.info('Scheduler', 'Started native feed scheduler driver', {
+        mode: this.mode,
+        result,
+      });
     } catch (error) {
-      logger.error('Scheduler', 'Failed to start feed scheduler lifecycle', { error });
+      await this.abortStaleLifecycle(lifecycleId);
+      logger.error('Scheduler', 'Failed to start native feed scheduler driver', { error });
     }
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     this.lifecycleId += 1;
-    this.clearTimerAndAbort();
+    this.clearAbort();
     this.cycleInProgress = false;
+
+    if (this.nativeTickUnlisten) {
+      this.nativeTickUnlisten();
+      this.nativeTickUnlisten = null;
+    }
+
+    if (this.nativeDriverActive) {
+      try {
+        await tauriClient.scheduler.stop();
+      } catch (error) {
+        logger.warn('Scheduler', 'Failed to stop native feed scheduler driver', { error });
+      }
+      this.nativeDriverActive = false;
+    }
+
     logger.info('Scheduler', 'Stopped feed scheduler lifecycle');
   }
 
-  reconfigure(mode: BackgroundUpdateMode): void {
+  async reconfigure(mode: BackgroundUpdateMode): Promise<void> {
     this.mode = mode;
-    this.clearTimerAndAbort();
+    this.clearAbort();
     const lifecycleId = ++this.lifecycleId;
     logger.info('Scheduler', 'Reconfigured feed scheduler lifecycle', { mode });
-    this.scheduleNext(lifecycleId);
+
+    try {
+      await tauriClient.scheduler.reconfigure({ mode });
+      if (!this.isCurrentLifecycle(lifecycleId)) {
+        return;
+      }
+      this.nativeDriverActive = true;
+    } catch (error) {
+      logger.error('Scheduler', 'Failed to reconfigure native feed scheduler driver', { error });
+    }
   }
 
   boostMany(feedIds: string[]): void {
@@ -89,35 +122,49 @@ class FeedSchedulerService {
     }
   }
 
-  private clearTimerAndAbort(): void {
-    if (this.timer !== null) {
-      window.clearTimeout(this.timer);
-      this.timer = null;
+  private async ensureNativeTickListener(lifecycleId: number): Promise<void> {
+    if (this.nativeTickUnlisten) {
+      return;
     }
+
+    this.nativeTickUnlisten = await listen(SCHEDULER_CYCLE_TICK_EVENT, () => {
+      void this.runScheduledCycle(this.lifecycleId);
+    });
+
+    if (!this.isCurrentLifecycle(lifecycleId)) {
+      this.nativeTickUnlisten();
+      this.nativeTickUnlisten = null;
+    }
+  }
+
+  private async abortStaleLifecycle(lifecycleId: number): Promise<void> {
+    if (this.isCurrentLifecycle(lifecycleId)) {
+      return;
+    }
+
+    try {
+      await tauriClient.scheduler.stop();
+    } catch (error) {
+      logger.warn('Scheduler', 'Failed to stop native driver for stale lifecycle', { error });
+    }
+    this.nativeDriverActive = false;
+  }
+
+  private async runScheduledCycle(lifecycleId: number): Promise<void> {
+    if (!this.isCurrentLifecycle(lifecycleId) || this.cycleInProgress) {
+      return;
+    }
+
+    await this.refreshAllFeeds(lifecycleId);
+  }
+
+  private clearAbort(): void {
     this.abortController?.abort();
     this.abortController = null;
   }
 
   private isCurrentLifecycle(lifecycleId: number): boolean {
     return lifecycleId === this.lifecycleId;
-  }
-
-  private scheduleNext(lifecycleId: number): void {
-    if (!this.isCurrentLifecycle(lifecycleId)) {
-      return;
-    }
-
-    const intervalMs = MODE_INTERVAL_MS[this.mode];
-    if (intervalMs === null) {
-      return;
-    }
-
-    this.timer = window.setTimeout(() => {
-      if (!this.isCurrentLifecycle(lifecycleId)) {
-        return;
-      }
-      void this.refreshAllFeeds(lifecycleId).finally(() => this.scheduleNext(lifecycleId));
-    }, intervalMs);
   }
 
   private async refreshAllFeeds(lifecycleId: number): Promise<void> {
@@ -129,6 +176,7 @@ class FeedSchedulerService {
     this.abortController = new AbortController();
     const { signal } = this.abortController;
     this.emit({ type: 'cycle-start' });
+    logger.info('Scheduler', 'Background refresh cycle started', { mode: this.mode });
 
     try {
       const feeds = await feedsManager.getAllFeeds();
@@ -160,6 +208,7 @@ class FeedSchedulerService {
       this.cycleInProgress = false;
       this.abortController = null;
       this.emit({ type: 'cycle-complete' });
+      logger.info('Scheduler', 'Background refresh cycle completed', { mode: this.mode });
     }
   }
 

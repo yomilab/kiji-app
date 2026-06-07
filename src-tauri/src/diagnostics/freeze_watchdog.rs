@@ -10,6 +10,7 @@ use std::{
 };
 
 const HEARTBEAT_INTERVAL_MS: u64 = 250;
+const SUSPEND_STALL_THRESHOLD_MS: u64 = 120_000;
 const FREEZE_THRESHOLD_MS: u64 = 1_000;
 const BEACHBALL_THRESHOLD_MS: u64 = 2_000;
 const SEVERE_THRESHOLD_MS: u64 = 5_000;
@@ -30,6 +31,11 @@ pub fn start(state: Arc<DiagnosticsState>) {
             std::thread::sleep(Duration::from_millis(HEARTBEAT_INTERVAL_MS));
             let stall_duration_ms =
                 now_ms().saturating_sub(LAST_HEARTBEAT_MS.load(Ordering::Relaxed));
+            if stall_duration_ms >= SUSPEND_STALL_THRESHOLD_MS {
+                touch_heartbeat();
+                last_reported_stall_ms = 0;
+                continue;
+            }
             let Some(severity) = classify_freeze_severity(stall_duration_ms) else {
                 last_reported_stall_ms = 0;
                 continue;

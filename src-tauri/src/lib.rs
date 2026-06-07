@@ -2,6 +2,7 @@ mod db;
 mod diagnostics;
 mod net;
 mod saved;
+mod scheduler;
 mod settings;
 mod shell;
 mod system;
@@ -33,6 +34,7 @@ use net::{
 use saved::{
     saved_export_preflight, saved_export_start, saved_sync_queue, SavedExportState, SavedSyncState,
 };
+use scheduler::{scheduler_reconfigure, scheduler_start, scheduler_stop, FeedSchedulerState};
 use settings::{settings_get, settings_reset, settings_update, SettingsState};
 use shell::{
     restore_main_window_bounds, shell_article_window_get_data, shell_article_window_open,
@@ -85,6 +87,7 @@ pub fn run() {
             app.manage(sync_state);
             app.manage(SavedExportState::new());
             app.manage(diagnostics_arc);
+            app.manage(Arc::new(FeedSchedulerState::new()));
             app.manage(app_icon_state);
             Ok(())
         })
@@ -149,6 +152,9 @@ pub fn run() {
             saved_list_all,
             saved_query,
             saved_sync_queue,
+            scheduler_reconfigure,
+            scheduler_start,
+            scheduler_stop,
             saved_update_highlights,
             saved_update_last_read_at,
             saved_update_notes,
@@ -183,6 +189,9 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let RunEvent::Exit = event {
+                if let Some(scheduler_state) = app_handle.try_state::<Arc<FeedSchedulerState>>() {
+                    let _ = scheduler_state.stop();
+                }
                 if let Some(db_state) = app_handle.try_state::<DbState>() {
                     if let Err(error) = db_state.checkpoint_wal() {
                         eprintln!("[KiJi] Failed to checkpoint database WAL on exit: {error}");

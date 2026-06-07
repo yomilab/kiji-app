@@ -1,0 +1,56 @@
+---
+description: Run Tauri build after Rust/TS changes and fix visibility/compiler issues
+globs: src-tauri/**/*.rs,src/**/*.{ts,tsx},package.json
+alwaysApply: false
+---
+
+# Tauri Build Verification
+
+After any task that touches `src-tauri/`, Tauri commands, scheduler/native services, or frontend code wired to `invoke`, run a release build before finishing:
+
+```bash
+npm run build:tauri
+```
+
+If the full bundle is too slow for a quick check, at minimum run:
+
+```bash
+npm run build && cargo build --release --manifest-path src-tauri/Cargo.toml
+```
+
+## Fix and scan for similar issues
+
+When the build fails or emits Rust warnings, fix the reported issue and scan nearby code for the same pattern.
+
+### Rust `private_interfaces` (common)
+
+Do not expose a `pub`/`pub(crate)` method that returns a private enum or struct. Prefer keeping the helper on the module:
+
+```rust
+// ❌ BAD — private enum leaks through public method
+enum SchedulerStartOutcome { Started, AlreadyRunning }
+impl FeedSchedulerState {
+    pub fn start(...) -> Result<SchedulerStartOutcome, String> { ... }
+}
+
+// ✅ GOOD — method stays module-private; commands call it
+impl FeedSchedulerState {
+    fn start(...) -> Result<SchedulerStartOutcome, String> { ... }
+}
+```
+
+Alternative: mark the return type `pub(crate)` only when the API must stay public.
+
+Use `pub(crate) fn` when another module in `src-tauri` must call the helper (for example `lib.rs` exit hooks calling `FeedSchedulerState::stop`).
+
+### Other patterns to check in the same pass
+
+- Missing Cargo features (`tokio/macros`, `reqwest/stream`, etc.) after adding async/stream APIs
+- Tauri command names/types out of sync with `src/lib/tauriClient/`
+- TypeScript errors from `tsc` in the `beforeBuildCommand` step
+- New `pub` items in `lib.rs` that surface private helper types
+
+## Done criteria
+
+- `npm run build:tauri` exits 0 with no Rust warnings
+- Scheduler/native tests still pass when the changed area has coverage (`npm test`, `npm run test:rust`)
