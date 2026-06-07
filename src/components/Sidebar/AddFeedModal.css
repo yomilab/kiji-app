@@ -36,6 +36,19 @@
   min-height: 40px;
 }
 
+.modal-confirm-button.add-feed-modal-button-primary {
+  background-color: var(--framework-input-bg);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.modal-confirm-button.add-feed-modal-button-primary:hover:not(:disabled) {
+  background-color: var(--theme-hover-overlay);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  opacity: 1;
+}
+
 [data-theme="dark"] .add-feed-modal-error {
   background-color: rgba(220, 38, 38, 0.15);
   border-color: rgba(220, 38, 38, 0.3);

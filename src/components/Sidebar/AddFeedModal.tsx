@@ -260,7 +260,7 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
         {error && <div className="add-feed-modal-error">{error}</div>}
         <div className="add-feed-modal-actions">
           <button
-            className="modal-confirm-button add-feed-modal-button"
+            className="modal-confirm-button add-feed-modal-button add-feed-modal-button-primary"
             onClick={handleAddFeed}
             disabled={isLoading || !feedUrl.trim()}
             type="button"
