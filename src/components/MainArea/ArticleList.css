@@ -101,7 +101,8 @@
   background-color: var(--article-list-bg);
   z-index: 10;
   width: 100%;
-  overflow-y: auto;
+  /* Keep header widgets visible above scrolled backdrop layers (Tauri WebView). */
+  overflow: visible;
   overscroll-behavior: none;
   scrollbar-gutter: stable;
   transition:

@@ -329,11 +329,11 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
         {showResizeHandle && (
           <div className={`article-list-resize-handle ${isDragging ? 'is-dragging' : ''}`} onMouseDown={handleBorderMouseDown} />
         )}
-        <ArticleListWidgets
-          onToggleSearch={handleToggleSearch}
-          isSavedView={isSavedView}
-        />
         <div className={titleSectionClassName} data-section="article-list-title">
+          <ArticleListWidgets
+            onToggleSearch={handleToggleSearch}
+            isSavedView={isSavedView}
+          />
           <div className="article-list-title-content">
             <ArticleListSearchInput
               isOpen={isSearchOpen}
@@ -357,11 +357,11 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
         {showResizeHandle && (
           <div className={`article-list-resize-handle ${isDragging ? 'is-dragging' : ''}`} onMouseDown={handleBorderMouseDown} />
         )}
-        <ArticleListWidgets
-          onToggleSearch={handleToggleSearch}
-          isSavedView={isSavedView}
-        />
         <div className={titleSectionClassName} data-section="article-list-title">
+          <ArticleListWidgets
+            onToggleSearch={handleToggleSearch}
+            isSavedView={isSavedView}
+          />
           <div className="article-list-title-content">
             <motion.div
               className="article-list-fixed-loader-shell"

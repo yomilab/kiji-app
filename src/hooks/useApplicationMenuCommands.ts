@@ -110,9 +110,9 @@ export const useApplicationMenuCommands = ({
           feedLibraryMutationBus.publishFeedDeleted(feed.id);
           reportProgress(index + 1);
         }
-      });
+      }, { subject: 'feeds' });
 
-      sidebarIndicatorService.show(sidebarIndicatorOngoing('clearing'));
+      sidebarIndicatorService.show(sidebarIndicatorOngoing('clearing', undefined, { subject: 'feeds' }));
       for (const tag of tags) {
         await tagsManager.deleteTag(tag.name);
       }
@@ -121,10 +121,13 @@ export const useApplicationMenuCommands = ({
       clearFeedSelection();
       await refreshTotalFeeds();
       notifyFeedLibraryChanged();
-      sidebarIndicatorService.show(sidebarIndicatorDone('clearing', feeds.length), { durationMs: 5000 });
+      sidebarIndicatorService.show(
+        sidebarIndicatorDone('clearing', feeds.length, { subject: 'feeds' }),
+        { durationMs: 5000 },
+      );
     } catch (error) {
       logger.error('AppMenu', 'Failed to clear feeds from menu', { error });
-      sidebarIndicatorService.show(sidebarIndicatorFailed('clearing'), { durationMs: 5000 });
+      sidebarIndicatorService.show(sidebarIndicatorFailed('clearing', { subject: 'feeds' }), { durationMs: 5000 });
     }
   }, [
     clearFeedSelection,
@@ -181,14 +184,17 @@ export const useApplicationMenuCommands = ({
           });
           reportProgress(index + 1);
         }
-      });
+      }, { subject: 'saved' });
 
       await reloadCurrentSourceFromStore();
       notifyFeedLibraryChanged();
-      sidebarIndicatorService.show(sidebarIndicatorDone('clearing', savedArticles.length), { durationMs: 5000 });
+      sidebarIndicatorService.show(
+        sidebarIndicatorDone('clearing', savedArticles.length, { subject: 'saved' }),
+        { durationMs: 5000 },
+      );
     } catch (error) {
       logger.error('AppMenu', 'Failed to clear saved articles from menu', { error });
-      sidebarIndicatorService.show(sidebarIndicatorFailed('clearing'), { durationMs: 5000 });
+      sidebarIndicatorService.show(sidebarIndicatorFailed('clearing', { subject: 'saved' }), { durationMs: 5000 });
     }
   }, [
     closeActiveArticleIfNeeded,
@@ -231,17 +237,21 @@ export const useApplicationMenuCommands = ({
           });
           reportProgress(index + 1);
         }
-      });
+      }, { subject: 'articles' });
 
       await reloadCurrentSourceFromStore();
       notifyFeedLibraryChanged();
       sidebarIndicatorService.show(
-        sidebarIndicatorDone('clearing', deletedArticleCount > 0 ? deletedArticleCount : undefined),
+        sidebarIndicatorDone(
+          'clearing',
+          deletedArticleCount > 0 ? deletedArticleCount : undefined,
+          { subject: 'articles' },
+        ),
         { durationMs: 5000 },
       );
     } catch (error) {
       logger.error('AppMenu', 'Failed to clear articles from menu', { error });
-      sidebarIndicatorService.show(sidebarIndicatorFailed('clearing'), { durationMs: 5000 });
+      sidebarIndicatorService.show(sidebarIndicatorFailed('clearing', { subject: 'articles' }), { durationMs: 5000 });
     }
   }, [
     closeActiveArticleIfNeeded,
@@ -261,17 +271,21 @@ export const useApplicationMenuCommands = ({
     closeActiveArticleIfNeeded();
 
     try {
-      sidebarIndicatorService.show(sidebarIndicatorOngoing('clearing'));
+      sidebarIndicatorService.show(sidebarIndicatorOngoing('clearing', undefined, { subject: 'articles' }));
       const deletedArticleCount = await articlesManager.cleanOldArticlesAcrossFeeds(months);
       await reloadCurrentSourceFromStore();
       notifyFeedLibraryChanged();
       sidebarIndicatorService.show(
-        sidebarIndicatorDone('clearing', deletedArticleCount > 0 ? deletedArticleCount : undefined),
+        sidebarIndicatorDone(
+          'clearing',
+          deletedArticleCount > 0 ? deletedArticleCount : undefined,
+          { subject: 'articles' },
+        ),
         { durationMs: 5000 },
       );
     } catch (error) {
       logger.error('AppMenu', 'Failed to clear old articles from menu', { months, error });
-      sidebarIndicatorService.show(sidebarIndicatorFailed('clearing'), { durationMs: 5000 });
+      sidebarIndicatorService.show(sidebarIndicatorFailed('clearing', { subject: 'articles' }), { durationMs: 5000 });
     }
   }, [
     closeActiveArticleIfNeeded,

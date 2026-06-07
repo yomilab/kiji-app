@@ -149,7 +149,7 @@ pub fn saved_export_start(
                 SavedArticlesExportEventFailed {
                     job_id: worker_job_id.clone(),
                     status: "failed",
-                    message: "Export failed".to_string(),
+                    message: "Export articles failed".to_string(),
                     error,
                 },
             );
@@ -282,7 +282,7 @@ fn run_export_job(
         article_count,
         0,
         None,
-        format!("Exporting {article_count}…"),
+        format!("Exporting {article_count} articles"),
     )?;
 
     let (article_count, written_bytes) =
@@ -295,7 +295,7 @@ fn run_export_job(
         article_count,
         article_count,
         None,
-        "Exporting…".to_string(),
+        "Exporting articles".to_string(),
     )?;
 
     let _ = app.emit(
@@ -303,7 +303,7 @@ fn run_export_job(
         SavedArticlesExportEventCompleted {
             job_id: job_id.to_string(),
             status: "completed",
-            message: format!("Export done · {article_count}"),
+            message: format!("Exported {article_count} articles"),
             result: SavedArticlesExportCompletedPayload {
                 output_path: output_path.to_string(),
                 article_count,

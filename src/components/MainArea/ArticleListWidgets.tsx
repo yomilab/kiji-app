@@ -67,7 +67,7 @@ export const ArticleListWidgets: React.FC<ArticleListWidgetsProps> = ({
 
   return (
     <div className="article-list-widgets" data-section="article-list-widgets">
-      <div className="article-list-widgets-buttons">
+      <div className="article-list-widgets-buttons has-no-drag">
         <button
           className="button is-text is-small article-view-action-button article-list-search-button"
           onMouseDown={(event) => {

@@ -1,8 +1,10 @@
 .feed-edit-widgets {
   position: absolute;
-  top: 12px;
-  right: 16px;
+  top: max(12px, calc(var(--app-window-radius, 0px) + 6px));
+  right: max(16px, calc(var(--app-window-radius, 0px) + 10px));
   z-index: 15;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
   display: flex;
   align-items: flex-start;
   gap: 12px;

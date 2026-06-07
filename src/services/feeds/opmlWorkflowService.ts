@@ -103,7 +103,13 @@ class OpmlWorkflowService {
       feedScheduler.boostMany(importResult.importedFeeds.map((feed) => feed.id));
     }
 
-    await this.enqueueFaviconTasks(importResult.importedFeeds);
+    if (importResult.importedFeeds.length > 0) {
+      sidebarIndicatorService.show(
+        sidebarIndicatorOngoing('fetching', { count: importResult.importedFeeds.length }, { subject: 'favicons' }),
+      );
+      await this.enqueueFaviconTasks(importResult.importedFeeds);
+      sidebarIndicatorService.clear();
+    }
 
     return importResult;
   }

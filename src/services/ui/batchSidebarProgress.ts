@@ -2,6 +2,7 @@ import { sidebarIndicatorService } from '@/services/ui/sidebarIndicatorService';
 import {
   sidebarIndicatorOngoing,
   type SidebarIndicatorAction,
+  type SidebarIndicatorTextOptions,
 } from '@/services/ui/sidebarIndicatorText';
 
 const shouldReportProgress = (completed: number, total: number): boolean => (
@@ -15,6 +16,7 @@ export async function runWithSidebarBatchProgress<T>(
   action: SidebarIndicatorAction,
   total: number,
   work: (reportProgress: (completed: number) => void) => Promise<T>,
+  options?: SidebarIndicatorTextOptions,
 ): Promise<T> {
   const reportProgress = (completed: number) => {
     if (!shouldReportProgress(completed, total)) {
@@ -23,8 +25,8 @@ export async function runWithSidebarBatchProgress<T>(
 
     sidebarIndicatorService.show(
       total <= 1
-        ? sidebarIndicatorOngoing(action)
-        : sidebarIndicatorOngoing(action, { completed, total }),
+        ? sidebarIndicatorOngoing(action, undefined, options)
+        : sidebarIndicatorOngoing(action, { completed, total }, options),
     );
   };
 

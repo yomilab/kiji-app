@@ -235,7 +235,7 @@ export const Sidebar: React.FC = () => {
 
     // Check if the date is today
     if (dateAtMidnight.getTime() === today.getTime()) {
-      return `Today at ${date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+      return `Today ${date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
     }
 
     // Otherwise return the date

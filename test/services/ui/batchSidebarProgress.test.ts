@@ -22,10 +22,10 @@ describe('runWithSidebarBatchProgress', () => {
       reportProgress(2);
       reportProgress(4);
       return 'done';
-    });
+    }, { subject: 'feeds' });
 
     expect(result).toBe('done');
-    expect(show).toHaveBeenCalledWith('Clearing 0/4');
-    expect(show).toHaveBeenCalledWith('Clearing 4/4');
+    expect(show).toHaveBeenCalledWith('Clearing 0/4 feeds');
+    expect(show).toHaveBeenCalledWith('Clearing 4/4 feeds');
   });
 });
