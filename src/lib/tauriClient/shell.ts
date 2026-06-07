@@ -14,9 +14,9 @@ export async function updateMenuState(
 export async function showImageContextMenu(
   request: ShellContract["showImageContextMenu"]["request"],
 ): Promise<ShellContract["showImageContextMenu"]["response"]> {
-  return invokeContract<ShellContract["showImageContextMenu"]>(
+  return invokeCommand<ShellContract["showImageContextMenu"]["response"]>(
     "shell_context_menu_show_image",
-    request,
+    { request },
   );
 }
 

@@ -86,6 +86,10 @@ impl ApplicationMenu {
 
         let app_handle = app.clone();
         app.on_menu_event(move |app, event| {
+            if super::context_menu::ImageContextMenuState::handle_menu_event(app, event.id().as_ref()) {
+                return;
+            }
+
             if let Some(menu) = app.try_state::<ApplicationMenu>() {
                 menu.handle_event(&app_handle, event.id().as_ref());
             }

@@ -139,8 +139,11 @@ function installElectronApiCompat(): void {
     async showShareSheet(shareData) {
       await tauriClient.shell.share(shareData);
     },
-    async showImageContextMenu(src) {
-      await tauriClient.shell.showImageContextMenu({ src });
+    async showImageContextMenu(request) {
+      const normalized = typeof request === "string"
+        ? { url: request, kind: "image" as const }
+        : request;
+      await tauriClient.shell.showImageContextMenu(normalized);
     },
     async getShareServices() {
       const services = await tauriClient.shell.listShareServices();

@@ -65,7 +65,9 @@ export interface ElectronAPI {
   openArticleWindow: (articleData: { article: Article }) => Promise<void>;
   getArticleWindowData: () => Promise<Article>;
   showShareSheet: (shareData: { title: string; url: string; buttonRect?: { x: number; y: number; width: number; height: number } }) => Promise<void>;
-  showImageContextMenu: (src: string) => Promise<void>;
+  showImageContextMenu: (
+    request: string | { url: string; kind?: 'link' | 'image'; windowLabel?: string },
+  ) => Promise<void>;
   getShareServices: () => Promise<Array<{ id: string; name: string; icon: string }>>;
   shareToService: (serviceId: string, shareData: { title: string; url: string }) => Promise<{ success: boolean }>;
   storageGet: (key: string) => Promise<string | null>;

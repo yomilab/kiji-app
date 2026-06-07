@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import ArchiveIcon from '@mui/icons-material/Archive';
@@ -13,6 +14,7 @@ import { articleContentProcessingService } from '@/services/articles/articleCont
 import { sanitizeArticleHtmlStyles } from '@/services/articles/articleStyleSanitizer';
 import { savedArticlesService } from '@/services/saved/savedArticlesService';
 import { feedsManager } from '@/services/feeds/feedsManager';
+import { logger } from '@/services/logger';
 import { readerModeService, type ReaderModeContent } from '@/services/articles/readerModeService';
 import { postlightParserService } from '@/services/articles/postlightParserService';
 import { faviconFetcher } from '@/services/favicons/faviconFetcher';
@@ -1342,10 +1344,33 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     }
   }, []);
 
-  const handleImageContextMenu = useCallback((src: string) => {
-    if (window.electronAPI) {
-      window.electronAPI.showImageContextMenu(src);
+  const handleArticleContextMenu = useCallback((detail: { kind: 'link' | 'image'; url: string }) => {
+    if (!window.electronAPI?.showImageContextMenu) {
+      return;
     }
+
+    void (async () => {
+      let windowLabel: string | undefined;
+      try {
+        windowLabel = getCurrentWindow().label;
+      } catch {
+        windowLabel = undefined;
+      }
+
+      try {
+        await window.electronAPI.showImageContextMenu({
+          url: detail.url,
+          kind: detail.kind,
+          windowLabel,
+        });
+      } catch (error) {
+        logger.warn('ArticleView', 'Failed to show article context menu', {
+          kind: detail.kind,
+          url: detail.url,
+          error,
+        });
+      }
+    })();
   }, []);
 
   const handleArticleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
@@ -2010,7 +2035,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
             htmlContent={readerHtmlToRender}
             baseUrl={articleToShow?.link || articleToShow?.feedUrl}
             onLinkClick={handleArticleLinkClick}
-            onImageContextMenu={handleImageContextMenu}
+            onArticleContextMenu={handleArticleContextMenu}
             mediaProcessingDelayMs={mediaProcessingDelayMs}
             suspendProcessing={isClosing}
           />
@@ -2038,7 +2063,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
           htmlContent={originalHtmlToRender}
           baseUrl={articleToShow?.link || articleToShow?.feedUrl}
           onLinkClick={handleArticleLinkClick}
-          onImageContextMenu={handleImageContextMenu}
+          onArticleContextMenu={handleArticleContextMenu}
           mediaProcessingDelayMs={mediaProcessingDelayMs}
           suspendProcessing={isClosing}
         />

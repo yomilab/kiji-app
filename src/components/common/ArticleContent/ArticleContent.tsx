@@ -5,7 +5,7 @@ interface ArticleContentProps {
   htmlContent: string;
   baseUrl?: string;
   onLinkClick?: (href: string) => void;
-  onImageContextMenu?: (src: string) => void;
+  onArticleContextMenu?: (detail: { kind: 'link' | 'image'; url: string }) => void;
   mediaProcessingDelayMs?: number;
   suspendProcessing?: boolean;
 }
@@ -24,7 +24,7 @@ const ArticleContent = ({
   htmlContent,
   baseUrl,
   onLinkClick,
-  onImageContextMenu,
+  onArticleContextMenu,
   mediaProcessingDelayMs = 0,
   suspendProcessing = false,
 }: ArticleContentProps) => {
@@ -66,22 +66,22 @@ const ArticleContent = ({
     };
   }, [onLinkClick]);
 
-  // Attach broken-image context menu event listener
+  // Attach article-content context menu event listener
   useEffect(() => {
     const element = elementRef.current;
-    if (!element || !onImageContextMenu) return;
+    if (!element || !onArticleContextMenu) return;
 
-    const handleImageContextMenu = (event: Event) => {
-      const customEvent = event as CustomEvent<{ src: string }>;
-      onImageContextMenu(customEvent.detail.src);
+    const handleArticleContextMenu = (event: Event) => {
+      const customEvent = event as CustomEvent<{ kind: 'link' | 'image'; url: string }>;
+      onArticleContextMenu(customEvent.detail);
     };
 
-    element.addEventListener('article-image-context-menu', handleImageContextMenu);
+    element.addEventListener('article-content-context-menu', handleArticleContextMenu);
 
     return () => {
-      element.removeEventListener('article-image-context-menu', handleImageContextMenu);
+      element.removeEventListener('article-content-context-menu', handleArticleContextMenu);
     };
-  }, [onImageContextMenu]);
+  }, [onArticleContextMenu]);
 
   // Keep article-content accent color in sync with root/system accent color updates.
   useEffect(() => {

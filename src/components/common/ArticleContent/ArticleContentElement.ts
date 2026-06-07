@@ -409,7 +409,7 @@ class ArticleContentElement extends HTMLElement {
     this.observeThemeChanges();
 
     this.root.addEventListener('click', this.handleLinkClick.bind(this) as EventListener);
-    this.root.addEventListener('contextmenu', this.handleBrokenImageContextMenu.bind(this) as EventListener);
+    this.root.addEventListener('contextmenu', this.handleArticleContentContextMenu.bind(this) as EventListener);
     this.root.addEventListener('error', this.handleImageLoadError.bind(this), true);
   }
 
@@ -859,19 +859,59 @@ class ArticleContentElement extends HTMLElement {
   }
 
   /**
-   * Intercept right-click on broken image placeholders and dispatch custom event
-   * so the host can show a native context menu with the original image URL.
+   * Intercept right-clicks inside article content and dispatch a custom event so
+   * the host can show the native context menu. Linked images expose link actions
+   * only to avoid duplicate URL action groups.
    */
-  private handleBrokenImageContextMenu(event: MouseEvent): void {
+  private handleArticleContentContextMenu(event: MouseEvent): void {
     const target = event.target as HTMLElement;
+
+    const link = target.closest('a[href]') as HTMLAnchorElement | null;
+    if (link?.href) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.dispatchArticleContentContextMenu('link', link.href);
+      return;
+    }
+
     const brokenImage = target.closest('.article-content-broken-image') as HTMLElement | null;
-    if (!brokenImage?.dataset.originalSrc) return;
+    if (brokenImage?.dataset.originalSrc) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.dispatchArticleContentContextMenu('image', brokenImage.dataset.originalSrc);
+      return;
+    }
 
-    event.preventDefault();
-    event.stopPropagation();
+    const imageUrl = this.resolveImageContextUrl(target);
+    if (imageUrl) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.dispatchArticleContentContextMenu('image', imageUrl);
+    }
+  }
 
-    this.dispatchEvent(new CustomEvent('article-image-context-menu', {
-      detail: { src: brokenImage.dataset.originalSrc },
+  private resolveImageContextUrl(target: HTMLElement): string | null {
+    const image = target.closest('img[src]') as HTMLImageElement | null;
+    if (image?.src) {
+      return image.currentSrc || image.src;
+    }
+
+    const picture = target.closest('picture');
+    if (!picture) {
+      return null;
+    }
+
+    const pictureImage = picture.querySelector('img[src]') as HTMLImageElement | null;
+    if (!pictureImage?.src) {
+      return null;
+    }
+
+    return pictureImage.currentSrc || pictureImage.src;
+  }
+
+  private dispatchArticleContentContextMenu(kind: 'link' | 'image', url: string): void {
+    this.dispatchEvent(new CustomEvent('article-content-context-menu', {
+      detail: { kind, url },
       bubbles: true,
       composed: true,
     }));

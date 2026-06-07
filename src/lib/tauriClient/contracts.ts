@@ -742,7 +742,11 @@ export interface ShellContract {
     response: void;
   };
   showImageContextMenu: {
-    request: { src: UrlString };
+    request: {
+      url: UrlString;
+      kind?: "link" | "image";
+      windowLabel?: string;
+    };
     response: { shown: boolean };
   };
   listShareServices: {
