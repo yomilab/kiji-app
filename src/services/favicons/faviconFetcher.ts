@@ -1,4 +1,5 @@
-import { tauriClient } from "../../lib/tauriClient";
+import { tauriClient } from '../../lib/tauriClient';
+import { discoverFaviconDataUrl } from './faviconDiscovery';
 
 export class FaviconFetcher {
   private cache = new Map<string, string | null>();
@@ -24,51 +25,54 @@ export class FaviconFetcher {
   }
 
   private async fetchFaviconInternal(feedUrl: string, feedXmlText?: string): Promise<string | null> {
-    const origin = new URL(feedUrl).origin;
-    const candidates = [
-      ...this.extractFeedIconCandidates(feedUrl, feedXmlText),
-      `${origin}/favicon.ico`,
-      `${origin}/favicon.png`,
-      `${origin}/apple-touch-icon.png`,
-    ];
-
-    for (const candidate of candidates) {
-      const dataUrl = await this.fetchImage(candidate);
-      if (dataUrl) {
-        return this.cacheFavicon(feedUrl, dataUrl);
-      }
-    }
-
-    return this.cacheFavicon(feedUrl, null);
-  }
-
-  private extractFeedIconCandidates(feedUrl: string, feedXmlText?: string): string[] {
-    if (!feedXmlText) {
-      return [];
-    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
     try {
-      const doc = new DOMParser().parseFromString(feedXmlText, "text/xml");
-      const rawCandidates = [
-        doc.querySelector("channel > image > url")?.textContent,
-        doc.querySelector("feed > icon")?.textContent,
-        doc.querySelector("feed > logo")?.textContent,
-      ];
-      return rawCandidates
-        .map((candidate) => resolveUrl(candidate ?? "", feedUrl))
-        .filter((candidate): candidate is string => !!candidate);
+      const favicon = await discoverFaviconDataUrl(feedUrl, {
+        fetchImageDataUrl: async (url, signal) => this.fetchImage(url, signal),
+        fetchText: async (url, signal) => this.fetchText(url, signal),
+      }, {
+        feedXmlText,
+        signal: controller.signal,
+      });
+
+      return this.cacheFavicon(feedUrl, favicon);
     } catch {
-      return [];
+      return this.cacheFavicon(feedUrl, null);
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
-  private async fetchImage(url: string): Promise<string | null> {
+  private async fetchImage(url: string, signal?: AbortSignal): Promise<string | null> {
+    if (signal?.aborted) {
+      return null;
+    }
+
     try {
       const response = await tauriClient.feeds.fetchDataUrl({ url, timeout: this.timeout });
-      return response.dataUrl.startsWith("data:image/") ? response.dataUrl : null;
+      return response.dataUrl.startsWith('data:image/') ? response.dataUrl : null;
     } catch {
       return null;
     }
+  }
+
+  private async fetchText(url: string, signal?: AbortSignal): Promise<string> {
+    if (signal?.aborted) {
+      throw new DOMException('Task aborted', 'AbortError');
+    }
+
+    if (window.electronAPI?.fetchHtmlSafe) {
+      const result = await window.electronAPI.fetchHtmlSafe(url);
+      if (result.resourceType === 'html' && result.html) {
+        return result.html;
+      }
+
+      throw new Error(`Non-HTML content type: ${result.contentType}`);
+    }
+
+    return tauriClient.feeds.fetch({ url });
   }
 
   private cacheFavicon(url: string, favicon: string | null): string | null {
@@ -80,19 +84,6 @@ export class FaviconFetcher {
     }
     this.cache.set(url, favicon);
     return favicon;
-  }
-}
-
-function resolveUrl(candidate: string, baseUrl: string): string | undefined {
-  const trimmed = candidate.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  try {
-    return new URL(trimmed, baseUrl).toString();
-  } catch {
-    return undefined;
   }
 }
 

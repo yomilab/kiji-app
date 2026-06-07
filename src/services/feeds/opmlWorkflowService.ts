@@ -9,10 +9,21 @@ import {
 } from '@/services/tasks/helperTaskContracts';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 import { sidebarIndicatorService } from '@/services/ui/sidebarIndicatorService';
+import {
+  sidebarIndicatorDone,
+  sidebarIndicatorOngoing,
+} from '@/services/ui/sidebarIndicatorText';
+
+const FAVICON_ENQUEUE_BATCH_SIZE = 25;
+
+const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => {
+  setTimeout(resolve, 0);
+});
 
 class OpmlWorkflowService {
   private faviconTaskFeedMap = new Map<string, string>();
   private unsubscribeTaskEvents: (() => void) | null = null;
+  private backfillScheduled = false;
 
   attachFaviconTaskListener(): void {
     if (this.unsubscribeTaskEvents) return;
@@ -20,13 +31,13 @@ class OpmlWorkflowService {
     this.unsubscribeTaskEvents = helperTaskClient.onTaskResult((event) => {
       void this.handleTaskResult(event);
     });
+
+    this.scheduleMissingFaviconBackfill();
   }
 
-  async detachFaviconTaskListener(): Promise<void> {
+  detachFaviconTaskListener(): void {
     this.unsubscribeTaskEvents?.();
     this.unsubscribeTaskEvents = null;
-    this.faviconTaskFeedMap.clear();
-    await helperTaskClient.clearTasks();
   }
 
   async importFromOpmlText(opmlText: string): Promise<OpmlImportResult> {
@@ -39,38 +50,22 @@ class OpmlWorkflowService {
       payload: { opmlText },
     });
 
-    sidebarIndicatorService.show(`Import ${parsedOpml.entries.length} feeds`);
+    sidebarIndicatorService.show(
+      sidebarIndicatorOngoing('importing', { count: parsedOpml.entries.length }),
+    );
 
     const importResult = await opmlImportService.importEntries(parsedOpml.entries);
 
-    if (importResult.importedFeeds.length > 0) {
-      sidebarIndicatorService.show(
-        `Imported ${importResult.importedFeeds.length} · fetching`,
-        { durationMs: 4000 },
-      );
-    } else {
-      sidebarIndicatorService.show('No new feeds', { durationMs: 4000 });
-    }
+    sidebarIndicatorService.show(
+      sidebarIndicatorDone('importing', importResult.importedFeeds.length || undefined),
+      { durationMs: 4000 },
+    );
 
     if (importResult.importedFeeds.length > 0) {
       feedScheduler.boostMany(importResult.importedFeeds.map((feed) => feed.id));
     }
 
-    await Promise.all(importResult.importedFeeds.map(async (feed) => {
-      try {
-        const task = await helperTaskClient.addTask({
-          kind: HELPER_TASK_KIND.FAVICON_FETCH,
-          priority: 'low',
-          payload: {
-            feedId: feed.id,
-            feedUrl: feed.url,
-          },
-        });
-        this.faviconTaskFeedMap.set(task.taskId, feed.id);
-      } catch {
-        await feedsManager.updateFeed(feed.id, { faviconFetchFailed: true });
-      }
-    }));
+    await this.enqueueFaviconTasks(importResult.importedFeeds);
 
     return importResult;
   }
@@ -88,15 +83,12 @@ class OpmlWorkflowService {
     this.faviconTaskFeedMap.delete(event.taskId);
 
     if (event.status !== 'completed') {
-      await feedsManager.updateFeed(feedId, { faviconFetchFailed: true });
+      await feedsManager.applyFaviconResult(feedId, null);
       return;
     }
 
     const result = event.result as FaviconFetchTaskResult;
-    const updatedFeed = await feedsManager.updateFeed(feedId, {
-      favicon: result.favicon || undefined,
-      faviconFetchFailed: !result.favicon,
-    });
+    const updatedFeed = await feedsManager.applyFaviconResult(feedId, result.favicon);
 
     if (updatedFeed) {
       feedLibraryMutationBus.publishFeedPatched(feedId, {
@@ -105,6 +97,58 @@ class OpmlWorkflowService {
         faviconBgLight: updatedFeed.faviconBgLight,
         faviconBgDark: updatedFeed.faviconBgDark,
       });
+    }
+  }
+
+  private scheduleMissingFaviconBackfill(): void {
+    if (this.backfillScheduled) {
+      return;
+    }
+
+    this.backfillScheduled = true;
+    void this.enqueueMissingFaviconTasks();
+  }
+
+  private async enqueueMissingFaviconTasks(): Promise<void> {
+    const feeds = await feedsManager.getAllFeeds();
+    const missing = feeds.filter((feed) => (
+      !feed.emoji
+      && !feed.favicon
+      && !feed.faviconFetchFailed
+    ));
+
+    if (missing.length === 0) {
+      return;
+    }
+
+    await this.enqueueFaviconTasks(missing);
+  }
+
+  private async enqueueFaviconTasks(
+    feeds: Array<{ id: string; url: string }>,
+  ): Promise<void> {
+    for (let index = 0; index < feeds.length; index += FAVICON_ENQUEUE_BATCH_SIZE) {
+      const batch = feeds.slice(index, index + FAVICON_ENQUEUE_BATCH_SIZE);
+
+      for (const feed of batch) {
+        try {
+          const task = await helperTaskClient.addTask({
+            kind: HELPER_TASK_KIND.FAVICON_FETCH,
+            priority: 'low',
+            payload: {
+              feedId: feed.id,
+              feedUrl: feed.url,
+            },
+          });
+          this.faviconTaskFeedMap.set(task.taskId, feed.id);
+        } catch {
+          await feedsManager.applyFaviconResult(feed.id, null);
+        }
+      }
+
+      if (index + FAVICON_ENQUEUE_BATCH_SIZE < feeds.length) {
+        await yieldToEventLoop();
+      }
     }
   }
 }

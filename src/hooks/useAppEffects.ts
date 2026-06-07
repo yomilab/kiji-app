@@ -185,7 +185,7 @@ export const useOpmlWorkflowListener = (): void => {
   useMountEffect(() => {
     opmlWorkflowService.attachFaviconTaskListener();
     return () => {
-      void opmlWorkflowService.detachFaviconTaskListener();
+      opmlWorkflowService.detachFaviconTaskListener();
     };
   });
 };

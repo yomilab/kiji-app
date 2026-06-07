@@ -13,13 +13,14 @@ import { isOpenAddFeedShortcut, keybindingService } from '@/services/shortcuts/s
 import { useFeedRefreshActivity } from '@/hooks/useFeedRefreshActivity';
 import { useUserMessageChannel } from '@/hooks/useUserMessageChannel';
 import { SIDEBAR_INDICATOR_CHANNEL } from '@/services/ui/sidebarIndicatorService';
+import { sidebarIndicatorOngoing } from '@/services/ui/sidebarIndicatorText';
 import './Sidebar.css';
 
 const MIN_SIDEBAR_WIDTH = 250;
 const MAX_SIDEBAR_WIDTH = 600;
 
 export const formatFeedRefreshStatus = (feedCount: number): string =>
-  `Refresh ${feedCount}`;
+  sidebarIndicatorOngoing('refreshing', { count: feedCount });
 
 export const Sidebar: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
@@ -257,7 +258,7 @@ export const Sidebar: React.FC = () => {
 
     // Show "syncing" if currently syncing
     if (showSyncing) {
-      return 'Syncing';
+      return sidebarIndicatorOngoing('syncing');
     }
 
     // No feeds at all

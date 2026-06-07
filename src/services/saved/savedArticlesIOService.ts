@@ -6,6 +6,11 @@ import { logger } from '@/services/logger';
 import { settingsManager } from '@/services/settings';
 import { confirmDialog } from '@/services/ui/confirmDialogService';
 import { userMessageBus } from '@/services/ui/userMessageBus';
+import {
+  sidebarIndicatorDone,
+  sidebarIndicatorFailed,
+  sidebarIndicatorOngoing,
+} from '@/services/ui/sidebarIndicatorText';
 import type { SavedArticlesExportEvent } from '@/services/saved/export/shared';
 import { helperTaskClient } from '@/services/tasks/helperTaskClient';
 import { HELPER_TASK_KIND } from '@/services/tasks/helperTaskContracts';
@@ -33,7 +38,7 @@ class SavedArticlesIOService {
 
       const preflight = await window.electronAPI.getSavedArticlesExportPreflight(pathResult.filePath);
       if (preflight.articleCount === 0) {
-        userMessageBus.publish('export-progress', 'No saved', { durationMs: 4000 });
+        userMessageBus.publish('export-progress', sidebarIndicatorDone('exporting', 0), { durationMs: 4000 });
         return;
       }
 
@@ -49,7 +54,7 @@ class SavedArticlesIOService {
 
       userMessageBus.publish(
         'export-progress',
-        `Export prep (${preflight.articleCount})`,
+        sidebarIndicatorOngoing('exporting', { count: preflight.articleCount }),
       );
 
       const startResult = await window.electronAPI.startSavedArticlesExport({
@@ -58,8 +63,8 @@ class SavedArticlesIOService {
 
       if (!startResult.started || !startResult.jobId) {
         const message = startResult.reason === 'busy'
-          ? 'Export busy'
-          : 'Export start failed';
+          ? sidebarIndicatorOngoing('exporting')
+          : sidebarIndicatorFailed('exporting');
         userMessageBus.publish('export-progress', message, { durationMs: 5000 });
         logger.warn('SavedArticlesIO', message);
         return;
@@ -69,7 +74,7 @@ class SavedArticlesIOService {
       logger.info('SavedArticlesIO', `Started background export job ${startResult.jobId}`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      userMessageBus.publish('export-progress', 'Export failed', { durationMs: 6000 });
+      userMessageBus.publish('export-progress', sidebarIndicatorFailed('exporting'), { durationMs: 6000 });
       logger.error('SavedArticlesIO', 'Failed to export saved articles', {
         message: errorMessage,
         error,
@@ -243,7 +248,7 @@ class SavedArticlesIOService {
       this.activeExportJobId = null;
       userMessageBus.publish(
         'export-progress',
-        `Exported (${event.result.articleCount})`,
+        sidebarIndicatorDone('exporting', event.result.articleCount),
         { durationMs: 6000 },
       );
       logger.info('SavedArticlesIO', 'Saved articles export completed', event.result);
@@ -251,7 +256,7 @@ class SavedArticlesIOService {
     }
 
     this.activeExportJobId = null;
-    userMessageBus.publish('export-progress', event.message, { durationMs: 7000 });
+    userMessageBus.publish('export-progress', sidebarIndicatorFailed('exporting'), { durationMs: 7000 });
     logger.error('SavedArticlesIO', 'Saved articles export failed', { error: event.error });
   }
 

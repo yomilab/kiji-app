@@ -1,6 +1,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { tauriClient } from '@/lib/tauriClient';
 import { feedsManager } from '@/services/feeds/feedsManager';
+import { maybeRefreshFavicon } from '@/services/favicons/faviconRefreshService';
 import { settingsManager } from '@/services/settings';
 import { logger } from '@/services/logger';
 import type { BackgroundUpdateMode, SchedulerEvent } from './types';
@@ -265,6 +266,10 @@ class FeedSchedulerService {
 
         await feedsManager.refreshFeed(feed.id, { signal })
           .then((result) => {
+            if (!result.notModified) {
+              void maybeRefreshFavicon(feed.id, feed.url);
+            }
+
             this.emit({
               type: 'feed-updated',
               feedId: feed.id,

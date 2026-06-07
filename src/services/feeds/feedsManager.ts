@@ -149,15 +149,15 @@ class FeedsManager {
     }, options);
   }
 
-  async refreshFavicon(id: string, feedXmlText?: string): Promise<string | null> {
-    const feed = await this.requireFeed(id);
-    const favicon = await faviconFetcher.fetchFavicon(feed.url, feedXmlText);
+  async applyFaviconResult(id: string, favicon: string | null): Promise<Feed | null> {
+    const refreshedAt = new Date();
+
     if (!favicon) {
       await feedStore.update(id, {
         faviconFetchFailed: true,
-        lastFaviconRefresh: new Date(),
+        lastFaviconRefresh: refreshedAt,
       });
-      return null;
+      return feedStore.getById(id);
     }
 
     const appearance = await analyzeFaviconAppearance(favicon);
@@ -168,7 +168,7 @@ class FeedsManager {
       faviconBgLight: appearance.containerBgLight ?? undefined,
       faviconBgDark: appearance.containerBgDark ?? undefined,
       faviconFetchFailed: false,
-      lastFaviconRefresh: new Date(),
+      lastFaviconRefresh: refreshedAt,
     });
     await articleStore.updateFeedMeta(id, {
       feedFavicon: favicon,
@@ -176,6 +176,13 @@ class FeedsManager {
       feedFaviconBgLight: appearance.containerBgLight ?? undefined,
       feedFaviconBgDark: appearance.containerBgDark ?? undefined,
     });
+    return feedStore.getById(id);
+  }
+
+  async refreshFavicon(id: string, feedXmlText?: string): Promise<string | null> {
+    const feed = await this.requireFeed(id);
+    const favicon = await faviconFetcher.fetchFavicon(feed.url, feedXmlText);
+    await this.applyFaviconResult(id, favicon);
     return favicon;
   }
 

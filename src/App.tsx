@@ -34,6 +34,10 @@ import {
 } from './services/feeds/opmlUiWorkflow';
 import { APP_TOAST_CHANNEL, appToastService } from './services/ui/appToastService';
 import { sidebarIndicatorService } from './services/ui/sidebarIndicatorService';
+import {
+  sidebarIndicatorFailed,
+  sidebarIndicatorOngoing,
+} from './services/ui/sidebarIndicatorText';
 import { useApplicationMenuCommands } from './hooks/useApplicationMenuCommands';
 import {
   DECK_SLIDE_EASE,
@@ -187,7 +191,7 @@ export const App: React.FC = () => {
     try {
       // Surface the expensive parse/import phases in the sidebar indicator so
       // first-run OPML imports do not look stalled.
-      sidebarIndicatorService.show('Parse OPML…');
+      sidebarIndicatorService.show(sidebarIndicatorOngoing('parsing'));
       logger.info('OPML', 'Starting drag-and-drop OPML import', {
         fileName: opmlFile.name,
         fileSize: opmlFile.size,
@@ -206,7 +210,7 @@ export const App: React.FC = () => {
       const errorMessage = error instanceof Error
         ? error.message
         : 'Failed to import OPML file.';
-      sidebarIndicatorService.show('Import failed', { durationMs: 6000 });
+      sidebarIndicatorService.show(sidebarIndicatorFailed('importing'), { durationMs: 6000 });
       logger.error('OPML', 'OPML drag-and-drop import failed', { error });
       appToastService.show(errorMessage);
     }

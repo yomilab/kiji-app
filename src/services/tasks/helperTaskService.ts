@@ -21,7 +21,7 @@ function getServer(): HelperTaskServer {
   if (!server) {
     server = new HelperTaskServer({
       backend: new InProcessExecutionBackend(),
-      maxConcurrent: 2,
+      maxConcurrent: 3,
       onTaskSettled: (_ownerId, event) => {
         for (const listener of listeners) {
           listener(event);

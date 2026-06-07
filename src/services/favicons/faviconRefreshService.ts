@@ -30,23 +30,17 @@ export async function maybeRefreshFavicon(
     const newFavicon = await faviconFetcher.fetchFavicon(feedUrl);
 
     if (newFavicon && newFavicon !== feed.favicon) {
-      // New or changed favicon — update triggers analyzeFaviconAppearance automatically
-      const updatedFeed = await feedsManager.updateFeed(feedId, {
-        favicon: newFavicon,
-        faviconFetchFailed: false,
-        lastFaviconRefresh: new Date(),
-      });
-
+      const updatedFeed = await feedsManager.applyFaviconResult(feedId, newFavicon);
       logger.info('faviconRefresh', 'Favicon updated', { feedId });
       if (updatedFeed) {
         onChanged?.();
       }
-    } else {
-      // Same or failed — just stamp the refresh time to avoid retrying immediately
-      await feedsManager.updateFeed(feedId, {
-        lastFaviconRefresh: new Date(),
-      });
+      return;
     }
+
+    await feedsManager.updateFeed(feedId, {
+      lastFaviconRefresh: new Date(),
+    });
   } catch (error) {
     logger.warn('faviconRefresh', 'Favicon refresh failed', {
       feedId,
