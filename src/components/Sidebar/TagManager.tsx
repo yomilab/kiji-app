@@ -5,6 +5,7 @@ import UnfoldMoreOutlined from '@mui/icons-material/UnfoldMoreOutlined';
 import UnfoldLessOutlined from '@mui/icons-material/UnfoldLessOutlined';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { feedsManager, type Feed } from '@/services/feeds/feedsManager';
+import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import {
   useFeedDeletedMutation,
   useFeedPatchedMutation,
@@ -193,15 +194,18 @@ export const TagManager: React.FC = () => {
 
   const ensureFeedsCached = useCallback(async (feedIds: string[]) => {
     const missing = feedIds.filter(id => !feedCache.has(id));
-    if (missing.length === 0) return;
-    const fetched = await Promise.all(missing.map(id => feedsManager.getFeedById(id)));
-    setFeedCache(prev => {
-      const next = new Map(prev);
-      for (const feed of fetched) {
-        if (feed) next.set(feed.id, feed);
-      }
-      return next;
-    });
+    if (missing.length > 0) {
+      const fetched = await Promise.all(missing.map(id => feedsManager.getFeedById(id)));
+      setFeedCache(prev => {
+        const next = new Map(prev);
+        for (const feed of fetched) {
+          if (feed) next.set(feed.id, feed);
+        }
+        return next;
+      });
+    }
+
+    opmlWorkflowService.scheduleMissingFaviconsAfterStationSelection(feedIds);
   }, [feedCache]);
 
   const toggleStation = useCallback((tagName: string) => {

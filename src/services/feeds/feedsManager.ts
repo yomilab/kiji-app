@@ -153,6 +153,11 @@ class FeedsManager {
     const refreshedAt = new Date();
 
     if (!favicon) {
+      const existing = await feedStore.getById(id);
+      if (existing?.favicon) {
+        return existing;
+      }
+
       await feedStore.update(id, {
         faviconFetchFailed: true,
         lastFaviconRefresh: refreshedAt,

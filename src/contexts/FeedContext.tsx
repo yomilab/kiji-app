@@ -17,6 +17,7 @@ import { debugOnly } from '@/services/system/env';
 import { storage } from '@/services/storage/storageFactory';
 import { useDependencyEffect, useMountEffect } from '@/hooks/useLifecycleEffects';
 import type { SmartViewId } from '@/constants';
+import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
 import { feedRefreshCoordinator } from '@/services/feeds/feedRefreshCoordinator';
 import { feedRefreshActivity } from '@/services/feeds/feedRefreshActivity';
@@ -1436,6 +1437,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         performance.mark(`${perfMark}:fresh-ready`);
         performance.measure(`${perfMark}:total-selection`, `${perfMark}:start`, `${perfMark}:fresh-ready`);
       }
+
+      if (!isSelectionActive(token)) return;
+
+      // Schedule favicon backfill only after station feed refreshes and article list are ready.
+      opmlWorkflowService.scheduleMissingFaviconsAfterStationSelection(feedIds);
     } finally {
       if (isSelectionActive(token)) {
         collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: false, isLoadingArticles: false } });
