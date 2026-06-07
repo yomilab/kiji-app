@@ -282,7 +282,7 @@ fn run_export_job(
         article_count,
         0,
         None,
-        format!("Preparing export ({article_count})"),
+        format!("Export prep ({article_count})"),
     )?;
 
     let (article_count, written_bytes) =
@@ -295,7 +295,7 @@ fn run_export_job(
         article_count,
         article_count,
         None,
-        "Finalizing export".to_string(),
+        "Export zip…".to_string(),
     )?;
 
     let _ = app.emit(
@@ -303,7 +303,7 @@ fn run_export_job(
         SavedArticlesExportEventCompleted {
             job_id: job_id.to_string(),
             status: "completed",
-            message: format!("Export complete ({article_count})"),
+            message: format!("Exported ({article_count})"),
             result: SavedArticlesExportCompletedPayload {
                 output_path: output_path.to_string(),
                 article_count,

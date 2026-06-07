@@ -9,8 +9,6 @@ import {
 } from '@/services/tasks/helperTaskContracts';
 import { sidebarIndicatorService } from '@/services/ui/sidebarIndicatorService';
 
-const pluralizeFeeds = (count: number): string => `${count} feed${count === 1 ? '' : 's'}`;
-
 class OpmlWorkflowService {
   private faviconTaskFeedMap = new Map<string, string>();
   private unsubscribeTaskEvents: (() => void) | null = null;
@@ -40,17 +38,17 @@ class OpmlWorkflowService {
       payload: { opmlText },
     });
 
-    sidebarIndicatorService.show(`Importing ${pluralizeFeeds(parsedOpml.entries.length)}`);
+    sidebarIndicatorService.show(`Import ${parsedOpml.entries.length} feeds`);
 
     const importResult = await opmlImportService.importEntries(parsedOpml.entries);
 
     if (importResult.importedFeeds.length > 0) {
       sidebarIndicatorService.show(
-        `Imported ${pluralizeFeeds(importResult.importedFeeds.length)}. Fetching items and metadata`,
+        `Imported ${importResult.importedFeeds.length} · fetching`,
         { durationMs: 4000 },
       );
     } else {
-      sidebarIndicatorService.show('No new feeds to import', { durationMs: 4000 });
+      sidebarIndicatorService.show('No new feeds', { durationMs: 4000 });
     }
 
     if (importResult.importedFeeds.length > 0) {

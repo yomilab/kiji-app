@@ -19,7 +19,7 @@ const MIN_SIDEBAR_WIDTH = 250;
 const MAX_SIDEBAR_WIDTH = 600;
 
 export const formatFeedRefreshStatus = (feedCount: number): string =>
-  `Fetching ${feedCount} feed${feedCount === 1 ? '' : 's'}`;
+  `Refresh ${feedCount}`;
 
 export const Sidebar: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
@@ -262,7 +262,7 @@ export const Sidebar: React.FC = () => {
 
     // No feeds at all
     if (totalFeeds === 0) {
-      return 'No feeds yet';
+      return 'No feeds';
     }
 
     // Show "No articles" only for Saved view when empty

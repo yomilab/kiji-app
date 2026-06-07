@@ -58,11 +58,11 @@ export const useApplicationMenuCommands = ({
 
   const handleExportFeeds = useCallback(async () => {
     if (!window.electronAPI?.saveOpmlFile) {
-      sidebarIndicatorService.show('Feed export is only available in the desktop app.', { durationMs: 5000 });
+      sidebarIndicatorService.show('Export: desktop only', { durationMs: 5000 });
       return;
     }
 
-    sidebarIndicatorService.show('Preparing OPML export…');
+    sidebarIndicatorService.show('Export OPML…');
     try {
       const opmlText = await opmlExportService.buildOpmlText();
       const saveResult = await window.electronAPI.saveOpmlFile(opmlText, 'Feeds.opml');
@@ -71,17 +71,17 @@ export const useApplicationMenuCommands = ({
         return;
       }
 
-      sidebarIndicatorService.show('Exported feeds to OPML.', { durationMs: 5000 });
+      sidebarIndicatorService.show('Exported OPML', { durationMs: 5000 });
     } catch (error) {
       logger.error('AppMenu', 'Failed to export feeds from menu', { error });
-      sidebarIndicatorService.show('Failed to export feeds.', { durationMs: 5000 });
+      sidebarIndicatorService.show('Export failed', { durationMs: 5000 });
     }
   }, []);
 
   const handleClearFeeds = useCallback(async () => {
     const feeds = await feedsManager.getAllFeeds();
     if (feeds.length === 0) {
-      sidebarIndicatorService.show('No feeds to clear.', { durationMs: 4000 });
+      sidebarIndicatorService.show('No feeds', { durationMs: 4000 });
       return;
     }
 
@@ -97,7 +97,7 @@ export const useApplicationMenuCommands = ({
 
     try {
       const tags = await tagsManager.getAllTags();
-      await runWithSidebarBatchProgress('Clearing subscriptions', feeds.length, async (reportProgress) => {
+      await runWithSidebarBatchProgress('Clear feeds', feeds.length, async (reportProgress) => {
         for (let index = 0; index < feeds.length; index += 1) {
           const feed = feeds[index];
           await articlesManager.deleteArticlesByFeed(feed.id);
@@ -107,7 +107,7 @@ export const useApplicationMenuCommands = ({
         }
       });
 
-      sidebarIndicatorService.show('Clearing stations…');
+      sidebarIndicatorService.show('Clear stations…');
       for (const tag of tags) {
         await tagsManager.deleteTag(tag.name);
       }
@@ -116,10 +116,10 @@ export const useApplicationMenuCommands = ({
       clearFeedSelection();
       await refreshTotalFeeds();
       notifyFeedLibraryChanged();
-      sidebarIndicatorService.show(`Cleared ${feeds.length} subscriptions.`, { durationMs: 5000 });
+      sidebarIndicatorService.show(`Cleared ${feeds.length} feeds`, { durationMs: 5000 });
     } catch (error) {
       logger.error('AppMenu', 'Failed to clear feeds from menu', { error });
-      sidebarIndicatorService.show('Failed to clear subscriptions.', { durationMs: 5000 });
+      sidebarIndicatorService.show('Clear feeds failed', { durationMs: 5000 });
     }
   }, [
     clearFeedSelection,
@@ -150,7 +150,7 @@ export const useApplicationMenuCommands = ({
   const handleClearSavedArticles = useCallback(async () => {
     const savedArticles = await savedArticlesManager.getAllSavedArticles();
     if (savedArticles.length === 0) {
-      sidebarIndicatorService.show('No saved articles to clear.', { durationMs: 4000 });
+      sidebarIndicatorService.show('No saved', { durationMs: 4000 });
       return;
     }
 
@@ -165,7 +165,7 @@ export const useApplicationMenuCommands = ({
     closeActiveArticleIfNeeded();
 
     try {
-      await runWithSidebarBatchProgress('Clearing saved articles', savedArticles.length, async (reportProgress) => {
+      await runWithSidebarBatchProgress('Clear saved', savedArticles.length, async (reportProgress) => {
         for (let index = 0; index < savedArticles.length; index += 1) {
           const savedArticle = savedArticles[index];
           await savedArticlesService.unsaveArticle(savedArticle.id, savedArticle.title);
@@ -180,10 +180,10 @@ export const useApplicationMenuCommands = ({
 
       await reloadCurrentSourceFromStore();
       notifyFeedLibraryChanged();
-      sidebarIndicatorService.show(`Cleared ${savedArticles.length} saved articles.`, { durationMs: 5000 });
+      sidebarIndicatorService.show(`Cleared ${savedArticles.length} saved`, { durationMs: 5000 });
     } catch (error) {
       logger.error('AppMenu', 'Failed to clear saved articles from menu', { error });
-      sidebarIndicatorService.show('Failed to clear saved articles.', { durationMs: 5000 });
+      sidebarIndicatorService.show('Clear saved failed', { durationMs: 5000 });
     }
   }, [
     closeActiveArticleIfNeeded,
@@ -195,7 +195,7 @@ export const useApplicationMenuCommands = ({
   const handleClearArticles = useCallback(async () => {
     const feeds = await feedsManager.getAllFeeds();
     if (feeds.length === 0) {
-      sidebarIndicatorService.show('No feed articles to clear.', { durationMs: 4000 });
+      sidebarIndicatorService.show('No articles', { durationMs: 4000 });
       return;
     }
 
@@ -211,7 +211,7 @@ export const useApplicationMenuCommands = ({
 
     try {
       let deletedArticleCount = 0;
-      await runWithSidebarBatchProgress('Clearing articles', feeds.length, async (reportProgress) => {
+      await runWithSidebarBatchProgress('Clear articles', feeds.length, async (reportProgress) => {
         for (let index = 0; index < feeds.length; index += 1) {
           const feed = feeds[index];
           const deletedHashes = await articlesManager.deleteArticlesByFeed(feed.id);
@@ -232,13 +232,13 @@ export const useApplicationMenuCommands = ({
       notifyFeedLibraryChanged();
       sidebarIndicatorService.show(
         deletedArticleCount > 0
-          ? `Cleared ${deletedArticleCount} articles.`
-          : 'No non-saved articles needed clearing.',
+          ? `Cleared ${deletedArticleCount}`
+          : 'Nothing to clear',
         { durationMs: 5000 }
       );
     } catch (error) {
       logger.error('AppMenu', 'Failed to clear articles from menu', { error });
-      sidebarIndicatorService.show('Failed to clear articles.', { durationMs: 5000 });
+      sidebarIndicatorService.show('Clear failed', { durationMs: 5000 });
     }
   }, [
     closeActiveArticleIfNeeded,
@@ -247,10 +247,10 @@ export const useApplicationMenuCommands = ({
   ]);
 
   const handleClearArticlesOlderThan = useCallback(async (months: 1 | 3) => {
-    const label = months === 1 ? '1 month' : `${months} months`;
+    const ageLabel = months === 1 ? '>1mo' : `>${months}mo`;
     const confirmed = await confirmDialog({
-      title: `Clear articles older than ${label}`,
-      message: `Clear articles older than ${label}?\n\nThis deletes non-saved, non-starred subscription articles older than ${label}. Your feeds, starred articles, and saved articles stay in place.`,
+      title: `Clear articles older than ${months === 1 ? '1 month' : `${months} months`}`,
+      message: `Clear articles older than ${months === 1 ? '1 month' : `${months} months`}?\n\nThis deletes non-saved, non-starred subscription articles older than ${months === 1 ? '1 month' : `${months} months`}. Your feeds, starred articles, and saved articles stay in place.`,
     });
     if (!confirmed) {
       return;
@@ -259,19 +259,19 @@ export const useApplicationMenuCommands = ({
     closeActiveArticleIfNeeded();
 
     try {
-      sidebarIndicatorService.show(`Clearing articles older than ${label}…`);
+      sidebarIndicatorService.show(`Clear ${ageLabel}…`);
       const deletedArticleCount = await articlesManager.cleanOldArticlesAcrossFeeds(months);
       await reloadCurrentSourceFromStore();
       notifyFeedLibraryChanged();
       sidebarIndicatorService.show(
         deletedArticleCount > 0
-          ? `Cleared ${deletedArticleCount} articles older than ${label}.`
-          : `No articles older than ${label} needed clearing.`,
+          ? `Cleared ${deletedArticleCount} (${ageLabel})`
+          : `None ${ageLabel}`,
         { durationMs: 5000 }
       );
     } catch (error) {
       logger.error('AppMenu', 'Failed to clear old articles from menu', { months, error });
-      sidebarIndicatorService.show(`Failed to clear articles older than ${label}.`, { durationMs: 5000 });
+      sidebarIndicatorService.show(`Clear ${ageLabel} failed`, { durationMs: 5000 });
     }
   }, [
     closeActiveArticleIfNeeded,

@@ -187,7 +187,7 @@ export const App: React.FC = () => {
     try {
       // Surface the expensive parse/import phases in the sidebar indicator so
       // first-run OPML imports do not look stalled.
-      sidebarIndicatorService.show('Parsing OPML');
+      sidebarIndicatorService.show('Parse OPML…');
       logger.info('OPML', 'Starting drag-and-drop OPML import', {
         fileName: opmlFile.name,
         fileSize: opmlFile.size,
@@ -206,7 +206,7 @@ export const App: React.FC = () => {
       const errorMessage = error instanceof Error
         ? error.message
         : 'Failed to import OPML file.';
-      sidebarIndicatorService.show('OPML import failed', { durationMs: 6000 });
+      sidebarIndicatorService.show('Import failed', { durationMs: 6000 });
       logger.error('OPML', 'OPML drag-and-drop import failed', { error });
       appToastService.show(errorMessage);
     }

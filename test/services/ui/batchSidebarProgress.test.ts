@@ -17,7 +17,7 @@ describe('runWithSidebarBatchProgress', () => {
   });
 
   it('reports start and completion progress for batch work', async () => {
-    const result = await runWithSidebarBatchProgress('Clearing subscriptions', 4, async (reportProgress) => {
+    const result = await runWithSidebarBatchProgress('Clear feeds', 4, async (reportProgress) => {
       reportProgress(1);
       reportProgress(2);
       reportProgress(4);
@@ -25,7 +25,7 @@ describe('runWithSidebarBatchProgress', () => {
     });
 
     expect(result).toBe('done');
-    expect(show).toHaveBeenCalledWith('Clearing subscriptions… 0/4');
-    expect(show).toHaveBeenCalledWith('Clearing subscriptions… 4/4');
+    expect(show).toHaveBeenCalledWith('Clear feeds 0/4');
+    expect(show).toHaveBeenCalledWith('Clear feeds 4/4');
   });
 });

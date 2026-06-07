@@ -33,7 +33,7 @@ class SavedArticlesIOService {
 
       const preflight = await window.electronAPI.getSavedArticlesExportPreflight(pathResult.filePath);
       if (preflight.articleCount === 0) {
-        userMessageBus.publish('export-progress', 'No saved articles', { durationMs: 4000 });
+        userMessageBus.publish('export-progress', 'No saved', { durationMs: 4000 });
         return;
       }
 
@@ -49,7 +49,7 @@ class SavedArticlesIOService {
 
       userMessageBus.publish(
         'export-progress',
-        `Preparing export (${preflight.articleCount})`,
+        `Export prep (${preflight.articleCount})`,
       );
 
       const startResult = await window.electronAPI.startSavedArticlesExport({
@@ -58,8 +58,8 @@ class SavedArticlesIOService {
 
       if (!startResult.started || !startResult.jobId) {
         const message = startResult.reason === 'busy'
-          ? 'Export already running'
-          : 'Could not start export';
+          ? 'Export busy'
+          : 'Export start failed';
         userMessageBus.publish('export-progress', message, { durationMs: 5000 });
         logger.warn('SavedArticlesIO', message);
         return;
@@ -243,7 +243,7 @@ class SavedArticlesIOService {
       this.activeExportJobId = null;
       userMessageBus.publish(
         'export-progress',
-        `Export complete (${event.result.articleCount})`,
+        `Exported (${event.result.articleCount})`,
         { durationMs: 6000 },
       );
       logger.info('SavedArticlesIO', 'Saved articles export completed', event.result);

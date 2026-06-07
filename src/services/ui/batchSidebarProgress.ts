@@ -18,7 +18,7 @@ export async function runWithSidebarBatchProgress<T>(
     }
 
     sidebarIndicatorService.show(
-      total <= 1 ? `${label}…` : `${label}… ${completed}/${total}`,
+      total <= 1 ? `${label}…` : `${label} ${completed}/${total}`,
     );
   };
 
