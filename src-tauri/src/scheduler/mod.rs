@@ -150,6 +150,11 @@ async fn run_interval_loop(
     interval_ms: u64,
     generation: u64,
 ) {
+    if emit_cycle_tick(&app).is_err() {
+        state.on_loop_exited(generation);
+        return;
+    }
+
     loop {
         tokio::select! {
             changed = shutdown_rx.changed() => {

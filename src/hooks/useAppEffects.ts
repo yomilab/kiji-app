@@ -85,6 +85,15 @@ export const useFeedSchedulerLifecycle = (enabled = true): void => {
 
     void feedScheduler.start();
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+      void feedScheduler.catchUpAfterResume();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     const handleSettingsChanged = async () => {
       try {
         const settings = await settingsManager.getSettings();
@@ -101,6 +110,7 @@ export const useFeedSchedulerLifecycle = (enabled = true): void => {
     const removeSettingsChangedListener = window.electronAPI?.onSettingsChanged?.(handleSettingsChanged);
 
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (typeof removeSettingsChangedListener === 'function') {
         removeSettingsChangedListener();
       }

@@ -6,15 +6,27 @@ import { logger } from '@/services/logger';
 import type { BackgroundUpdateMode, SchedulerEvent } from './types';
 
 const SCHEDULER_CYCLE_TICK_EVENT = 'scheduler:cycle-tick';
+const STALE_CYCLE_ABORT_MS = 45 * 60 * 1_000;
+
+const MODE_INTERVAL_MS: Record<Exclude<BackgroundUpdateMode, 'on-launch' | 'never'>, number> = {
+  'every-5m': 5 * 60_000,
+  'every-10m': 10 * 60_000,
+  'every-15m': 15 * 60_000,
+  'every-30m': 30 * 60_000,
+  'every-1h': 60 * 60_000,
+};
 
 class FeedSchedulerService {
   private cycleInProgress = false;
+  private pendingCycleTick = false;
   private abortController: AbortController | null = null;
   private lifecycleId = 0;
   private listeners = new Set<(event: SchedulerEvent) => void>();
   private mode: BackgroundUpdateMode = 'every-15m';
   private nativeDriverActive = false;
   private nativeTickUnlisten: UnlistenFn | null = null;
+  private lastCycleStartedAt: number | null = null;
+  private lastCycleCompletedAt: number | null = null;
 
   on(listener: (event: SchedulerEvent) => void): () => void {
     this.listeners.add(listener);
@@ -71,6 +83,7 @@ class FeedSchedulerService {
     this.lifecycleId += 1;
     this.clearAbort();
     this.cycleInProgress = false;
+    this.pendingCycleTick = false;
 
     if (this.nativeTickUnlisten) {
       this.nativeTickUnlisten();
@@ -106,6 +119,47 @@ class FeedSchedulerService {
     }
   }
 
+  async catchUpAfterResume(): Promise<void> {
+    if (this.mode === 'never' || this.mode === 'on-launch') {
+      return;
+    }
+
+    const lifecycleId = this.lifecycleId;
+    if (!this.isCurrentLifecycle(lifecycleId)) {
+      return;
+    }
+
+    if (this.cycleInProgress) {
+      const startedAt = this.lastCycleStartedAt;
+      if (startedAt !== null && Date.now() - startedAt >= STALE_CYCLE_ABORT_MS) {
+        logger.warn('Scheduler', 'Aborting stale background refresh cycle after resume', {
+          mode: this.mode,
+          stallDurationMs: Date.now() - startedAt,
+        });
+        this.clearAbort();
+        this.cycleInProgress = false;
+        this.pendingCycleTick = true;
+      } else {
+        return;
+      }
+    }
+
+    const intervalMs = this.getIntervalMs();
+    const overdueMs = this.lastCycleCompletedAt === null
+      ? intervalMs
+      : Date.now() - this.lastCycleCompletedAt;
+
+    if (this.pendingCycleTick || overdueMs >= intervalMs) {
+      logger.info('Scheduler', 'Running catch-up background refresh after resume', {
+        mode: this.mode,
+        overdueMs,
+        pendingCycleTick: this.pendingCycleTick,
+      });
+      this.pendingCycleTick = false;
+      await this.runScheduledCycle(lifecycleId);
+    }
+  }
+
   boostMany(feedIds: string[]): void {
     if (feedIds.length === 0) {
       return;
@@ -122,19 +176,42 @@ class FeedSchedulerService {
     }
   }
 
+  private getIntervalMs(): number {
+    if (this.mode === 'on-launch' || this.mode === 'never') {
+      return Number.POSITIVE_INFINITY;
+    }
+    return MODE_INTERVAL_MS[this.mode];
+  }
+
   private async ensureNativeTickListener(lifecycleId: number): Promise<void> {
     if (this.nativeTickUnlisten) {
       return;
     }
 
     this.nativeTickUnlisten = await listen(SCHEDULER_CYCLE_TICK_EVENT, () => {
-      void this.runScheduledCycle(this.lifecycleId);
+      void this.handleNativeCycleTick(this.lifecycleId);
     });
 
     if (!this.isCurrentLifecycle(lifecycleId)) {
       this.nativeTickUnlisten();
       this.nativeTickUnlisten = null;
     }
+  }
+
+  private async handleNativeCycleTick(lifecycleId: number): Promise<void> {
+    if (!this.isCurrentLifecycle(lifecycleId)) {
+      return;
+    }
+
+    if (this.cycleInProgress) {
+      this.pendingCycleTick = true;
+      logger.info('Scheduler', 'Deferred native scheduler tick until current refresh cycle completes', {
+        mode: this.mode,
+      });
+      return;
+    }
+
+    await this.runScheduledCycle(lifecycleId);
   }
 
   private async abortStaleLifecycle(lifecycleId: number): Promise<void> {
@@ -173,6 +250,7 @@ class FeedSchedulerService {
     }
 
     this.cycleInProgress = true;
+    this.lastCycleStartedAt = Date.now();
     this.abortController = new AbortController();
     const { signal } = this.abortController;
     this.emit({ type: 'cycle-start' });
@@ -205,10 +283,23 @@ class FeedSchedulerService {
           });
       }
     } finally {
+      const durationMs = this.lastCycleStartedAt === null
+        ? null
+        : Date.now() - this.lastCycleStartedAt;
       this.cycleInProgress = false;
       this.abortController = null;
+      this.lastCycleCompletedAt = Date.now();
       this.emit({ type: 'cycle-complete' });
-      logger.info('Scheduler', 'Background refresh cycle completed', { mode: this.mode });
+      logger.info('Scheduler', 'Background refresh cycle completed', {
+        mode: this.mode,
+        durationMs,
+      });
+
+      if (this.pendingCycleTick && this.isCurrentLifecycle(lifecycleId)) {
+        this.pendingCycleTick = false;
+        logger.info('Scheduler', 'Running deferred native scheduler tick', { mode: this.mode });
+        void this.runScheduledCycle(lifecycleId);
+      }
     }
   }
 

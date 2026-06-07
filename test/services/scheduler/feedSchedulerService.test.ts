@@ -96,4 +96,29 @@ describe("feedSchedulerService", () => {
 
     expect(refreshFeed).toHaveBeenCalledWith("feed-1", { signal: expect.any(AbortSignal) });
   });
+
+  it("defers overlapping native ticks and runs one follow-up cycle", async () => {
+    let releaseRefresh!: () => void;
+    refreshFeed.mockImplementation(() => new Promise((resolve) => {
+      releaseRefresh = () => resolve({ insertedCount: 0 });
+    }));
+
+    await feedScheduler.start();
+    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+
+    const firstTick = tickHandler?.();
+    await vi.waitFor(() => {
+      expect(refreshFeed).toHaveBeenCalledTimes(1);
+    });
+
+    await tickHandler?.();
+    await tickHandler?.();
+    expect(refreshFeed).toHaveBeenCalledTimes(1);
+
+    releaseRefresh();
+    await firstTick;
+    await vi.waitFor(() => {
+      expect(getAllFeeds).toHaveBeenCalledTimes(2);
+    });
+  });
 });
