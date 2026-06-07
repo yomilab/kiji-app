@@ -7,6 +7,7 @@
 
 import { storage } from '@/services/storage/storageFactory';
 import { APP_NAME } from '@/config/appIdentity';
+import { appToastService } from '@/services/ui/appToastService';
 
 /**
  * Clear all user configs and cache
@@ -50,12 +51,9 @@ export async function clearAllConfigs(): Promise<void> {
     }
 
     console.log('[DEBUG] ✓ All configs and cache cleared successfully');
-    alert('All user configs and cache have been cleared. The app will reload.');
-
-    // Reload the app
     window.location.reload();
   } catch (error) {
     console.error('[DEBUG] Error clearing configs:', error);
-    alert('Error clearing configs. Check console for details.');
+    appToastService.show('Error clearing configs. Check console for details.');
   }
 }

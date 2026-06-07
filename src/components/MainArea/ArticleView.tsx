@@ -15,6 +15,7 @@ import { sanitizeArticleHtmlStyles } from '@/services/articles/articleStyleSanit
 import { savedArticlesService } from '@/services/saved/savedArticlesService';
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { logger } from '@/services/logger';
+import { appToastService } from '@/services/ui/appToastService';
 import { readerModeService, type ReaderModeContent } from '@/services/articles/readerModeService';
 import { postlightParserService } from '@/services/articles/postlightParserService';
 import { faviconFetcher } from '@/services/favicons/faviconFetcher';
@@ -1327,14 +1328,15 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     }
 
     try {
-      if (window.electronAPI) {
-        await window.electronAPI.writeClipboard(articleToShow.link);
+      if (!window.electronAPI?.writeClipboard) {
+        appToastService.show('Copy is not available in this environment.');
         return;
       }
 
-      await navigator.clipboard.writeText(articleToShow.link);
+      await window.electronAPI.writeClipboard(articleToShow.link);
     } catch (error) {
       console.error('Error copying article URL:', error);
+      appToastService.show('Failed to copy article URL.');
     }
   }, [articleToShow]);
 

@@ -30,6 +30,7 @@ export const tauriCommandCatalog: Record<
     { legacyMethod: "hideTrafficLights", legacyChannel: "hide-traffic-lights", kind: "renderer", targetCommand: "shell.window.hideTrafficLights" },
     { legacyMethod: "showTrafficLights", legacyChannel: "show-traffic-lights", kind: "renderer", targetCommand: "shell.window.showTrafficLights" },
     { legacyMethod: "openSettings", legacyChannel: "open-settings", kind: "invoke", targetCommand: "shell.window.openSettings", rustCommand: "shell_settings_window_open" },
+    { legacyMethod: "confirmDialog", legacyChannel: "dialog-confirm", kind: "invoke", targetCommand: "shell.dialog.confirm", rustCommand: "shell_dialog_confirm" },
     { legacyMethod: "updateAppMenuState", legacyChannel: "app-menu:update-state", kind: "invoke", targetCommand: "shell.menu.updateState", rustCommand: "shell_menu_update_state" },
     { legacyMethod: "onAppMenuCommand", legacyChannel: "app-menu:command", kind: "event", targetCommand: "shell.menu.onCommand" },
     { legacyMethod: "openExternal", legacyChannel: "open-external", kind: "invoke", targetCommand: "shell.links.openExternal", rustCommand: "shell_links_open_external" },

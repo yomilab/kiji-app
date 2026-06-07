@@ -96,6 +96,9 @@ function installElectronApiCompat(): void {
     async openSettings() {
       await tauriClient.shell.openSettings();
     },
+    async confirmDialog(request) {
+      return tauriClient.shell.confirmDialog(request);
+    },
     async updateAppMenuState(state) {
       await tauriClient.shell.updateMenuState(state);
     },

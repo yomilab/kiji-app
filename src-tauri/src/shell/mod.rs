@@ -13,7 +13,7 @@ pub use window::{
 };
 pub use window_guards::init as window_guards_plugin;
 
-use rfd::FileDialog;
+use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use tauri::AppHandle;
@@ -100,6 +100,34 @@ pub fn shell_dialog_save_file(
         canceled: file_path.is_none(),
         file_path,
     })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmDialogRequest {
+    pub title: Option<String>,
+    pub message: String,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn shell_dialog_confirm(request: ConfirmDialogRequest) -> Result<bool, String> {
+    if request.message.trim().is_empty() {
+        return Err("Confirm dialog message cannot be empty.".to_string());
+    }
+
+    let title = request
+        .title
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "KiJi".to_string());
+
+    let confirmed = MessageDialog::new()
+        .set_level(MessageLevel::Warning)
+        .set_title(title)
+        .set_description(request.message)
+        .set_buttons(MessageButtons::OkCancel)
+        .show();
+
+    Ok(matches!(confirmed, MessageDialogResult::Ok))
 }
 
 #[tauri::command(rename_all = "camelCase")]

@@ -4,6 +4,7 @@ import type { SavedArticleRecord } from '@/lib/tauriClient/contracts';
 import { normalizePublishedDate } from '@/services/articles/publishedDateNormalizer';
 import { logger } from '@/services/logger';
 import { settingsManager } from '@/services/settings';
+import { confirmDialog } from '@/services/ui/confirmDialogService';
 import { userMessageBus } from '@/services/ui/userMessageBus';
 import type { SavedArticlesExportEvent } from '@/services/saved/export/shared';
 import { helperTaskClient } from '@/services/tasks/helperTaskClient';
@@ -37,7 +38,10 @@ class SavedArticlesIOService {
       }
 
       if (preflight.exceedsOneGb || preflight.exceedsFreeSpace) {
-        const confirmed = window.confirm(this.buildExportConfirmationMessage(preflight));
+        const confirmed = await confirmDialog({
+          title: 'Export saved articles',
+          message: this.buildExportConfirmationMessage(preflight),
+        });
         if (!confirmed) {
           return;
         }

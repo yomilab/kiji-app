@@ -30,6 +30,15 @@ export async function openExternal(
   return invokeContract<ShellContract["openExternal"]>("shell_links_open_external", request);
 }
 
+export async function confirmDialog(
+  request: ShellContract["dialogConfirm"]["request"],
+): Promise<ShellContract["dialogConfirm"]["response"]> {
+  return invokeCommand<ShellContract["dialogConfirm"]["response"]>(
+    "shell_dialog_confirm",
+    { request },
+  );
+}
+
 export const dialog = {
   openFile(
     request: ShellContract["dialogOpenFile"]["request"],

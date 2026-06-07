@@ -760,6 +760,10 @@ export interface ShellContract {
     request: { url: UrlString };
     response: void;
   };
+  dialogConfirm: {
+    request: { title?: string; message: string };
+    response: boolean;
+  };
   dialogOpenFile: {
     request: OpenFileDialogRequest;
     response: DialogResult;

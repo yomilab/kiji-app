@@ -24,6 +24,8 @@ import {
   useUnmountEffect,
 } from '@/hooks/useLifecycleEffects';
 import { logger } from '@/services/logger';
+import { appToastService } from '@/services/ui/appToastService';
+import { confirmDialog } from '@/services/ui/confirmDialogService';
 import { isMainRendererWindow } from '@/utils/rendererWindow';
 
 export const useGlobalFetchLogging = (): void => {
@@ -274,23 +276,30 @@ export const useAppShortcuts = ({
 
         if (isResetSettingsShortcut(event)) {
           event.preventDefault();
-          const confirmed = confirm(
-            'Reset all settings to defaults?\n\nThis will:\n- Reset all fonts to defaults\n- Reset theme preferences\n- Reset layout settings\n- Keep your feeds and articles\n\nThe app will reload after reset.'
-          );
+          const confirmed = await confirmDialog({
+            title: 'Reset settings',
+            message: 'Reset all settings to defaults?\n\nThis will:\n- Reset all fonts to defaults\n- Reset theme preferences\n- Reset layout settings\n- Keep your feeds and articles\n\nThe app will reload after reset.',
+          });
           if (confirmed) {
             try {
               await settingsManager.resetSettings();
               window.location.reload();
             } catch (error) {
               console.error('Error resetting settings:', error);
-              alert('Failed to reset settings. Check console for details.');
+              appToastService.show('Failed to reset settings. Check console for details.');
             }
           }
         }
 
         if (isClearConfigsShortcut(event)) {
           event.preventDefault();
-          clearAllConfigs();
+          const confirmed = await confirmDialog({
+            title: 'Clear all data',
+            message: 'Clear all user configs and cache?\n\nThis deletes feeds, articles, settings, and local storage. The app will reload.\n\nThis is a debug-only action and cannot be undone.',
+          });
+          if (confirmed) {
+            await clearAllConfigs();
+          }
         }
 
         if (isRefreshCurrentFeedShortcut(event)) {

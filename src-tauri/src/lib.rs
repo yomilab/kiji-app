@@ -38,8 +38,9 @@ use scheduler::{scheduler_reconfigure, scheduler_start, scheduler_stop, FeedSche
 use settings::{settings_get, settings_reset, settings_update, SettingsState};
 use shell::{
     restore_main_window_bounds, shell_article_window_get_data, shell_article_window_open,
-    shell_context_menu_show_image, shell_dialog_open_file, shell_main_window_apply_saved_bounds,
-    shell_dialog_pick_folder, shell_dialog_save_file, shell_file_read_text, shell_file_write_text,
+    shell_context_menu_show_image, shell_dialog_confirm, shell_dialog_open_file,
+    shell_main_window_apply_saved_bounds, shell_dialog_pick_folder, shell_dialog_save_file,
+    shell_file_read_text, shell_file_write_text,
     shell_links_open_external, shell_menu_update_state, shell_settings_window_open, shell_share,
     shell_share_list_services, shell_share_to_service, window_guards_plugin, ApplicationMenu,
     ArticleWindowState, ImageContextMenuState,
@@ -159,6 +160,7 @@ pub fn run() {
             saved_update_last_read_at,
             saved_update_notes,
             shell_context_menu_show_image,
+            shell_dialog_confirm,
             shell_dialog_open_file,
             shell_dialog_pick_folder,
             shell_dialog_save_file,

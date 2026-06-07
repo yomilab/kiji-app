@@ -31,6 +31,7 @@ export interface ElectronAPI {
   hideTrafficLights: () => Promise<void>;
   showTrafficLights: () => Promise<void>;
   openSettings: () => Promise<void>;
+  confirmDialog: (request: { title?: string; message: string }) => Promise<boolean>;
   updateAppMenuState: (state: Partial<AppMenuState>) => Promise<void>;
   onAppMenuCommand: (callback: (command: AppMenuCommand) => void) => () => void;
   openExternal: (url: string) => Promise<void>;

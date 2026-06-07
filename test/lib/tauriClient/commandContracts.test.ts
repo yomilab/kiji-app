@@ -21,6 +21,8 @@ const STRUCT_ARGUMENT_EXPECTATIONS = [
   { command: "saved_query", argumentName: "request" },
   { command: "diagnostics_log_write_entry", argumentName: "entry" },
   { command: "shell_menu_update_state", argumentName: "patch" },
+  { command: "shell_dialog_confirm", argumentName: "request" },
+  { command: "shell_context_menu_show_image", argumentName: "request" },
   { command: "shell_file_write_text", argumentName: "request" },
   { command: "shell_share", argumentName: "request" },
   { command: "shell_share_to_service", argumentName: "request" },
