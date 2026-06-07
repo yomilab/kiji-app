@@ -7,6 +7,7 @@ import {
   type FaviconFetchTaskResult,
   type HelperTaskResultEvent,
 } from '@/services/tasks/helperTaskContracts';
+import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 import { sidebarIndicatorService } from '@/services/ui/sidebarIndicatorService';
 
 class OpmlWorkflowService {
@@ -55,7 +56,7 @@ class OpmlWorkflowService {
       feedScheduler.boostMany(importResult.importedFeeds.map((feed) => feed.id));
     }
 
-    for (const feed of importResult.importedFeeds) {
+    await Promise.all(importResult.importedFeeds.map(async (feed) => {
       try {
         const task = await helperTaskClient.addTask({
           kind: HELPER_TASK_KIND.FAVICON_FETCH,
@@ -69,7 +70,7 @@ class OpmlWorkflowService {
       } catch {
         await feedsManager.updateFeed(feed.id, { faviconFetchFailed: true });
       }
-    }
+    }));
 
     return importResult;
   }
@@ -92,10 +93,19 @@ class OpmlWorkflowService {
     }
 
     const result = event.result as FaviconFetchTaskResult;
-    await feedsManager.updateFeed(feedId, {
+    const updatedFeed = await feedsManager.updateFeed(feedId, {
       favicon: result.favicon || undefined,
       faviconFetchFailed: !result.favicon,
     });
+
+    if (updatedFeed) {
+      feedLibraryMutationBus.publishFeedPatched(feedId, {
+        favicon: updatedFeed.favicon,
+        faviconHasTransparency: updatedFeed.faviconHasTransparency,
+        faviconBgLight: updatedFeed.faviconBgLight,
+        faviconBgDark: updatedFeed.faviconBgDark,
+      });
+    }
   }
 }
 

@@ -13,6 +13,7 @@ export type { Feed } from "./types";
 
 export interface AddFeedOptions {
   skipMetadataFetch?: boolean;
+  skipFaviconRefresh?: boolean;
   id?: string;
 }
 
@@ -65,12 +66,17 @@ class FeedsManager {
     };
 
     await feedStore.add(feed);
-    await this.refreshFavicon(feed.id, metadata.xmlText);
+    if (!options.skipFaviconRefresh) {
+      await this.refreshFavicon(feed.id, metadata.xmlText);
+    }
     return (await this.getFeedById(feed.id)) ?? feed;
   }
 
   async addFeedWithoutMetadata(url: string, title?: string): Promise<Feed> {
-    return this.addFeed(url, title, { skipMetadataFetch: true });
+    return this.addFeed(url, title, {
+      skipMetadataFetch: true,
+      skipFaviconRefresh: true,
+    });
   }
 
   async updateFeed(id: string, updates: Partial<Feed>): Promise<Feed | null> {
