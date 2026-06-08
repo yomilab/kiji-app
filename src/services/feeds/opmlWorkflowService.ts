@@ -51,7 +51,7 @@ class OpmlWorkflowService {
     void (async () => {
       const feeds = await Promise.all(feedIds.map((feedId) => feedsManager.getFeedById(feedId)));
       this.prioritizeMissingFaviconsForFeeds(
-        feeds.filter((feed): feed is NonNullable<typeof feed> => feed !== null),
+        feeds.filter((feed): feed is NonNullable<typeof feed> => feed != null),
       );
     })();
   }

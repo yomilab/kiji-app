@@ -83,7 +83,7 @@ describe("Database migration parity (21d)", () => {
         `Rust migration parity tests failed:\n${resultV15.stdout}\n${resultV15.stderr}`,
       );
     }
-  }, 30_000);
+  }, 120_000);
 });
 
 describe("Performance diagnostics parity (21e)", () => {

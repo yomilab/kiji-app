@@ -79,6 +79,16 @@ globalThis.ResizeObserver = vi.fn().mockImplementation(() => ({
   disconnect: vi.fn(),
 }));
 
+vi.mock("@/services/feeds/opmlWorkflowService", () => ({
+  opmlWorkflowService: {
+    attachFaviconTaskListener: vi.fn(),
+    detachFaviconTaskListener: vi.fn(),
+    scheduleMissingFaviconsAfterStationSelection: vi.fn(),
+    prioritizeMissingFaviconsForFeeds: vi.fn(),
+    importFromOpmlText: vi.fn(),
+  },
+}));
+
 vi.mock("howler", () => ({
   Howl: vi.fn().mockImplementation(() => ({
     play: vi.fn(),

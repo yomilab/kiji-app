@@ -20,12 +20,17 @@ vi.mock('@/stores/feedStore', () => ({
   getById: vi.fn(),
 }));
 
-vi.mock('@/services/feeds/feedsFetcher', () => ({
-  feedsFetcher: {
-    fetchFeed: vi.fn(),
-    fetchFeedNetworkWithCache: vi.fn(),
-  },
-}));
+vi.mock('@/services/feeds/feedsFetcher', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/feeds/feedsFetcher')>();
+  return {
+    ...actual,
+    feedsFetcher: {
+      fetchFeed: vi.fn(),
+      fetchFeedNetworkWithCache: vi.fn(),
+      fetchFeedWithCache: vi.fn(),
+    },
+  };
+});
 
 vi.mock('@/services/articles/articleConverter', () => ({
   convertFeedItemsToArticles: vi.fn(),

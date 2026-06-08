@@ -1,0 +1,24 @@
+<rss xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
+  <channel>
+  <language>ja</language>
+  <title>東洋経済オンライン | 社会をよくする経済ニュース</title>
+  <link>https://toyokeizai.net</link>
+  <copyright>(C)東洋経済オンライン</copyright>
+  <description>東洋経済オンラインは、ビジネスリーダーのための総合サイト。企業分析記事のほか、政治・経済、マーケット、テクノロジー、キャリア・教育など幅広いジャンルの記事を配信</description>
+  <atom:link href="https://toyokeizai.net/list/feed/rss" rel="self" type="application/rss+xml"/>
+  <lastBuildDate>Thu, 19 Mar 2026 17:00:00 +0900</lastBuildDate>
+  <item>
+  <title>
+  <![CDATA[ パナ｢1万2000人リストラ｣でも変われない悲哀 | 最新の週刊東洋経済 | 東洋経済オンライン ]]>
+  </title>
+  <link>https://toyokeizai.net/articles/-/938463?utm_source=rss&utm_medium=http&utm_campaign=link_back</link>
+  <category>ビジネス</category>
+  <guid isPermaLink="false">938463@toyokeizai.net</guid>
+  <description>
+  <![CDATA[ 「このままパナソニックに残っても活躍できる未来が見えない。もっと挑戦できる職場に行きたいんです」パ… ]]>
+  </description>
+  <pubDate>Thu, 19 Mar 2026 17:00:00 +0900</pubDate>
+  <enclosure url="https://tk.ismcdn.jp/mwimgs/4/0/1200w/img_404b091d5672eb558b1d82a7c2617876779430.jpg?nextgen=false" type="image/jpeg" length="127667"/>
+  </item>
+</channel>
+</rss>

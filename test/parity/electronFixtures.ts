@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const kijiAppRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const bundledFixturesRoot = path.resolve(kijiAppRoot, "test/data");
 const electronFixturesRoot = path.resolve(kijiAppRoot, "../kiji-electron/test/data");
 
 export const ELECTRON_FIXTURE_FILES = [
@@ -23,6 +24,10 @@ export const FEEDS_OPML_UNIQUE_URL_COUNT = 403;
 export type ElectronFixtureFile = (typeof ELECTRON_FIXTURE_FILES)[number];
 
 export function resolveElectronFixturePath(name: ElectronFixtureFile | string): string {
+  const bundledPath = path.join(bundledFixturesRoot, name);
+  if (fs.existsSync(bundledPath)) {
+    return bundledPath;
+  }
   return path.join(electronFixturesRoot, name);
 }
 

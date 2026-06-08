@@ -6,6 +6,11 @@
 
 - GPL-3.0-or-later license (`LICENSE`, copyright Yomi Lab) and `THIRD_PARTY_NOTICES.md` (major npm/Rust deps and copyleft components).
 - `src-tauri/Entitlements.plist` (WebKit hardened-runtime JIT flags) wired via `bundle.macOS.entitlements` for signed/notarized builds.
+- Bundled Electron parity fixtures under `test/data` for CI smoke/parity coverage.
+
+### Fixed
+
+- GitHub Actions build: FeedContext tests mock `fetchFeedNetworkWithCache` (not legacy `fetchFeed`) and preserve `parseFeed` export; smoke tests use bundled fixtures and longer Rust smoke timeouts; `opmlWorkflowService` ignores undefined feed lookups after station selection.
 
 ### Fixed
 

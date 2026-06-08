@@ -23,12 +23,17 @@ vi.mock('@/stores/feedStore', () => ({
   getById: vi.fn(),
 }));
 
-vi.mock('@/services/feeds/feedsFetcher', () => ({
-  feedsFetcher: {
-    fetchFeed: vi.fn(),
-    fetchFeedNetworkWithCache: vi.fn(),
-  },
-}));
+vi.mock('@/services/feeds/feedsFetcher', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/feeds/feedsFetcher')>();
+  return {
+    ...actual,
+    feedsFetcher: {
+      fetchFeed: vi.fn(),
+      fetchFeedNetworkWithCache: vi.fn(),
+      fetchFeedWithCache: vi.fn(),
+    },
+  };
+});
 
 vi.mock('@/services/feeds/feedsManager', () => ({
   feedsManager: {
@@ -148,7 +153,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     (articleStore.store as vi.Mock).mockResolvedValue(0);
     (articleStore.getUnreadCount as vi.Mock).mockResolvedValue(0);
     (feedsManager.updateFeed as vi.Mock).mockResolvedValue(undefined);
-    (feedsFetcher.fetchFeed as vi.Mock).mockResolvedValue([]);
+    (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockResolvedValue(feedNetworkDataResult());
     (savedArticlesService.querySavedViewArticles as vi.Mock).mockResolvedValue({ articles: [], total: 0 });
     (savedArticlesService.enrichSavedViewArticlesMeta as vi.Mock).mockImplementation((articles: Article[]) => Promise.resolve(articles));
 
@@ -283,7 +288,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       createArticle('station-1', 'feed-a'),
       createArticle('station-2', 'feed-b'),
     ];
-    const firstFetchDeferred = createDeferred<[]>();
+    const firstFetchDeferred = createDeferred<ReturnType<typeof feedNetworkDataResult>>();
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a', 'feed-b']);
     (feedsManager.getFeedById as vi.Mock).mockImplementation((id: string) => Promise.resolve({
@@ -293,9 +298,9 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       lastFetched: null,
     }));
     (articleStore.query as vi.Mock).mockResolvedValue({ articles: stationArticles, total: 2 });
-    (feedsFetcher.fetchFeed as vi.Mock)
+    (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock)
       .mockImplementationOnce(() => firstFetchDeferred.promise)
-      .mockResolvedValue([]);
+      .mockResolvedValue(feedNetworkDataResult());
 
     act(() => {
       root.render(
@@ -328,11 +333,11 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     });
 
     await waitForExpectation(() => {
-      expect(feedsFetcher.fetchFeed).toHaveBeenCalledTimes(2);
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(2);
     });
 
     await act(async () => {
-      firstFetchDeferred.resolve([]);
+      firstFetchDeferred.resolve(feedNetworkDataResult());
       await Promise.resolve();
     });
 
@@ -343,7 +348,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
 
   it('limits station feed refresh concurrency to reduce switch-time pressure', async () => {
     const feedIds = Array.from({ length: 6 }, (_, index) => `feed-${index + 1}`);
-    const fetchDeferreds = feedIds.map(() => createDeferred<[]>());
+    const fetchDeferreds = feedIds.map(() => createDeferred<ReturnType<typeof feedNetworkDataResult>>());
     let fetchCallCount = 0;
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(feedIds);
@@ -354,7 +359,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       lastFetched: null,
     }));
     (articleStore.query as vi.Mock).mockResolvedValue({ articles: [createArticle('station-1', 'feed-1')], total: 1 });
-    (feedsFetcher.fetchFeed as vi.Mock).mockImplementation(() => {
+    (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockImplementation(() => {
       const deferred = fetchDeferreds[fetchCallCount];
       fetchCallCount += 1;
       return deferred.promise;
@@ -375,27 +380,27 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     });
 
     await waitForExpectation(() => {
-      expect(feedsFetcher.fetchFeed).toHaveBeenCalledTimes(4);
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(4);
     });
 
     await act(async () => {
-      fetchDeferreds[0].resolve([]);
+      fetchDeferreds[0].resolve(feedNetworkDataResult());
       await Promise.resolve();
     });
 
     await waitForExpectation(() => {
-      expect(feedsFetcher.fetchFeed).toHaveBeenCalledTimes(5);
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(5);
     });
 
     await act(async () => {
       for (const deferred of fetchDeferreds) {
-        deferred.resolve([]);
+        deferred.resolve(feedNetworkDataResult());
       }
       await Promise.resolve();
     });
 
     await waitForExpectation(() => {
-      expect(feedsFetcher.fetchFeed).toHaveBeenCalledTimes(6);
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(6);
       expect(articleStore.store).toHaveBeenCalledTimes(6);
     });
   });
@@ -473,7 +478,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
 
   it('defers station feed persistence until scrolling is idle', async () => {
     const stationArticles = [createArticle('station-1', 'feed-a')];
-    const fetchDeferred = createDeferred<[]>();
+    const fetchDeferred = createDeferred<ReturnType<typeof feedNetworkDataResult>>();
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
     (feedsManager.getFeedById as vi.Mock).mockResolvedValue({
@@ -483,7 +488,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       lastFetched: null,
     });
     (articleStore.query as vi.Mock).mockResolvedValue({ articles: stationArticles, total: 1 });
-    (feedsFetcher.fetchFeed as vi.Mock).mockImplementationOnce(() => fetchDeferred.promise);
+    (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockImplementationOnce(() => fetchDeferred.promise);
 
     act(() => {
       root.render(
@@ -500,7 +505,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     });
 
     await waitForExpectation(() => {
-      expect(feedsFetcher.fetchFeed).toHaveBeenCalledTimes(1);
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
     });
 
     act(() => {
@@ -512,7 +517,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       });
     });
 
-    fetchDeferred.resolve([]);
+    fetchDeferred.resolve(feedNetworkDataResult());
 
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 120));
@@ -521,7 +526,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     expect(articleStore.store).not.toHaveBeenCalled();
 
     await waitForExpectation(() => {
-      expect(feedsFetcher.fetchFeed).toHaveBeenCalledTimes(1);
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
       expect(articleStore.store).toHaveBeenCalledTimes(1);
     }, 1000);
   });
@@ -929,7 +934,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       return Promise.resolve({ articles: allArticles, total: 1 });
     });
 
-    (feedsFetcher.fetchFeed as vi.Mock).mockReturnValue(fetchDeferred.promise);
+    (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockReturnValue(fetchDeferred.promise);
 
     act(() => {
       root.render(
@@ -979,7 +984,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       }
       return Promise.resolve({ articles: [], total: 0 });
     });
-    (feedsFetcher.fetchFeed as vi.Mock).mockReturnValue(fetchDeferred.promise);
+    (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockReturnValue(fetchDeferred.promise);
     (savedArticlesService.querySavedViewArticles as vi.Mock).mockResolvedValue({ articles: savedArticles, total: 1 });
     (savedArticlesService.enrichSavedViewArticlesMeta as vi.Mock).mockResolvedValue(savedArticles);
 
@@ -1086,7 +1091,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       }
       return Promise.resolve({ articles: allArticles, total: 1 });
     });
-    (feedsFetcher.fetchFeed as vi.Mock).mockReturnValue(fetchDeferred.promise);
+    (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockReturnValue(fetchDeferred.promise);
 
     act(() => {
       root.render(

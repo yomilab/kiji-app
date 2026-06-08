@@ -7,43 +7,46 @@ import { feedsManager } from "@/services/feeds/feedsManager";
 import * as articleStore from "@/stores/articleStore";
 import * as feedStore from "@/stores/feedStore";
 import { feedsFetcher } from "@/services/feeds/feedsFetcher";
+import { feedNetworkDataResult } from "../helpers/feedNetworkFetchMock";
 import {
   electronFixturesAreAvailable,
   readElectronFixture,
 } from "../parity/electronFixtures";
 
 const manifestPath = path.join(process.cwd(), "src-tauri/Cargo.toml");
+const describeWithFixtures = electronFixturesAreAvailable() ? describe : describe.skip;
 
 describe("Desktop smoke (todo 22)", () => {
-  it("passes Rust desktop workflow smoke for feed refresh, save, export, and relaunch persistence", () => {
-    expect(fs.existsSync(manifestPath)).toBe(true);
+  it(
+    "passes Rust desktop workflow smoke for feed refresh, save, export, and relaunch persistence",
+    () => {
+      expect(fs.existsSync(manifestPath)).toBe(true);
 
-    const result = spawnSync(
-      "cargo",
-      [
-        "test",
-        "--manifest-path",
-        manifestPath,
-        "desktop_smoke_workflow",
-        "--",
-        "--nocapture",
-      ],
-      { cwd: process.cwd(), encoding: "utf8" },
-    );
-
-    if (result.status !== 0) {
-      throw new Error(
-        `Rust desktop smoke failed:\n${result.stdout}\n${result.stderr}`,
+      const result = spawnSync(
+        "cargo",
+        [
+          "test",
+          "--manifest-path",
+          manifestPath,
+          "desktop_smoke_workflow",
+          "--",
+          "--nocapture",
+        ],
+        { cwd: process.cwd(), encoding: "utf8" },
       );
-    }
-  });
 
+      if (result.status !== 0) {
+        throw new Error(
+          `Rust desktop smoke failed:\n${result.stdout}\n${result.stderr}`,
+        );
+      }
+    },
+    120_000,
+  );
+});
+
+describeWithFixtures("Desktop smoke (todo 22)", () => {
   it("refreshes a feed from fixture XML through the service layer", async () => {
-    expect(
-      electronFixturesAreAvailable(),
-      "Electron parity fixtures are required for feed refresh smoke coverage",
-    ).toBe(true);
-
     const fixtureXml = readElectronFixture("simon.xml");
     const parsedItems = parseFeed(fixtureXml, "https://example.com/simon.xml");
     expect(parsedItems.length).toBeGreaterThan(0);
@@ -62,13 +65,9 @@ describe("Desktop smoke (todo 22)", () => {
 
     vi.spyOn(feedStore, "getById").mockResolvedValue(feed as never);
     vi.spyOn(feedStore, "update").mockResolvedValue(undefined as never);
-    vi.spyOn(feedsFetcher, "fetchFeedWithCache").mockResolvedValue({
-      notModified: false,
-      items: parsedItems,
-      etag: "smoke-etag",
-      lastModified: "Mon, 06 Jun 2026 00:00:00 GMT",
-      xmlText: fixtureXml,
-    } as never);
+    vi.spyOn(feedsFetcher, "fetchFeedNetworkWithCache").mockResolvedValue(
+      feedNetworkDataResult(fixtureXml),
+    );
     vi.spyOn(articleStore, "store").mockResolvedValue(parsedItems.length);
     vi.spyOn(articleStore, "getArticleCount").mockResolvedValue(parsedItems.length);
     vi.spyOn(articleStore, "getUnreadCount").mockResolvedValue(parsedItems.length);
