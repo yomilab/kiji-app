@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- GPL-3.0-or-later license (`LICENSE`, copyright Yomi Lab) and `THIRD_PARTY_NOTICES.md` listing major npm/Rust dependencies and copyleft components (`html2md`, libvips/sharp, DOMPurify, JSZip).
+
 ### Fixed
 
 - Feed-management drag-and-drop: disable Tauri `dragDropEnabled` on all windows so HTML5 DnD works; `tagsManager.updateTag` sends only provided fields so reorder no longer clears station emoji/color; drop-target highlight via per-cell box-shadow (avoids broken `tr` pseudo-elements in WebKit); drag handles use `span` instead of `button` for reliable HTML5 drag in Tauri.
