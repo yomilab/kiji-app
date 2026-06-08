@@ -61,7 +61,7 @@ jobs:
         run: npm run test:smoke
 
       - name: Build Tauri app
-        run: npm run tauri build
+        run: npm run build
 
       - name: Desktop launch smoke
         run: npm run test:smoke:launch

@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build:web",
     "frontendDist": "../dist"
   },
   "app": {
@@ -21,6 +21,7 @@
         "minHeight": 400,
         "decorations": false,
         "transparent": true,
+        "dragDropEnabled": false,
         "windowEffects": {
           "effects": ["sidebar"],
           "state": "active",
@@ -37,6 +38,7 @@
         "resizable": true,
         "decorations": false,
         "transparent": true,
+        "dragDropEnabled": false,
         "windowEffects": {
           "effects": ["underWindowBackground"],
           "state": "active",
@@ -55,6 +57,7 @@
         "minHeight": 480,
         "decorations": false,
         "transparent": true,
+        "dragDropEnabled": false,
         "windowEffects": {
           "effects": ["underWindowBackground"],
           "state": "active",

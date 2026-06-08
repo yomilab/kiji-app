@@ -1389,6 +1389,8 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (shouldReset && !await yieldToSelectionCoalescing(token)) return;
 
     try {
+      feedScheduler.pauseForStationSelection();
+
       const feedIds = await tagsManager.getFeedsByTag(tagName);
       if (!isSelectionActive(token)) return;
 
@@ -1456,6 +1458,8 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Schedule favicon backfill only after station feed refreshes and article list are ready.
       opmlWorkflowService.scheduleMissingFaviconsAfterStationSelection(feedIds);
     } finally {
+      feedScheduler.resumeAfterStationSelection();
+
       if (isSelectionActive(token)) {
         collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: false, isLoadingArticles: false } });
       }

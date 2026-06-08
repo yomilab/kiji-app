@@ -163,20 +163,36 @@
   background: transparent;
 }
 
-.feed-edit-group-table tbody tr {
-  position: relative;
+.feed-edit-group-table tbody tr.is-dragging td {
+  opacity: 0.72;
 }
 
-.feed-edit-group-table tbody tr.is-dragging {
-  opacity: 0.55;
+/* Drop targets use td box-shadow — tr::before/::after breaks hit-testing in Tauri WebKit. */
+.feed-edit-group-table tbody tr.is-drop-before td {
+  box-shadow:
+    inset 0 0 0 999px color-mix(in srgb, var(--theme-primary) 14%, transparent),
+    inset 0 4px 0 0 var(--theme-primary);
 }
 
-.feed-edit-group-table tbody tr.is-drop-before {
-  box-shadow: inset 0 2px 0 var(--theme-border-active);
+.feed-edit-group-table tbody tr.is-drop-after td {
+  box-shadow:
+    inset 0 0 0 999px color-mix(in srgb, var(--theme-primary) 14%, transparent),
+    inset 0 -4px 0 0 var(--theme-primary);
 }
 
-.feed-edit-group-table tbody tr.is-drop-after {
-  box-shadow: inset 0 -2px 0 var(--theme-border-active);
+.feed-edit-group-table tbody tr.is-drop-before td:first-child,
+.feed-edit-group-table tbody tr.is-drop-after td:first-child {
+  box-shadow:
+    inset 0 0 0 999px color-mix(in srgb, var(--theme-primary) 14%, transparent),
+    inset 4px 0 0 0 var(--theme-primary),
+    inset 0 4px 0 0 var(--theme-primary);
+}
+
+.feed-edit-group-table tbody tr.is-drop-after td:first-child {
+  box-shadow:
+    inset 0 0 0 999px color-mix(in srgb, var(--theme-primary) 14%, transparent),
+    inset 4px 0 0 0 var(--theme-primary),
+    inset 0 -4px 0 0 var(--theme-primary);
 }
 
 .feed-edit-group-table tbody tr.is-search-match {
@@ -317,6 +333,9 @@ body.feed-edit-col-resizing {
   background: transparent;
   color: var(--theme-text-secondary);
   cursor: grab;
+  -webkit-user-drag: element;
+  user-select: none;
+  touch-action: none;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 

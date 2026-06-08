@@ -66,7 +66,7 @@ export async function runLaunchSmoke() {
   if (!binaryPath) {
     return {
       skipped: true,
-      reason: "No built KiJi binary found (run npm run build:tauri first)",
+      reason: "No built KiJi binary found (run npm run build first)",
     };
   }
 

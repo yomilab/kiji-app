@@ -27,14 +27,28 @@ class TagsManager {
   }
 
   async updateTag(tagName: string, updates: Partial<Tag>): Promise<Tag | null> {
-    await feedStore.tags.update({
-      name: tagName,
-      updates: {
-        color: updates.color ?? null,
-        emoji: updates.emoji ?? null,
-        sortOrder: updates.sortOrder,
-      },
-    });
+    const patch: {
+      color?: string | null;
+      emoji?: string | null;
+      sortOrder?: number;
+    } = {};
+
+    if (updates.color !== undefined) {
+      patch.color = updates.color ?? null;
+    }
+    if (updates.emoji !== undefined) {
+      patch.emoji = updates.emoji ?? null;
+    }
+    if (updates.sortOrder !== undefined) {
+      patch.sortOrder = updates.sortOrder;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await feedStore.tags.update({
+        name: tagName,
+        updates: patch,
+      });
+    }
 
     const tags = await this.getAllTags();
     return tags.find((tag) => tag.name === tagName) ?? null;

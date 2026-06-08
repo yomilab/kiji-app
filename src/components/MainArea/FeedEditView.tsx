@@ -220,7 +220,7 @@ interface FeedEditStationRowProps {
   feedCount: number;
   attachRowRef: (stationName: string, node: HTMLTableRowElement | null) => void;
   stationNameEditState: StationNameEditState | null;
-  onRowDragStart: (group: DragGroup, id: string, event: React.DragEvent<HTMLButtonElement>) => void;
+  onRowDragStart: (group: DragGroup, id: string, event: React.DragEvent<HTMLSpanElement>) => void;
   onRowDragEnd: () => void;
   onRowDragOver: (group: DragGroup, targetId: string, event: React.DragEvent<HTMLTableRowElement>) => void;
   onRowDrop: (group: DragGroup, targetId: string, event: React.DragEvent<HTMLTableRowElement>) => Promise<void>;
@@ -235,12 +235,33 @@ interface FeedEditStationRowProps {
 interface FeedEditLibraryRowProps {
   item: LibraryItemRow;
   attachRowRef: (itemId: string, node: HTMLTableRowElement | null) => void;
-  onRowDragStart: (group: DragGroup, id: string, event: React.DragEvent<HTMLButtonElement>) => void;
+  onRowDragStart: (group: DragGroup, id: string, event: React.DragEvent<HTMLSpanElement>) => void;
   onRowDragEnd: () => void;
   onRowDragOver: (group: DragGroup, targetId: string, event: React.DragEvent<HTMLTableRowElement>) => void;
   onRowDrop: (group: DragGroup, targetId: string, event: React.DragEvent<HTMLTableRowElement>) => Promise<void>;
   onToggleVisibility: (viewId: SmartViewId) => void;
 }
+
+interface FeedEditDragHandleProps {
+  label: string;
+  onDragStart: (event: React.DragEvent<HTMLSpanElement>) => void;
+  onDragEnd: () => void;
+}
+
+const FeedEditDragHandle: React.FC<FeedEditDragHandleProps> = ({ label, onDragStart, onDragEnd }) => (
+  <span
+    role="button"
+    tabIndex={0}
+    className="feed-edit-drag-handle"
+    draggable
+    onDragStart={onDragStart}
+    onDragEnd={onDragEnd}
+    aria-label={`Reorder ${label}`}
+    title={`Drag to reorder ${label}`}
+  >
+    <DragIndicatorRoundedIcon fontSize="small" />
+  </span>
+);
 
 interface FeedEditTableViewportProps {
   colgroup?: React.ReactNode;
@@ -687,17 +708,11 @@ const FeedEditStationRow = React.memo<FeedEditStationRowProps>(({
     onDrop={(event) => { void onRowDrop('station', station.name, event); }}
   >
     <td className="feed-edit-drag-col">
-      <button
-        type="button"
-        className="feed-edit-drag-handle"
-        draggable
+      <FeedEditDragHandle
+        label={station.name}
         onDragStart={(event) => onRowDragStart('station', station.name, event)}
         onDragEnd={onRowDragEnd}
-        aria-label={`Reorder station ${station.name}`}
-        title={`Drag to reorder ${station.name}`}
-      >
-        <DragIndicatorRoundedIcon fontSize="small" />
-      </button>
+      />
     </td>
     <td>
       <button
@@ -767,17 +782,11 @@ const FeedEditLibraryRow = React.memo<FeedEditLibraryRowProps>(({
     onDrop={(event) => { void onRowDrop('library', item.id, event); }}
   >
     <td className="feed-edit-drag-col">
-      <button
-        type="button"
-        className="feed-edit-drag-handle"
-        draggable
+      <FeedEditDragHandle
+        label={item.label}
         onDragStart={(event) => onRowDragStart('library', item.id, event)}
         onDragEnd={onRowDragEnd}
-        aria-label={`Reorder library item ${item.label}`}
-        title={`Drag to reorder ${item.label}`}
-      >
-        <DragIndicatorRoundedIcon fontSize="small" />
-      </button>
+      />
     </td>
     <td className="feed-edit-cell-title">{item.label}</td>
     <td className="feed-edit-visibility-col">
@@ -1576,17 +1585,21 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   }, [loadData]);
 
   const persistStationOrder = useCallback(async (orderedStations: Tag[]) => {
-    setStations(orderedStations);
+    const nextStations = orderedStations.map((station, index) => ({
+      ...station,
+      sortOrder: index,
+    }));
+    setStations(nextStations);
 
     try {
-      const nextStations = orderedStations.map((station, index) => ({
+      const stationUpdates = nextStations.map((station, index) => ({
         station,
         sortOrder: index,
       }));
 
-      await Promise.all(nextStations.map(({ station, sortOrder }) => tagsManager.updateTag(station.name, { sortOrder })));
+      await Promise.all(stationUpdates.map(({ station, sortOrder }) => tagsManager.updateTag(station.name, { sortOrder })));
       feedLibraryMutationBus.publishStationsReordered(
-        nextStations.map(({ station, sortOrder }) => ({
+        stationUpdates.map(({ station, sortOrder }) => ({
           name: station.name,
           sortOrder,
         }))
@@ -1870,7 +1883,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     overRow.classList.add(nextDragState.placement === 'after' ? 'is-drop-after' : 'is-drop-before');
   }, [clearDragRowPlacement, getDragRowRefs]);
 
-  const handleDragStart = useCallback((group: DragGroup, id: string, event: React.DragEvent<HTMLButtonElement>) => {
+  const handleDragStart = useCallback((group: DragGroup, id: string, event: React.DragEvent<HTMLSpanElement>) => {
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', `${group}:${id}`);
     applyDragState({

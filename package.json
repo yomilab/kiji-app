@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "CI=true tauri build",
+    "build:web": "tsc && vite build",
     "dev:tauri": "tauri dev",
-    "build:tauri": "tauri build",
+    "build:tauri": "npm run build",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",

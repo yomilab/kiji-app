@@ -13,3 +13,7 @@ KiJi helps you follow feeds, save articles, sync saved reading to a local Markdo
 ## Status
 
 All platform versions are currently under development. A public release is coming soon.
+
+## Development
+
+Canonical implementation docs and AI/Cursor rules live in the sibling [`kiji-doc`](../kiji-doc) repository — not in this repo.

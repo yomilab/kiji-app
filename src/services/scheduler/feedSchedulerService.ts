@@ -57,6 +57,7 @@ class FeedSchedulerService {
   private lastCycleStartedAt: number | null = null;
   private lastCycleCompletedAt: number | null = null;
   private boosts = new Map<string, number>();
+  private stationSelectionPauseDepth = 0;
 
   on(listener: (event: SchedulerEvent) => void): () => void {
     this.listeners.add(listener);
@@ -109,11 +110,38 @@ class FeedSchedulerService {
     }
   }
 
+  pauseForStationSelection(): void {
+    if (this.stationSelectionPauseDepth === 0) {
+      logger.info('Scheduler', 'Pausing background refresh for station selection');
+      if (this.cycleInProgress) {
+        this.pendingCycleTick = true;
+        this.clearAbort();
+      }
+    }
+
+    this.stationSelectionPauseDepth += 1;
+  }
+
+  resumeAfterStationSelection(): void {
+    if (this.stationSelectionPauseDepth === 0) {
+      return;
+    }
+
+    this.stationSelectionPauseDepth -= 1;
+    if (this.stationSelectionPauseDepth > 0) {
+      return;
+    }
+
+    logger.info('Scheduler', 'Resuming background refresh after station selection');
+    this.maybeRunDeferredCycle(this.lifecycleId);
+  }
+
   async stop(): Promise<void> {
     this.lifecycleId += 1;
     this.clearAbort();
     this.cycleInProgress = false;
     this.pendingCycleTick = false;
+    this.stationSelectionPauseDepth = 0;
 
     if (this.nativeTickUnlisten) {
       this.nativeTickUnlisten();
@@ -159,6 +187,13 @@ class FeedSchedulerService {
       return;
     }
 
+    if (this.isStationSelectionPaused()) {
+      if (this.shouldScheduleCatchUpCycle()) {
+        this.pendingCycleTick = true;
+      }
+      return;
+    }
+
     if (this.cycleInProgress) {
       const startedAt = this.lastCycleStartedAt;
       if (startedAt !== null && Date.now() - startedAt >= STALE_CYCLE_ABORT_MS) {
@@ -174,20 +209,22 @@ class FeedSchedulerService {
       }
     }
 
+    if (!this.shouldScheduleCatchUpCycle()) {
+      return;
+    }
+
     const intervalMs = this.getIntervalMs();
     const overdueMs = this.lastCycleCompletedAt === null
       ? intervalMs
       : Date.now() - this.lastCycleCompletedAt;
 
-    if (this.pendingCycleTick || overdueMs >= intervalMs) {
-      logger.info('Scheduler', 'Running catch-up background refresh after resume', {
-        mode: this.mode,
-        overdueMs,
-        pendingCycleTick: this.pendingCycleTick,
-      });
-      this.pendingCycleTick = false;
-      await this.runScheduledCycle(lifecycleId);
-    }
+    logger.info('Scheduler', 'Running catch-up background refresh after resume', {
+      mode: this.mode,
+      overdueMs,
+      pendingCycleTick: this.pendingCycleTick,
+    });
+    this.pendingCycleTick = false;
+    await this.runScheduledCycle(lifecycleId);
   }
 
   boostMany(feedIds: string[]): void {
@@ -200,9 +237,11 @@ class FeedSchedulerService {
       this.boosts.set(feedId, boostUntil);
     }
 
-    if (this.cycleInProgress) {
+    if (this.cycleInProgress || this.isStationSelectionPaused()) {
       this.pendingCycleTick = true;
-      logger.info('Scheduler', 'Deferred boosted import refresh until current cycle completes', {
+      logger.info('Scheduler', this.isStationSelectionPaused()
+        ? 'Deferred boosted import refresh during station selection'
+        : 'Deferred boosted import refresh until current cycle completes', {
         feedCount: feedIds.length,
       });
       return;
@@ -213,6 +252,37 @@ class FeedSchedulerService {
     });
 
     void this.runScheduledCycle(this.lifecycleId);
+  }
+
+  private isStationSelectionPaused(): boolean {
+    return this.stationSelectionPauseDepth > 0;
+  }
+
+  private shouldScheduleCatchUpCycle(): boolean {
+    if (this.pendingCycleTick) {
+      return true;
+    }
+
+    const intervalMs = this.getIntervalMs();
+    const overdueMs = this.lastCycleCompletedAt === null
+      ? intervalMs
+      : Date.now() - this.lastCycleCompletedAt;
+    return overdueMs >= intervalMs;
+  }
+
+  private maybeRunDeferredCycle(lifecycleId: number): void {
+    if (
+      !this.pendingCycleTick
+      || this.cycleInProgress
+      || !this.isCurrentLifecycle(lifecycleId)
+      || this.isStationSelectionPaused()
+    ) {
+      return;
+    }
+
+    this.pendingCycleTick = false;
+    logger.info('Scheduler', 'Running deferred native scheduler tick', { mode: this.mode });
+    void this.runScheduledCycle(lifecycleId);
   }
 
   private getIntervalMs(): number {
@@ -242,6 +312,14 @@ class FeedSchedulerService {
       return;
     }
 
+    if (this.isStationSelectionPaused()) {
+      this.pendingCycleTick = true;
+      logger.info('Scheduler', 'Deferred native scheduler tick during station selection', {
+        mode: this.mode,
+      });
+      return;
+    }
+
     if (this.cycleInProgress) {
       this.pendingCycleTick = true;
       logger.info('Scheduler', 'Deferred native scheduler tick until current refresh cycle completes', {
@@ -268,6 +346,11 @@ class FeedSchedulerService {
 
   private async runScheduledCycle(lifecycleId: number): Promise<void> {
     if (!this.isCurrentLifecycle(lifecycleId) || this.cycleInProgress) {
+      return;
+    }
+
+    if (this.isStationSelectionPaused()) {
+      this.pendingCycleTick = true;
       return;
     }
 
@@ -371,11 +454,7 @@ class FeedSchedulerService {
         durationMs,
       });
 
-      if (this.pendingCycleTick && this.isCurrentLifecycle(lifecycleId)) {
-        this.pendingCycleTick = false;
-        logger.info('Scheduler', 'Running deferred native scheduler tick', { mode: this.mode });
-        void this.runScheduledCycle(lifecycleId);
-      }
+      this.maybeRunDeferredCycle(lifecycleId);
     }
   }
 

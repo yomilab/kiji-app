@@ -224,4 +224,105 @@ describe("feedSchedulerService", () => {
       expect(getAll).toHaveBeenCalledTimes(2);
     });
   });
+
+  it("defers native ticks while station selection pauses the scheduler", async () => {
+    await feedScheduler.start();
+    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+
+    feedScheduler.pauseForStationSelection();
+    await tickHandler?.();
+
+    expect(getAll).not.toHaveBeenCalled();
+
+    feedScheduler.resumeAfterStationSelection();
+    await vi.waitFor(() => {
+      expect(getAll).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("aborts an in-flight cycle when station selection pauses the scheduler", async () => {
+    let releaseRefresh!: () => void;
+    fetchFeedNetworkWithCache.mockImplementation(() => new Promise((resolve) => {
+      releaseRefresh = () => resolve({
+        notModified: true,
+        etag: "etag-1",
+        lastModified: "date-1",
+      });
+    }));
+
+    await feedScheduler.start();
+    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+
+    const firstTick = tickHandler?.();
+    await vi.waitFor(() => {
+      expect(fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
+    });
+
+    feedScheduler.pauseForStationSelection();
+    releaseRefresh();
+    await firstTick;
+
+    feedScheduler.resumeAfterStationSelection();
+    await vi.waitFor(() => {
+      expect(getAll).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("keeps the scheduler paused until nested station selections finish", async () => {
+    await feedScheduler.start();
+    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+
+    feedScheduler.pauseForStationSelection();
+    feedScheduler.pauseForStationSelection();
+    feedScheduler.resumeAfterStationSelection();
+
+    await tickHandler?.();
+    expect(getAll).not.toHaveBeenCalled();
+
+    feedScheduler.resumeAfterStationSelection();
+    await vi.waitFor(() => {
+      expect(getAll).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("defers boostMany during station pause and runs one cycle after resume", async () => {
+    await feedScheduler.start();
+
+    feedScheduler.pauseForStationSelection();
+    feedScheduler.boostMany(["feed-1"]);
+
+    expect(getAll).not.toHaveBeenCalled();
+
+    feedScheduler.resumeAfterStationSelection();
+    await vi.waitFor(() => {
+      expect(getAll).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("defers catchUpAfterResume during station pause and runs after resume", async () => {
+    vi.useFakeTimers();
+
+    try {
+      await feedScheduler.start();
+      const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+
+      await tickHandler?.();
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(1);
+      });
+
+      vi.advanceTimersByTime(6 * 60_000);
+
+      feedScheduler.pauseForStationSelection();
+      await feedScheduler.catchUpAfterResume();
+      expect(getAll).toHaveBeenCalledTimes(1);
+
+      feedScheduler.resumeAfterStationSelection();
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(2);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
