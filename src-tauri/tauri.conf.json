@@ -72,6 +72,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "macOS": {
+      "entitlements": "./Entitlements.plist"
+    },
     "resources": {
       "icons/": "icons",
       "icons-dark/": "icons-dark"
