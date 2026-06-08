@@ -4,7 +4,7 @@
 
 ### Added
 
-- GPL-3.0-or-later license (`LICENSE`, copyright Yomi Lab) and `THIRD_PARTY_NOTICES.md` listing major npm/Rust dependencies and copyleft components (`html2md`, libvips/sharp, DOMPurify, JSZip).
+- GPL-3.0-or-later license (`LICENSE`, copyright Yomi Lab) and `THIRD_PARTY_NOTICES.md` (major npm/Rust deps and copyleft components).
 
 ### Fixed
 
