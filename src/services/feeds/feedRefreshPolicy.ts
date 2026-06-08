@@ -14,8 +14,10 @@ export interface FeedRefreshBlock {
   failureCount?: number;
 }
 
-type RefreshPolicyFeed = Pick<Feed, "lastFetched" | "lastFailedFetchAt" | "consecutiveFailures"> &
-  Partial<Pick<Feed, "updateFrequencyScore">>;
+type RefreshPolicyFeed = Pick<Feed, "consecutiveFailures"> & {
+  lastFetched?: Date | null;
+  lastFailedFetchAt?: Date | null;
+} & Partial<Pick<Feed, "updateFrequencyScore">>;
 
 export function getFeedFailureBackoffMaxMs(updateFrequencyScore = 0): number {
   const activityTier = FEED_FAILURE_BACKOFF_MAX_BY_FREQUENCY.find(

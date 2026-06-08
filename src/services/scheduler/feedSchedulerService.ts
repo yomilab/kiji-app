@@ -1,13 +1,27 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { tauriClient } from '@/lib/tauriClient';
-import { feedsManager } from '@/services/feeds/feedsManager';
+import * as articleStore from '@/stores/articleStore';
+import * as feedStore from '@/stores/feedStore';
+import { convertFeedItemsToArticles } from '@/services/articles/articleConverter';
+import { feedRefreshActivity } from '@/services/feeds/feedRefreshActivity';
+import { feedRefreshCoordinator } from '@/services/feeds/feedRefreshCoordinator';
+import { feedsFetcher } from '@/services/feeds/feedsFetcher';
 import { maybeRefreshFavicon } from '@/services/favicons/faviconRefreshService';
 import { settingsManager } from '@/services/settings';
+import { createTaskPool } from '@/services/tasks/taskPool';
 import { logger } from '@/services/logger';
-import type { BackgroundUpdateMode, SchedulerEvent } from './types';
+import { computeFrequencyFromDates } from './feedPriorityCalculator';
+import { createSchedulerRunPlan } from './schedulerRunPlan';
+import type {
+  BackgroundUpdateMode,
+  FeedPriorityEntry,
+  SchedulerEvent,
+  SchedulerFeedEntry,
+} from './types';
 
 const SCHEDULER_CYCLE_TICK_EVENT = 'scheduler:cycle-tick';
 const STALE_CYCLE_ABORT_MS = 45 * 60 * 1_000;
+const BOOST_TTL_MS = 5 * 60_000;
 
 const MODE_INTERVAL_MS: Record<Exclude<BackgroundUpdateMode, 'on-launch' | 'never'>, number> = {
   'every-5m': 5 * 60_000,
@@ -15,6 +29,20 @@ const MODE_INTERVAL_MS: Record<Exclude<BackgroundUpdateMode, 'on-launch' | 'neve
   'every-15m': 15 * 60_000,
   'every-30m': 30 * 60_000,
   'every-1h': 60 * 60_000,
+};
+
+interface SchedulerCycleStats {
+  notModifiedFeeds: number;
+  changedFeeds: number;
+  insertedArticles: number;
+  failedFeeds: number;
+}
+
+const getConcurrency = (): number => {
+  if (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) {
+    return Math.min(8, Math.max(3, navigator.hardwareConcurrency));
+  }
+  return 3;
 };
 
 class FeedSchedulerService {
@@ -28,6 +56,7 @@ class FeedSchedulerService {
   private nativeTickUnlisten: UnlistenFn | null = null;
   private lastCycleStartedAt: number | null = null;
   private lastCycleCompletedAt: number | null = null;
+  private boosts = new Map<string, number>();
 
   on(listener: (event: SchedulerEvent) => void): () => void {
     this.listeners.add(listener);
@@ -166,15 +195,24 @@ class FeedSchedulerService {
       return;
     }
 
-    logger.info('Scheduler', 'Refreshing imported feeds after OPML import', {
+    const boostUntil = Date.now() + BOOST_TTL_MS;
+    for (const feedId of feedIds) {
+      this.boosts.set(feedId, boostUntil);
+    }
+
+    if (this.cycleInProgress) {
+      this.pendingCycleTick = true;
+      logger.info('Scheduler', 'Deferred boosted import refresh until current cycle completes', {
+        feedCount: feedIds.length,
+      });
+      return;
+    }
+
+    logger.info('Scheduler', 'Boosted feed priorities after import', {
       feedCount: feedIds.length,
     });
 
-    for (const feedId of feedIds) {
-      void feedsManager.refreshFeed(feedId).catch((error) => {
-        logger.warn('Scheduler', 'Failed to refresh imported feed', { feedId, error });
-      });
-    }
+    void this.runScheduledCycle(this.lifecycleId);
   }
 
   private getIntervalMs(): number {
@@ -257,36 +295,55 @@ class FeedSchedulerService {
     this.emit({ type: 'cycle-start' });
     logger.info('Scheduler', 'Background refresh cycle started', { mode: this.mode });
 
+    const cycleStats: SchedulerCycleStats = {
+      notModifiedFeeds: 0,
+      changedFeeds: 0,
+      insertedArticles: 0,
+      failedFeeds: 0,
+    };
+
     try {
-      const feeds = await feedsManager.getAllFeeds();
-      for (const feed of feeds) {
+      const feeds = await feedStore.getAll();
+      if (feeds.length === 0 || signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
+        return;
+      }
+
+      const totalFeeds = feeds.length;
+      const entries: SchedulerFeedEntry[] = feeds.map((feed) => ({
+        feedId: feed.id,
+        feedUrl: feed.url,
+        feedTitle: feed.title,
+        lastFetched: feed.lastFetched ?? null,
+        lastFailedFetchAt: feed.lastFailedFetchAt ?? null,
+        sortOrder: feed.sortOrder ?? 0,
+        updateFrequencyScore: feed.updateFrequencyScore ?? 0,
+        consecutiveFailures: feed.consecutiveFailures ?? 0,
+      }));
+
+      const { prioritized, skippedBackoffCount } = createSchedulerRunPlan(
+        entries,
+        totalFeeds,
+        this.boosts,
+      );
+
+      const pool = createTaskPool({ concurrency: getConcurrency() });
+      for (const entry of prioritized) {
         if (signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
           break;
         }
-
-        await feedsManager.refreshFeed(feed.id, { signal })
-          .then((result) => {
-            if (!result.notModified) {
-              void maybeRefreshFavicon(feed.id, feed.url);
-            }
-
-            this.emit({
-              type: 'feed-updated',
-              feedId: feed.id,
-              newArticleCount: result.insertedCount,
-            });
-          })
-          .catch((error) => {
-            if (signal.aborted) {
-              return;
-            }
-            this.emit({
-              type: 'feed-failed',
-              feedId: feed.id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          });
+        pool.enqueue(() => this.fetchSingleFeed(entry, signal, lifecycleId, cycleStats));
       }
+
+      await pool.whenIdle();
+
+      logger.info('Scheduler', 'Background refresh cycle stats', {
+        totalFeeds,
+        scheduledFeeds: prioritized.length,
+        skippedBackoffFeeds: skippedBackoffCount,
+        ...cycleStats,
+      });
+    } catch (error) {
+      logger.error('Scheduler', 'Background refresh cycle failed', { error });
     } finally {
       const durationMs = this.lastCycleStartedAt === null
         ? null
@@ -305,6 +362,112 @@ class FeedSchedulerService {
         logger.info('Scheduler', 'Running deferred native scheduler tick', { mode: this.mode });
         void this.runScheduledCycle(lifecycleId);
       }
+    }
+  }
+
+  private async fetchSingleFeed(
+    entry: FeedPriorityEntry,
+    signal: AbortSignal,
+    lifecycleId: number,
+    cycleStats: SchedulerCycleStats,
+  ): Promise<void> {
+    if (signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
+      return;
+    }
+
+    try {
+      await feedRefreshCoordinator.run(entry.feedId, async () => {
+        if (signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
+          return;
+        }
+
+        const feed = await feedStore.getById(entry.feedId);
+        if (!feed || signal.aborted) {
+          return;
+        }
+
+        const fetchResult = await feedRefreshActivity.track(
+          entry.feedId,
+          () => feedsFetcher.fetchFeedWithCache(entry.feedUrl, {
+            etag: feed.etag,
+            lastModified: feed.lastModifiedHeader,
+            signal,
+          }),
+        );
+
+        if (signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
+          return;
+        }
+
+        if (fetchResult.notModified) {
+          await feedStore.update(entry.feedId, {
+            lastFetched: new Date(),
+            lastFailedFetchAt: undefined,
+            consecutiveFailures: 0,
+          });
+          cycleStats.notModifiedFeeds += 1;
+          return;
+        }
+
+        const articles = await convertFeedItemsToArticles(fetchResult.items ?? [], {
+          feedId: entry.feedId,
+          feedUrl: entry.feedUrl,
+          feed,
+          feedTitle: entry.feedTitle,
+        });
+        if (signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
+          return;
+        }
+
+        const insertedCount = await articleStore.store(entry.feedId, articles);
+        cycleStats.changedFeeds += 1;
+        cycleStats.insertedArticles += insertedCount;
+
+        const { articles: recentArticles } = await articleStore.query({
+          feedIds: [entry.feedId],
+          sort: { field: 'publishedDate', order: 'desc' },
+          limit: 50,
+        });
+
+        const dates = recentArticles
+          .map((article) => article.publishedDate)
+          .filter((date): date is string => !!date);
+        const newFrequency = computeFrequencyFromDates(dates);
+
+        await feedStore.update(entry.feedId, {
+          lastFetched: new Date(),
+          lastFailedFetchAt: undefined,
+          updateFrequencyScore: newFrequency,
+          consecutiveFailures: 0,
+          etag: fetchResult.etag,
+          lastModifiedHeader: fetchResult.lastModified,
+        });
+
+        const unreadCount = await articleStore.getUnreadCount(entry.feedId);
+        const articleCount = await articleStore.getArticleCount(entry.feedId);
+        await feedStore.update(entry.feedId, { unreadCount, articleCount });
+
+        void maybeRefreshFavicon(entry.feedId, entry.feedUrl);
+        this.emit({ type: 'feed-updated', feedId: entry.feedId, newArticleCount: insertedCount });
+      }, { signal });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      cycleStats.failedFeeds += 1;
+      logger.warn('Scheduler', 'Feed fetch failed in scheduler cycle', {
+        feedId: entry.feedId,
+        error: message,
+      });
+
+      await feedStore.update(entry.feedId, {
+        consecutiveFailures: (entry.consecutiveFailures ?? 0) + 1,
+        lastFailedFetchAt: new Date(),
+      });
+
+      this.emit({ type: 'feed-failed', feedId: entry.feedId, error: message });
     }
   }
 

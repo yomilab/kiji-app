@@ -1,0 +1,23 @@
+---
+description: Feed scheduler, refresh indicator, timeout, boostMany, and article-list widget invariants
+globs: src/services/scheduler/**,src/services/feeds/**,src/services/tasks/**,src/components/MainArea/ArticleList*.**,src-tauri/src/net/**,src/constants.ts
+alwaysApply: false
+---
+
+# Feed Scheduler & Refresh Discipline
+
+Consult `../kiji-doc/docs/tauri/feed-scheduler-refresh.md` before changing background refresh, feed fetch timeouts, `feedRefreshActivity`, OPML boosts, or article-list header widgets.
+
+## Required invariants
+
+1. **Timeout:** `FEED_FETCH_TIMEOUT_MS` is 5s everywhere (renderer + Rust default). Do not lengthen without Electron parity review.
+2. **Refresh indicator:** `feedRefreshActivity.track()` wraps HTTP fetch only — never parse/store. Scheduler uses `fetchSingleFeed` with the same split.
+3. **Scheduler pool:** One ephemeral `createTaskPool` per cycle; concurrency 3–8 via `getConcurrency()`. No unbounded parallel refresh or persistent cross-cycle queues.
+4. **Tick coalescing:** Overlapping native ticks → `pendingCycleTick`; run one deferred cycle after the current one finishes.
+5. **OPML boost:** `boostMany` starts a cycle when idle; if a cycle is running, set `pendingCycleTick` instead of nesting cycles.
+6. **Article-list widgets:** `ArticleListWidgets` stays inside `.article-list-title-section`, absolutely positioned `top: 12px; right: 16px` on the panel.
+
+## Before finishing
+
+- Extend scheduler/task-pool/refresh tests when behavior changes.
+- Update `../kiji-doc/docs/tauri/feed-scheduler-refresh.md` and one `CHANGELOG.md` entry in the same task.
