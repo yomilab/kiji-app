@@ -9,6 +9,7 @@ import { feedsFetcher } from '@/services/feeds/feedsFetcher';
 import { savedArticlesService } from '@/services/saved/savedArticlesService';
 import * as articleStore from '@/stores/articleStore';
 import * as feedStore from '@/stores/feedStore';
+import { feedNetworkDataResult } from '../helpers/feedNetworkFetchMock';
 
 vi.mock('@/stores/articleStore', () => ({
   query: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock('@/stores/feedStore', () => ({
 vi.mock('@/services/feeds/feedsFetcher', () => ({
   feedsFetcher: {
     fetchFeed: vi.fn(),
+    fetchFeedNetworkWithCache: vi.fn(),
   },
 }));
 

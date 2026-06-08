@@ -23,6 +23,7 @@ vi.mock('@/stores/feedStore', () => ({
 vi.mock('@/services/feeds/feedsFetcher', () => ({
   feedsFetcher: {
     fetchFeed: vi.fn(),
+    fetchFeedNetworkWithCache: vi.fn(),
   },
 }));
 
@@ -69,6 +70,8 @@ const schedulerHarness = vi.hoisted(() => {
           }
         };
       }),
+      pauseForStationSelection: vi.fn(),
+      resumeAfterStationSelection: vi.fn(),
     },
     __emitSchedulerEvent: (event: TestSchedulerEvent) => {
       listener?.(event);
