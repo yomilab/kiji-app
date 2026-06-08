@@ -8,6 +8,7 @@ import { opmlExportService } from "@/services/feeds/opmlExportService";
 import { feedsManager } from "@/services/feeds/feedsManager";
 import { tagsManager } from "@/services/tags/tagsManager";
 import { electronFixturesAreAvailable, FEEDS_OPML_ENTRY_COUNT, FEEDS_OPML_UNIQUE_URL_COUNT, readElectronFixture } from "./electronFixtures";
+import { describeRustIntegration } from "../helpers/rustIntegrationTest";
 
 const describeWithFixtures = electronFixturesAreAvailable() ? describe : describe.skip;
 
@@ -59,7 +60,7 @@ describeWithFixtures("Electron workflow parity (21c)", () => {
   });
 });
 
-describe("Database migration parity (21d)", () => {
+describeRustIntegration("Database migration parity (21d)", () => {
   it("passes Rust synthetic Electron v13/v15 migration tests", () => {
     const manifestPath = path.join(process.cwd(), "src-tauri/Cargo.toml");
     expect(fs.existsSync(manifestPath)).toBe(true);

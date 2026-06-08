@@ -12,11 +12,12 @@ import {
   electronFixturesAreAvailable,
   readElectronFixture,
 } from "../parity/electronFixtures";
+import { describeRustIntegration } from "../helpers/rustIntegrationTest";
 
 const manifestPath = path.join(process.cwd(), "src-tauri/Cargo.toml");
 const describeWithFixtures = electronFixturesAreAvailable() ? describe : describe.skip;
 
-describe("Desktop smoke (todo 22)", () => {
+describeRustIntegration("Desktop smoke (todo 22)", () => {
   it(
     "passes Rust desktop workflow smoke for feed refresh, save, export, and relaunch persistence",
     () => {
