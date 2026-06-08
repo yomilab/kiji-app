@@ -5,7 +5,7 @@ import * as feedStore from '@/stores/feedStore';
 import { convertFeedItemsToArticles } from '@/services/articles/articleConverter';
 import { feedRefreshActivity } from '@/services/feeds/feedRefreshActivity';
 import { feedRefreshCoordinator } from '@/services/feeds/feedRefreshCoordinator';
-import { feedsFetcher } from '@/services/feeds/feedsFetcher';
+import { feedsFetcher, parseFeed } from '@/services/feeds/feedsFetcher';
 import { maybeRefreshFavicon } from '@/services/favicons/faviconRefreshService';
 import { settingsManager } from '@/services/settings';
 import { createTaskPool } from '@/services/tasks/taskPool';
@@ -326,15 +326,29 @@ class FeedSchedulerService {
         this.boosts,
       );
 
-      const pool = createTaskPool({ concurrency: getConcurrency() });
-      for (const entry of prioritized) {
-        if (signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
-          break;
-        }
-        pool.enqueue(() => this.fetchSingleFeed(entry, signal, lifecycleId, cycleStats));
-      }
+      const releaseQueuedFeeds = prioritized.length > 0
+        ? feedRefreshActivity.beginQueuedFeeds(prioritized.map((entry) => entry.feedId))
+        : null;
 
-      await pool.whenIdle();
+      try {
+        const pool = createTaskPool({ concurrency: getConcurrency() });
+        for (const entry of prioritized) {
+          if (signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
+            break;
+          }
+          pool.enqueue(() => this.fetchSingleFeed(
+            entry,
+            signal,
+            lifecycleId,
+            cycleStats,
+            releaseQueuedFeeds,
+          ));
+        }
+
+        await pool.whenIdle();
+      } finally {
+        releaseQueuedFeeds?.();
+      }
 
       logger.info('Scheduler', 'Background refresh cycle stats', {
         totalFeeds,
@@ -370,46 +384,63 @@ class FeedSchedulerService {
     signal: AbortSignal,
     lifecycleId: number,
     cycleStats: SchedulerCycleStats,
+    releaseQueuedFeeds: ((feedId?: string) => void) | null,
   ): Promise<void> {
+    let queuedFeedReleased = false;
+    const settleQueuedFeed = (): void => {
+      if (queuedFeedReleased || !releaseQueuedFeeds) {
+        return;
+      }
+      queuedFeedReleased = true;
+      releaseQueuedFeeds(entry.feedId);
+    };
+
     if (signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
+      settleQueuedFeed();
       return;
     }
 
     try {
       await feedRefreshCoordinator.run(entry.feedId, async () => {
         if (signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
+          settleQueuedFeed();
           return;
         }
 
         const feed = await feedStore.getById(entry.feedId);
         if (!feed || signal.aborted) {
+          settleQueuedFeed();
           return;
         }
 
-        const fetchResult = await feedRefreshActivity.track(
+        const networkResult = await feedRefreshActivity.track(
           entry.feedId,
-          () => feedsFetcher.fetchFeedWithCache(entry.feedUrl, {
+          () => feedsFetcher.fetchFeedNetworkWithCache(entry.feedUrl, {
             etag: feed.etag,
             lastModified: feed.lastModifiedHeader,
             signal,
           }),
         );
+        settleQueuedFeed();
 
         if (signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
           return;
         }
 
-        if (fetchResult.notModified) {
+        if (networkResult.notModified || !networkResult.data) {
           await feedStore.update(entry.feedId, {
             lastFetched: new Date(),
             lastFailedFetchAt: undefined,
             consecutiveFailures: 0,
+            etag: networkResult.etag,
+            lastModifiedHeader: networkResult.lastModified,
           });
           cycleStats.notModifiedFeeds += 1;
           return;
         }
 
-        const articles = await convertFeedItemsToArticles(fetchResult.items ?? [], {
+        const feedItems = parseFeed(networkResult.data, entry.feedUrl);
+        const articles = await convertFeedItemsToArticles(feedItems, {
           feedId: entry.feedId,
           feedUrl: entry.feedUrl,
           feed,
@@ -439,8 +470,8 @@ class FeedSchedulerService {
           lastFailedFetchAt: undefined,
           updateFrequencyScore: newFrequency,
           consecutiveFailures: 0,
-          etag: fetchResult.etag,
-          lastModifiedHeader: fetchResult.lastModified,
+          etag: networkResult.etag,
+          lastModifiedHeader: networkResult.lastModified,
         });
 
         const unreadCount = await articleStore.getUnreadCount(entry.feedId);
@@ -451,6 +482,8 @@ class FeedSchedulerService {
         this.emit({ type: 'feed-updated', feedId: entry.feedId, newArticleCount: insertedCount });
       }, { signal });
     } catch (error) {
+      settleQueuedFeed();
+
       if (error instanceof Error && error.name === 'AbortError') {
         return;
       }

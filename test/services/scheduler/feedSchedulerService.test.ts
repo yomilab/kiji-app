@@ -21,7 +21,7 @@ const getById = vi.hoisted(() => vi.fn().mockResolvedValue({
   url: "https://feed-1.example.com/rss",
   tags: [],
 }));
-const fetchFeedWithCache = vi.hoisted(() => vi.fn().mockResolvedValue({
+const fetchFeedNetworkWithCache = vi.hoisted(() => vi.fn().mockResolvedValue({
   notModified: true,
   etag: "etag-1",
   lastModified: "date-1",
@@ -63,13 +63,15 @@ vi.mock("@/stores/articleStore", () => ({
 
 vi.mock("@/services/feeds/feedsFetcher", () => ({
   feedsFetcher: {
-    fetchFeedWithCache,
+    fetchFeedNetworkWithCache,
   },
+  parseFeed: vi.fn(),
 }));
 
 vi.mock("@/services/feeds/feedRefreshActivity", () => ({
   feedRefreshActivity: {
     track: vi.fn((_feedId: string, operation: () => Promise<unknown>) => operation()),
+    beginQueuedFeeds: vi.fn(() => vi.fn()),
   },
 }));
 
@@ -114,7 +116,7 @@ describe("feedSchedulerService", () => {
       url: "https://feed-1.example.com/rss",
       tags: [],
     });
-    fetchFeedWithCache.mockResolvedValue({
+    fetchFeedNetworkWithCache.mockResolvedValue({
       notModified: true,
       etag: "etag-1",
       lastModified: "date-1",
@@ -160,7 +162,7 @@ describe("feedSchedulerService", () => {
       expect(getAll).toHaveBeenCalledTimes(1);
     });
 
-    expect(fetchFeedWithCache).toHaveBeenCalledWith(
+    expect(fetchFeedNetworkWithCache).toHaveBeenCalledWith(
       "https://feed-1.example.com/rss",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
@@ -168,7 +170,7 @@ describe("feedSchedulerService", () => {
 
   it("defers overlapping native ticks and runs one follow-up cycle", async () => {
     let releaseRefresh!: () => void;
-    fetchFeedWithCache.mockImplementation(() => new Promise((resolve) => {
+    fetchFeedNetworkWithCache.mockImplementation(() => new Promise((resolve) => {
       releaseRefresh = () => resolve({
         notModified: true,
         etag: "etag-1",
@@ -181,12 +183,12 @@ describe("feedSchedulerService", () => {
 
     const firstTick = tickHandler?.();
     await vi.waitFor(() => {
-      expect(fetchFeedWithCache).toHaveBeenCalledTimes(1);
+      expect(fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
     });
 
     await tickHandler?.();
     await tickHandler?.();
-    expect(fetchFeedWithCache).toHaveBeenCalledTimes(1);
+    expect(fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
 
     releaseRefresh();
     await firstTick;
@@ -197,7 +199,7 @@ describe("feedSchedulerService", () => {
 
   it("defers boostMany during an active cycle and runs one follow-up cycle", async () => {
     let releaseRefresh!: () => void;
-    fetchFeedWithCache.mockImplementation(() => new Promise((resolve) => {
+    fetchFeedNetworkWithCache.mockImplementation(() => new Promise((resolve) => {
       releaseRefresh = () => resolve({
         notModified: true,
         etag: "etag-1",
@@ -210,7 +212,7 @@ describe("feedSchedulerService", () => {
 
     const firstTick = tickHandler?.();
     await vi.waitFor(() => {
-      expect(fetchFeedWithCache).toHaveBeenCalledTimes(1);
+      expect(fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
     });
 
     feedScheduler.boostMany(["feed-1"]);

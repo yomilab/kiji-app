@@ -7,7 +7,7 @@ import { faviconFetcher } from "../favicons/faviconFetcher";
 import { tauriClient } from "../../lib/tauriClient";
 import { feedRefreshActivity } from "./feedRefreshActivity";
 import { feedRefreshCoordinator } from "./feedRefreshCoordinator";
-import { feedsFetcher } from "./feedsFetcher";
+import { feedsFetcher, parseFeed } from "./feedsFetcher";
 import type { Feed } from "./types";
 
 export type { Feed } from "./types";
@@ -97,26 +97,27 @@ class FeedsManager {
       const feed = await this.requireFeed(id);
 
       try {
-        const result = await feedRefreshActivity.track(id, () =>
-          feedsFetcher.fetchFeedWithCache(feed.url, {
+        const networkResult = await feedRefreshActivity.track(id, () =>
+          feedsFetcher.fetchFeedNetworkWithCache(feed.url, {
             etag: options.force ? undefined : feed.etag,
             lastModified: options.force ? undefined : feed.lastModifiedHeader,
             signal: options.signal,
           }),
         );
 
-        if (result.notModified) {
+        if (networkResult.notModified || !networkResult.data) {
           await feedStore.update(id, {
             lastFetched: new Date(),
-            etag: result.etag ?? feed.etag,
-            lastModifiedHeader: result.lastModified ?? feed.lastModifiedHeader,
+            etag: networkResult.etag ?? feed.etag,
+            lastModifiedHeader: networkResult.lastModified ?? feed.lastModifiedHeader,
             consecutiveFailures: 0,
             lastFailedFetchAt: undefined,
           });
           return { feedId: id, notModified: true, insertedCount: 0 };
         }
 
-        const articles = await convertFeedItemsToArticles(result.items ?? [], {
+        const items = parseFeed(networkResult.data, feed.url);
+        const articles = await convertFeedItemsToArticles(items, {
           feedId: id,
           feedUrl: feed.url,
           feed,
@@ -130,8 +131,8 @@ class FeedsManager {
           lastFetched: new Date(),
           lastFailedFetchAt: undefined,
           consecutiveFailures: 0,
-          etag: result.etag ?? feed.etag,
-          lastModifiedHeader: result.lastModified ?? feed.lastModifiedHeader,
+          etag: networkResult.etag ?? feed.etag,
+          lastModifiedHeader: networkResult.lastModified ?? feed.lastModifiedHeader,
           articleCount,
           unreadCount,
         });

@@ -29,6 +29,13 @@ export interface FeedItem {
   seasonNumber?: number;
 }
 
+export interface FeedNetworkFetchResult {
+  notModified: boolean;
+  data?: string;
+  etag?: string;
+  lastModified?: string;
+}
+
 export interface FeedFetchResult {
   notModified: boolean;
   items?: FeedItem[];
@@ -47,10 +54,10 @@ class FeedsFetcher {
     return result.items;
   }
 
-  async fetchFeedWithCache(
+  async fetchFeedNetworkWithCache(
     url: string,
     options: { etag?: string; lastModified?: string; signal?: AbortSignal } = {},
-  ): Promise<FeedFetchResult> {
+  ): Promise<FeedNetworkFetchResult> {
     const normalizedUrl = validateFeedUrl(url);
     const requestId = `feed-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const abortListener = () => {
@@ -70,18 +77,45 @@ class FeedsFetcher {
       this.throwIfAborted(options.signal);
 
       if (response.notModified || !response.data) {
-        return { notModified: true, etag: response.etag ?? undefined, lastModified: response.lastModified ?? undefined };
+        return {
+          notModified: true,
+          etag: response.etag ?? undefined,
+          lastModified: response.lastModified ?? undefined,
+        };
       }
 
       return {
         notModified: false,
-        items: parseFeed(response.data, normalizedUrl),
+        data: response.data,
         etag: response.etag ?? undefined,
         lastModified: response.lastModified ?? undefined,
       };
     } finally {
       options.signal?.removeEventListener("abort", abortListener);
     }
+  }
+
+  async fetchFeedWithCache(
+    url: string,
+    options: { etag?: string; lastModified?: string; signal?: AbortSignal } = {},
+  ): Promise<FeedFetchResult> {
+    const normalizedUrl = validateFeedUrl(url);
+    const networkResult = await this.fetchFeedNetworkWithCache(url, options);
+
+    if (networkResult.notModified || !networkResult.data) {
+      return {
+        notModified: true,
+        etag: networkResult.etag,
+        lastModified: networkResult.lastModified,
+      };
+    }
+
+    return {
+      notModified: false,
+      items: parseFeed(networkResult.data, normalizedUrl),
+      etag: networkResult.etag,
+      lastModified: networkResult.lastModified,
+    };
   }
 
   private throwIfAborted(signal?: AbortSignal): void {

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useCallback, ReactNode, useTransition, useRef, useReducer, useMemo } from 'react';
-import { feedsFetcher } from '@/services/feeds/feedsFetcher';
+import { feedsFetcher, parseFeed } from '@/services/feeds/feedsFetcher';
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { savedArticlesService } from '@/services/saved/savedArticlesService';
@@ -618,13 +618,26 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (signal?.aborted) return;
       // Successful UI-triggered refreshes clear any prior failure backoff so the
       // feed immediately returns to the normal freshness/cooldown path.
-      const fetched = await (async () => {
-        try {
-          return await feedRefreshActivity.track(feed.id, () => feedsFetcher.fetchFeed(feed.url, { signal }));
-        } finally {
-          options?.onFetchSettled?.();
-        }
-      })();
+      const networkResult = await feedRefreshActivity.track(feed.id, () =>
+        feedsFetcher.fetchFeedNetworkWithCache(feed.url, { signal }),
+      );
+      options?.onFetchSettled?.();
+      if (signal?.aborted) return;
+      await waitForUiBudget();
+      if (signal?.aborted) return;
+
+      if (networkResult.notModified || !networkResult.data) {
+        await feedsManager.updateFeed(feed.id, {
+          lastFetched: new Date(),
+          lastFailedFetchAt: undefined,
+          consecutiveFailures: 0,
+          etag: networkResult.etag,
+          lastModifiedHeader: networkResult.lastModified,
+        });
+        return;
+      }
+
+      const fetched = parseFeed(networkResult.data, feed.url);
       if (signal?.aborted) return;
       await waitForUiBudget();
       if (signal?.aborted) return;
