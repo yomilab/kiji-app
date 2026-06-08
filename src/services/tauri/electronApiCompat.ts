@@ -1,4 +1,5 @@
 import { emit, listen } from '@tauri-apps/api/event';
+import { FEED_FETCH_TIMEOUT_MS } from '@/constants';
 import { tauriClient } from '@/lib/tauriClient';
 import { createDeferredUnsubscribe } from '@/services/tauri/tauriEventSubscription';
 import {
@@ -65,7 +66,7 @@ function installElectronApiCompat(): void {
         requestId: options?.requestId,
         etag: options?.etag,
         lastModified: options?.lastModified,
-        timeout: options?.timeout,
+        timeout: options?.timeout ?? FEED_FETCH_TIMEOUT_MS,
       });
       return {
         notModified: response.notModified,

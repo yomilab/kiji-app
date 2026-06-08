@@ -18,6 +18,7 @@ static ACTIVE_REQUESTS: Lazy<Mutex<HashMap<String, AbortHandle>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 const DEFAULT_TIMEOUT_MS: u64 = 15_000;
+const FEED_FETCH_DEFAULT_TIMEOUT_MS: u64 = 5_000;
 const MAX_DATA_URL_BYTES: u64 = 1024 * 1024;
 const PDF_MAGIC: &[u8] = b"%PDF-";
 const CHROME_LIKE_USER_AGENT: &str =
@@ -319,7 +320,11 @@ async fn execute_fetch(
         .build()
         .map_err(|error| format!("Failed to create HTTP client: {error}"))?;
 
-    let timeout = Duration::from_millis(request.timeout.unwrap_or(DEFAULT_TIMEOUT_MS));
+    let timeout = Duration::from_millis(
+        request
+            .timeout
+            .unwrap_or(FEED_FETCH_DEFAULT_TIMEOUT_MS),
+    );
     let mut request_builder = client
         .get(&request.url)
         .headers(chrome_like_headers())

@@ -1,5 +1,6 @@
 import * as articleStore from "../../stores/articleStore";
 import * as feedStore from "../../stores/feedStore";
+import { FEED_FETCH_TIMEOUT_MS } from "../../constants";
 import { convertFeedItemsToArticles } from "../articles/articleConverter";
 import { analyzeFaviconAppearance } from "../favicons/faviconTransparency";
 import { faviconFetcher } from "../favicons/faviconFetcher";
@@ -93,15 +94,16 @@ class FeedsManager {
     options: { signal?: AbortSignal; force?: boolean } = {},
   ): Promise<RefreshFeedResult> {
     return feedRefreshCoordinator.run(id, async () => {
-      return feedRefreshActivity.track(id, async () => {
       const feed = await this.requireFeed(id);
 
       try {
-        const result = await feedsFetcher.fetchFeedWithCache(feed.url, {
-          etag: options.force ? undefined : feed.etag,
-          lastModified: options.force ? undefined : feed.lastModifiedHeader,
-          signal: options.signal,
-        });
+        const result = await feedRefreshActivity.track(id, () =>
+          feedsFetcher.fetchFeedWithCache(feed.url, {
+            etag: options.force ? undefined : feed.etag,
+            lastModified: options.force ? undefined : feed.lastModifiedHeader,
+            signal: options.signal,
+          }),
+        );
 
         if (result.notModified) {
           await feedStore.update(id, {
@@ -145,7 +147,6 @@ class FeedsManager {
         }
         throw error;
       }
-      });
     }, options);
   }
 
@@ -240,7 +241,11 @@ class FeedsManager {
 }
 
 async function feedsFetcherText(url: string): Promise<string> {
-  return tauriClient.feeds.fetch({ url });
+  const response = await tauriClient.feeds.fetchWithCache({
+    url,
+    timeout: FEED_FETCH_TIMEOUT_MS,
+  });
+  return response.data ?? "";
 }
 
 function text(root: ParentNode | null, selector: string): string {

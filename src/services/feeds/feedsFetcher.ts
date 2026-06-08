@@ -1,4 +1,5 @@
 import type { Author, Enclosure, MediaThumbnail } from "../../types/article";
+import { FEED_FETCH_TIMEOUT_MS } from "../../constants";
 import { tauriClient } from "../../lib/tauriClient";
 import { normalizePublishedDate } from "../articles/publishedDateNormalizer";
 import { logger } from "../logger/logger";
@@ -64,6 +65,7 @@ class FeedsFetcher {
         requestId,
         etag: options.etag,
         lastModified: options.lastModified,
+        timeout: FEED_FETCH_TIMEOUT_MS,
       });
       this.throwIfAborted(options.signal);
 

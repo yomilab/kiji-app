@@ -23,6 +23,12 @@ export const ARTICLE_VIEW_CLOSE_ANIMATION_MS = APP_LAYER_TRANSITION_MS;
 export const FEED_FETCH_COOLDOWN_MS = 60_000;
 
 /**
+ * Network timeout (ms) for RSS/Atom/JSON feed HTTP fetches.
+ * Matches Electron `httpService.FEED_FETCH_TIMEOUT`.
+ */
+export const FEED_FETCH_TIMEOUT_MS = 5_000;
+
+/**
  * Minimum time (ms) between favicon refresh attempts for the same feed.
  * Piggybacks on article fetching — if the favicon hasn't been refreshed
  * in over 24 hours, it re-fetches it.
