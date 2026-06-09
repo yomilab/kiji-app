@@ -15,6 +15,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
+    "test:ci": "vitest run --retry 2",
+    "release:test": "node scripts/monitor-release-test.mjs",
     "test:watch": "vitest",
     "test:parity": "vitest run test/parity",
     "test:parity:db": "cargo test --manifest-path src-tauri/Cargo.toml synthetic_v13 synthetic_v15",

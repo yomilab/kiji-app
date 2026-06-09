@@ -131,7 +131,7 @@ function collectArtifacts({ profile, platform, target, outDir }) {
     return { bundleDir, outputDir, artifacts };
   }
 
-  if (platform === "windows-x86_64") {
+  if (platform === "windows-x86_64" || platform === "windows-aarch64") {
     const msiPath = firstMatch(path.join(bundleDir, "msi"), (name) =>
       name.endsWith(".msi"),
     );
@@ -160,7 +160,7 @@ function collectArtifacts({ profile, platform, target, outDir }) {
     return { bundleDir, outputDir, artifacts };
   }
 
-  if (platform === "linux-x86_64") {
+  if (platform === "linux-x86_64" || platform === "linux-aarch64") {
     const debPath = firstMatch(path.join(bundleDir, "deb"), (name) =>
       name.endsWith(".deb"),
     );

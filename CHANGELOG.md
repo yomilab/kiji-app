@@ -4,6 +4,11 @@
 
 ### Added
 
+- Cross-platform release-test monitor: `npm run release:test` dispatches `build-desktop.yml`, polls GitHub Actions, and retries failed runs up to 10 times (`scripts/monitor-release-test.mjs`).
+- CI release matrix now includes Windows ARM64 and Linux ARM64 (deb/rpm cross-compile) alongside existing macOS/Windows/Linux x64 targets; `npm run test:ci` retries flaky Vitest cases in verify.
+
+### Added
+
 - GPL-3.0-or-later license (`LICENSE`, copyright Yomi Lab) and `THIRD_PARTY_NOTICES.md` (major npm/Rust deps and copyleft components).
 - `src-tauri/Entitlements.plist` (WebKit hardened-runtime JIT flags) wired via `bundle.macOS.entitlements` for signed/notarized builds.
 - Bundled Electron parity fixtures under `test/data` for CI smoke/parity coverage.
