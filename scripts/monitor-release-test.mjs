@@ -22,7 +22,7 @@ const DEFAULTS = {
   ref: "main",
   profile: "release",
   maxAttempts: 10,
-  pollSeconds: 30,
+  pollSeconds: 60,
   trigger: "dispatch",
 };
 
@@ -85,7 +85,7 @@ function resolveToken() {
   return null;
 }
 
-async function githubRequest(path, { method = "GET", token, body } = {}) {
+async function githubRequest(path, { method = "GET", token, body, attempt = 0 } = {}) {
   const headers = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
@@ -111,6 +111,17 @@ async function githubRequest(path, { method = "GET", token, body } = {}) {
     } catch {
       payload = text;
     }
+  }
+
+  if (response.status === 403 && attempt < 8) {
+    const resetHeader = response.headers.get("x-ratelimit-reset");
+    const resetAt = resetHeader ? Number(resetHeader) * 1000 : Date.now() + 60_000;
+    const waitMs = Math.max(resetAt - Date.now() + 1000, 15_000);
+    console.warn(
+      `[monitor-release-test] GitHub API rate limit hit; waiting ${Math.ceil(waitMs / 1000)}s`,
+    );
+    await sleep(waitMs);
+    return githubRequest(path, { method, token, body, attempt: attempt + 1 });
   }
 
   if (!response.ok) {
