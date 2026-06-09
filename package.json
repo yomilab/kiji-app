@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "vite",
     "build": "CI=true tauri build",
+    "build:debug": "CI=true tauri build --debug",
     "build:web": "tsc && vite build",
+    "build:collect-artifacts": "node scripts/collect-bundle-artifacts.mjs",
     "dev:tauri": "tauri dev",
     "build:tauri": "npm run build",
     "preview": "vite preview",

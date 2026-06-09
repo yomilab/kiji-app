@@ -16,11 +16,24 @@ const LAUNCH_TIMEOUT_MS = 12_000;
 const STABLE_RUNTIME_MS = 3_000;
 
 function resolveAppBinary() {
+  if (process.env.KIJI_APP_BINARY && fs.existsSync(process.env.KIJI_APP_BINARY)) {
+    return process.env.KIJI_APP_BINARY;
+  }
+
   const candidates = [
     path.join(
       rootDir,
       "src-tauri/target/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app",
     ),
+    path.join(
+      rootDir,
+      "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app",
+    ),
+    path.join(
+      rootDir,
+      "src-tauri/target/x86_64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app",
+    ),
+    path.join(rootDir, "src-tauri/target/release/kiji-app"),
     path.join(rootDir, "src-tauri/target/debug/kiji-app"),
   ];
 

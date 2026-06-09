@@ -1,0 +1,239 @@
+name: Build Tauri desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Build profile to package
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - debug
+          - both
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: tauri-desktop-${{ github.ref }}-${{ github.event.inputs.profile || 'release' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify (${{ matrix.platform_id }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform_id: ubuntu
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Run frontend tests
+        run: npm test
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Run desktop smoke tests
+        run: npm run test:smoke
+
+  build:
+    name: Build ${{ matrix.profile }} (${{ matrix.platform_id }})
+    needs: verify
+    if: github.event_name == 'push' || github.event.inputs.profile != 'debug'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform_id: macos-aarch64
+            rust_target: aarch64-apple-darwin
+            profile: release
+          - os: macos-14
+            platform_id: macos-x86_64
+            rust_target: x86_64-apple-darwin
+            profile: release
+          - os: windows-latest
+            platform_id: windows-x86_64
+            rust_target: x86_64-pc-windows-msvc
+            profile: release
+          - os: ubuntu-24.04
+            platform_id: linux-x86_64
+            rust_target: x86_64-unknown-linux-gnu
+            profile: release
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install Linux build dependencies
+        if: matrix.platform_id == 'linux-x86_64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Log toolchain versions
+        shell: bash
+        run: |
+          node --version
+          npm --version
+          rustc --version
+          cargo --version
+          rustc --print host-tuple
+          rustc --print target-list | grep "${{ matrix.rust_target }}" || true
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Tauri bundles
+        env:
+          CI: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROFILE="${{ matrix.profile }}"
+          TARGET="${{ matrix.rust_target }}"
+          ARGS=(--target "$TARGET")
+
+          if [[ "$PROFILE" == "debug" ]]; then
+            ARGS+=(--debug)
+          fi
+
+          npx tauri build "${ARGS[@]}"
+
+      - name: Verify macOS bundle signature
+        if: startsWith(matrix.platform_id, 'macos-') && matrix.profile == 'release'
+        run: |
+          APP="src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/KiJi.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | tee /tmp/codesign-info.txt
+          grep -q "Sealed Resources" /tmp/codesign-info.txt
+
+      - name: Desktop launch smoke
+        if: matrix.platform_id == 'macos-aarch64' && matrix.profile == 'release'
+        env:
+          KIJI_APP_BINARY: src-tauri/target/aarch64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app
+        run: npm run test:smoke:launch
+
+      - name: Collect bundle artifacts
+        shell: bash
+        run: |
+          node scripts/collect-bundle-artifacts.mjs \
+            --profile "${{ matrix.profile }}" \
+            --platform "${{ matrix.platform_id }}" \
+            --target "${{ matrix.rust_target }}"
+
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: kiji-${{ matrix.platform_id }}-${{ matrix.profile }}
+          path: src-tauri/target/${{ matrix.rust_target }}/${{ matrix.profile }}/bundle/artifacts/${{ matrix.platform_id }}/${{ matrix.profile }}/*
+          if-no-files-found: error
+
+  build-debug-linux:
+    name: Build debug (linux-x86_64)
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.profile == 'debug' || github.event.inputs.profile == 'both')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build debug bundles
+        env:
+          CI: true
+        run: npm run build:debug
+
+      - name: Collect debug artifacts
+        run: |
+          node scripts/collect-bundle-artifacts.mjs \
+            --profile debug \
+            --platform linux-x86_64
+
+      - name: Upload debug Linux artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: kiji-linux-x86_64-debug
+          path: src-tauri/target/debug/bundle/artifacts/linux-x86_64/debug/*
+          if-no-files-found: error
