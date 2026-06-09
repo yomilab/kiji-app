@@ -19,8 +19,16 @@ import './Sidebar.css';
 const MIN_SIDEBAR_WIDTH = 250;
 const MAX_SIDEBAR_WIDTH = 600;
 
-export const formatFeedRefreshStatus = (feedCount: number): string =>
-  sidebarIndicatorOngoing('refreshing', { count: feedCount });
+export const formatFeedRefreshStatus = (
+  displayFeedCount: number,
+  isBackgroundFeedRefreshing: boolean,
+): string => {
+  if (isBackgroundFeedRefreshing) {
+    return sidebarIndicatorOngoing('syncing', undefined, { subject: 'all' });
+  }
+
+  return sidebarIndicatorOngoing('refreshing', { count: Math.max(1, displayFeedCount) });
+};
 
 export const Sidebar: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
@@ -32,10 +40,14 @@ export const Sidebar: React.FC = () => {
   const sidebarRef = useRef<HTMLElement>(null);
   const syncStartTimeRef = useRef<number | null>(null);
   const syncTimeoutRef = useRef<number | null>(null);
-  const { isGlobalLoadingIndicatorActive, articles } = useFeedCollection();
+  const { articles } = useFeedCollection();
   const { selectedSmartView } = useFeedNavigation();
   const { totalFeeds, feedLibraryVersion } = useFeedUI();
-  const { displayFeedCount, isAnyFeedRefreshing } = useFeedRefreshActivity();
+  const {
+    displayFeedCount,
+    isAnyFeedRefreshing,
+    isBackgroundFeedRefreshing,
+  } = useFeedRefreshActivity();
   const sidebarIndicatorText = useUserMessageChannel(SIDEBAR_INDICATOR_CHANNEL);
   const exportProgressText = useUserMessageChannel('export-progress');
 
@@ -43,7 +55,7 @@ export const Sidebar: React.FC = () => {
 
   // Handle syncing state with minimum display duration
   useEffect(() => {
-    if (isGlobalLoadingIndicatorActive && totalFeeds > 0) {
+    if (isAnyFeedRefreshing && totalFeeds > 0) {
       // Start syncing - record start time and show syncing immediately
       syncStartTimeRef.current = Date.now();
       setShowSyncing(true);
@@ -67,7 +79,7 @@ export const Sidebar: React.FC = () => {
         setShowSyncing(false);
       }
     }
-  }, [isGlobalLoadingIndicatorActive, totalFeeds, feedLibraryVersion]);
+  }, [isAnyFeedRefreshing, totalFeeds, feedLibraryVersion]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -113,7 +125,7 @@ export const Sidebar: React.FC = () => {
     };
 
     loadLastSyncTime();
-  }, [feedLibraryVersion, isGlobalLoadingIndicatorActive, totalFeeds]);
+  }, [feedLibraryVersion, isAnyFeedRefreshing, totalFeeds]);
 
   // Keyboard shortcut: Cmd+N to open add feed modal
   useEffect(() => {
@@ -252,8 +264,8 @@ export const Sidebar: React.FC = () => {
       return exportProgressText;
     }
 
-    if (isAnyFeedRefreshing && displayFeedCount > 0) {
-      return formatFeedRefreshStatus(displayFeedCount);
+    if (isAnyFeedRefreshing) {
+      return formatFeedRefreshStatus(displayFeedCount, isBackgroundFeedRefreshing);
     }
 
     // Show "syncing" if currently syncing
@@ -274,9 +286,10 @@ export const Sidebar: React.FC = () => {
     // Default: show sync time
     return formatSyncTime(lastSyncTime);
   }, [
-    displayFeedCount,
     articles.length,
     exportProgressText,
+    displayFeedCount,
+    isBackgroundFeedRefreshing,
     isAnyFeedRefreshing,
     lastSyncTime,
     selectedSmartView,

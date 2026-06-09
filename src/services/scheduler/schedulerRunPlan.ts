@@ -5,6 +5,12 @@ import type { FeedPriorityEntry, SchedulerFeedEntry } from './types';
 export interface SchedulerRunPlan {
   prioritized: FeedPriorityEntry[];
   skippedBackoffCount: number;
+  skippedSuppressedCount: number;
+}
+
+export interface SchedulerRunPlanOptions {
+  frontloadFeedIds?: ReadonlySet<string>;
+  skipFeedIdsForThisCycle?: ReadonlySet<string>;
 }
 
 export const isSchedulerEntryInBackoff = (
@@ -17,11 +23,18 @@ export const createSchedulerRunPlan = (
   totalFeeds: number,
   boosts: ReadonlyMap<string, number>,
   now = Date.now(),
+  options: SchedulerRunPlanOptions = {},
 ): SchedulerRunPlan => {
   const runnableEntries: FeedPriorityEntry[] = [];
   let skippedBackoffCount = 0;
+  let skippedSuppressedCount = 0;
 
   for (const entry of entries) {
+    if (options.skipFeedIdsForThisCycle?.has(entry.feedId)) {
+      skippedSuppressedCount += 1;
+      continue;
+    }
+
     if (isSchedulerEntryInBackoff(entry, now)) {
       skippedBackoffCount += 1;
       continue;
@@ -30,10 +43,19 @@ export const createSchedulerRunPlan = (
     runnableEntries.push(computePriority(entry, totalFeeds, boosts.get(entry.feedId)));
   }
 
-  runnableEntries.sort((a, b) => b.score - a.score);
+  runnableEntries.sort((a, b) => {
+    const aFrontloaded = options.frontloadFeedIds?.has(a.feedId) ?? false;
+    const bFrontloaded = options.frontloadFeedIds?.has(b.feedId) ?? false;
+    if (aFrontloaded !== bFrontloaded) {
+      return aFrontloaded ? -1 : 1;
+    }
+
+    return b.score - a.score;
+  });
 
   return {
     prioritized: runnableEntries,
     skippedBackoffCount,
+    skippedSuppressedCount,
   };
 };

@@ -240,6 +240,63 @@ describe("feedSchedulerService", () => {
     });
   });
 
+  it("front-loads active station feeds when a native tick runs during station dwell", async () => {
+    getAll.mockResolvedValue([
+      {
+        id: "feed-rest",
+        title: "Rest",
+        url: "https://feed-rest.example.com/rss",
+        tags: [],
+        sortOrder: 0,
+        updateFrequencyScore: 1,
+        consecutiveFailures: 0,
+      },
+      {
+        id: "feed-station",
+        title: "Station",
+        url: "https://feed-station.example.com/rss",
+        tags: ["Station"],
+        sortOrder: 2,
+        updateFrequencyScore: 0.1,
+        consecutiveFailures: 0,
+      },
+    ]);
+    getById.mockImplementation((feedId: string) => Promise.resolve({
+      id: feedId,
+      title: feedId,
+      url: `https://${feedId}.example.com/rss`,
+      tags: feedId === "feed-station" ? ["Station"] : [],
+    }));
+
+    await feedScheduler.start();
+    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+
+    feedScheduler.setActiveStationFocus("tag:Station", ["feed-station"]);
+    await tickHandler?.();
+    await vi.waitFor(() => {
+      expect(fetchFeedNetworkWithCache).toHaveBeenCalledTimes(2);
+    });
+
+    expect(fetchFeedNetworkWithCache.mock.calls[0]?.[0]).toBe("https://feed-station.example.com/rss");
+  });
+
+  it("suppresses foreground-refreshed station feeds for only the next cycle", async () => {
+    await feedScheduler.start();
+    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+
+    feedScheduler.suppressFeedsForNextCycle(["feed-1"]);
+    await tickHandler?.();
+    await vi.waitFor(() => {
+      expect(getAll).toHaveBeenCalledTimes(1);
+    });
+    expect(fetchFeedNetworkWithCache).not.toHaveBeenCalled();
+
+    await tickHandler?.();
+    await vi.waitFor(() => {
+      expect(fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("aborts an in-flight cycle when station selection pauses the scheduler", async () => {
     let releaseRefresh!: () => void;
     fetchFeedNetworkWithCache.mockImplementation(() => new Promise((resolve) => {

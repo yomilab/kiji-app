@@ -69,4 +69,46 @@ describe('schedulerRunPlan', () => {
     expect(plan.skippedBackoffCount).toBe(0);
     expect(plan.prioritized.map((entry) => entry.feedId)).toEqual(['active']);
   });
+
+  it('front-loads active station feeds while preserving score order inside each partition', () => {
+    const highRest = createEntry('high-rest', { updateFrequencyScore: 1.0, sortOrder: 0 });
+    const lowStation = createEntry('low-station', { updateFrequencyScore: 0.1, sortOrder: 2 });
+    const highStation = createEntry('high-station', { updateFrequencyScore: 0.9, sortOrder: 1 });
+    const lowRest = createEntry('low-rest', { updateFrequencyScore: 0.1, sortOrder: 3 });
+
+    const plan = createSchedulerRunPlan(
+      [highRest, lowStation, highStation, lowRest],
+      4,
+      new Map(),
+      Date.now(),
+      { frontloadFeedIds: new Set(['low-station', 'high-station']) },
+    );
+
+    expect(plan.prioritized.map((entry) => entry.feedId)).toEqual([
+      'high-station',
+      'low-station',
+      'high-rest',
+      'low-rest',
+    ]);
+  });
+
+  it('suppresses refreshed station feeds for one scheduler cycle', () => {
+    const plan = createSchedulerRunPlan(
+      [
+        createEntry('station-1'),
+        createEntry('station-2'),
+        createEntry('other'),
+      ],
+      3,
+      new Map(),
+      Date.now(),
+      {
+        frontloadFeedIds: new Set(['station-1', 'station-2']),
+        skipFeedIdsForThisCycle: new Set(['station-1', 'station-2']),
+      },
+    );
+
+    expect(plan.skippedSuppressedCount).toBe(2);
+    expect(plan.prioritized.map((entry) => entry.feedId)).toEqual(['other']);
+  });
 });

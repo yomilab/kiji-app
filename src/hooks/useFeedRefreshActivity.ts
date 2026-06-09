@@ -4,8 +4,12 @@ import { feedRefreshActivity, type FeedRefreshActivitySnapshot } from '@/service
 const EMPTY_SNAPSHOT: FeedRefreshActivitySnapshot = {
   activeFeedCount: 0,
   queuedFeedCount: 0,
+  foregroundQueuedFeedCount: 0,
+  backgroundQueuedFeedCount: 0,
   displayFeedCount: 0,
   isAnyFeedRefreshing: false,
+  isForegroundFeedRefreshing: false,
+  isBackgroundFeedRefreshing: false,
 };
 
 export const useFeedRefreshActivity = () =>

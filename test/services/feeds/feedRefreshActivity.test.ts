@@ -38,8 +38,12 @@ describe('FeedRefreshActivity', () => {
     expect(activity.getSnapshot()).toEqual({
       activeFeedCount: 2,
       queuedFeedCount: 0,
+      foregroundQueuedFeedCount: 0,
+      backgroundQueuedFeedCount: 0,
       displayFeedCount: 2,
       isAnyFeedRefreshing: true,
+      isForegroundFeedRefreshing: true,
+      isBackgroundFeedRefreshing: false,
     });
 
     firstTurn.resolve();
@@ -47,8 +51,12 @@ describe('FeedRefreshActivity', () => {
     expect(activity.getSnapshot()).toEqual({
       activeFeedCount: 1,
       queuedFeedCount: 0,
+      foregroundQueuedFeedCount: 0,
+      backgroundQueuedFeedCount: 0,
       displayFeedCount: 1,
       isAnyFeedRefreshing: true,
+      isForegroundFeedRefreshing: true,
+      isBackgroundFeedRefreshing: false,
     });
 
     secondTurn.resolve();
@@ -56,15 +64,19 @@ describe('FeedRefreshActivity', () => {
     expect(activity.getSnapshot()).toEqual({
       activeFeedCount: 0,
       queuedFeedCount: 0,
+      foregroundQueuedFeedCount: 0,
+      backgroundQueuedFeedCount: 0,
       displayFeedCount: 0,
       isAnyFeedRefreshing: false,
+      isForegroundFeedRefreshing: false,
+      isBackgroundFeedRefreshing: false,
     });
 
     expect(snapshots).toEqual([
-      { activeFeedCount: 1, queuedFeedCount: 0, displayFeedCount: 1, isAnyFeedRefreshing: true },
-      { activeFeedCount: 2, queuedFeedCount: 0, displayFeedCount: 2, isAnyFeedRefreshing: true },
-      { activeFeedCount: 1, queuedFeedCount: 0, displayFeedCount: 1, isAnyFeedRefreshing: true },
-      { activeFeedCount: 0, queuedFeedCount: 0, displayFeedCount: 0, isAnyFeedRefreshing: false },
+      { activeFeedCount: 1, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 1, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false },
+      { activeFeedCount: 2, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 2, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false },
+      { activeFeedCount: 1, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 1, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false },
+      { activeFeedCount: 0, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 0, isAnyFeedRefreshing: false, isForegroundFeedRefreshing: false, isBackgroundFeedRefreshing: false },
     ]);
 
     unsubscribe();
@@ -83,32 +95,84 @@ describe('FeedRefreshActivity', () => {
     expect(activity.getSnapshot()).toEqual({
       activeFeedCount: 0,
       queuedFeedCount: 3,
+      foregroundQueuedFeedCount: 3,
+      backgroundQueuedFeedCount: 0,
       displayFeedCount: 3,
       isAnyFeedRefreshing: true,
+      isForegroundFeedRefreshing: true,
+      isBackgroundFeedRefreshing: false,
     });
 
     releaseQueuedFeed('feed-1');
     expect(activity.getSnapshot()).toEqual({
       activeFeedCount: 0,
       queuedFeedCount: 2,
+      foregroundQueuedFeedCount: 2,
+      backgroundQueuedFeedCount: 0,
       displayFeedCount: 2,
       isAnyFeedRefreshing: true,
+      isForegroundFeedRefreshing: true,
+      isBackgroundFeedRefreshing: false,
     });
 
     releaseQueuedFeed();
     expect(activity.getSnapshot()).toEqual({
       activeFeedCount: 0,
       queuedFeedCount: 0,
+      foregroundQueuedFeedCount: 0,
+      backgroundQueuedFeedCount: 0,
       displayFeedCount: 0,
       isAnyFeedRefreshing: false,
+      isForegroundFeedRefreshing: false,
+      isBackgroundFeedRefreshing: false,
     });
 
     expect(snapshots).toEqual([
-      { activeFeedCount: 0, queuedFeedCount: 3, displayFeedCount: 3, isAnyFeedRefreshing: true },
-      { activeFeedCount: 0, queuedFeedCount: 2, displayFeedCount: 2, isAnyFeedRefreshing: true },
-      { activeFeedCount: 0, queuedFeedCount: 0, displayFeedCount: 0, isAnyFeedRefreshing: false },
+      { activeFeedCount: 0, queuedFeedCount: 3, foregroundQueuedFeedCount: 3, backgroundQueuedFeedCount: 0, displayFeedCount: 3, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false },
+      { activeFeedCount: 0, queuedFeedCount: 2, foregroundQueuedFeedCount: 2, backgroundQueuedFeedCount: 0, displayFeedCount: 2, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false },
+      { activeFeedCount: 0, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 0, isAnyFeedRefreshing: false, isForegroundFeedRefreshing: false, isBackgroundFeedRefreshing: false },
     ]);
 
     unsubscribe();
+  });
+
+  it('distinguishes foreground station queues from background scheduler queues', () => {
+    const activity = new FeedRefreshActivity();
+
+    const releaseForeground = activity.beginQueuedFeeds(['station-1', 'station-2']);
+    expect(activity.getSnapshot()).toMatchObject({
+      foregroundQueuedFeedCount: 2,
+      backgroundQueuedFeedCount: 0,
+      displayFeedCount: 2,
+      isForegroundFeedRefreshing: true,
+      isBackgroundFeedRefreshing: false,
+    });
+
+    const releaseBackground = activity.beginQueuedFeeds(['scheduler-1'], 'background');
+    expect(activity.getSnapshot()).toMatchObject({
+      foregroundQueuedFeedCount: 2,
+      backgroundQueuedFeedCount: 1,
+      displayFeedCount: 3,
+      isForegroundFeedRefreshing: true,
+      isBackgroundFeedRefreshing: true,
+    });
+
+    releaseForeground();
+    expect(activity.getSnapshot()).toMatchObject({
+      foregroundQueuedFeedCount: 0,
+      backgroundQueuedFeedCount: 1,
+      displayFeedCount: 1,
+      isForegroundFeedRefreshing: false,
+      isBackgroundFeedRefreshing: true,
+    });
+
+    releaseBackground();
+    expect(activity.getSnapshot()).toMatchObject({
+      foregroundQueuedFeedCount: 0,
+      backgroundQueuedFeedCount: 0,
+      displayFeedCount: 0,
+      isForegroundFeedRefreshing: false,
+      isBackgroundFeedRefreshing: false,
+    });
   });
 });

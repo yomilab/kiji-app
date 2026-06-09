@@ -38,6 +38,11 @@ interface SchedulerCycleStats {
   failedFeeds: number;
 }
 
+interface ActiveStationFocus {
+  sourceKey: string;
+  feedIds: Set<string>;
+}
+
 const getConcurrency = (): number => {
   if (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) {
     return Math.min(8, Math.max(3, navigator.hardwareConcurrency));
@@ -58,6 +63,8 @@ class FeedSchedulerService {
   private lastCycleCompletedAt: number | null = null;
   private boosts = new Map<string, number>();
   private stationSelectionPauseDepth = 0;
+  private activeStationFocus: ActiveStationFocus | null = null;
+  private skipOnceFeedIds = new Set<string>();
 
   on(listener: (event: SchedulerEvent) => void): () => void {
     this.listeners.add(listener);
@@ -136,12 +143,39 @@ class FeedSchedulerService {
     this.maybeRunDeferredCycle(this.lifecycleId);
   }
 
+  setActiveStationFocus(sourceKey: string, feedIds: string[]): void {
+    this.activeStationFocus = {
+      sourceKey,
+      feedIds: new Set(feedIds),
+    };
+  }
+
+  clearActiveStationFocus(sourceKey?: string): void {
+    if (!this.activeStationFocus) {
+      return;
+    }
+
+    if (sourceKey && this.activeStationFocus.sourceKey !== sourceKey) {
+      return;
+    }
+
+    this.activeStationFocus = null;
+  }
+
+  suppressFeedsForNextCycle(feedIds: string[]): void {
+    for (const feedId of feedIds) {
+      this.skipOnceFeedIds.add(feedId);
+    }
+  }
+
   async stop(): Promise<void> {
     this.lifecycleId += 1;
     this.clearAbort();
     this.cycleInProgress = false;
     this.pendingCycleTick = false;
     this.stationSelectionPauseDepth = 0;
+    this.activeStationFocus = null;
+    this.skipOnceFeedIds.clear();
 
     if (this.nativeTickUnlisten) {
       this.nativeTickUnlisten();
@@ -403,14 +437,21 @@ class FeedSchedulerService {
         consecutiveFailures: feed.consecutiveFailures ?? 0,
       }));
 
-      const { prioritized, skippedBackoffCount } = createSchedulerRunPlan(
+      const frontloadFeedIds = this.activeStationFocus?.feedIds;
+      const skipFeedIdsForThisCycle = this.consumeSkipOnceFeedIds();
+      const { prioritized, skippedBackoffCount, skippedSuppressedCount } = createSchedulerRunPlan(
         entries,
         totalFeeds,
         this.boosts,
+        Date.now(),
+        {
+          frontloadFeedIds,
+          skipFeedIdsForThisCycle,
+        },
       );
 
       const releaseQueuedFeeds = prioritized.length > 0
-        ? feedRefreshActivity.beginQueuedFeeds(prioritized.map((entry) => entry.feedId))
+        ? feedRefreshActivity.beginQueuedFeeds(prioritized.map((entry) => entry.feedId), 'background')
         : null;
 
       try {
@@ -437,6 +478,8 @@ class FeedSchedulerService {
         totalFeeds,
         scheduledFeeds: prioritized.length,
         skippedBackoffFeeds: skippedBackoffCount,
+        skippedSuppressedFeeds: skippedSuppressedCount,
+        activeStationFeedCount: frontloadFeedIds?.size ?? 0,
         ...cycleStats,
       });
     } catch (error) {
@@ -581,6 +624,16 @@ class FeedSchedulerService {
 
       this.emit({ type: 'feed-failed', feedId: entry.feedId, error: message });
     }
+  }
+
+  private consumeSkipOnceFeedIds(): Set<string> | undefined {
+    if (this.skipOnceFeedIds.size === 0) {
+      return undefined;
+    }
+
+    const skipFeedIds = new Set(this.skipOnceFeedIds);
+    this.skipOnceFeedIds.clear();
+    return skipFeedIds;
   }
 
   private emit(event: SchedulerEvent): void {

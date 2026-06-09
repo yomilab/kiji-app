@@ -9,6 +9,7 @@ export type SidebarIndicatorAction =
 
 export type SidebarIndicatorSubject =
   | 'feeds'
+  | 'all'
   | 'articles'
   | 'saved'
   | 'favicons'
@@ -33,6 +34,7 @@ const LABELS: Record<
 
 const SUBJECT_LABELS: Record<SidebarIndicatorSubject, string> = {
   feeds: 'feeds',
+  all: 'all',
   articles: 'articles',
   saved: 'saved',
   favicons: 'favicons',

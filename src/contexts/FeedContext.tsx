@@ -116,6 +116,16 @@ type RefreshTriggerOptions = {
   forceNetwork?: boolean;
 };
 
+type RefreshFeedFromNetworkOptions = {
+  updateCounts?: boolean;
+  waitForUiBudget?: () => Promise<void>;
+  onFetchSettled?: () => void;
+};
+
+type FeedNetworkRefreshResult = {
+  inserted: number;
+};
+
 // ─── Specialized Context Types ───
 
 interface NavigationState {
@@ -597,13 +607,16 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const schedulerUiBatchTimerRef = useRef<number | null>(null);
   const schedulerUiFlushInFlightRef = useRef(false);
   const schedulerUiFlushQueuedRef = useRef(false);
+  const stationUiBatchTimerRef = useRef<number | null>(null);
+  const pendingStationRefreshSourceKeyRef = useRef<string | null>(null);
+  const articleViewOverlayPhaseRef = useRef<ArticleViewOverlayPhase>('closed');
   const isFeedProviderMountedRef = useRef(false);
 
   const refreshFeedFromNetwork = useCallback(async (
     feed: Feed,
-    options?: { updateCounts?: boolean; waitForUiBudget?: () => Promise<void>; onFetchSettled?: () => void },
+    options?: RefreshFeedFromNetworkOptions,
     signal?: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<FeedNetworkRefreshResult> => {
     const waitForUiBudget = async (): Promise<void> => {
       if (!options?.waitForUiBudget) {
         return;
@@ -612,19 +625,19 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await options.waitForUiBudget();
     };
 
-    await feedRefreshCoordinator.run(feed.id, async () => {
-      if (signal?.aborted) return;
+    return await feedRefreshCoordinator.run(feed.id, async () => {
+      if (signal?.aborted) return { inserted: 0 };
       await waitForUiBudget();
-      if (signal?.aborted) return;
+      if (signal?.aborted) return { inserted: 0 };
       // Successful UI-triggered refreshes clear any prior failure backoff so the
       // feed immediately returns to the normal freshness/cooldown path.
       const networkResult = await feedRefreshActivity.track(feed.id, () =>
         feedsFetcher.fetchFeedNetworkWithCache(feed.url, { signal }),
       );
       options?.onFetchSettled?.();
-      if (signal?.aborted) return;
+      if (signal?.aborted) return { inserted: 0 };
       await waitForUiBudget();
-      if (signal?.aborted) return;
+      if (signal?.aborted) return { inserted: 0 };
 
       if (networkResult.notModified || !networkResult.data) {
         await feedsManager.updateFeed(feed.id, {
@@ -634,19 +647,19 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           etag: networkResult.etag,
           lastModifiedHeader: networkResult.lastModified,
         });
-        return;
+        return { inserted: 0 };
       }
 
       const fetched = parseFeed(networkResult.data, feed.url);
-      if (signal?.aborted) return;
+      if (signal?.aborted) return { inserted: 0 };
       await waitForUiBudget();
-      if (signal?.aborted) return;
+      if (signal?.aborted) return { inserted: 0 };
       const articles = await convertFeedItemsToArticles(fetched, { feedId: feed.id, feedUrl: feed.url, feed });
-      if (signal?.aborted) return;
+      if (signal?.aborted) return { inserted: 0 };
       await waitForUiBudget();
-      if (signal?.aborted) return;
+      if (signal?.aborted) return { inserted: 0 };
       const inserted = await articleStore.store(feed.id, articles);
-      if (signal?.aborted) return;
+      if (signal?.aborted) return { inserted: 0 };
 
       // [DEDUPLICATION_DEBUG]
       debugOnly(() => {
@@ -672,6 +685,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       await feedsManager.updateFeed(feed.id, updates);
+      return { inserted };
     }, { signal });
   }, []);
 
@@ -779,14 +793,24 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return isSelectionActive(token);
   }, [isSelectionActive]);
 
+  const clearStationUiRefreshTimer = useCallback(() => {
+    if (stationUiBatchTimerRef.current !== null) {
+      window.clearTimeout(stationUiBatchTimerRef.current);
+      stationUiBatchTimerRef.current = null;
+    }
+    pendingStationRefreshSourceKeyRef.current = null;
+  }, []);
+
   const beginSelectionRequest = useCallback((): number => {
     selectionAbortControllerRef.current?.abort();
     pendingLoadMoreCommitMetricRef.current = null;
+    pendingBackgroundRefreshSourceKeyRef.current = null;
+    clearStationUiRefreshTimer();
     const controller = new AbortController();
     selectionAbortControllerRef.current = controller;
     selectionTokenRef.current += 1;
     return selectionTokenRef.current;
-  }, []);
+  }, [clearStationUiRefreshTimer]);
 
   const clearArticleListScrollIdleState = useCallback(() => {
     if (articleListScrollIdleTimerRef.current !== null) {
@@ -915,95 +939,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return { articles, total, query };
   }, [createArticleQueryForSource]);
 
-  const refreshStationFeeds = useCallback(async (
-    feedIds: string[],
-    options: RefreshTriggerOptions,
-    token: number,
-  ): Promise<void> => {
-    if (feedIds.length === 0) {
-      return;
-    }
-
-    const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds(feedIds);
-    const activeSignal = selectionAbortControllerRef.current?.signal;
-    let nextFeedIndex = 0;
-
-    const refreshOneFeed = async (id: string): Promise<void> => {
-      let queuedFeedReleased = false;
-      const releaseQueuedStationFeed = (): void => {
-        if (queuedFeedReleased) {
-          return;
-        }
-        queuedFeedReleased = true;
-        releaseQueuedFeed(id);
-      };
-
-      try {
-        const feed = await feedsManager.getFeedById(id);
-        if (!feed) {
-          releaseQueuedStationFeed();
-          return;
-        }
-        if (!isSelectionActive(token)) {
-          releaseQueuedStationFeed();
-          return;
-        }
-
-        const refreshBlock = options.forceNetwork
-          ? null
-          : getFeedRefreshBlock(feed, FEED_FETCH_COOLDOWN_MS, { includeBackoff: true });
-        if (refreshBlock) {
-          logFeedRefreshSkip(feed, refreshBlock);
-          releaseQueuedStationFeed();
-          return;
-        }
-
-        try {
-          await refreshFeedFromNetwork(
-            feed,
-            {
-              onFetchSettled: releaseQueuedStationFeed,
-              waitForUiBudget: () => waitForStationRefreshUiBudget(activeSignal),
-            },
-            activeSignal,
-          );
-        } catch (error) {
-          if (error instanceof Error && error.name === 'AbortError') {
-            return;
-          }
-          await recordFeedRefreshFailure(feed, error);
-        } finally {
-          releaseQueuedStationFeed();
-        }
-      } finally {
-        await yieldToArticleListPrefetchFrame();
-      }
-    };
-
-    const runWorker = async (): Promise<void> => {
-      while (isSelectionActive(token)) {
-        const feedId = feedIds[nextFeedIndex];
-        nextFeedIndex += 1;
-        if (!feedId) {
-          return;
-        }
-        await refreshOneFeed(feedId);
-      }
-    };
-
-    try {
-      const workerCount = Math.min(STATION_REFRESH_WORKER_COUNT, feedIds.length);
-      await Promise.allSettled(Array.from({ length: workerCount }, () => runWorker()));
-    } finally {
-      releaseQueuedFeed();
-    }
-  }, [
-    isSelectionActive,
-    recordFeedRefreshFailure,
-    refreshFeedFromNetwork,
-    waitForStationRefreshUiBudget,
-  ]);
-
   const createBackgroundScrollRequest = useCallback((
     mode: ArticleListScrollRequest['mode'],
     anchorHash: string | null = null
@@ -1055,14 +990,24 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return pinnedFeedIds.some(hasNewArticles);
   }, []);
 
+  const isArticleViewTransitioning = useCallback((): boolean => {
+    return articleViewOverlayPhaseRef.current === 'opening'
+      || articleViewOverlayPhaseRef.current === 'closing';
+  }, []);
+
   const applyBackgroundRefreshForSource = useCallback(async (source: RefreshSourceDescriptor): Promise<void> => {
     if (source.type === 'smart' && source.viewType === 'saved') {
       return;
     }
 
-    // Search and active scrolling freeze the visible list so background inserts
-    // do not scramble filtered rows or fight the virtualizer's scroll position.
-    if (articleListSearchActiveRef.current || articleListScrollActiveRef.current) {
+    // Search, scroll, and article-view deck transitions freeze visible list
+    // publishes so inserted rows do not fight filtered rows, virtualized scroll,
+    // or the article-view open/close animation.
+    if (
+      articleListSearchActiveRef.current
+      || articleListScrollActiveRef.current
+      || isArticleViewTransitioning()
+    ) {
       pendingBackgroundRefreshSourceKeyRef.current = source.key;
       return;
     }
@@ -1078,6 +1023,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       let nextSource: RefreshSourceDescriptor | null = source;
 
       while (nextSource) {
+        if (isArticleViewTransitioning()) {
+          pendingBackgroundRefreshSourceKeyRef.current = nextSource.key;
+          return;
+        }
+
         pendingBackgroundRefreshSourceKeyRef.current = null;
 
         const previousArticles = currentArticlesRef.current;
@@ -1091,7 +1041,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           continue;
         }
 
-        if (articleListSearchActiveRef.current) {
+        if (articleListSearchActiveRef.current || isArticleViewTransitioning()) {
           pendingBackgroundRefreshSourceKeyRef.current = activeSource.key;
           nextSource = null;
           continue;
@@ -1146,7 +1096,134 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       backgroundRefreshInFlightRef.current = false;
     }
-  }, [createArticleQueryForSource, createBackgroundScrollRequest, startTransition]);
+  }, [createArticleQueryForSource, createBackgroundScrollRequest, isArticleViewTransitioning, startTransition]);
+
+  const flushStationUiUpdates = useCallback(async (): Promise<void> => {
+    if (stationUiBatchTimerRef.current !== null) {
+      window.clearTimeout(stationUiBatchTimerRef.current);
+      stationUiBatchTimerRef.current = null;
+    }
+
+    const pendingSourceKey = pendingStationRefreshSourceKeyRef.current;
+    pendingStationRefreshSourceKeyRef.current = null;
+    const activeSource = activeSourceRef.current;
+    if (!pendingSourceKey || !activeSource || activeSource.key !== pendingSourceKey) {
+      return;
+    }
+
+    await applyBackgroundRefreshForSource(activeSource);
+  }, [applyBackgroundRefreshForSource]);
+
+  const scheduleStationUiRefresh = useCallback((sourceKey: string): void => {
+    const activeSource = activeSourceRef.current;
+    if (!activeSource || activeSource.key !== sourceKey) {
+      return;
+    }
+
+    pendingStationRefreshSourceKeyRef.current = sourceKey;
+    if (stationUiBatchTimerRef.current !== null) {
+      return;
+    }
+
+    stationUiBatchTimerRef.current = window.setTimeout(() => {
+      stationUiBatchTimerRef.current = null;
+      void flushStationUiUpdates();
+    }, SCHEDULER_UI_BATCH_DELAY_MS);
+  }, [flushStationUiUpdates]);
+
+  const refreshStationFeeds = useCallback(async (
+    feedIds: string[],
+    options: RefreshTriggerOptions,
+    token: number,
+    sourceKey: string,
+  ): Promise<void> => {
+    if (feedIds.length === 0) {
+      return;
+    }
+
+    const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds(feedIds);
+    const activeSignal = selectionAbortControllerRef.current?.signal;
+    let nextFeedIndex = 0;
+
+    const refreshOneFeed = async (id: string): Promise<void> => {
+      let queuedFeedReleased = false;
+      const releaseQueuedStationFeed = (): void => {
+        if (queuedFeedReleased) {
+          return;
+        }
+        queuedFeedReleased = true;
+        releaseQueuedFeed(id);
+      };
+
+      try {
+        const feed = await feedsManager.getFeedById(id);
+        if (!feed) {
+          releaseQueuedStationFeed();
+          return;
+        }
+        if (!isSelectionActive(token)) {
+          releaseQueuedStationFeed();
+          return;
+        }
+
+        const refreshBlock = options.forceNetwork
+          ? null
+          : getFeedRefreshBlock(feed, FEED_FETCH_COOLDOWN_MS, { includeBackoff: true });
+        if (refreshBlock) {
+          logFeedRefreshSkip(feed, refreshBlock);
+          releaseQueuedStationFeed();
+          return;
+        }
+
+        try {
+          const result = await refreshFeedFromNetwork(
+            feed,
+            {
+              onFetchSettled: releaseQueuedStationFeed,
+              waitForUiBudget: () => waitForStationRefreshUiBudget(activeSignal),
+            },
+            activeSignal,
+          );
+          if (result.inserted > 0 && isSelectionActive(token)) {
+            scheduleStationUiRefresh(sourceKey);
+          }
+        } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') {
+            return;
+          }
+          await recordFeedRefreshFailure(feed, error);
+        } finally {
+          releaseQueuedStationFeed();
+        }
+      } finally {
+        await yieldToArticleListPrefetchFrame();
+      }
+    };
+
+    const runWorker = async (): Promise<void> => {
+      while (isSelectionActive(token)) {
+        const feedId = feedIds[nextFeedIndex];
+        nextFeedIndex += 1;
+        if (!feedId) {
+          return;
+        }
+        await refreshOneFeed(feedId);
+      }
+    };
+
+    try {
+      const workerCount = Math.min(STATION_REFRESH_WORKER_COUNT, feedIds.length);
+      await Promise.allSettled(Array.from({ length: workerCount }, () => runWorker()));
+    } finally {
+      releaseQueuedFeed();
+    }
+  }, [
+    isSelectionActive,
+    recordFeedRefreshFailure,
+    refreshFeedFromNetwork,
+    scheduleStationUiRefresh,
+    waitForStationRefreshUiBudget,
+  ]);
 
   const selectArticle = useCallback((id: string) => {
     overlayDispatch({ type: 'SET_ACTIVE', payload: id, trigger: true });
@@ -1393,6 +1470,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       const feedIds = await tagsManager.getFeedsByTag(tagName);
       if (!isSelectionActive(token)) return;
+      feedScheduler.setActiveStationFocus(sourceKey, feedIds);
 
       const tagQuery = createFeedIdArticleListQuery(feedIds);
 
@@ -1434,16 +1512,25 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: true } });
-      await refreshStationFeeds(feedIds, options, token);
+      await refreshStationFeeds(feedIds, options, token, sourceKey);
+      feedScheduler.suppressFeedsForNextCycle(feedIds);
 
       if (!isSelectionActive(token)) return;
       const visibleCount = Math.max(currentArticlesRef.current.length, SMART_VIEW_ARTICLE_LIMIT);
-      const { articles: fresh, total: freshTotal } = await articleStore.query({ ...tagQuery, limit: visibleCount });
-      if (!isSelectionActive(token)) return;
-      dispatchArticlesTransition(fresh, freshTotal);
+      let freshArticleCount = currentArticlesRef.current.length;
+      let freshArticleTotal = collectionState.articlesTotalCount;
+      if (isArticleViewTransitioning()) {
+        pendingBackgroundRefreshSourceKeyRef.current = sourceKey;
+      } else {
+        const { articles: fresh, total: freshTotal } = await articleStore.query({ ...tagQuery, limit: visibleCount });
+        if (!isSelectionActive(token)) return;
+        freshArticleCount = fresh.length;
+        freshArticleTotal = freshTotal;
+        dispatchArticlesTransition(fresh, freshTotal);
+      }
       interactionPerformance.markTimedInteractionStage('sidebar-switch', `tag:${tagName}`, 'freshReady', {
-        freshArticleCount: fresh.length,
-        freshArticleTotal: freshTotal,
+        freshArticleCount,
+        freshArticleTotal,
         taggedFeedCount: feedIds.length,
       });
 
@@ -1466,6 +1553,8 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [
     dispatchArticlesTransition,
+    collectionState.articlesTotalCount,
+    isArticleViewTransitioning,
     isSelectionActive,
     refreshStationFeeds,
     restoreSourceArticleSnapshot,
@@ -1560,6 +1649,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     title: string,
     options: RefreshTriggerOptions = {},
   ) => {
+    feedScheduler.clearActiveStationFocus();
     const isSameFeed = feedId === prevNavRef.current.id && feedId !== null;
     if (!isSameFeed) {
       clearArticleListScrollIdleState();
@@ -1586,6 +1676,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const selectTag = useCallback(async (tagName: string, options: RefreshTriggerOptions = {}) => {
     const isSameTag = tagName === prevNavRef.current.tag && tagName !== null;
     if (!isSameTag) {
+      feedScheduler.clearActiveStationFocus();
       clearArticleListScrollIdleState();
     }
     prevNavRef.current = { id: null, tag: tagName, smart: null };
@@ -1606,6 +1697,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [beginSelectionRequest, clearArticleListScrollIdleState, handleTagSelection]);
 
   const selectSmartView = useCallback(async (viewType: SmartViewType) => {
+    feedScheduler.clearActiveStationFocus();
     const isSameSmart = viewType === prevNavRef.current.smart && viewType !== null;
     if (!isSameSmart) {
       clearArticleListScrollIdleState();
@@ -1628,6 +1720,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [beginSelectionRequest, clearArticleListScrollIdleState, handleSmartViewSelection]);
 
   const clearFeedSelection = useCallback(() => {
+    feedScheduler.clearActiveStationFocus();
     clearArticleListScrollIdleState();
     selectionAbortControllerRef.current?.abort();
     selectionAbortControllerRef.current = null;
@@ -1680,6 +1773,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
 
   const openFeedEditView = useCallback((target?: FeedEditTarget) => {
+    feedScheduler.clearActiveStationFocus();
     clearArticleListScrollIdleState();
     selectionAbortControllerRef.current?.abort();
     selectionAbortControllerRef.current = null;
@@ -2018,6 +2112,26 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }
   activeSourceRef.current = activeSourceSnapshot;
+  articleViewOverlayPhaseRef.current = overlayState.articleViewOverlayPhase;
+
+  useDependencyEffect(() => {
+    articleViewOverlayPhaseRef.current = overlayState.articleViewOverlayPhase;
+    if (overlayState.articleViewOverlayPhase === 'opening' || overlayState.articleViewOverlayPhase === 'closing') {
+      return;
+    }
+
+    const activeSource = activeSourceRef.current;
+    if (
+      !activeSource
+      || pendingBackgroundRefreshSourceKeyRef.current !== activeSource.key
+      || articleListSearchActiveRef.current
+      || articleListScrollActiveRef.current
+    ) {
+      return;
+    }
+
+    void applyBackgroundRefreshForSource(activeSource);
+  }, [applyBackgroundRefreshForSource, overlayState.articleViewOverlayPhase]);
 
   useMountEffect(() => {
     isFeedProviderMountedRef.current = true;
@@ -2047,9 +2161,16 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         window.clearTimeout(articleListScrollIdleTimerRef.current);
         articleListScrollIdleTimerRef.current = null;
       }
+      if (stationUiBatchTimerRef.current !== null) {
+        window.clearTimeout(stationUiBatchTimerRef.current);
+        stationUiBatchTimerRef.current = null;
+      }
       pendingSchedulerFeedUpdatesRef.current.clear();
+      pendingBackgroundRefreshSourceKeyRef.current = null;
+      pendingStationRefreshSourceKeyRef.current = null;
       schedulerUiFlushQueuedRef.current = false;
       schedulerUiFlushInFlightRef.current = false;
+      feedScheduler.clearActiveStationFocus();
       isFeedProviderMountedRef.current = false;
     };
   });

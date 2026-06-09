@@ -1,8 +1,14 @@
+export type FeedRefreshActivityScope = 'foreground' | 'background';
+
 export interface FeedRefreshActivitySnapshot {
   activeFeedCount: number;
   queuedFeedCount: number;
+  foregroundQueuedFeedCount: number;
+  backgroundQueuedFeedCount: number;
   displayFeedCount: number;
   isAnyFeedRefreshing: boolean;
+  isForegroundFeedRefreshing: boolean;
+  isBackgroundFeedRefreshing: boolean;
 }
 
 type FeedRefreshActivityListener = () => void;
@@ -12,6 +18,10 @@ export class FeedRefreshActivity {
 
   private queuedFeeds = new Map<string, number>();
 
+  private foregroundQueuedFeedTotal = 0;
+
+  private backgroundQueuedFeedTotal = 0;
+
   private queuedFeedTotal = 0;
 
   private listeners = new Set<FeedRefreshActivityListener>();
@@ -19,8 +29,12 @@ export class FeedRefreshActivity {
   private snapshot: FeedRefreshActivitySnapshot = {
     activeFeedCount: 0,
     queuedFeedCount: 0,
+    foregroundQueuedFeedCount: 0,
+    backgroundQueuedFeedCount: 0,
     displayFeedCount: 0,
     isAnyFeedRefreshing: false,
+    isForegroundFeedRefreshing: false,
+    isBackgroundFeedRefreshing: false,
   };
 
   subscribe = (listener: FeedRefreshActivityListener): (() => void) => {
@@ -32,7 +46,10 @@ export class FeedRefreshActivity {
 
   getSnapshot = (): FeedRefreshActivitySnapshot => this.snapshot;
 
-  beginQueuedFeeds(feedIds: string[]): (feedId?: string) => void {
+  beginQueuedFeeds(
+    feedIds: string[],
+    scope: FeedRefreshActivityScope = 'foreground',
+  ): (feedId?: string) => void {
     const pendingFeedCounts = new Map<string, number>();
 
     for (const feedId of feedIds) {
@@ -40,6 +57,11 @@ export class FeedRefreshActivity {
       this.queuedFeeds.set(feedId, currentCount + 1);
       pendingFeedCounts.set(feedId, (pendingFeedCounts.get(feedId) ?? 0) + 1);
       this.queuedFeedTotal += 1;
+      if (scope === 'background') {
+        this.backgroundQueuedFeedTotal += 1;
+      } else {
+        this.foregroundQueuedFeedTotal += 1;
+      }
     }
 
     this.publishSnapshot();
@@ -62,6 +84,11 @@ export class FeedRefreshActivity {
         this.queuedFeeds.delete(feedId);
       }
       this.queuedFeedTotal = Math.max(0, this.queuedFeedTotal - 1);
+      if (scope === 'background') {
+        this.backgroundQueuedFeedTotal = Math.max(0, this.backgroundQueuedFeedTotal - 1);
+      } else {
+        this.foregroundQueuedFeedTotal = Math.max(0, this.foregroundQueuedFeedTotal - 1);
+      }
     };
 
     return (feedId?: string) => {
@@ -118,18 +145,29 @@ export class FeedRefreshActivity {
   private publishSnapshot(): void {
     const queuedFeedCount = this.queuedFeedTotal;
     const displayFeedCount = queuedFeedCount > 0 ? queuedFeedCount : this.activeFeeds.size;
+    const isBackgroundFeedRefreshing = this.backgroundQueuedFeedTotal > 0;
+    const isForegroundFeedRefreshing = this.foregroundQueuedFeedTotal > 0
+      || (this.activeFeeds.size > 0 && !isBackgroundFeedRefreshing);
     const nextSnapshot: FeedRefreshActivitySnapshot = {
       activeFeedCount: this.activeFeeds.size,
       queuedFeedCount,
+      foregroundQueuedFeedCount: this.foregroundQueuedFeedTotal,
+      backgroundQueuedFeedCount: this.backgroundQueuedFeedTotal,
       displayFeedCount,
       isAnyFeedRefreshing: displayFeedCount > 0,
+      isForegroundFeedRefreshing,
+      isBackgroundFeedRefreshing,
     };
 
     if (
       nextSnapshot.activeFeedCount === this.snapshot.activeFeedCount
       && nextSnapshot.queuedFeedCount === this.snapshot.queuedFeedCount
+      && nextSnapshot.foregroundQueuedFeedCount === this.snapshot.foregroundQueuedFeedCount
+      && nextSnapshot.backgroundQueuedFeedCount === this.snapshot.backgroundQueuedFeedCount
       && nextSnapshot.displayFeedCount === this.snapshot.displayFeedCount
       && nextSnapshot.isAnyFeedRefreshing === this.snapshot.isAnyFeedRefreshing
+      && nextSnapshot.isForegroundFeedRefreshing === this.snapshot.isForegroundFeedRefreshing
+      && nextSnapshot.isBackgroundFeedRefreshing === this.snapshot.isBackgroundFeedRefreshing
     ) {
       return;
     }

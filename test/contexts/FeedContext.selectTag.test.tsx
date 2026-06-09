@@ -318,7 +318,7 @@ describe('FeedContext selectTag', () => {
     });
   });
 
-  it('refreshes station articles once after tagged feeds finish fetching', async () => {
+  it('publishes station articles after feed batches complete before the full station refresh settles', async () => {
     const feedA = { id: 'feed-a', url: 'https://a.example.com', title: 'Feed A', lastFetched: new Date(0) };
     const feedB = { id: 'feed-b', url: 'https://b.example.com', title: 'Feed B', lastFetched: new Date(0) };
     const fetchADeferred = createDeferred<ReturnType<typeof feedNetworkDataResult>>();
@@ -383,16 +383,75 @@ describe('FeedContext selectTag', () => {
     });
 
     fetchADeferred.resolve(feedNetworkDataResult());
-    await act(async () => {
-      await Promise.resolve();
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a1']);
+      expect(latestContext!.isFetchingNew).toBe(true);
     });
-    expect(latestContext!.articles).toEqual([]);
-    expect(latestContext!.isFetchingNew).toBe(true);
 
     fetchBDeferred.resolve(feedNetworkDataResult());
     await waitForExpectation(() => {
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-b1', 'hash-a1']);
       expect(latestContext!.isFetchingNew).toBe(false);
+    });
+  });
+
+  it('defers incremental station publishes while the article view is opening', async () => {
+    const feedA = { id: 'feed-a', url: 'https://a.example.com', title: 'Feed A', lastFetched: new Date(0) };
+    const fetchADeferred = createDeferred<ReturnType<typeof feedNetworkDataResult>>();
+    let hasStoredFeed = false;
+    const refreshedArticles = [createArticle('hash-a1', 'feed-a')];
+
+    (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
+    (feedsManager.getFeedById as vi.Mock).mockResolvedValue(feedA);
+    (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockReturnValue(fetchADeferred.promise);
+    (convertFeedItemsToArticles as vi.Mock).mockResolvedValue(refreshedArticles);
+    (articleStore.store as vi.Mock).mockImplementation(async () => {
+      hasStoredFeed = true;
+      return 1;
+    });
+    (articleStore.query as vi.Mock).mockImplementation((query: any) => {
+      if (query.feedIds?.includes('feed-a') || query.tagName === 'A') {
+        return Promise.resolve({
+          articles: hasStoredFeed ? refreshedArticles : [],
+          total: hasStoredFeed ? refreshedArticles.length : 0,
+        });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      latestContext!.setArticleViewOverlayPhase('opening');
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isFetchingNew).toBe(true);
+    });
+
+    fetchADeferred.resolve(feedNetworkDataResult());
+    await waitForExpectation(() => {
+      expect(articleStore.store).toHaveBeenCalledWith('feed-a', refreshedArticles);
+      expect(latestContext!.isFetchingNew).toBe(false);
+    });
+    expect(latestContext!.articles).toEqual([]);
+
+    await act(async () => {
+      latestContext!.setArticleViewOverlayPhase('open');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a1']);
     });
   });
 
