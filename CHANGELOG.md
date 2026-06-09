@@ -5,7 +5,7 @@
 ### Added
 
 - Cross-platform release-test monitor: `npm run release:test` dispatches `build-desktop.yml`, polls GitHub Actions, and retries failed runs up to 10 times (`scripts/monitor-release-test.mjs`).
-- CI release matrix now includes Windows ARM64 and Linux ARM64 (deb/rpm cross-compile) alongside existing macOS/Windows/Linux x64 targets; `npm run test:ci` retries flaky Vitest cases in verify.
+- CI release matrix now includes Windows ARM64 and Linux ARM64 (native ARM emulation via `pguyot/arm-runner-action`) alongside existing macOS/Windows/Linux x64 targets; `npm run test:ci` retries flaky Vitest cases in verify.
 
 ### Added
 

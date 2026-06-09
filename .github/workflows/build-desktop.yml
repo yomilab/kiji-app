@@ -88,37 +88,26 @@ jobs:
             rust_target: aarch64-apple-darwin
             profile: release
             bundle_args: ""
-            cross_linux: false
           - os: macos-14
             platform_id: macos-x86_64
             rust_target: x86_64-apple-darwin
             profile: release
             bundle_args: ""
-            cross_linux: false
           - os: windows-latest
             platform_id: windows-x86_64
             rust_target: x86_64-pc-windows-msvc
             profile: release
             bundle_args: ""
-            cross_linux: false
           - os: windows-latest
             platform_id: windows-aarch64
             rust_target: aarch64-pc-windows-msvc
             profile: release
             bundle_args: ""
-            cross_linux: false
           - os: ubuntu-24.04
             platform_id: linux-x86_64
             rust_target: x86_64-unknown-linux-gnu
             profile: release
             bundle_args: ""
-            cross_linux: false
-          - os: ubuntu-24.04
-            platform_id: linux-aarch64
-            rust_target: aarch64-unknown-linux-gnu
-            profile: release
-            bundle_args: "--bundles deb,rpm"
-            cross_linux: true
 
     steps:
       - uses: actions/checkout@v5
@@ -148,22 +137,6 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      - name: Install Linux ARM64 cross-compilation dependencies
-        if: matrix.cross_linux
-        run: |
-          sudo dpkg --add-architecture arm64
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
-            pkg-config \
-            libwebkit2gtk-4.1-dev:arm64 \
-            libappindicator3-dev:arm64 \
-            librsvg2-dev:arm64 \
-            libssl-dev:arm64 \
-            libgtk-3-dev:arm64 \
-            patchelf
-
       - name: Log toolchain versions
         shell: bash
         run: |
@@ -180,10 +153,6 @@ jobs:
       - name: Build Tauri bundles
         env:
           CI: true
-          PKG_CONFIG_ALLOW_CROSS: ${{ matrix.cross_linux && '1' || '' }}
-          PKG_CONFIG_SYSROOT_DIR: ${{ matrix.cross_linux && '/usr/aarch64-linux-gnu' || '' }}
-          CC_aarch64_unknown_linux_gnu: ${{ matrix.cross_linux && 'aarch64-linux-gnu-gcc' || '' }}
-          CXX_aarch64_unknown_linux_gnu: ${{ matrix.cross_linux && 'aarch64-linux-gnu-g++' || '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -230,6 +199,59 @@ jobs:
         with:
           name: kiji-${{ matrix.platform_id }}-${{ matrix.profile }}
           path: src-tauri/target/${{ matrix.rust_target }}/${{ matrix.profile }}/bundle/artifacts/${{ matrix.platform_id }}/${{ matrix.profile }}/*
+          if-no-files-found: error
+
+  build-linux-aarch64:
+    name: Build release (linux-aarch64)
+    needs: verify
+    if: github.event_name == 'push' || github.event.inputs.profile != 'debug'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build Linux ARM64 bundles (native ARM emulation)
+        uses: pguyot/arm-runner-action@v2.6.5
+        with:
+          base_image: https://dietpi.com/downloads/images/DietPi_RPi5-ARMv8-Bookworm.img.xz
+          cpu: cortex-a72
+          bind_mount_repository: true
+          image_additional_mb: 10240
+          optimize_image: no
+          commands: |
+            export HOME=/root
+            export CI=true
+            export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+            apt-get update -y --allow-releaseinfo-change
+            apt-get install -y --no-install-recommends \
+              curl \
+              libwebkit2gtk-4.1-dev \
+              build-essential \
+              libssl-dev \
+              libgtk-3-dev \
+              libayatana-appindicator3-dev \
+              librsvg2-dev \
+              patchelf \
+              libfuse2 \
+              file
+            curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+            apt-get install -y nodejs
+            curl https://sh.rustup.rs -sSf | sh -s -- -y
+            . "$HOME/.cargo/env"
+            npm ci
+            npx tauri build
+
+      - name: Collect bundle artifacts
+        run: |
+          node scripts/collect-bundle-artifacts.mjs \
+            --profile release \
+            --platform linux-aarch64
+
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: kiji-linux-aarch64-release
+          path: src-tauri/target/release/bundle/artifacts/linux-aarch64/release/*
           if-no-files-found: error
 
   build-debug-linux:
