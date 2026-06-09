@@ -147,6 +147,13 @@ async function dispatchWorkflow({ repo, ref, profile, token }) {
 }
 
 function triggerPush(ref) {
+  const pull = spawnSync("git", ["pull", "--rebase", "origin", ref], {
+    stdio: "inherit",
+  });
+  if (pull.status !== 0) {
+    throw new Error(`Failed to sync local branch with origin/${ref} before retry push`);
+  }
+
   const message = `chore(ci): trigger release test on ${ref}`;
   const commit = spawnSync("git", ["commit", "--allow-empty", "-m", message], {
     stdio: "inherit",
