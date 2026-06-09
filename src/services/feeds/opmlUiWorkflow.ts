@@ -1,10 +1,52 @@
 import { feedsManager, type Feed } from '@/services/feeds/feedsManager';
 import type { OpmlImportResult, OpmlImportSummary } from '@/services/feeds/opmlImportService';
 import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
+import { httpClient } from '@/services/http/httpClientFactory';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 
 const pluralizeFeeds = (count: number): string => `${count} feed${count === 1 ? '' : 's'}`;
+
+export const isLikelyOpmlUrl = (url: string): boolean => {
+  try {
+    return new URL(url).pathname.toLowerCase().endsWith('.opml');
+  } catch {
+    return false;
+  }
+};
+
+export const isOpmlDocument = (text: string): boolean => {
+  const trimmed = text.trim();
+  if (!/<opml[\s>]/i.test(trimmed)) {
+    return false;
+  }
+
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(trimmed, 'text/xml');
+  if (xmlDoc.querySelector('parsererror')) {
+    return false;
+  }
+
+  return Boolean(xmlDoc.querySelector('opml > body, body'));
+};
+
+export const fetchOpmlTextFromUrl = async (url: string): Promise<string> => {
+  const text = await httpClient.get(url, {
+    headers: {
+      Accept: 'application/xml, text/xml, application/opml+xml, */*',
+    },
+  });
+
+  if (!text.trim()) {
+    throw new Error('OPML URL returned empty content.');
+  }
+
+  if (!isOpmlDocument(text)) {
+    throw new Error('URL does not appear to be an OPML file.');
+  }
+
+  return text;
+};
 
 export const formatOpmlImportSummary = (summary: OpmlImportSummary): string => {
   if (summary.total === 0) {
@@ -64,6 +106,14 @@ export const importOpmlTextIntoLibrary = async (
   const importResult = await opmlWorkflowService.importFromOpmlText(opmlText);
   await applyOpmlImportResultToLibrary(importResult, options);
   return importResult;
+};
+
+export const importOpmlFromUrlIntoLibrary = async (
+  url: string,
+  options: ApplyOpmlImportResultOptions
+): Promise<OpmlImportResult> => {
+  const opmlText = await fetchOpmlTextFromUrl(url);
+  return importOpmlTextIntoLibrary(opmlText, options);
 };
 
 export const openOpmlFileForImport = async (): Promise<string | null> => {

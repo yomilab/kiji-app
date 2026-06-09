@@ -5,7 +5,9 @@ import { feedsManager } from '@/services/feeds/feedsManager';
 import { feedsFetcher } from '@/services/feeds/feedsFetcher';
 import {
   formatOpmlImportSummary,
+  importOpmlFromUrlIntoLibrary,
   importOpmlTextIntoLibrary,
+  isLikelyOpmlUrl,
   openOpmlFileForImport,
 } from '@/services/feeds/opmlUiWorkflow';
 import { faviconFetcher } from '@/services/favicons/faviconFetcher';
@@ -51,18 +53,56 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
     return `Already subscribed to "${feedTitle}" in stations "${stationNames.join('", "')}".`;
   };
 
+  const trimmedInput = feedUrl.trim();
+  const isOpmlInput = isLikelyOpmlUrl(trimmedInput);
+
+  const applyOpmlImport = async (opmlText: string) => {
+    const importResult = await importOpmlTextIntoLibrary(opmlText, {
+      refreshTotalFeeds,
+      notifyFeedLibraryChanged,
+    });
+    appToastService.show(formatOpmlImportSummary(importResult.summary));
+    setFeedUrl('');
+    setError(null);
+    onClose();
+  };
+
   const handleAddFeed = async () => {
     setError(null);
     const trimmedFeedUrl = feedUrl.trim();
 
     // Validate URL format
     if (!trimmedFeedUrl) {
-      setError('Please enter a feed URL');
+      setError('Please enter a feed or OPML URL');
       return;
     }
 
     if (!validateUrl(trimmedFeedUrl)) {
       setError('Please enter a valid URL (http:// or https://)');
+      return;
+    }
+
+    if (isLikelyOpmlUrl(trimmedFeedUrl)) {
+      setActiveAction('importing');
+
+      try {
+        const importResult = await importOpmlFromUrlIntoLibrary(trimmedFeedUrl, {
+          refreshTotalFeeds,
+          notifyFeedLibraryChanged,
+        });
+        appToastService.show(formatOpmlImportSummary(importResult.summary));
+        setFeedUrl('');
+        setError(null);
+        onClose();
+      } catch (importError) {
+        const message = importError instanceof Error
+          ? importError.message
+          : 'Failed to import OPML file.';
+        setError(message);
+      } finally {
+        setActiveAction(null);
+      }
+
       return;
     }
 
@@ -201,13 +241,7 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
         return;
       }
 
-      const importResult = await importOpmlTextIntoLibrary(opmlText, {
-        refreshTotalFeeds,
-        notifyFeedLibraryChanged,
-      });
-      appToastService.show(formatOpmlImportSummary(importResult.summary));
-      setFeedUrl('');
-      onClose();
+      await applyOpmlImport(opmlText);
     } catch (importError) {
       appToastService.show(
         importError instanceof Error ? importError.message : 'Failed to import OPML file.'
@@ -240,13 +274,22 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
       closeOnEscape={!isLoading}
     >
       <div className="add-feed-modal-body">
+        <h2 className="add-feed-modal-title">Add Feed</h2>
+        <p id="add-feed-modal-description" className="add-feed-modal-description">
+          Paste a feed URL to subscribe to one source, or an OPML link ending in
+          {' '}
+          <code className="add-feed-modal-code">.opml</code>
+          {' '}
+          to import many feeds at once. You can also choose an OPML file below.
+        </p>
         <div className="modal-input-row add-feed-modal-input-row">
           <input
             id="feed-url"
-            type="text"
+            type="url"
             className="add-feed-modal-input modal-input"
-            placeholder="https://example.com/feed.xml"
-            aria-label="Feed URL"
+            placeholder={isOpmlInput ? 'https://example.com/feeds/list.opml' : 'https://example.com/feed.xml'}
+            aria-label="Feed URL or OPML link"
+            aria-describedby="add-feed-modal-description"
             value={feedUrl}
             onChange={(e) => {
               setFeedUrl(e.target.value);
@@ -260,23 +303,29 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
         {error && <div className="add-feed-modal-error">{error}</div>}
         <div className="add-feed-modal-actions">
           <button
-            className="modal-confirm-button add-feed-modal-button add-feed-modal-button-primary"
+            className="modal-confirm-button add-feed-modal-button"
             onClick={handleAddFeed}
             disabled={isLoading || !feedUrl.trim()}
             type="button"
           >
-            {activeAction === 'adding' ? 'Loading...' : 'Add Feed'}
+            {activeAction === 'adding'
+              ? 'Loading...'
+              : activeAction === 'importing'
+                ? 'Importing...'
+                : isOpmlInput
+                  ? 'Import Feeds'
+                  : 'Add Feed'}
           </button>
           <button
-            className="modal-confirm-button modal-confirm-button-outline add-feed-modal-button"
+            className="modal-confirm-button add-feed-modal-button"
             onClick={handleImportFeeds}
             disabled={isLoading}
             type="button"
           >
-            {activeAction === 'importing' ? 'Importing...' : 'Import Feeds'}
+            {activeAction === 'importing' ? 'Importing...' : 'Choose OPML File'}
           </button>
           <button
-            className="modal-confirm-button modal-confirm-button-outline add-feed-modal-button"
+            className="modal-confirm-button add-feed-modal-button"
             onClick={handleClose}
             disabled={isLoading}
             type="button"

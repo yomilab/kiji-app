@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import UnfoldMoreOutlined from '@mui/icons-material/UnfoldMoreOutlined';
@@ -183,6 +183,7 @@ export const TagManager: React.FC = () => {
   const [tags, setTags] = useState<Tag[]>([]);
   const [expandedStations, setExpandedStations] = useState<Set<string>>(new Set());
   const [feedCache, setFeedCache] = useState<Map<string, Feed>>(new Map());
+  const feedCacheRef = useRef(feedCache);
   const { selectedTag, selectTag, selectedFeedId, selectFeed, openFeedEditView, clearFeedSelection } = useFeedNavigation();
   const feedFaviconRefreshed = useFeedFaviconRefreshed();
   const patchedFeed = useFeedPatchedMutation();
@@ -192,8 +193,12 @@ export const TagManager: React.FC = () => {
   const hydratedStations = useStationsHydratedMutation();
   const stationsReordered = useStationsReorderedMutation();
 
+  useEffect(() => {
+    feedCacheRef.current = feedCache;
+  }, [feedCache]);
+
   const ensureFeedsCached = useCallback(async (feedIds: string[]) => {
-    const missing = feedIds.filter(id => !feedCache.has(id));
+    const missing = feedIds.filter(id => !feedCacheRef.current.has(id));
     if (missing.length > 0) {
       const fetched = await Promise.all(missing.map(id => feedsManager.getFeedById(id)));
       setFeedCache(prev => {
@@ -201,12 +206,13 @@ export const TagManager: React.FC = () => {
         for (const feed of fetched) {
           if (feed) next.set(feed.id, feed);
         }
+        feedCacheRef.current = next;
         return next;
       });
     }
 
     opmlWorkflowService.scheduleMissingFaviconsAfterStationSelection(feedIds);
-  }, [feedCache]);
+  }, []);
 
   const toggleStation = useCallback((tagName: string) => {
     setExpandedStations(prev => {

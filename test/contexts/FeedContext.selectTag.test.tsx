@@ -665,4 +665,93 @@ describe('FeedContext selectTag', () => {
       }));
     });
   });
+
+  it('skips the post-refresh station query when no feeds insert articles', async () => {
+    const feedA = { id: 'feed-a', url: 'https://a.example.com', title: 'Feed A', lastFetched: new Date(0) };
+    const cachedArticles = [createArticle('hash-a1', 'feed-a')];
+
+    (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
+    (feedsManager.getFeedById as vi.Mock).mockResolvedValue(feedA);
+    (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockResolvedValue(feedNetworkDataResult());
+    (convertFeedItemsToArticles as vi.Mock).mockResolvedValue([]);
+    (articleStore.store as vi.Mock).mockResolvedValue(0);
+    (articleStore.query as vi.Mock).mockResolvedValue({
+      articles: cachedArticles,
+      total: cachedArticles.length,
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a1']);
+      expect(latestContext!.isFetchingNew).toBe(false);
+    });
+
+    expect(articleStore.query).toHaveBeenCalledTimes(1);
+  });
+
+  it('requests article close through the shared close lifecycle when switching stations', async () => {
+    const stationAArticles = [createArticle('hash-a1', 'feed-a')];
+    const stationBFeedsDeferred = createDeferred<string[]>();
+
+    (tagsManager.getFeedsByTag as vi.Mock).mockImplementation((tagName: string) => {
+      if (tagName === 'A') return Promise.resolve(['feed-a']);
+      if (tagName === 'B') return stationBFeedsDeferred.promise;
+      return Promise.resolve([]);
+    });
+    (articleStore.query as vi.Mock).mockImplementation((query: any) => {
+      const feedIds = query.feedIds || [];
+      if (feedIds.includes('feed-a')) {
+        return Promise.resolve({ articles: stationAArticles, total: stationAArticles.length });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a1']);
+    });
+
+    await act(async () => {
+      latestContext!.selectArticle('hash-a1');
+      latestContext!.setArticleViewOverlayPhase('open');
+    });
+    await waitForExpectation(() => {
+      expect(latestContext!.activeArticleHash).toBe('hash-a1');
+      expect(latestContext!.articleViewOverlayPhase).toBe('open');
+    });
+
+    await act(async () => {
+      void latestContext!.selectTag('B');
+    });
+
+    expect(latestContext!.articleCloseRequest).toBe(1);
+    expect(latestContext!.isArticleClosing).toBe(true);
+    expect(latestContext!.activeArticleHash).toBeNull();
+
+    stationBFeedsDeferred.resolve(['feed-b']);
+  });
 });

@@ -15,6 +15,7 @@
 
 ### Changed
 
+- Add Feed modal: `.opml` URLs fetch and import feeds via the same OPML workflow as Import Feeds.
 - GitHub Actions `build-desktop.yml` runs on `dev` pushes (integration/release-test); use `workflow_dispatch` on `main` for production verification. `npm run release:test` defaults to the `dev` branch.
 
 ### Fixed

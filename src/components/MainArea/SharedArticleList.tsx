@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useFeedNavigation, useFeedCollection, useFeedOverlay, useFeedUI } from '@/contexts/FeedContext';
 import { LayoutType } from '@/services/settings/types';
@@ -244,7 +244,6 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
 
   useArticleListScrollReset({
     sourceKey,
-    isListLoading,
     filteredCount: filteredArticles.length,
     articleListItemsRef,
     rowVirtualizer,
@@ -410,72 +409,60 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
             handleArticleListScroll(event);
           }}
         >
-          <AnimatePresence mode="popLayout" initial={false}>
-            {isInitialLoading ? (
-              <ArticleListSkeletonGroup key="skeleton" count={10} />
-            ) : filteredArticles.length === 0 ? (
-              !isInitialLoading && debouncedSearchQuery.trim() ? (
-                <motion.div
-                  key="empty-search"
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 1, y: 10 }}
-                  className="article-list-empty theme-text-secondary"
-                >
-                  <p>No articles match your search.</p>
-                </motion.div>
-              ) : null
-            ) : (
-              <>
-                <motion.div
-                  key={sourceKey}
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 20 }}
-                  transition={{
-                    duration: 0.35,
-                    ease: [0.16, 1, 0.3, 1] // Custom quint ease-out for a more "viscous" feel
-                  }}
-                  className="article-list-virtual-spacer"
-                  style={{ height: `${rowVirtualizer.getTotalSize() + ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px` }}
-                >
-                  {virtualItems.map((virtualRow) => {
-                    const article = filteredArticles[virtualRow.index];
-                    if (!article) return null;
+          {isInitialLoading ? (
+            <ArticleListSkeletonGroup key="skeleton" count={10} />
+          ) : filteredArticles.length === 0 ? (
+            !isInitialLoading && debouncedSearchQuery.trim() ? (
+              <motion.div
+                key="empty-search"
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 1, y: 10 }}
+                className="article-list-empty theme-text-secondary"
+              >
+                <p>No articles match your search.</p>
+              </motion.div>
+            ) : null
+          ) : (
+            <div
+              className="article-list-virtual-spacer"
+              style={{ height: `${rowVirtualizer.getTotalSize() + ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px` }}
+            >
+              {virtualItems.map((virtualRow) => {
+                const article = filteredArticles[virtualRow.index];
+                if (!article) return null;
 
-                    return (
-                      <div
-                        key={virtualRow.key}
-                        ref={rowVirtualizer.measureElement}
-                        className="article-list-virtual-row"
-                        data-index={virtualRow.index}
-                        style={{ transform: `translateY(${virtualRow.start}px)` }}
-                      >
-                        <ArticleListItem
-                          article={article}
-                          isActive={activeArticleHash === article.hash}
-                          isNew={newArticleHashes.has(article.hash)}
-                          newAnimationOrder={newArticleAnimationOrderMap.get(article.hash) ?? -1}
-                          readStateMode={isSavedView ? 'none' : 'normal'}
-                          searchQuery={debouncedSearchQuery}
-                          onSelect={handleSelectArticle}
-                          formatDateDisplay={formatDateDisplay}
-                          enableLayoutAnimation={false}
-                        />
-                      </div>
-                    );
-                  })}
-                  {/* Keep a literal trailing block inside the virtual canvas so the
-                      spacer only appears once users reach the actual bottom. */}
+                return (
                   <div
-                    className="article-list-bottom-spacer"
-                    style={{ transform: `translateY(${rowVirtualizer.getTotalSize()}px)`, height: `${ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px` }}
-                    aria-hidden="true"
-                  />
-                </motion.div>
-              </>
-            )}
-          </AnimatePresence>
+                    key={virtualRow.key}
+                    ref={rowVirtualizer.measureElement}
+                    className="article-list-virtual-row"
+                    data-index={virtualRow.index}
+                    style={{ transform: `translateY(${virtualRow.start}px)` }}
+                  >
+                    <ArticleListItem
+                      article={article}
+                      isActive={activeArticleHash === article.hash}
+                      isNew={newArticleHashes.has(article.hash)}
+                      newAnimationOrder={newArticleAnimationOrderMap.get(article.hash) ?? -1}
+                      readStateMode={isSavedView ? 'none' : 'normal'}
+                      searchQuery={debouncedSearchQuery}
+                      onSelect={handleSelectArticle}
+                      formatDateDisplay={formatDateDisplay}
+                      enableLayoutAnimation={false}
+                    />
+                  </div>
+                );
+              })}
+              {/* Keep a literal trailing block inside the virtual canvas so the
+                  spacer only appears once users reach the actual bottom. */}
+              <div
+                className="article-list-bottom-spacer"
+                style={{ transform: `translateY(${rowVirtualizer.getTotalSize()}px)`, height: `${ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px` }}
+                aria-hidden="true"
+              />
+            </div>
+          )}
           {isLoadingMoreArticles && (
             <div className="article-list-load-more">
               <FeedLineLoader

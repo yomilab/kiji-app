@@ -610,6 +610,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const stationUiBatchTimerRef = useRef<number | null>(null);
   const pendingStationRefreshSourceKeyRef = useRef<string | null>(null);
   const articleViewOverlayPhaseRef = useRef<ArticleViewOverlayPhase>('closed');
+  const activeArticleHashRef = useRef<string | null>(null);
   const isFeedProviderMountedRef = useRef(false);
 
   const refreshFeedFromNetwork = useCallback(async (
@@ -1136,16 +1137,17 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     options: RefreshTriggerOptions,
     token: number,
     sourceKey: string,
-  ): Promise<void> => {
+  ): Promise<number> => {
     if (feedIds.length === 0) {
-      return;
+      return 0;
     }
 
     const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds(feedIds);
     const activeSignal = selectionAbortControllerRef.current?.signal;
     let nextFeedIndex = 0;
+    let insertedTotal = 0;
 
-    const refreshOneFeed = async (id: string): Promise<void> => {
+    const refreshOneFeed = async (id: string): Promise<number> => {
       let queuedFeedReleased = false;
       const releaseQueuedStationFeed = (): void => {
         if (queuedFeedReleased) {
@@ -1159,11 +1161,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const feed = await feedsManager.getFeedById(id);
         if (!feed) {
           releaseQueuedStationFeed();
-          return;
+          return 0;
         }
         if (!isSelectionActive(token)) {
           releaseQueuedStationFeed();
-          return;
+          return 0;
         }
 
         const refreshBlock = options.forceNetwork
@@ -1172,7 +1174,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (refreshBlock) {
           logFeedRefreshSkip(feed, refreshBlock);
           releaseQueuedStationFeed();
-          return;
+          return 0;
         }
 
         try {
@@ -1187,11 +1189,13 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           if (result.inserted > 0 && isSelectionActive(token)) {
             scheduleStationUiRefresh(sourceKey);
           }
+          return result.inserted;
         } catch (error) {
           if (error instanceof Error && error.name === 'AbortError') {
-            return;
+            return 0;
           }
           await recordFeedRefreshFailure(feed, error);
+          return 0;
         } finally {
           releaseQueuedStationFeed();
         }
@@ -1207,13 +1211,14 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (!feedId) {
           return;
         }
-        await refreshOneFeed(feedId);
+        insertedTotal += await refreshOneFeed(feedId);
       }
     };
 
     try {
       const workerCount = Math.min(STATION_REFRESH_WORKER_COUNT, feedIds.length);
       await Promise.allSettled(Array.from({ length: workerCount }, () => runWorker()));
+      return insertedTotal;
     } finally {
       releaseQueuedFeed();
     }
@@ -1244,6 +1249,18 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const setArticleViewOverlayPhase = useCallback((phase: ArticleViewOverlayPhase) => {
     overlayDispatch({ type: 'SET_PHASE', payload: phase });
   }, []);
+
+  const closeActiveArticleForSourceSwitch = useCallback(() => {
+    const hasActiveArticle = activeArticleHashRef.current !== null;
+    const isOverlayActive = articleViewOverlayPhaseRef.current !== 'closed';
+
+    if (isOverlayActive) {
+      requestCloseArticle();
+    }
+    if (hasActiveArticle) {
+      setActiveArticle(null);
+    }
+  }, [requestCloseArticle, setActiveArticle]);
 
   const syncArticleListViewport = useCallback((snapshot: ArticleListViewportSnapshot) => {
     const wasSearchActive = articleListSearchActiveRef.current;
@@ -1460,7 +1477,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           payload: { isLoadingArticles: true, isSavedListLoading: false, isFetchingNew: false },
         });
       }
-      setActiveArticle(null);
+      closeActiveArticleForSourceSwitch();
     }
 
     if (shouldReset && !await yieldToSelectionCoalescing(token)) return;
@@ -1505,21 +1522,22 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           performance.measure(`${perfMark}:to-cached`, `${perfMark}:start`, `${perfMark}:cached-ready`);
         }
 
-        if (!restoredSnapshot) {
-          await new Promise((resolve) => setTimeout(resolve, FEED_SWITCH_STORED_ANIMATION_WAIT_MS));
-          if (!isSelectionActive(token)) return;
-        }
+        await yieldToArticleListPrefetchFrame();
+        if (!isSelectionActive(token)) return;
       }
 
       collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: true } });
-      await refreshStationFeeds(feedIds, options, token, sourceKey);
+      const insertedCount = await refreshStationFeeds(feedIds, options, token, sourceKey);
       feedScheduler.suppressFeedsForNextCycle(feedIds);
 
       if (!isSelectionActive(token)) return;
       const visibleCount = Math.max(currentArticlesRef.current.length, SMART_VIEW_ARTICLE_LIMIT);
       let freshArticleCount = currentArticlesRef.current.length;
       let freshArticleTotal = collectionState.articlesTotalCount;
-      if (isArticleViewTransitioning()) {
+      if (insertedCount === 0) {
+        // Cached content is already current, so avoid a second full DB query and
+        // virtualized list publish on the station-switch path.
+      } else if (isArticleViewTransitioning()) {
         pendingBackgroundRefreshSourceKeyRef.current = sourceKey;
       } else {
         const { articles: fresh, total: freshTotal } = await articleStore.query({ ...tagQuery, limit: visibleCount });
@@ -1558,7 +1576,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     isSelectionActive,
     refreshStationFeeds,
     restoreSourceArticleSnapshot,
-    setActiveArticle,
+    closeActiveArticleForSourceSwitch,
     startTransition,
     yieldToSelectionCoalescing,
   ]);
@@ -2113,6 +2131,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }
   activeSourceRef.current = activeSourceSnapshot;
   articleViewOverlayPhaseRef.current = overlayState.articleViewOverlayPhase;
+  activeArticleHashRef.current = overlayState.activeArticleHash;
 
   useDependencyEffect(() => {
     articleViewOverlayPhaseRef.current = overlayState.articleViewOverlayPhase;
