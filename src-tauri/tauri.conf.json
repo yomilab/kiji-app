@@ -73,7 +73,8 @@
     "active": true,
     "targets": "all",
     "macOS": {
-      "entitlements": "./Entitlements.plist"
+      "entitlements": "./Entitlements.plist",
+      "signingIdentity": "-"
     },
     "resources": {
       "icons/": "icons",

@@ -63,12 +63,26 @@ jobs:
       - name: Build Tauri app
         run: npm run build
 
+      - name: Verify macOS bundle signature
+        run: |
+          APP="src-tauri/target/release/bundle/macos/KiJi.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | tee /tmp/codesign-info.txt
+          grep -q "Sealed Resources" /tmp/codesign-info.txt
+
       - name: Desktop launch smoke
         run: npm run test:smoke:launch
 
-      - name: Upload macOS bundles
+      - name: Upload macOS DMG
         uses: actions/upload-artifact@v6
         with:
-          name: kiji-app-macos
-          path: src-tauri/target/release/bundle/**/*
+          name: kiji-app-macos-dmg
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+      - name: Upload macOS app bundle
+        uses: actions/upload-artifact@v6
+        with:
+          name: kiji-app-macos-app
+          path: src-tauri/target/release/bundle/macos/KiJi.app
           if-no-files-found: error
