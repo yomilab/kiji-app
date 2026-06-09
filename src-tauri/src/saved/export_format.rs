@@ -9,6 +9,7 @@ const DEFAULT_TITLE: &str = "Untitled";
 const MAX_TITLE_LENGTH: usize = 180;
 const MAX_FILENAME_LENGTH: usize = 180;
 
+#[derive(Clone)]
 pub struct SavedArticleIndexEntry {
     pub title: String,
     pub file_name: String,
