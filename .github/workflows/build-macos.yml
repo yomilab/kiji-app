@@ -73,6 +73,12 @@ jobs:
       - name: Desktop launch smoke
         run: npm run test:smoke:launch
 
+      - name: Package macOS artifacts
+        run: |
+          ditto -c -k --keepParent \
+            src-tauri/target/release/bundle/macos/KiJi.app \
+            src-tauri/target/release/bundle/KiJi-macos-aarch64.app.zip
+
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v6
         with:
@@ -80,9 +86,9 @@ jobs:
           path: src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
 
-      - name: Upload macOS app bundle
+      - name: Upload macOS app zip
         uses: actions/upload-artifact@v6
         with:
           name: kiji-app-macos-app
-          path: src-tauri/target/release/bundle/macos/KiJi.app
+          path: src-tauri/target/release/bundle/KiJi-macos-aarch64.app.zip
           if-no-files-found: error
