@@ -5,7 +5,7 @@
  * Usage:
  *   node scripts/monitor-release-test.mjs
  *   node scripts/monitor-release-test.mjs --max-attempts 10 --profile release
- *   GITHUB_TOKEN=... node scripts/monitor-release-test.mjs --ref main
+ *   GITHUB_TOKEN=... node scripts/monitor-release-test.mjs --ref dev
  *
  * Auth (first match wins):
  *   - GITHUB_TOKEN / GH_TOKEN env var
@@ -19,7 +19,7 @@ import process from "node:process";
 const DEFAULTS = {
   repo: "yomilab/kiji-app",
   workflowFile: "build-desktop.yml",
-  ref: "main",
+  ref: "dev",
   profile: "release",
   maxAttempts: 10,
   pollSeconds: 60,

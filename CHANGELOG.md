@@ -13,8 +13,13 @@
 - `src-tauri/Entitlements.plist` (WebKit hardened-runtime JIT flags) wired via `bundle.macOS.entitlements` for signed/notarized builds.
 - Bundled Electron parity fixtures under `test/data` for CI smoke/parity coverage.
 
+### Changed
+
+- GitHub Actions `build-desktop.yml` runs on `dev` pushes (integration/release-test); use `workflow_dispatch` on `main` for production verification. `npm run release:test` defaults to the `dev` branch.
+
 ### Fixed
 
+- GitHub Actions `build-desktop.yml` Linux ARM64: use native `ubuntu-24.04-arm` runner and shared Linux apt deps instead of x86_64 cross-compile, which hit Noble arm64 404s on `security.ubuntu.com` during `apt-get update`.
 - GitHub Actions build: FeedContext tests mock `fetchFeedNetworkWithCache` (not legacy `fetchFeed`) and preserve `parseFeed` export; smoke tests use bundled fixtures; skip Vitest subprocess `cargo test` hooks in CI (workflow runs `cargo test` separately); `opmlWorkflowService` ignores undefined feed lookups after station selection.
 - macOS CI artifacts: enable ad-hoc bundle signing (`signingIdentity: "-"`) so `.app`/`.dmg` seal resources and avoid Gatekeeper “damaged” errors; workflow verifies `codesign` and uploads DMG plus `KiJi-macos-aarch64.app.zip` (keeps `KiJi.app` bundle name).
 
