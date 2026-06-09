@@ -77,6 +77,9 @@ const schedulerHarness = vi.hoisted(() => {
       }),
       pauseForStationSelection: vi.fn(),
       resumeAfterStationSelection: vi.fn(),
+      setActiveStationFocus: vi.fn(),
+      clearActiveStationFocus: vi.fn(),
+      suppressFeedsForNextCycle: vi.fn(),
     },
     __emitSchedulerEvent: (event: TestSchedulerEvent) => {
       listener?.(event);
