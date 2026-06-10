@@ -114,6 +114,8 @@ type SidebarSelectionSnapshot =
 
 type RefreshTriggerOptions = {
   forceNetwork?: boolean;
+  /** Station switch bypasses failure backoff but still respects the 60s fetch cooldown. */
+  bypassBackoff?: boolean;
 };
 
 type RefreshFeedFromNetworkOptions = {
@@ -1170,7 +1172,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         const refreshBlock = options.forceNetwork
           ? null
-          : getFeedRefreshBlock(feed, FEED_FETCH_COOLDOWN_MS, { includeBackoff: true });
+          : getFeedRefreshBlock(feed, FEED_FETCH_COOLDOWN_MS, {
+              includeBackoff: !options.bypassBackoff,
+            });
         if (refreshBlock) {
           logFeedRefreshSkip(feed, refreshBlock);
           releaseQueuedStationFeed();
@@ -1527,7 +1531,12 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: true } });
-      const insertedCount = await refreshStationFeeds(feedIds, options, token, sourceKey);
+      const insertedCount = await refreshStationFeeds(
+        feedIds,
+        { ...options, bypassBackoff: shouldReset || options.bypassBackoff },
+        token,
+        sourceKey,
+      );
       feedScheduler.suppressFeedsForNextCycle(feedIds);
 
       if (!isSelectionActive(token)) return;

@@ -573,7 +573,7 @@ describe('FeedContext selectTag', () => {
     });
   });
 
-  it('records a failed station fetch and backs off on the next click', async () => {
+  it('records a failed station fetch and backs off on a same-station re-click', async () => {
     const failedFeed = {
       id: 'feed-a',
       url: 'https://a.example.com',
@@ -623,6 +623,57 @@ describe('FeedContext selectTag', () => {
     expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
   });
 
+  it('retries feeds in failure backoff when switching to a different station', async () => {
+    const backedOffFeed = {
+      id: 'feed-a',
+      url: 'https://a.example.com',
+      title: 'Feed A',
+      lastFetched: new Date(0),
+      consecutiveFailures: 2,
+      lastFailedFetchAt: new Date(),
+    };
+
+    (tagsManager.getFeedsByTag as vi.Mock).mockImplementation((tagName: string) => {
+      if (tagName === 'A') {
+        return Promise.resolve(['feed-a']);
+      }
+      if (tagName === 'B') {
+        return Promise.resolve(['feed-a']);
+      }
+      return Promise.resolve([]);
+    });
+    (feedsManager.getFeedById as vi.Mock).mockResolvedValue(backedOffFeed);
+    (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockResolvedValue(feedNetworkDataResult());
+    (convertFeedItemsToArticles as vi.Mock).mockResolvedValue([]);
+    (articleStore.query as vi.Mock).mockResolvedValue({ articles: [], total: 0 });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      await latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      await latestContext!.selectTag('B');
+    });
+
+    await waitForExpectation(() => {
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('clears failure backoff after a successful station fetch', async () => {
     const recoveredFeed = {
       id: 'feed-a',
@@ -630,7 +681,7 @@ describe('FeedContext selectTag', () => {
       title: 'Feed A',
       lastFetched: new Date(0),
       consecutiveFailures: 2,
-      lastFailedFetchAt: new Date(Date.now() - (31 * 60_000)),
+      lastFailedFetchAt: new Date(Date.now() - (11 * 60_000)),
     };
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
