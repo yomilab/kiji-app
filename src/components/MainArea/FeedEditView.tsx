@@ -36,6 +36,7 @@ import { NotificationToast } from '@/components/common/NotificationToast';
 import { Modal } from '@/components/common/Modal';
 import type { Tag } from '@/types/tag';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
+import { appToastService } from '@/services/ui/appToastService';
 import { useResizeObserverEffect } from '@/hooks/useLifecycleEffects';
 import { isValidUrl } from '@/utils/urlValidator';
 import { FeedEditWidgets } from './FeedEditWidgets';
@@ -1111,7 +1112,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     try {
       const updatedFeed = await feedsManager.updateFeed(feedId, { emoji });
       if (!updatedFeed) {
-        setError('Failed to update feed icon.');
+        appToastService.show('Failed to update feed icon.');
         return;
       }
 
@@ -1125,7 +1126,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       feedLibraryMutationBus.publishFeedPatched(feedId, { emoji: updatedFeed.emoji });
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to update feed icon.';
-      setError(message);
+      appToastService.show(message);
     }
   }, []);
 
@@ -1133,7 +1134,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     try {
       const updatedStation = await tagsManager.updateTag(stationName, { emoji });
       if (!updatedStation) {
-        setError('Failed to update station emoji.');
+        appToastService.show('Failed to update station emoji.');
         return;
       }
 
@@ -1153,7 +1154,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       });
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to update station emoji.';
-      setError(message);
+      appToastService.show(message);
     }
   }, []);
 
@@ -1271,7 +1272,6 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       sortOrder: nextSortOrder,
     };
 
-    setError(null);
     try {
       await tagsManager.saveTag(nextStation);
       setStations((current) => [...current, nextStation]);
@@ -1284,7 +1284,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       });
     } catch (createError) {
       const message = createError instanceof Error ? createError.message : 'Failed to add station.';
-      setError(message);
+      appToastService.show(message);
     }
   }, [stationsRef]);
 
@@ -1311,7 +1311,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     try {
       const updatedFeed = await feedsManager.updateFeed(state.feedId, { title: nextTitle });
       if (!updatedFeed) {
-        setError('Failed to update feed title.');
+        appToastService.show('Failed to update feed title.');
         return;
       }
 
@@ -1325,7 +1325,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       feedLibraryMutationBus.publishFeedPatched(state.feedId, { title: updatedFeed.title });
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to update feed title.';
-      setError(message);
+      appToastService.show(message);
     }
   }, []);
 
@@ -1337,20 +1337,20 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     if (!nextUrl || nextUrl === state.originalUrl) return;
 
     if (!isValidUrl(nextUrl)) {
-      setError('Please enter a valid URL (http:// or https://).');
+      appToastService.show('Please enter a valid URL (http:// or https://).');
       return;
     }
 
     try {
       const existingFeed = await feedsManager.getFeedByUrl(nextUrl);
       if (existingFeed && existingFeed.id !== state.feedId) {
-        setError('This feed URL already exists in your library.');
+        appToastService.show('This feed URL already exists in your library.');
         return;
       }
 
       const updatedFeed = await feedsManager.updateFeed(state.feedId, { url: nextUrl });
       if (!updatedFeed) {
-        setError('Failed to update feed URL.');
+        appToastService.show('Failed to update feed URL.');
         return;
       }
 
@@ -1364,7 +1364,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       feedLibraryMutationBus.publishFeedPatched(state.feedId, { url: updatedFeed.url });
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to update feed URL.';
-      setError(message);
+      appToastService.show(message);
     }
   }, []);
 
@@ -1390,7 +1390,6 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
         : currentStation.feedIds.filter((currentFeedId) => currentFeedId !== feedId),
     };
 
-    setError(null);
     setStationEditState((current) => (
       current && current.feedId === feedId
         ? { ...current, draftStationNames: nextStationNames }
@@ -1431,7 +1430,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       });
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to update feed stations.';
-      setError(message);
+      appToastService.show(message);
       void loadData();
     }
   }, [feedToStationsMapRef, loadData, stationsRef]);
@@ -1541,7 +1540,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       ));
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to rename station.';
-      setError(message);
+      appToastService.show(message);
       void loadData();
     } finally {
       if (stationNameCommitKeyRef.current === commitKey) {
@@ -1564,7 +1563,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       feedLibraryMutationBus.publishSmartViewsPatched(nextSmartViews);
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to save library item settings.';
-      setError(message);
+      appToastService.show(message);
       void loadData();
     }
   }, [loadData]);
@@ -1591,7 +1590,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       );
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to save station order.';
-      setError(message);
+      appToastService.show(message);
       void loadData();
     }
   }, [loadData]);
@@ -1970,7 +1969,6 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     if (!feedToDelete || isFeedDeleteActionLoading) return;
 
     setIsFeedDeleteActionLoading(true);
-    setError(null);
     try {
       const targetFeedId = feedToDelete.id;
       const isDeletingSelectedFeed = selectedFeedId === targetFeedId;
@@ -2025,7 +2023,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       setFeedToDelete(null);
     } catch (deleteError) {
       const message = deleteError instanceof Error ? deleteError.message : 'Failed to delete feed.';
-      setError(message);
+      appToastService.show(message);
       void loadData();
     } finally {
       setIsFeedDeleteActionLoading(false);
@@ -2036,7 +2034,6 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     if (!stationToDelete || isStationDeleteActionLoading) return;
 
     setIsStationDeleteActionLoading(true);
-    setError(null);
     try {
       const targetStationName = stationToDelete.name;
       const deletedStation = stationsRef.current.find((station) => station.name === targetStationName);
@@ -2095,7 +2092,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       setStationToDelete(null);
     } catch (deleteError) {
       const message = deleteError instanceof Error ? deleteError.message : 'Failed to delete station.';
-      setError(message);
+      appToastService.show(message);
       void loadData();
     } finally {
       setIsStationDeleteActionLoading(false);
