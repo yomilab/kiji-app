@@ -2,12 +2,18 @@ import { feedsManager } from '@/services/feeds/feedsManager';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { faviconFetcher } from '@/services/favicons/faviconFetcher';
 import * as feedStore from '@/stores/feedStore';
-import { LEGACY_OPML_STATION_NAME_ATTRIBUTE, OPML_STATION_NAME_ATTRIBUTE } from './opmlAttributes';
+import {
+  LEGACY_OPML_STATION_NAME_ATTRIBUTE,
+  OPML_STATION_NAME_ATTRIBUTE,
+  readOpmlOutlineEmoji,
+} from './opmlAttributes';
 
 export interface OpmlImportEntry {
   title?: string;
   url: string;
   station?: string;
+  emoji?: string;
+  stationEmoji?: string;
 }
 
 export interface OpmlImportSummary {
@@ -94,31 +100,40 @@ export const parseOpmlEntries = (opmlText: string): OpmlImportEntry[] => {
 
   const entries: OpmlImportEntry[] = [];
 
-  const walkOutline = (outline: Element, topStation: string | undefined, depth: number) => {
+  const walkOutline = (
+    outline: Element,
+    topStation: string | undefined,
+    topStationEmoji: string | undefined,
+    depth: number,
+  ) => {
     const label = getOutlineLabel(outline);
     const xmlUrl = outline.getAttribute('xmlUrl')?.trim();
+    const stationName = depth === 0
+      ? normalizeStationName(getOutlineStationName(outline) || label)
+      : topStation;
+    const stationEmoji = depth === 0
+      ? readOpmlOutlineEmoji(outline)
+      : topStationEmoji;
 
     if (xmlUrl) {
       entries.push({
         url: xmlUrl,
         title: label || undefined,
-        station: topStation,
+        station: stationName,
+        emoji: readOpmlOutlineEmoji(outline),
+        stationEmoji,
       });
     }
 
     const childOutlines = getDirectOutlineChildren(outline);
-    const nextTopStation = depth === 0
-      ? normalizeStationName(getOutlineStationName(outline) || label)
-      : topStation;
-
     for (const child of childOutlines) {
-      walkOutline(child, nextTopStation, depth + 1);
+      walkOutline(child, stationName, stationEmoji, depth + 1);
     }
   };
 
   const rootOutlines = getDirectOutlineChildren(body);
   for (const outline of rootOutlines) {
-    walkOutline(outline, undefined, 0);
+    walkOutline(outline, undefined, undefined, 0);
   }
 
   return entries;
@@ -182,6 +197,17 @@ class OpmlImportService {
 
         if (entry.station) {
           await tagsManager.addTagToFeed(feed.id, entry.station);
+          if (entry.stationEmoji) {
+            const stationTag = (await tagsManager.getAllTags())
+              .find((tag) => tag.name === entry.station);
+            if (stationTag && !stationTag.emoji) {
+              await tagsManager.updateTag(entry.station, { emoji: entry.stationEmoji });
+            }
+          }
+        }
+
+        if (entry.emoji) {
+          await feedsManager.updateFeed(feed.id, { emoji: entry.emoji });
         }
 
         importedFeeds.push({ id: feed.id, url: feed.url });

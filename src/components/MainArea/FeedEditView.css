@@ -205,6 +205,18 @@
     inset 3px 0 0 var(--theme-primary);
 }
 
+/* Jump targets use td box-shadow — tr animations/shadows do not paint reliably in Tauri WebKit. */
+.feed-edit-group-table tbody tr.is-jump-target td {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--theme-primary) 24%, transparent);
+  transition: box-shadow 0.2s ease-out;
+}
+
+.feed-edit-group-table tbody tr.is-jump-target td:first-child {
+  box-shadow:
+    inset 0 0 0 999px color-mix(in srgb, var(--theme-primary) 24%, transparent),
+    inset 3px 0 0 var(--theme-primary);
+}
+
 .feed-edit-sort-header {
   display: inline-flex;
   align-items: center;

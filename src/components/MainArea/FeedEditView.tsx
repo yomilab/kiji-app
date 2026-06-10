@@ -151,8 +151,8 @@ const STATION_TABLE_COLUMN_WIDTHS = {
 } as const;
 
 const FEED_EDIT_ACTION_COLUMN_WIDTH = 64;
-const FEED_EDIT_JUMP_SCROLL_DURATION_MS = 520;
-const FEED_EDIT_JUMP_FLASH_DURATION_MS = 900;
+const FEED_EDIT_JUMP_SCROLL_DURATION_MS = 280;
+const FEED_EDIT_JUMP_FLASH_DURATION_MS = 480;
 
 const orderStationNames = (stationNames: string[], orderedStations: Tag[]): string[] => {
   const selectedNames = new Set(stationNames);
@@ -375,16 +375,6 @@ const getCenteredScrollTop = (
   return Math.min(Math.max(0, nextScrollTop), maxScrollTop);
 };
 
-const isRowVisibleWithinContainer = (
-  container: HTMLElement,
-  row: HTMLTableRowElement,
-): boolean => {
-  const containerRect = container.getBoundingClientRect();
-  const rowRect = row.getBoundingClientRect();
-
-  return rowRect.top >= containerRect.top && rowRect.bottom <= containerRect.bottom;
-};
-
 const animateScrollTop = (
   container: HTMLElement,
   targetScrollTop: number,
@@ -425,15 +415,10 @@ const animateScrollTop = (
 };
 
 const flashFeedEditRow = (row: HTMLTableRowElement): void => {
-  row.animate(
-    [
-      { boxShadow: 'inset 0 0 0 0 rgba(64, 140, 255, 0)' },
-      { boxShadow: 'inset 0 0 0 999px rgba(64, 140, 255, 0.32)', offset: 0.3 },
-      { boxShadow: 'inset 0 0 0 999px rgba(64, 140, 255, 0.16)', offset: 0.55 },
-      { boxShadow: 'inset 0 0 0 999px rgba(64, 140, 255, 0)', offset: 1 },
-    ],
-    { duration: FEED_EDIT_JUMP_FLASH_DURATION_MS, easing: 'ease-out' }
-  );
+  row.classList.add('is-jump-target');
+  window.setTimeout(() => {
+    row.classList.remove('is-jump-target');
+  }, FEED_EDIT_JUMP_FLASH_DURATION_MS);
 };
 
 const FeedEditTableViewport: React.FC<FeedEditTableViewportProps> = ({
@@ -1730,9 +1715,6 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
 
     const targetScrollTop = getCenteredScrollTop(scrollContainer, targetRow);
     const cancelScroll = animateScrollTop(scrollContainer, targetScrollTop, () => {
-      if (!isRowVisibleWithinContainer(scrollContainer, targetRow)) {
-        return;
-      }
       flashFeedEditRow(targetRow);
       clearFeedEditTarget();
     });

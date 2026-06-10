@@ -21,6 +21,8 @@ export interface ParsedOpmlEntry {
   url: string;
   title?: string;
   station?: string;
+  emoji?: string;
+  stationEmoji?: string;
 }
 
 export interface OpmlParseTaskPayload {

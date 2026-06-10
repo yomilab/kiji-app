@@ -2,8 +2,7 @@ import { feedsManager, type Feed } from '@/services/feeds/feedsManager';
 import { tagsManager } from '@/services/tags/tagsManager';
 import type { Tag } from '@/types/tag';
 import {
-  OPML_FEED_EMOJI_ATTRIBUTE,
-  OPML_STATION_EMOJI_ATTRIBUTE,
+  OPML_EMOJI_ATTRIBUTE,
   OPML_STATION_NAME_ATTRIBUTE,
 } from './opmlAttributes';
 
@@ -21,14 +20,7 @@ const normalizeLabel = (value?: string): string => {
   return value.replace(/\s+/g, ' ').trim();
 };
 
-const buildStationDisplayLabel = (tag: Tag): string => {
-  const stationName = normalizeLabel(tag.name);
-  const emoji = normalizeLabel(tag.emoji);
-  if (!emoji) return stationName;
-  return `${emoji} ${stationName}`.trim();
-};
-
-const buildFeedDisplayLabel = (feed: Feed): string => {
+const buildFeedSortLabel = (feed: Feed): string => {
   const title = normalizeLabel(feed.title) || normalizeLabel(feed.url);
   const emoji = normalizeLabel(feed.emoji);
   if (!emoji) return title;
@@ -36,17 +28,18 @@ const buildFeedDisplayLabel = (feed: Feed): string => {
 };
 
 const buildFeedOutline = (feed: Feed): string => {
-  const label = buildFeedDisplayLabel(feed);
+  const title = normalizeLabel(feed.title) || normalizeLabel(feed.url);
+  const emoji = normalizeLabel(feed.emoji);
   const attributes = [
     'type="rss"',
-    `title="${xmlEscape(label)}"`,
-    `text="${xmlEscape(label)}"`,
+    `title="${xmlEscape(title)}"`,
+    `text="${xmlEscape(title)}"`,
     `xmlUrl="${xmlEscape(feed.url)}"`,
     `htmlUrl="${xmlEscape(feed.url)}"`,
   ];
 
-  if (feed.emoji) {
-    attributes.push(`${OPML_FEED_EMOJI_ATTRIBUTE}="${xmlEscape(feed.emoji)}"`);
+  if (emoji) {
+    attributes.push(`${OPML_EMOJI_ATTRIBUTE}="${xmlEscape(emoji)}"`);
   }
 
   return `<outline ${attributes.join(' ')} />`;
@@ -54,8 +47,8 @@ const buildFeedOutline = (feed: Feed): string => {
 
 const sortFeedsByLabel = (feeds: Feed[]): Feed[] => {
   return [...feeds].sort((a, b) => {
-    const aLabel = buildFeedDisplayLabel(a);
-    const bLabel = buildFeedDisplayLabel(b);
+    const aLabel = buildFeedSortLabel(a);
+    const bLabel = buildFeedSortLabel(b);
     return aLabel.localeCompare(bLabel, undefined, { sensitivity: 'base' });
   });
 };
@@ -92,15 +85,16 @@ class OpmlExportService {
 
       if (memberFeeds.length === 0) continue;
 
-      const stationLabel = buildStationDisplayLabel(tag);
+      const stationName = normalizeLabel(tag.name);
+      const stationEmoji = normalizeLabel(tag.emoji);
       const stationAttrs = [
-        `title="${xmlEscape(stationLabel)}"`,
-        `text="${xmlEscape(stationLabel)}"`,
-        `${OPML_STATION_NAME_ATTRIBUTE}="${xmlEscape(tag.name)}"`,
+        `title="${xmlEscape(stationName)}"`,
+        `text="${xmlEscape(stationName)}"`,
+        `${OPML_STATION_NAME_ATTRIBUTE}="${xmlEscape(stationName)}"`,
       ];
 
-      if (tag.emoji) {
-        stationAttrs.push(`${OPML_STATION_EMOJI_ATTRIBUTE}="${xmlEscape(tag.emoji)}"`);
+      if (stationEmoji) {
+        stationAttrs.push(`${OPML_EMOJI_ATTRIBUTE}="${xmlEscape(stationEmoji)}"`);
       }
 
       bodyLines.push(`  <outline ${stationAttrs.join(' ')}>`);

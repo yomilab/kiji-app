@@ -47,16 +47,16 @@ describe("opmlExportService", () => {
 
     const techStation = stationOutlines.find((node) => node.getAttribute("kijiStationName") === "Tech") ?? null;
     expect(techStation).not.toBeNull();
-    expect(techStation?.getAttribute("text")).toBe("📟 Tech");
-    expect(techStation?.getAttribute("kijiStationEmoji")).toBe("📟");
+    expect(techStation?.getAttribute("text")).toBe("Tech");
+    expect(techStation?.getAttribute("kijiEmoji")).toBe("📟");
 
     const betaOutlines = body!.querySelectorAll('outline[xmlUrl="https://example.com/b.xml"]');
     expect(betaOutlines.length).toBe(2);
 
     const alphaOutline = body!.querySelector('outline[xmlUrl="https://example.com/a.xml"]');
     expect(alphaOutline).not.toBeNull();
-    expect(alphaOutline?.getAttribute("text")).toBe("🛰️ Alpha Feed");
-    expect(alphaOutline?.getAttribute("kijiFeedEmoji")).toBe("🛰️");
+    expect(alphaOutline?.getAttribute("text")).toBe("Alpha Feed");
+    expect(alphaOutline?.getAttribute("kijiEmoji")).toBe("🛰️");
 
     const unstationedGamma =
       topLevelOutlines.find((node) => node.getAttribute("xmlUrl") === "https://example.com/c.xml") ?? null;
