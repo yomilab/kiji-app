@@ -261,12 +261,21 @@ class FeedSchedulerService {
     await this.runScheduledCycle(lifecycleId);
   }
 
+  private pruneExpiredBoosts(now = Date.now()): void {
+    for (const [feedId, boostUntil] of this.boosts) {
+      if (boostUntil <= now) {
+        this.boosts.delete(feedId);
+      }
+    }
+  }
+
   boostMany(feedIds: string[]): void {
     if (feedIds.length === 0) {
       return;
     }
 
     const boostUntil = Date.now() + BOOST_TTL_MS;
+    this.pruneExpiredBoosts(boostUntil);
     for (const feedId of feedIds) {
       this.boosts.set(feedId, boostUntil);
     }
@@ -439,11 +448,13 @@ class FeedSchedulerService {
 
       const frontloadFeedIds = this.activeStationFocus?.feedIds;
       const skipFeedIdsForThisCycle = this.consumeSkipOnceFeedIds();
+      const now = Date.now();
+      this.pruneExpiredBoosts(now);
       const { prioritized, skippedBackoffCount, skippedSuppressedCount } = createSchedulerRunPlan(
         entries,
         totalFeeds,
         this.boosts,
-        Date.now(),
+        now,
         {
           frontloadFeedIds,
           skipFeedIdsForThisCycle,

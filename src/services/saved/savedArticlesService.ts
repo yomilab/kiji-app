@@ -1,3 +1,4 @@
+import { prepareArticleForList } from '@/services/articles/articleListMemory';
 import { savedArticlesManager } from '@/services/articles/savedArticlesManager';
 import * as articleStore from '@/stores/articleStore';
 import type { Article, SavedArticle } from '@/types/article';
@@ -129,7 +130,7 @@ class SavedArticlesService {
   private toListArticle(savedArticle: SavedArticle): Article {
     const isFeedLinked = !!savedArticle.feedId && savedArticle.feedId !== 'clipboard' && savedArticle.feedId !== 'saved';
 
-    return {
+    return prepareArticleForList({
       hash: savedArticle.articleHash,
       title: savedArticle.title,
       description: savedArticle.description,
@@ -157,7 +158,7 @@ class SavedArticlesService {
       savedDate: savedArticle.savedDate,
       lastReadAt: savedArticle.lastReadAt,
       isFeedLinked,
-    };
+    });
   }
 }
 

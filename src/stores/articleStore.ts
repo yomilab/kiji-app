@@ -2,6 +2,7 @@ import { tauriClient } from "../lib/tauriClient";
 import type { ArticleRecord } from "../lib/tauriClient/contracts";
 import type { Article } from "../types/article";
 import type { ArticleQuery, ArticleQueryResult } from "../types/articleQuery";
+import { prepareArticleForList } from "../services/articles/articleListMemory";
 import { normalizePublishedDate } from "../services/articles/publishedDateNormalizer";
 
 type ArticleMetadata = Partial<Pick<
@@ -22,9 +23,12 @@ type ArticleMetadata = Partial<Pick<
   | "isFeedLinked"
 >>;
 
-export function recordToArticle(record: ArticleRecord, options: { now?: Date } = {}): Article {
+export function recordToArticle(
+  record: ArticleRecord,
+  options: { now?: Date; forList?: boolean } = {},
+): Article {
   const metadata = normalizeMetadata(record.metadata);
-  return {
+  const article: Article = {
     hash: record.hash,
     title: record.title,
     description: record.description,
@@ -48,6 +52,8 @@ export function recordToArticle(record: ArticleRecord, options: { now?: Date } =
     lastReadAt: record.lastReadAt ?? undefined,
     ...metadata,
   };
+
+  return options.forList ? prepareArticleForList(article) : article;
 }
 
 export function articleToRecord(article: Article): ArticleRecord {
@@ -96,7 +102,7 @@ export async function query(q: ArticleQuery): Promise<ArticleQueryResult> {
   });
 
   return {
-    articles: result.articles.map((record) => recordToArticle(record, { now })),
+    articles: result.articles.map((record) => recordToArticle(record, { now, forList: true })),
     total: result.total,
   };
 }

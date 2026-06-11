@@ -5,6 +5,7 @@ import UnfoldMoreOutlined from '@mui/icons-material/UnfoldMoreOutlined';
 import UnfoldLessOutlined from '@mui/icons-material/UnfoldLessOutlined';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { feedsManager, type Feed } from '@/services/feeds/feedsManager';
+import { seedArticleFeedMetadataFromFeed } from '@/services/articles/articleListMemory';
 import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import {
   useFeedDeletedMutation,
@@ -179,6 +180,25 @@ const StationListItem = React.memo<StationListItemProps>(({
   );
 });
 
+const TAG_MANAGER_FEED_CACHE_MAX_ENTRIES = 200;
+
+const rememberFeedInCache = (prev: Map<string, Feed>, feed: Feed): Map<string, Feed> => {
+  const next = new Map(prev);
+  next.delete(feed.id);
+  next.set(feed.id, feed);
+  seedArticleFeedMetadataFromFeed(feed);
+
+  while (next.size > TAG_MANAGER_FEED_CACHE_MAX_ENTRIES) {
+    const oldestKey = next.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    next.delete(oldestKey);
+  }
+
+  return next;
+};
+
 export const TagManager: React.FC = () => {
   const [tags, setTags] = useState<Tag[]>([]);
   const [expandedStations, setExpandedStations] = useState<Set<string>>(new Set());
@@ -201,10 +221,12 @@ export const TagManager: React.FC = () => {
     const missing = feedIds.filter(id => !feedCacheRef.current.has(id));
     if (missing.length > 0) {
       const fetched = await Promise.all(missing.map(id => feedsManager.getFeedById(id)));
-      setFeedCache(prev => {
-        const next = new Map(prev);
+      setFeedCache((prev) => {
+        let next = prev;
         for (const feed of fetched) {
-          if (feed) next.set(feed.id, feed);
+          if (feed) {
+            next = rememberFeedInCache(next, feed);
+          }
         }
         feedCacheRef.current = next;
         return next;
@@ -265,9 +287,7 @@ export const TagManager: React.FC = () => {
       if (!updated) return;
       setFeedCache((prev) => {
         if (!prev.has(feedId)) return prev;
-        const next = new Map(prev);
-        next.set(feedId, updated);
-        return next;
+        return rememberFeedInCache(prev, updated);
       });
     });
   }, [feedFaviconRefreshed]);
@@ -280,12 +300,10 @@ export const TagManager: React.FC = () => {
         return prev;
       }
 
-      const next = new Map(prev);
-      next.set(patchedFeed.feedId, {
+      return rememberFeedInCache(prev, {
         ...current,
         ...patchedFeed.changes,
       });
-      return next;
     });
   }, [patchedFeed]);
 

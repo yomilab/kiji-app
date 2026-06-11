@@ -80,7 +80,20 @@ const ARTICLE_VIEW_ELEMENT_TRANSITION = {
 const AUDIO_EXTENSION_PATTERN = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)(?:[?#]|$)/i;
 
 // Simple cache to avoid flash of content for known feeds
+const FEED_READER_MODE_CACHE_MAX_ENTRIES = 256;
 const feedReaderModeCache = new Map<string, boolean>();
+
+const rememberFeedReaderMode = (feedId: string, enabled: boolean): void => {
+  feedReaderModeCache.delete(feedId);
+  feedReaderModeCache.set(feedId, enabled);
+  while (feedReaderModeCache.size > FEED_READER_MODE_CACHE_MAX_ENTRIES) {
+    const oldestKey = feedReaderModeCache.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    feedReaderModeCache.delete(oldestKey);
+  }
+};
 
 function getBasicModeContentForSave(article: Article): string {
   const articleContent = article.content || '';
@@ -373,7 +386,7 @@ function useEmbeddedArticleOpenBootstrap(params: {
           void feedsManager.getFeedById(fullArticle.feedId).then((feed) => {
             if (articleOpenTrigger === lastOpenTriggerRef.current && openRequestVersion === modeRequestVersionRef.current) {
               const mode = !!feed?.readerModeEnabled;
-              feedReaderModeCache.set(fullArticle.feedId, mode);
+              rememberFeedReaderMode(fullArticle.feedId, mode);
               setArticleDisplayMode(mode ? 'reader' : 'basic');
               if (mode && fullArticle.link) {
                 ensureReaderContentForArticle(fullArticle, openRequestVersion);
@@ -1523,7 +1536,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     const shouldUseReaderMode = feed?.readerModeEnabled || false;
     
     // Update cache and state just in case Phase 1 missed it
-    feedReaderModeCache.set(article.feedId, shouldUseReaderMode);
+    rememberFeedReaderMode(article.feedId, shouldUseReaderMode);
     setArticleDisplayMode(shouldUseReaderMode ? 'reader' : 'basic');
 
     if (shouldUseReaderMode && article.link) {
@@ -1682,7 +1695,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
       }).catch((error) => {
         console.error('Error updating reader mode:', error);
       });
-      feedReaderModeCache.set(articleToShow.feedId, newMode === 'reader');
+      rememberFeedReaderMode(articleToShow.feedId, newMode === 'reader');
     }
 
     if (newMode === 'reader') {

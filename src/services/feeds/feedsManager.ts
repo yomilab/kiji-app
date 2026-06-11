@@ -1,6 +1,7 @@
 import * as articleStore from "../../stores/articleStore";
 import * as feedStore from "../../stores/feedStore";
 import { FEED_FETCH_TIMEOUT_MS } from "../../constants";
+import { removeArticleFeedMetadata } from "../articles/articleListMemory";
 import { convertFeedItemsToArticles } from "../articles/articleConverter";
 import { analyzeFaviconAppearance } from "../favicons/faviconTransparency";
 import { faviconFetcher } from "../favicons/faviconFetcher";
@@ -86,7 +87,11 @@ class FeedsManager {
   }
 
   async deleteFeed(id: string): Promise<boolean> {
-    return feedStore.remove(id);
+    const deleted = await feedStore.remove(id);
+    if (deleted) {
+      removeArticleFeedMetadata(id);
+    }
+    return deleted;
   }
 
   async refreshFeed(

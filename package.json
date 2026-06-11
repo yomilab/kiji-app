@@ -22,6 +22,8 @@
     "test:parity:db": "cargo test --manifest-path src-tauri/Cargo.toml synthetic_v13 synthetic_v15",
     "test:smoke": "vitest run test/smoke",
     "test:smoke:launch": "node scripts/smoke-launch.mjs",
+    "test:memory": "NODE_OPTIONS='--expose-gc' vitest run test/services/articles/articleListMemory.load.test.ts test/contexts/FeedContext.loadMore.memory.test.tsx test/services/scheduler/feedSchedulerBoostRetention.test.ts",
+    "test:memory:report": "KIJI_MEMORY_TEST_REPORT=1 NODE_OPTIONS='--expose-gc' vitest run test/services/articles/articleListMemory.load.test.ts test/contexts/FeedContext.loadMore.memory.test.tsx test/services/scheduler/feedSchedulerBoostRetention.test.ts",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "verify": "node scripts/verify.mjs"
   },
