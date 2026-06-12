@@ -1585,7 +1585,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
         const nowIso = new Date().toISOString();
         setArticleResourceType(readerResult.resourceType);
         setClipboardLoading(false);
-        // Create a minimal article so the view can render the PDF iframe / empty state
+        // Create a minimal article so the view can render the PDF open-in-browser prompt / empty state
         setArticleToShow({
           hash: url,
           title: hostname,
@@ -1953,16 +1953,24 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     if (articleResourceType === 'pdf' && articleToShow.link) {
       return (
         <motion.div
-          key="pdf-viewer"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
+          key="pdf-prompt"
+          className="article-view-pdf-prompt"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0 }}
         >
-          <iframe
-            src={articleToShow.link}
-            style={{ width: '100%', height: 'calc(100vh - 120px)', border: 'none', borderRadius: '4px' }}
-            title="PDF viewer"
-          />
+          {podcastAudio}
+          <p>This article link is a PDF.</p>
+          <button
+            type="button"
+            className="article-view-pdf-open-button"
+            onClick={() => {
+              handleOpenInBrowser(true);
+            }}
+            title={withShortcutHint(TOOLTIPS.articleView.titleOpenInBrowser, SHORTCUT_LABELS.OPEN_IN_BROWSER)}
+          >
+            {TOOLTIPS.articleView.titleOpenInBrowser}
+          </button>
         </motion.div>
       );
     }

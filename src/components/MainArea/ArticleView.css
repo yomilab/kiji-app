@@ -480,4 +480,48 @@
   margin-bottom: 0;
 }
 
+/* Reader mode PDF prompt — external open is user-initiated (iframe navigation is blocked by Tauri window guards). */
+.article-view-pdf-prompt {
+  padding: 0;
+  margin: 16px 0;
+}
+
+.article-view-pdf-prompt p {
+  color: var(--theme-text-secondary);
+  margin: 0 0 12px;
+}
+
+.article-view-pdf-open-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border: none;
+  border-radius: var(--widget-button-border-radius);
+  background-color: var(--system-accent-color, var(--theme-primary-color));
+  color: #ffffff;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.2s ease, opacity 0.2s ease, transform 0.12s ease;
+}
+
+.system-accent-color-available .article-view-pdf-open-button:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--system-accent-color) 88%, #ffffff);
+}
+
+.article-view-pdf-open-button:hover:not(:disabled) {
+  opacity: 0.92;
+}
+
+.article-view-pdf-open-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.article-view-pdf-open-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--system-accent-color, var(--theme-primary-color)) 28%, transparent);
+}
+
 /* Reader mode button follows shared .is-active style (same as hover) */
