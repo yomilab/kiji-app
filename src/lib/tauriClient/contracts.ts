@@ -525,6 +525,10 @@ export interface FeedsContract {
     request: FeedFetchDataUrlRequest;
     response: FeedFetchDataUrlResponse;
   };
+  fetchPdfDataUrl: {
+    request: FeedFetchDataUrlRequest;
+    response: FeedFetchDataUrlResponse;
+  };
   abortRequest: {
     request: { requestId: string };
     response: void;

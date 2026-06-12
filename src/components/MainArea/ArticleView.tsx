@@ -32,6 +32,7 @@ import { normalizePublishedDate } from '@/services/articles/publishedDateNormali
 import { renderTextWithNonAsciiFont } from '@/utils/nonAsciiTypography';
 import { StatefulButtonGroup, type ButtonState } from '@/components/common/StatefulButtonGroup';
 import { ArticleContent, ArticleContentSkeleton } from '@/components/common/ArticleContent';
+import { ArticlePdfViewer } from '@/components/common/ArticlePdf';
 import { InteractionProfiler } from '@/components/common/InteractionProfiler';
 import { TOOLTIPS } from '@/config/tooltips';
 import {
@@ -468,6 +469,7 @@ function useEmbeddedArticleCloseFlow(params: {
   setArticleToShow: React.Dispatch<React.SetStateAction<Article | null>>;
   setProcessedArticleBodyHtml: React.Dispatch<React.SetStateAction<string | null>>;
   setProcessedArticleBodyKey: React.Dispatch<React.SetStateAction<string | null>>;
+  setArticleResourceType: React.Dispatch<React.SetStateAction<'html' | 'pdf' | 'unsupported' | null>>;
   completeArticleClose: () => void;
 }): void {
   const {
@@ -484,6 +486,7 @@ function useEmbeddedArticleCloseFlow(params: {
     setArticleToShow,
     setProcessedArticleBodyHtml,
     setProcessedArticleBodyKey,
+    setArticleResourceType,
     completeArticleClose,
   } = params;
 
@@ -509,6 +512,7 @@ function useEmbeddedArticleCloseFlow(params: {
       flushPendingArticleListUpdate();
       setIsClosing(false);
       setArticleToShow(null);
+      setArticleResourceType(null);
       articleContentProcessingService.clearCache();
       setProcessedArticleBodyHtml(null);
       setProcessedArticleBodyKey(null);
@@ -1482,6 +1486,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     }
 
     if (result.resourceType && result.resourceType !== 'html') {
+      readerContentHashRef.current = hash;
       readerFetchKeyRef.current = null;
       setArticleResourceType(result.resourceType);
       setReaderLoading(false);
@@ -1584,8 +1589,9 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
       if (readerResult.resourceType && readerResult.resourceType !== 'html') {
         const nowIso = new Date().toISOString();
         setArticleResourceType(readerResult.resourceType);
+        setArticleDisplayMode('reader');
         setClipboardLoading(false);
-        // Create a minimal article so the view can render the PDF open-in-browser prompt / empty state
+        // Create a minimal article so the view can render the inline PDF viewer / empty state
         setArticleToShow({
           hash: url,
           title: hostname,
@@ -1708,6 +1714,13 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     } else {
       // If disabling, immediately stop reader-only loading and ignore in-flight reader responses.
       setReaderLoading(false);
+      setArticleResourceType((current) => {
+        if (current === 'pdf') {
+          readerContentHashRef.current = null;
+          return null;
+        }
+        return current;
+      });
     }
   }, [articleToShow, isTemporaryArticle, isFeedLinkedArticle, ensureReaderContentForArticle]);
 
@@ -1808,6 +1821,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     setArticleToShow,
     setProcessedArticleBodyHtml,
     setProcessedArticleBodyKey,
+    setArticleResourceType,
     completeArticleClose,
   });
 
@@ -1953,24 +1967,19 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     if (articleResourceType === 'pdf' && articleToShow.link) {
       return (
         <motion.div
-          key="pdf-prompt"
-          className="article-view-pdf-prompt"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
+          key="pdf-panel"
+          className="article-view-pdf-panel"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
           {podcastAudio}
-          <p>This article link is a PDF.</p>
-          <button
-            type="button"
-            className="article-view-pdf-open-button"
-            onClick={() => {
-              handleOpenInBrowser(true);
-            }}
-            title={withShortcutHint(TOOLTIPS.articleView.titleOpenInBrowser, SHORTCUT_LABELS.OPEN_IN_BROWSER)}
-          >
-            {TOOLTIPS.articleView.titleOpenInBrowser}
-          </button>
+          <ArticlePdfViewer
+            key={articleToShow.link}
+            url={articleToShow.link}
+            suspendProcessing={isClosing}
+            onOpenInBrowser={handleOpenInBrowser}
+          />
         </motion.div>
       );
     }

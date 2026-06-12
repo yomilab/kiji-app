@@ -33,6 +33,7 @@ export function isExpectedFeedCommandFailure(command: string, error: unknown): b
     command !== "feeds_fetch"
     && command !== "feeds_fetch_with_cache"
     && command !== "feeds_fetch_data_url"
+    && command !== "feeds_fetch_pdf_data_url"
   ) {
     return false;
   }

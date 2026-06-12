@@ -20,6 +20,7 @@ static ACTIVE_REQUESTS: Lazy<Mutex<HashMap<String, AbortHandle>>> =
 const DEFAULT_TIMEOUT_MS: u64 = 15_000;
 const FEED_FETCH_DEFAULT_TIMEOUT_MS: u64 = 5_000;
 const MAX_DATA_URL_BYTES: u64 = 1024 * 1024;
+const MAX_PDF_INLINE_BYTES: u64 = 25 * 1024 * 1024;
 const PDF_MAGIC: &[u8] = b"%PDF-";
 const CHROME_LIKE_USER_AGENT: &str =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 KiJi/0.1";
@@ -121,6 +122,15 @@ pub async fn feeds_fetch_data_url(
     timeout: Option<u64>,
 ) -> Result<FeedFetchDataUrlResponse, String> {
     fetch_data_url(url, request_id, timeout).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn feeds_fetch_pdf_data_url(
+    url: String,
+    request_id: Option<String>,
+    timeout: Option<u64>,
+) -> Result<FeedFetchDataUrlResponse, String> {
+    fetch_pdf_data_url(url, request_id, timeout).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -460,7 +470,40 @@ async fn fetch_data_url(
     }
 
     let request_id_for_cleanup = request_id.clone();
-    let fetch_future = async move { execute_data_url_fetch(url, timeout).await };
+    let fetch_future =
+        async move { execute_data_url_fetch(url, timeout, MAX_DATA_URL_BYTES).await };
+    let result = Abortable::new(fetch_future, abort_registration).await;
+
+    if let Some(request_id) = request_id_for_cleanup {
+        let _ = ACTIVE_REQUESTS
+            .lock()
+            .map(|mut requests| requests.remove(&request_id));
+    }
+
+    match result {
+        Ok(result) => result,
+        Err(_) => Err(feed_request_cancelled_error()),
+    }
+}
+
+async fn fetch_pdf_data_url(
+    url: String,
+    request_id: Option<String>,
+    timeout: Option<u64>,
+) -> Result<FeedFetchDataUrlResponse, String> {
+    validate_http_url(&url)?;
+
+    let (abort_handle, abort_registration) = AbortHandle::new_pair();
+    if let Some(request_id) = &request_id {
+        ACTIVE_REQUESTS
+            .lock()
+            .map_err(|_| "Failed to lock feed request registry.".to_string())?
+            .insert(request_id.clone(), abort_handle);
+    }
+
+    let request_id_for_cleanup = request_id.clone();
+    let fetch_future =
+        async move { execute_data_url_fetch(url, timeout, MAX_PDF_INLINE_BYTES).await };
     let result = Abortable::new(fetch_future, abort_registration).await;
 
     if let Some(request_id) = request_id_for_cleanup {
@@ -478,6 +521,7 @@ async fn fetch_data_url(
 async fn execute_data_url_fetch(
     url: String,
     timeout: Option<u64>,
+    max_bytes: u64,
 ) -> Result<FeedFetchDataUrlResponse, String> {
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))
@@ -497,19 +541,22 @@ async fn execute_data_url_fetch(
     }
 
     if let Some(content_length) = response.content_length() {
-        if content_length > MAX_DATA_URL_BYTES {
+        if content_length > max_bytes {
             return Err("HTTP response is too large for a data URL.".to_string());
         }
     }
 
-    let content_type =
+    let mut content_type =
         content_type_from_headers(response.headers()).unwrap_or_else(|| mime_type_from_url(&url));
+    if max_bytes > MAX_DATA_URL_BYTES && !content_type.contains("pdf") {
+        content_type = "application/pdf".to_string();
+    }
     let bytes = response
         .bytes()
         .await
         .map_err(|error| format!("Failed to read HTTP response body: {error}"))?;
 
-    if bytes.len() as u64 > MAX_DATA_URL_BYTES {
+    if bytes.len() as u64 > max_bytes {
         return Err("HTTP response is too large for a data URL.".to_string());
     }
 
@@ -552,6 +599,7 @@ fn mime_type_from_url(url: &str) -> String {
         Some("gif") => "image/gif",
         Some("svg") => "image/svg+xml",
         Some("webp") => "image/webp",
+        Some("pdf") => "application/pdf",
         _ => "image/png",
     }
     .to_string()

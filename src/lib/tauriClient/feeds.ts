@@ -25,6 +25,12 @@ export async function fetchDataUrl(
   return invokeContract<FeedsContract["fetchDataUrl"]>("feeds_fetch_data_url", request);
 }
 
+export async function fetchPdfDataUrl(
+  request: FeedsContract["fetchPdfDataUrl"]["request"],
+): Promise<FeedsContract["fetchPdfDataUrl"]["response"]> {
+  return invokeContract<FeedsContract["fetchPdfDataUrl"]>("feeds_fetch_pdf_data_url", request);
+}
+
 export async function abortRequest(
   request: FeedsContract["abortRequest"]["request"],
 ): Promise<FeedsContract["abortRequest"]["response"]> {
