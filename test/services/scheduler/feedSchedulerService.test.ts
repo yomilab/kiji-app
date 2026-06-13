@@ -382,4 +382,41 @@ describe("feedSchedulerService", () => {
       vi.useRealTimers();
     }
   });
+
+  it("releases station pause on background and runs deferred scheduler tick", async () => {
+    await feedScheduler.start();
+    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+
+    feedScheduler.pauseForStationSelection();
+    await tickHandler?.();
+    expect(getAll).not.toHaveBeenCalled();
+
+    feedScheduler.releaseStationSelectionPause("background");
+    await vi.waitFor(() => {
+      expect(getAll).toHaveBeenCalledTimes(1);
+    });
+
+    feedScheduler.resumeAfterStationSelection();
+  });
+
+  it("auto-releases station pause after the max pause window", async () => {
+    vi.useFakeTimers();
+
+    try {
+      await feedScheduler.start();
+
+      feedScheduler.pauseForStationSelection();
+      expect(getAll).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(10 * 60_000 + 1);
+
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(1);
+      });
+
+      feedScheduler.resumeAfterStationSelection();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

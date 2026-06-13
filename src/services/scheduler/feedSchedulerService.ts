@@ -21,6 +21,7 @@ import type {
 
 const SCHEDULER_CYCLE_TICK_EVENT = 'scheduler:cycle-tick';
 const STALE_CYCLE_ABORT_MS = 45 * 60 * 1_000;
+const STATION_SELECTION_PAUSE_MAX_MS = 10 * 60 * 1_000;
 const BOOST_TTL_MS = 5 * 60_000;
 
 const MODE_INTERVAL_MS: Record<Exclude<BackgroundUpdateMode, 'on-launch' | 'never'>, number> = {
@@ -63,6 +64,7 @@ class FeedSchedulerService {
   private lastCycleCompletedAt: number | null = null;
   private boosts = new Map<string, number>();
   private stationSelectionPauseDepth = 0;
+  private stationSelectionPauseTimer: ReturnType<typeof setTimeout> | null = null;
   private activeStationFocus: ActiveStationFocus | null = null;
   private skipOnceFeedIds = new Set<string>();
 
@@ -124,6 +126,9 @@ class FeedSchedulerService {
         this.pendingCycleTick = true;
         this.clearAbort();
       }
+      this.stationSelectionPauseTimer = setTimeout(() => {
+        this.releaseStationSelectionPause('timeout');
+      }, STATION_SELECTION_PAUSE_MAX_MS);
     }
 
     this.stationSelectionPauseDepth += 1;
@@ -139,8 +144,28 @@ class FeedSchedulerService {
       return;
     }
 
+    this.clearStationSelectionPauseTimer();
     logger.info('Scheduler', 'Resuming background refresh after station selection');
     this.maybeRunDeferredCycle(this.lifecycleId);
+  }
+
+  releaseStationSelectionPause(reason: 'background' | 'timeout'): void {
+    if (this.stationSelectionPauseDepth === 0) {
+      return;
+    }
+
+    this.clearStationSelectionPauseTimer();
+    this.stationSelectionPauseDepth = 0;
+    logger.info('Scheduler', 'Released station-selection scheduler pause', { reason });
+
+    const lifecycleId = this.lifecycleId;
+    if (this.pendingCycleTick || this.shouldScheduleCatchUpCycle()) {
+      this.pendingCycleTick = false;
+      void this.runScheduledCycle(lifecycleId);
+      return;
+    }
+
+    this.maybeRunDeferredCycle(lifecycleId);
   }
 
   setActiveStationFocus(sourceKey: string, feedIds: string[]): void {
@@ -174,6 +199,7 @@ class FeedSchedulerService {
     this.cycleInProgress = false;
     this.pendingCycleTick = false;
     this.stationSelectionPauseDepth = 0;
+    this.clearStationSelectionPauseTimer();
     this.activeStationFocus = null;
     this.skipOnceFeedIds.clear();
 
@@ -398,6 +424,13 @@ class FeedSchedulerService {
     }
 
     await this.refreshAllFeeds(lifecycleId);
+  }
+
+  private clearStationSelectionPauseTimer(): void {
+    if (this.stationSelectionPauseTimer !== null) {
+      clearTimeout(this.stationSelectionPauseTimer);
+      this.stationSelectionPauseTimer = null;
+    }
   }
 
   private clearAbort(): void {
