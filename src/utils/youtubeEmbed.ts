@@ -70,15 +70,68 @@ export function extractYouTubeEmbedTarget(url: string): YouTubeEmbedTarget | nul
   }
 }
 
+export function buildYouTubeWatchUrl(target: YouTubeEmbedTarget): string {
+  const url = new URL(`https://www.youtube.com/watch?v=${target.videoId}`);
+  if (target.startSeconds && target.startSeconds > 0) {
+    url.searchParams.set('t', String(target.startSeconds));
+  }
+  return url.toString();
+}
+
+export function resolveYouTubeWatchUrl(url: string): string | null {
+  const target = extractYouTubeEmbedTarget(url);
+  if (!target) {
+    return null;
+  }
+  return buildYouTubeWatchUrl(target);
+}
+
+export function buildYouTubeLiteParams(startSeconds?: number): string {
+  if (!startSeconds || startSeconds <= 0) {
+    return '';
+  }
+  return new URLSearchParams({ start: String(startSeconds) }).toString();
+}
+
+const YOUTUBE_EMBED_HOSTS = new Set([
+  'youtube.com',
+  'www.youtube.com',
+  'm.youtube.com',
+  'youtube-nocookie.com',
+  'www.youtube-nocookie.com',
+]);
+
+/** Mirrors Tauri `window_guards` embed allowlist — `/embed/` on YouTube hosts only. */
+export function isYouTubeEmbedNavigationUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (!YOUTUBE_EMBED_HOSTS.has(parsed.hostname.toLowerCase())) {
+      return false;
+    }
+
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+    return pathParts[0] === 'embed' && Boolean(pathParts[1]);
+  } catch {
+    return false;
+  }
+}
+
+export function isYouTubeInlineEmbedPageUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname === '/youtube-embed.html'
+      || parsed.pathname.endsWith('/youtube-embed.html');
+  } catch {
+    return false;
+  }
+}
+
 export function buildYouTubeEmbedHtml(url: string, title?: string): string | null {
   const target = extractYouTubeEmbedTarget(url);
   if (!target) return null;
 
   const safeTitle = (title || 'YouTube video').replace(/"/g, '&quot;');
-  const params = new URLSearchParams();
-  if (target.startSeconds && target.startSeconds > 0) {
-    params.set('start', String(target.startSeconds));
-  }
+  const params = buildYouTubeLiteParams(target.startSeconds);
 
-  return `<lite-youtube videoid="${target.videoId}" playlabel="Play YouTube video" title="${safeTitle}" aria-label="${safeTitle}"${params.toString() ? ` params="${params.toString()}"` : ''}></lite-youtube>`;
+  return `<lite-youtube videoid="${target.videoId}" playlabel="Play YouTube video" title="${safeTitle}" aria-label="${safeTitle}"${params ? ` params="${params}"` : ''}></lite-youtube>`;
 }

@@ -22,7 +22,7 @@ import { faviconFetcher } from '@/services/favicons/faviconFetcher';
 import { extractUrlFromText } from '@/utils/urlValidator';
 import { hasEmbeddableMedia, selectArticleHtmlContent } from '@/utils/articleContentSelection';
 import { createTemporaryArticleFromPostlight } from '@/utils/temporaryArticleFactory';
-import { buildYouTubeEmbedHtml } from '@/utils/youtubeEmbed';
+import { buildYouTubeEmbedHtml, resolveYouTubeWatchUrl } from '@/utils/youtubeEmbed';
 import { injectLeadImage } from '@/utils/articleLeadImage';
 import {
   getLinkOnlySavedContent,
@@ -1358,9 +1358,11 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   }, [articleToShow]);
 
   const handleArticleLinkClick = useCallback((href: string) => {
-    if (window.electronAPI) {
-      window.electronAPI.openExternal(href);
+    if (!window.electronAPI) {
+      return;
     }
+
+    void window.electronAPI.openExternal(resolveYouTubeWatchUrl(href) ?? href);
   }, []);
 
   const handleArticleContextMenu = useCallback((detail: { kind: 'link' | 'image'; url: string }) => {
