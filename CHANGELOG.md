@@ -21,6 +21,7 @@
 ### Fixed
 
 - Station refresh now batch-syncs feed counts and patches the sidebar (same pattern as scheduler), after worker pool completes.
+- Favicon discovery rejects blank placeholder icons (tiny monochrome ICO, near-empty/near-white rasters), expands WordPress `?w=` feed icons to larger sizes, and clears stored placeholders on retry (fixes TechCrunch blank sidebar icon).
 
 ### Fixed
 

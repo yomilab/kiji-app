@@ -4,6 +4,7 @@ import { FEED_FETCH_TIMEOUT_MS } from "../../constants";
 import { removeArticleFeedMetadata } from "../articles/articleListMemory";
 import { convertFeedItemsToArticles } from "../articles/articleConverter";
 import { analyzeFaviconAppearance } from "../favicons/faviconTransparency";
+import { isPlaceholderFaviconDataUrl } from "../favicons/faviconQuality";
 import { faviconFetcher } from "../favicons/faviconFetcher";
 import { tauriClient } from "../../lib/tauriClient";
 import { feedRefreshActivity } from "./feedRefreshActivity";
@@ -159,9 +160,16 @@ class FeedsManager {
   async applyFaviconResult(id: string, favicon: string | null): Promise<Feed | null> {
     const refreshedAt = new Date();
 
+    if (favicon && await isPlaceholderFaviconDataUrl(favicon)) {
+      favicon = null;
+    }
+
     if (!favicon) {
       const existing = await feedStore.getById(id);
       if (existing?.favicon) {
+        if (await isPlaceholderFaviconDataUrl(existing.favicon)) {
+          return await this.clearStoredFavicon(id);
+        }
         return existing;
       }
 
@@ -187,6 +195,31 @@ class FeedsManager {
       feedFaviconHasTransparency: appearance.hasTransparency,
       feedFaviconBgLight: appearance.containerBgLight ?? undefined,
       feedFaviconBgDark: appearance.containerBgDark ?? undefined,
+    });
+    return feedStore.getById(id);
+  }
+
+  async clearStoredFavicon(id: string): Promise<Feed | null> {
+    const existing = await feedStore.getById(id);
+    if (!existing?.favicon) {
+      return existing;
+    }
+
+    const refreshedAt = new Date();
+    await feedStore.update(id, {
+      favicon: undefined,
+      faviconHasTransparency: undefined,
+      faviconDominantColor: undefined,
+      faviconBgLight: undefined,
+      faviconBgDark: undefined,
+      faviconFetchFailed: true,
+      lastFaviconRefresh: refreshedAt,
+    });
+    await articleStore.updateFeedMeta(id, {
+      feedFavicon: undefined,
+      feedFaviconHasTransparency: undefined,
+      feedFaviconBgLight: undefined,
+      feedFaviconBgDark: undefined,
     });
     return feedStore.getById(id);
   }
