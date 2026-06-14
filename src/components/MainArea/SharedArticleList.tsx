@@ -19,6 +19,7 @@ import { useArticleListBackgroundScrollSync } from './hooks/useArticleListBackgr
 import { useArticleListPerformanceMetrics } from './hooks/useArticleListPerformanceMetrics';
 import { InteractionProfiler } from '@/components/common/InteractionProfiler';
 import { FeedLineLoader } from '@/components/common/FeedLineLoader';
+import { ARTICLE_LIST_PREVIEW_SCROLL_IDLE_MS } from './articleListPreviewConstants';
 import './ArticleList.css';
 
 interface SharedArticleListProps {
@@ -290,7 +291,7 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
     previewImageScrollIdleTimerRef.current = window.setTimeout(() => {
       previewImageScrollIdleTimerRef.current = null;
       setDeferPreviewImages(false);
-    }, 450);
+    }, ARTICLE_LIST_PREVIEW_SCROLL_IDLE_MS);
     syncViewportSnapshot(!isScrolled, true);
   }, [syncViewportSnapshot]);
 

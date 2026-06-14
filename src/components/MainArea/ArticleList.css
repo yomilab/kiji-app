@@ -499,11 +499,17 @@
   height: 60px;
   flex-shrink: 0;
   border-radius: 5px;
-  background-color: color-mix(in srgb, var(--theme-text-primary) 12%, transparent);
+  background-color: color-mix(in srgb, var(--theme-text-primary) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-border, var(--theme-text-primary)) 50%, transparent);
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+.article-list-item-preview-image.is-placeholder {
+  background-color: color-mix(in srgb, var(--theme-text-primary) 12%, transparent);
 }
 
 .article-list-item-preview-image-content {
@@ -513,6 +519,13 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  border-radius: 5px;
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+}
+
+.article-list-item-preview-image.is-loaded .article-list-item-preview-image-content {
+  opacity: 1;
 }
 
 /* Article Meta (author + date) */

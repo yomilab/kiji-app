@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { FaviconImage } from '@/components/common/FaviconImage';
 import type { Article } from '@/types/article';
@@ -40,9 +40,36 @@ export const ArticleListItem = memo<ArticleListItemProps>(
         : 'is-unread';
 
     const previewImageUrl = article.previewImage;
-    const previewImageSrc = deferPreviewImages ? undefined : previewImageUrl;
-    const publishedDateLabel = article.publishedDate ? formatDateDisplay(article.publishedDate) : '';
     const [imageError, setImageError] = useState(false);
+    const [previewLoaded, setPreviewLoaded] = useState(false);
+
+    const previewImageRef = useRef<HTMLImageElement>(null);
+
+    useEffect(() => {
+      setImageError(false);
+      setPreviewLoaded(false);
+    }, [previewImageUrl]);
+
+    const shouldAssignPreviewSrc = previewImageUrl
+      && !imageError
+      && (!deferPreviewImages || previewLoaded);
+    const previewImageSrc = shouldAssignPreviewSrc ? previewImageUrl : undefined;
+
+    useEffect(() => {
+      if (!previewImageSrc) {
+        return;
+      }
+      const image = previewImageRef.current;
+      if (image?.complete && image.naturalWidth > 0) {
+        setPreviewLoaded(true);
+      }
+    }, [previewImageSrc]);
+
+    const previewImageClassName = [
+      'article-list-item-preview-image',
+      previewLoaded ? 'is-loaded' : 'is-placeholder',
+    ].join(' ');
+    const publishedDateLabel = article.publishedDate ? formatDateDisplay(article.publishedDate) : '';
 
     return (
       <div
@@ -114,13 +141,15 @@ export const ArticleListItem = memo<ArticleListItemProps>(
               )}
             </div>
             {previewImageUrl && !imageError && (
-              <div className="article-list-item-preview-image" aria-hidden="true">
+              <div className={previewImageClassName} aria-hidden="true">
                 <img
+                  ref={previewImageRef}
                   className="article-list-item-preview-image-content"
                   src={previewImageSrc}
                   alt=""
                   loading="lazy"
                   decoding="async"
+                  onLoad={() => setPreviewLoaded(true)}
                   onError={() => setImageError(true)}
                 />
               </div>
