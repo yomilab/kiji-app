@@ -1,5 +1,6 @@
 use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tauri::State;
 
 use super::{
@@ -214,6 +215,99 @@ pub fn articles_count_by_feed(feed_id: String, state: State<'_, DbState>) -> Res
             )
             .map_err(|error| format!("Failed to count feed articles: {error}"))
     })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedArticleCounts {
+    pub feed_id: String,
+    pub unread_count: i64,
+    pub article_count: i64,
+}
+
+pub fn sync_feed_article_counts_batch(
+    connection: &Connection,
+    feed_ids: &[String],
+) -> Result<Vec<FeedArticleCounts>, String> {
+    if feed_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut counts_by_feed: HashMap<String, (i64, i64)> = HashMap::new();
+    for feed_id in feed_ids {
+        counts_by_feed.insert(feed_id.clone(), (0, 0));
+    }
+
+    let placeholders = feed_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT feed_id, COUNT(*) AS article_count, \
+         SUM(CASE WHEN read = 0 THEN 1 ELSE 0 END) AS unread_count \
+         FROM articles WHERE feed_id IN ({placeholders}) GROUP BY feed_id"
+    );
+
+    let mut statement = connection
+        .prepare(&sql)
+        .map_err(|error| format!("Failed to prepare batch feed count query: {error}"))?;
+    let query_params: Vec<Value> = feed_ids
+        .iter()
+        .map(|feed_id| Value::Text(feed_id.clone()))
+        .collect();
+    let rows = statement
+        .query_map(params_from_iter(query_params.iter()), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .map_err(|error| format!("Failed to query batch feed counts: {error}"))?;
+
+    for row in rows {
+        let (feed_id, article_count, unread_count) = row
+            .map_err(|error| format!("Failed to read batch feed count row: {error}"))?;
+        counts_by_feed.insert(feed_id, (article_count, unread_count));
+    }
+
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to start feed count sync transaction: {error}"))?;
+
+    let mut synced = Vec::with_capacity(feed_ids.len());
+    for feed_id in feed_ids {
+        let (article_count, unread_count) = counts_by_feed
+            .get(feed_id)
+            .copied()
+            .unwrap_or((0, 0));
+        transaction
+            .execute(
+                "UPDATE feeds SET unread_count = ?1, article_count = ?2 WHERE id = ?3",
+                params![unread_count, article_count, feed_id],
+            )
+            .map_err(|error| format!("Failed to update feed counts for {feed_id}: {error}"))?;
+        synced.push(FeedArticleCounts {
+            feed_id: feed_id.clone(),
+            unread_count,
+            article_count,
+        });
+    }
+
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit feed count sync transaction: {error}"))?;
+
+    Ok(synced)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn articles_sync_feed_counts_batch(
+    feed_ids: Vec<String>,
+    state: State<'_, DbState>,
+) -> Result<Vec<FeedArticleCounts>, String> {
+    state.with_connection(|connection| sync_feed_article_counts_batch(connection, &feed_ids))
 }
 
 #[tauri::command(rename_all = "camelCase")]

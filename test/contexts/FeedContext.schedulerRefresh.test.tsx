@@ -13,6 +13,7 @@ vi.mock('@/stores/articleStore', () => ({
   store: vi.fn(),
   getUnreadCount: vi.fn(),
   getArticleCount: vi.fn(),
+  syncFeedCountsBatch: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('@/stores/feedStore', () => ({
@@ -80,6 +81,7 @@ const schedulerHarness = vi.hoisted(() => {
       setActiveStationFocus: vi.fn(),
       clearActiveStationFocus: vi.fn(),
       suppressFeedsForNextCycle: vi.fn(),
+      setRuntimeUiState: vi.fn(),
     },
     __emitSchedulerEvent: (event: TestSchedulerEvent) => {
       listener?.(event);

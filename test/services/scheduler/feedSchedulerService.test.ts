@@ -27,6 +27,9 @@ const fetchFeedNetworkWithCache = vi.hoisted(() => vi.fn().mockResolvedValue({
   lastModified: "date-1",
 }));
 const getSettings = vi.hoisted(() => vi.fn().mockResolvedValue({ backgroundUpdate: "every-5m" }));
+const storeParsedFeedContent = vi.hoisted(() => vi.fn());
+const syncFeedCountsBatch = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+const publishFeedsCountsUpdated = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/tauriClient", () => ({
   tauriClient: {
@@ -59,13 +62,23 @@ vi.mock("@/stores/articleStore", () => ({
   query: vi.fn(),
   getUnreadCount: vi.fn(),
   getArticleCount: vi.fn(),
+  syncFeedCountsBatch,
+}));
+
+vi.mock("@/services/feeds/feedRefreshPipeline", () => ({
+  storeParsedFeedContent,
+}));
+
+vi.mock("@/services/ui/feedLibraryMutationBus", () => ({
+  feedLibraryMutationBus: {
+    publishFeedsCountsUpdated,
+  },
 }));
 
 vi.mock("@/services/feeds/feedsFetcher", () => ({
   feedsFetcher: {
     fetchFeedNetworkWithCache,
   },
-  parseFeed: vi.fn(),
 }));
 
 vi.mock("@/services/feeds/feedRefreshActivity", () => ({

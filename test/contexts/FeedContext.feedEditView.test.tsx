@@ -53,6 +53,7 @@ describe('FeedContext FeedEditView transition', () => {
     (feedStore.getCount as vi.Mock).mockResolvedValue(1);
     (feedStore.getById as vi.Mock).mockResolvedValue({ id: 'feed-a', url: 'url-a', title: 'Title A' });
     (articleStore.query as vi.Mock).mockResolvedValue({ articles: [{ hash: '1', title: 'Art 1' }], total: 1 });
+    (articleStore.syncFeedCountsBatch as vi.Mock).mockResolvedValue([]);
     (feedsFetcher.fetchFeed as vi.Mock).mockResolvedValue({ items: [] });
   });
 

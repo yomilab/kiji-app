@@ -56,3 +56,10 @@ export const useStationsHydratedMutation = () =>
     feedLibraryMutationBus.getStationsHydrated,
     (): null => null
   );
+
+export const useFeedsCountsUpdatedMutation = () =>
+  useSyncExternalStore(
+    feedLibraryMutationBus.subscribe,
+    feedLibraryMutationBus.getFeedsCountsUpdated,
+    (): null => null,
+  );

@@ -6,6 +6,7 @@ import {
   useFeedDeletedMutation,
   useFeedPatchedMutation,
   useFeedsAddedMutation,
+  useFeedsCountsUpdatedMutation,
   useStationDeletedMutation,
 } from '@/hooks/useFeedLibraryMutation';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
@@ -22,6 +23,7 @@ interface Feed {
   title: string;
   url: string;
   unreadCount?: number;
+  articleCount?: number;
   tags: string[];
   favicon?: string;
   faviconHasTransparency?: boolean;
@@ -105,6 +107,7 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
   const patchedFeed = useFeedPatchedMutation();
   const deletedFeed = useFeedDeletedMutation();
   const addedFeeds = useFeedsAddedMutation();
+  const feedsCountsUpdated = useFeedsCountsUpdatedMutation();
   const deletedStation = useStationDeletedMutation();
 
   const sortUntaggedFeeds = useCallback((feedList: Feed[]) => (
@@ -200,6 +203,28 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
       });
     }
   }, [patchedFeed, sortUntaggedFeeds]);
+
+  useEffect(() => {
+    if (!feedsCountsUpdated) return;
+
+    setFeeds((current) => {
+      let changed = false;
+      const nextFeeds = [...current];
+      for (const feedCounts of feedsCountsUpdated.feeds) {
+        const index = nextFeeds.findIndex((feed) => feed.id === feedCounts.id);
+        if (index < 0) {
+          continue;
+        }
+        changed = true;
+        nextFeeds[index] = {
+          ...nextFeeds[index],
+          unreadCount: feedCounts.unreadCount,
+          articleCount: feedCounts.articleCount,
+        };
+      }
+      return changed ? nextFeeds : current;
+    });
+  }, [feedsCountsUpdated]);
 
   useEffect(() => {
     if (!deletedFeed) return;

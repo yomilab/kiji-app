@@ -92,8 +92,10 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
   const { error, totalFeeds } = useFeedUI();
 
   const [hasListScrollOffset, setHasListScrollOffset] = useState(false);
+  const [deferPreviewImages, setDeferPreviewImages] = useState(false);
   const articleListRef = useRef<HTMLDivElement>(null);
   const articleListItemsRef = useRef<HTMLDivElement>(null);
+  const previewImageScrollIdleTimerRef = useRef<number | null>(null);
   
   const {
     searchQuery,
@@ -281,6 +283,14 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
     const { scrollTop } = event.currentTarget;
     const isScrolled = scrollTop > 0;
     setHasListScrollOffset((previous) => (previous === isScrolled ? previous : isScrolled));
+    setDeferPreviewImages(true);
+    if (previewImageScrollIdleTimerRef.current !== null) {
+      window.clearTimeout(previewImageScrollIdleTimerRef.current);
+    }
+    previewImageScrollIdleTimerRef.current = window.setTimeout(() => {
+      previewImageScrollIdleTimerRef.current = null;
+      setDeferPreviewImages(false);
+    }, 450);
     syncViewportSnapshot(!isScrolled, true);
   }, [syncViewportSnapshot]);
 
@@ -301,6 +311,14 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
     ensureHashInView,
     setHasListScrollOffset,
   });
+
+  useEffect(() => {
+    return () => {
+      if (previewImageScrollIdleTimerRef.current !== null) {
+        window.clearTimeout(previewImageScrollIdleTimerRef.current);
+      }
+    };
+  }, []);
 
   const isInitialLoading = isListLoading && sourceArticles.length === 0;
   const hasStoredArticles = sourceArticles.length > 0;
@@ -447,6 +465,7 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
                       newAnimationOrder={newArticleAnimationOrderMap.get(article.hash) ?? -1}
                       readStateMode={isSavedView ? 'none' : 'normal'}
                       searchQuery={debouncedSearchQuery}
+                      deferPreviewImages={deferPreviewImages}
                       onSelect={handleSelectArticle}
                       formatDateDisplay={formatDateDisplay}
                       enableLayoutAnimation={false}

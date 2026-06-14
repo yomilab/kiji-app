@@ -2,16 +2,17 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { tauriClient } from '@/lib/tauriClient';
 import * as articleStore from '@/stores/articleStore';
 import * as feedStore from '@/stores/feedStore';
-import { convertFeedItemsToArticles } from '@/services/articles/articleConverter';
 import { feedRefreshActivity } from '@/services/feeds/feedRefreshActivity';
 import { feedRefreshCoordinator } from '@/services/feeds/feedRefreshCoordinator';
-import { feedsFetcher, parseFeed } from '@/services/feeds/feedsFetcher';
+import { feedsFetcher } from '@/services/feeds/feedsFetcher';
+import { storeParsedFeedContent } from '@/services/feeds/feedRefreshPipeline';
 import { maybeRefreshFavicon } from '@/services/favicons/faviconRefreshService';
 import { settingsManager } from '@/services/settings';
 import { createTaskPool } from '@/services/tasks/taskPool';
 import { logger } from '@/services/logger';
-import { computeFrequencyFromDates } from './feedPriorityCalculator';
+import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 import { createSchedulerRunPlan } from './schedulerRunPlan';
+import { getSchedulerConcurrency, setSchedulerRuntimeUiState } from './schedulerConcurrency';
 import type {
   BackgroundUpdateMode,
   FeedPriorityEntry,
@@ -45,13 +46,6 @@ interface ActiveStationFocus {
   feedIds: Set<string>;
 }
 
-const getConcurrency = (): number => {
-  if (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) {
-    return Math.min(8, Math.max(3, navigator.hardwareConcurrency));
-  }
-  return 3;
-};
-
 class FeedSchedulerService {
   private cycleInProgress = false;
   private pendingCycleTick = false;
@@ -74,6 +68,10 @@ class FeedSchedulerService {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  setRuntimeUiState(patch: Partial<{ scrollActive: boolean; articleViewOpen: boolean }>): void {
+    setSchedulerRuntimeUiState(patch);
   }
 
   async start(): Promise<void> {
@@ -503,6 +501,7 @@ class FeedSchedulerService {
       insertedArticles: 0,
       failedFeeds: 0,
     };
+    const feedsNeedingCountSync = new Set<string>();
 
     try {
       const feeds = await feedStore.getAll();
@@ -542,7 +541,7 @@ class FeedSchedulerService {
         : null;
 
       try {
-        const pool = createTaskPool({ concurrency: getConcurrency() });
+        const pool = createTaskPool({ concurrency: getSchedulerConcurrency() });
         for (const entry of prioritized) {
           if (signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
             break;
@@ -553,10 +552,28 @@ class FeedSchedulerService {
             lifecycleId,
             cycleStats,
             releaseQueuedFeeds,
+            feedsNeedingCountSync,
           ));
         }
 
         await pool.whenIdle();
+
+        if (
+          feedsNeedingCountSync.size > 0
+          && !signal.aborted
+          && this.isCurrentLifecycle(lifecycleId)
+        ) {
+          const syncedCounts = await articleStore.syncFeedCountsBatch(Array.from(feedsNeedingCountSync));
+          if (syncedCounts.length > 0) {
+            feedLibraryMutationBus.publishFeedsCountsUpdated(
+              syncedCounts.map((counts) => ({
+                feedId: counts.feedId,
+                unreadCount: counts.unreadCount,
+                articleCount: counts.articleCount,
+              })),
+            );
+          }
+        }
       } finally {
         releaseQueuedFeeds?.();
       }
@@ -594,6 +611,7 @@ class FeedSchedulerService {
     lifecycleId: number,
     cycleStats: SchedulerCycleStats,
     releaseQueuedFeeds: ((feedId?: string) => void) | null,
+    feedsNeedingCountSync: Set<string>,
   ): Promise<void> {
     let queuedFeedReleased = false;
     const settleQueuedFeed = (): void => {
@@ -648,47 +666,33 @@ class FeedSchedulerService {
           return;
         }
 
-        const feedItems = parseFeed(networkResult.data, entry.feedUrl);
-        const articles = await convertFeedItemsToArticles(feedItems, {
+        const stored = await storeParsedFeedContent({
           feedId: entry.feedId,
           feedUrl: entry.feedUrl,
           feed,
           feedTitle: entry.feedTitle,
+          rawText: networkResult.data,
+          signal,
         });
         if (signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
           return;
         }
 
-        const insertedCount = await articleStore.store(entry.feedId, articles);
         cycleStats.changedFeeds += 1;
-        cycleStats.insertedArticles += insertedCount;
-
-        const { articles: recentArticles } = await articleStore.query({
-          feedIds: [entry.feedId],
-          sort: { field: 'publishedDate', order: 'desc' },
-          limit: 50,
-        });
-
-        const dates = recentArticles
-          .map((article) => article.publishedDate)
-          .filter((date): date is string => !!date);
-        const newFrequency = computeFrequencyFromDates(dates);
+        cycleStats.insertedArticles += stored.insertedCount;
+        feedsNeedingCountSync.add(entry.feedId);
 
         await feedStore.update(entry.feedId, {
           lastFetched: new Date(),
           lastFailedFetchAt: undefined,
-          updateFrequencyScore: newFrequency,
+          updateFrequencyScore: stored.updateFrequencyScore ?? feed.updateFrequencyScore,
           consecutiveFailures: 0,
           etag: networkResult.etag,
           lastModifiedHeader: networkResult.lastModified,
         });
 
-        const unreadCount = await articleStore.getUnreadCount(entry.feedId);
-        const articleCount = await articleStore.getArticleCount(entry.feedId);
-        await feedStore.update(entry.feedId, { unreadCount, articleCount });
-
         void maybeRefreshFavicon(entry.feedId, entry.feedUrl);
-        this.emit({ type: 'feed-updated', feedId: entry.feedId, newArticleCount: insertedCount });
+        this.emit({ type: 'feed-updated', feedId: entry.feedId, newArticleCount: stored.insertedCount });
       }, { signal });
     } catch (error) {
       settleQueuedFeed();

@@ -10,9 +10,9 @@ mod tags;
 pub use articles::{
     articles_clean_old_across_feeds, articles_clean_old_by_feed, articles_count_by_feed,
     articles_count_unread_by_feed, articles_delete_by_feed, articles_exists, articles_get,
-    articles_get_content, articles_insert_batch, articles_query, articles_toggle_starred,
-    articles_update_feed_meta, articles_update_last_read_at, articles_update_read,
-    articles_update_saved_state,
+    articles_get_content, articles_insert_batch, articles_query, articles_sync_feed_counts_batch,
+    articles_toggle_starred, articles_update_feed_meta, articles_update_last_read_at,
+    articles_update_read, articles_update_saved_state,
 };
 pub use feeds::{
     feeds_count, feeds_create, feeds_delete, feeds_get, feeds_get_by_url, feeds_list, feeds_update,
@@ -232,7 +232,7 @@ fn read_foreign_keys_enabled(connection: &Connection) -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        articles::{get_article, query_articles, ArticleQueryRequest},
+        articles::{get_article, query_articles, sync_feed_article_counts_batch, ArticleQueryRequest},
         feeds::list_feeds,
         migrations::{read_current_migration_version, run_migrations},
         saved::{get_saved_article_by_hash, query_saved_articles, SavedArticleQueryRequest},
@@ -757,5 +757,41 @@ mod tests {
         assert_eq!(reloaded.sidebar_width, 280);
 
         let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn sync_feed_article_counts_batch_updates_feed_rows_in_one_transaction() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+        seed_repository_fixture(&connection);
+
+        connection
+            .execute(
+                "INSERT INTO articles (hash, feed_id, title, read, fetched_date) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    "article-hash-2",
+                    "feed-1",
+                    "Read article",
+                    1,
+                    "2026-01-02T00:00:00.000Z"
+                ],
+            )
+            .expect("insert read article");
+
+        let synced = sync_feed_article_counts_batch(&connection, &["feed-1".to_string()])
+            .expect("sync feed counts");
+        assert_eq!(synced.len(), 1);
+        assert_eq!(synced[0].feed_id, "feed-1");
+        assert_eq!(synced[0].article_count, 2);
+        assert_eq!(synced[0].unread_count, 1);
+
+        let stored_counts = connection
+            .query_row(
+                "SELECT unread_count, article_count FROM feeds WHERE id = ?1",
+                params!["feed-1"],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .expect("read feed counts");
+        assert_eq!(stored_counts, (1, 2));
     }
 }

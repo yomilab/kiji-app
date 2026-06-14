@@ -87,6 +87,7 @@ export const tauriCommandCatalog: Record<
     { legacyMethod: "dbArticlesCleanOldAcrossFeeds", legacyChannel: "db-articles-clean-old-across-feeds", kind: "invoke", targetCommand: "articles.cleanOldAcrossFeeds", rustCommand: "articles_clean_old_across_feeds" },
     { legacyMethod: "dbArticlesUnreadCount", legacyChannel: "db-articles-unread-count", kind: "invoke", targetCommand: "articles.countUnreadByFeed", rustCommand: "articles_count_unread_by_feed" },
     { legacyMethod: "dbArticlesCount", legacyChannel: "db-articles-count", kind: "invoke", targetCommand: "articles.countByFeed", rustCommand: "articles_count_by_feed" },
+    { legacyMethod: "dbArticlesSyncFeedCountsBatch", legacyChannel: "db-articles-sync-feed-counts-batch", kind: "invoke", targetCommand: "articles.syncFeedCountsBatch", rustCommand: "articles_sync_feed_counts_batch" },
     { legacyMethod: "dbArticlesUpdateFeedMeta", legacyChannel: "db-articles-update-feed-meta", kind: "invoke", targetCommand: "articles.updateFeedMeta", rustCommand: "articles_update_feed_meta" },
   ],
   saved: [

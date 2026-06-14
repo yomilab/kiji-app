@@ -138,7 +138,13 @@ describe('SharedArticleList hooks', () => {
       vi.useRealTimers();
     });
 
-    it('resets scroll immediately on source switch and again after loading settles', () => {
+    it('resets scroll on source switch via requestAnimationFrame', () => {
+      const pendingFrames: FrameRequestCallback[] = [];
+      window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+        pendingFrames.push(callback);
+        return pendingFrames.length;
+      }) as typeof window.requestAnimationFrame;
+
       const scrollToIndex = vi.fn();
       const setHasListScrollOffset = vi.fn();
       const articleListItemsRef = {
@@ -148,9 +154,8 @@ describe('SharedArticleList hooks', () => {
       } as RefObject<HTMLDivElement>;
 
       const { rerender } = renderHook(
-        ({ sourceKey, isListLoading }) => useArticleListScrollReset({
+        ({ sourceKey }) => useArticleListScrollReset({
           sourceKey,
-          isListLoading,
           filteredCount: 3,
           articleListItemsRef,
           rowVirtualizer: { scrollToIndex },
@@ -159,28 +164,23 @@ describe('SharedArticleList hooks', () => {
         {
           initialProps: {
             sourceKey: 'feed:1',
-            isListLoading: false,
           },
         }
       );
 
       rerender({
         sourceKey: 'feed:2',
-        isListLoading: true,
+      });
+
+      expect(articleListItemsRef.current?.scrollTop).toBe(240);
+      expect(scrollToIndex).not.toHaveBeenCalled();
+
+      act(() => {
+        pendingFrames.at(-1)?.(0);
       });
 
       expect(articleListItemsRef.current?.scrollTop).toBe(0);
       expect(scrollToIndex).toHaveBeenCalledWith(0, { align: 'start' });
-      expect(setHasListScrollOffset).toHaveBeenCalledWith(false);
-
-      articleListItemsRef.current!.scrollTop = 120;
-      rerender({
-        sourceKey: 'feed:2',
-        isListLoading: false,
-      });
-
-      expect(articleListItemsRef.current?.scrollTop).toBe(0);
-      expect(scrollToIndex).toHaveBeenCalledTimes(2);
       expect(setHasListScrollOffset).toHaveBeenCalledWith(false);
     });
 
@@ -191,7 +191,9 @@ describe('SharedArticleList hooks', () => {
         pendingFrames.push(callback);
         return pendingFrames.length;
       }) as typeof window.requestAnimationFrame;
-      window.cancelAnimationFrame = vi.fn() as typeof window.cancelAnimationFrame;
+      window.cancelAnimationFrame = ((frameId: number) => {
+        pendingFrames[frameId - 1] = () => {};
+      }) as typeof window.cancelAnimationFrame;
 
       const scrollToIndex = vi.fn();
       const setHasListScrollOffset = vi.fn();
@@ -202,9 +204,8 @@ describe('SharedArticleList hooks', () => {
       } as RefObject<HTMLDivElement>;
 
       const { rerender } = renderHook(
-        ({ sourceKey, isListLoading }) => useArticleListScrollReset({
+        ({ sourceKey }) => useArticleListScrollReset({
           sourceKey,
-          isListLoading,
           filteredCount: 3,
           articleListItemsRef,
           rowVirtualizer: { scrollToIndex },
@@ -213,18 +214,15 @@ describe('SharedArticleList hooks', () => {
         {
           initialProps: {
             sourceKey: 'feed:1',
-            isListLoading: false,
           },
         }
       );
 
       rerender({
         sourceKey: 'feed:2',
-        isListLoading: false,
       });
       rerender({
         sourceKey: 'feed:3',
-        isListLoading: false,
       });
 
       articleListItemsRef.current!.scrollTop = 180;

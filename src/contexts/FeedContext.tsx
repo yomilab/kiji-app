@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useCallback, ReactNode, useTransition, useRef, useReducer, useMemo } from 'react';
-import { feedsFetcher, parseFeed } from '@/services/feeds/feedsFetcher';
+import { feedsFetcher } from '@/services/feeds/feedsFetcher';
+import { storeParsedFeedContent } from '@/services/feeds/feedRefreshPipeline';
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { savedArticlesService } from '@/services/saved/savedArticlesService';
 import * as articleStore from '@/stores/articleStore';
 import * as feedStore from '@/stores/feedStore';
-import { convertFeedItemsToArticles } from '@/services/articles/articleConverter';
 import type { Article } from '@/types/article';
 import type { ArticleQuery } from '@/types/articleQuery';
 import { FEED_FETCH_COOLDOWN_MS } from '@/constants';
@@ -19,6 +19,7 @@ import { useDependencyEffect, useMountEffect } from '@/hooks/useLifecycleEffects
 import type { SmartViewId } from '@/constants';
 import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
+import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 import { feedRefreshCoordinator } from '@/services/feeds/feedRefreshCoordinator';
 import { feedRefreshActivity } from '@/services/feeds/feedRefreshActivity';
 import { interactionPerformance } from '@/services/performance/interactionPerformance';
@@ -653,24 +654,25 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { inserted: 0 };
       }
 
-      const fetched = parseFeed(networkResult.data, feed.url);
-      if (signal?.aborted) return { inserted: 0 };
       await waitForUiBudget();
       if (signal?.aborted) return { inserted: 0 };
-      const articles = await convertFeedItemsToArticles(fetched, { feedId: feed.id, feedUrl: feed.url, feed });
-      if (signal?.aborted) return { inserted: 0 };
-      await waitForUiBudget();
-      if (signal?.aborted) return { inserted: 0 };
-      const inserted = await articleStore.store(feed.id, articles);
+
+      const stored = await storeParsedFeedContent({
+        feedId: feed.id,
+        feedUrl: feed.url,
+        feed,
+        rawText: networkResult.data,
+        signal,
+      });
       if (signal?.aborted) return { inserted: 0 };
 
       // [DEDUPLICATION_DEBUG]
       debugOnly(() => {
         logger.info('FeedContext', `Refresh results for ${feed.title}`, {
           feedId: feed.id,
-          total: articles.length,
-          inserted,
-          skipped: articles.length - inserted,
+          total: stored.articles.length,
+          inserted: stored.insertedCount,
+          skipped: stored.articles.length - stored.insertedCount,
         });
       });
 
@@ -678,17 +680,27 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         lastFetched: new Date(),
         lastFailedFetchAt: undefined,
         consecutiveFailures: 0,
+        etag: networkResult.etag,
+        lastModifiedHeader: networkResult.lastModified,
+        updateFrequencyScore: stored.updateFrequencyScore ?? feed.updateFrequencyScore,
       };
 
       if (options?.updateCounts) {
-        const unread = await articleStore.getUnreadCount(feed.id);
-        const articleCount = await articleStore.getArticleCount(feed.id);
-        updates.unreadCount = unread;
-        updates.articleCount = articleCount;
+        const syncedCounts = await articleStore.syncFeedCountsBatch([feed.id]);
+        const counts = syncedCounts[0];
+        if (counts) {
+          updates.unreadCount = counts.unreadCount;
+          updates.articleCount = counts.articleCount;
+          feedLibraryMutationBus.publishFeedsCountsUpdated([{
+            feedId: feed.id,
+            unreadCount: counts.unreadCount,
+            articleCount: counts.articleCount,
+          }]);
+        }
       }
 
       await feedsManager.updateFeed(feed.id, updates);
-      return { inserted };
+      return { inserted: stored.insertedCount };
     }, { signal });
   }, []);
 
@@ -1146,6 +1158,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds(feedIds);
     const activeSignal = selectionAbortControllerRef.current?.signal;
+    const feedsNeedingCountSync = new Set<string>();
     let nextFeedIndex = 0;
     let insertedTotal = 0;
 
@@ -1190,8 +1203,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             },
             activeSignal,
           );
-          if (result.inserted > 0 && isSelectionActive(token)) {
-            scheduleStationUiRefresh(sourceKey);
+          if (result.inserted > 0) {
+            feedsNeedingCountSync.add(id);
+            if (isSelectionActive(token)) {
+              scheduleStationUiRefresh(sourceKey);
+            }
           }
           return result.inserted;
         } catch (error) {
@@ -1222,6 +1238,24 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const workerCount = Math.min(STATION_REFRESH_WORKER_COUNT, feedIds.length);
       await Promise.allSettled(Array.from({ length: workerCount }, () => runWorker()));
+
+      if (
+        feedsNeedingCountSync.size > 0
+        && isSelectionActive(token)
+        && !activeSignal?.aborted
+      ) {
+        const syncedCounts = await articleStore.syncFeedCountsBatch(Array.from(feedsNeedingCountSync));
+        if (syncedCounts.length > 0) {
+          feedLibraryMutationBus.publishFeedsCountsUpdated(
+            syncedCounts.map((counts) => ({
+              feedId: counts.feedId,
+              unreadCount: counts.unreadCount,
+              articleCount: counts.articleCount,
+            })),
+          );
+        }
+      }
+
       return insertedTotal;
     } finally {
       releaseQueuedFeed();
@@ -1275,12 +1309,14 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     if (snapshot.isScrolling) {
       articleListScrollActiveRef.current = true;
+      feedScheduler.setRuntimeUiState({ scrollActive: true });
       if (articleListScrollIdleTimerRef.current !== null) {
         window.clearTimeout(articleListScrollIdleTimerRef.current);
       }
       articleListScrollIdleTimerRef.current = window.setTimeout(() => {
         articleListScrollIdleTimerRef.current = null;
         articleListScrollActiveRef.current = false;
+        feedScheduler.setRuntimeUiState({ scrollActive: false });
 
         const activeSource = activeSourceRef.current;
         if (
@@ -2093,7 +2129,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const feedUpdates = new Map(pendingSchedulerFeedUpdatesRef.current);
         pendingSchedulerFeedUpdatesRef.current.clear();
 
-        if (shouldNotifyLibrary || feedUpdates.size > 0) {
+        if (shouldNotifyLibrary) {
           notifyFeedLibraryChanged();
           shouldNotifyLibrary = false;
         }
@@ -2141,6 +2177,12 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   activeSourceRef.current = activeSourceSnapshot;
   articleViewOverlayPhaseRef.current = overlayState.articleViewOverlayPhase;
   activeArticleHashRef.current = overlayState.activeArticleHash;
+
+  useDependencyEffect(() => {
+    feedScheduler.setRuntimeUiState({
+      articleViewOpen: overlayState.articleViewOverlayPhase !== 'closed',
+    });
+  }, [overlayState.articleViewOverlayPhase]);
 
   useDependencyEffect(() => {
     articleViewOverlayPhaseRef.current = overlayState.articleViewOverlayPhase;

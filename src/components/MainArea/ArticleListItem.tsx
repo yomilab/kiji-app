@@ -13,6 +13,7 @@ interface ArticleListItemProps {
   enableLayoutAnimation?: boolean;
   readStateMode?: 'normal' | 'none';
   searchQuery?: string;
+  deferPreviewImages?: boolean;
   onSelect: (hash: string) => void;
   formatDateDisplay: (dateString: string) => string;
 }
@@ -26,6 +27,7 @@ export const ArticleListItem = memo<ArticleListItemProps>(
     enableLayoutAnimation = true,
     readStateMode = 'normal',
     searchQuery = '',
+    deferPreviewImages = false,
     onSelect,
     formatDateDisplay
   }) => {
@@ -38,6 +40,7 @@ export const ArticleListItem = memo<ArticleListItemProps>(
         : 'is-unread';
 
     const previewImageUrl = article.previewImage;
+    const previewImageSrc = deferPreviewImages ? undefined : previewImageUrl;
     const publishedDateLabel = article.publishedDate ? formatDateDisplay(article.publishedDate) : '';
     const [imageError, setImageError] = useState(false);
 
@@ -114,7 +117,7 @@ export const ArticleListItem = memo<ArticleListItemProps>(
               <div className="article-list-item-preview-image" aria-hidden="true">
                 <img
                   className="article-list-item-preview-image-content"
-                  src={previewImageUrl}
+                  src={previewImageSrc}
                   alt=""
                   loading="lazy"
                   decoding="async"
@@ -140,6 +143,7 @@ export const ArticleListItem = memo<ArticleListItemProps>(
       prevProps.enableLayoutAnimation === nextProps.enableLayoutAnimation &&
       prevProps.readStateMode === nextProps.readStateMode &&
       prevProps.searchQuery === nextProps.searchQuery &&
+      prevProps.deferPreviewImages === nextProps.deferPreviewImages &&
       prevProps.newAnimationOrder === nextProps.newAnimationOrder
     );
   }

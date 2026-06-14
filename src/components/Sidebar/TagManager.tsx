@@ -10,6 +10,7 @@ import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import {
   useFeedDeletedMutation,
   useFeedPatchedMutation,
+  useFeedsCountsUpdatedMutation,
   useStationDeletedMutation,
   useStationPatchedMutation,
   useStationsHydratedMutation,
@@ -207,6 +208,7 @@ export const TagManager: React.FC = () => {
   const { selectedTag, selectTag, selectedFeedId, selectFeed, openFeedEditView, clearFeedSelection } = useFeedNavigation();
   const feedFaviconRefreshed = useFeedFaviconRefreshed();
   const patchedFeed = useFeedPatchedMutation();
+  const feedsCountsUpdated = useFeedsCountsUpdatedMutation();
   const deletedFeed = useFeedDeletedMutation();
   const patchedStation = useStationPatchedMutation();
   const deletedStation = useStationDeletedMutation();
@@ -306,6 +308,27 @@ export const TagManager: React.FC = () => {
       });
     });
   }, [patchedFeed]);
+
+  useEffect(() => {
+    if (!feedsCountsUpdated) return;
+    setFeedCache((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const feedCounts of feedsCountsUpdated.feeds) {
+        const current = next.get(feedCounts.id);
+        if (!current) {
+          continue;
+        }
+        changed = true;
+        next.set(feedCounts.id, {
+          ...current,
+          unreadCount: feedCounts.unreadCount,
+          articleCount: feedCounts.articleCount,
+        });
+      }
+      return changed ? next : prev;
+    });
+  }, [feedsCountsUpdated]);
 
   useEffect(() => {
     if (!deletedFeed) return;

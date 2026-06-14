@@ -174,6 +174,17 @@ export async function getArticleCount(feedId: string): Promise<number> {
   return tauriClient.articles.countByFeed({ feedId });
 }
 
+export async function syncFeedCountsBatch(feedIds: string[]): Promise<Array<{
+  feedId: string;
+  unreadCount: number;
+  articleCount: number;
+}>> {
+  if (feedIds.length === 0) {
+    return [];
+  }
+  return tauriClient.articles.syncFeedCountsBatch({ feedIds });
+}
+
 export async function updateFeedMeta(
   feedId: string,
   meta: {

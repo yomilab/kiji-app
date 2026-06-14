@@ -113,6 +113,12 @@ export interface ArticleFeedMetadata {
   feedImage: UrlString | null;
 }
 
+export interface FeedArticleCountsRecord {
+  feedId: string;
+  unreadCount: number;
+  articleCount: number;
+}
+
 export interface ArticleRecord extends ArticleFeedMetadata {
   hash: string;
   feedId: string;
@@ -667,6 +673,10 @@ export interface ArticlesContract {
   countByFeed: {
     request: { feedId: string };
     response: number;
+  };
+  syncFeedCountsBatch: {
+    request: { feedIds: string[] };
+    response: FeedArticleCountsRecord[];
   };
   updateFeedMeta: {
     request: ArticleFeedMetaUpdateRequest;
