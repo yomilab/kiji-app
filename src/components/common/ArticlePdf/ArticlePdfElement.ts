@@ -6,6 +6,7 @@ type PdfJsModule = typeof import('pdfjs-dist');
 type PdfDocument = Awaited<ReturnType<PdfJsModule['getDocument']>['promise']>;
 type PdfPage = Awaited<ReturnType<PdfDocument['getPage']>>;
 type PdfLoadingTask = ReturnType<PdfJsModule['getDocument']>;
+type PdfRenderTask = ReturnType<PdfPage['render']>;
 
 let pdfJsModulePromise: Promise<PdfJsModule> | null = null;
 
@@ -29,14 +30,18 @@ function releaseCanvasMemory(canvas: HTMLCanvasElement): void {
 /**
  * ArticlePdfElement — owns PDF fetch/render lifecycle and releases pdf.js,
  * canvas, and byte buffers on cancel or disconnect.
+ * Renders each pdf.js page to canvas and appends it immediately (not batched).
  */
 class ArticlePdfElement extends HTMLElement {
   private root: ShadowRoot;
   private loadToken = 0;
   private activeUrl: string | null = null;
   private loadingTask: PdfLoadingTask | null = null;
+  private activeRenderTask: PdfRenderTask | null = null;
   private pdfDocument: PdfDocument | null = null;
   private renderedPages: PdfPage[] = [];
+  private releasePromise: Promise<void> = Promise.resolve();
+  private loadingElement: HTMLDivElement | null = null;
   private pagesContainer: HTMLDivElement;
   private promptContainer: HTMLDivElement;
 
@@ -72,22 +77,19 @@ class ArticlePdfElement extends HTMLElement {
         box-shadow: 0 1px 6px var(--theme-shadow, rgba(0, 0, 0, 0.1));
       }
 
-      .article-pdf-loading {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
+      .article-pdf-progress {
+        width: 100%;
+        max-width: 420px;
+        padding: 10px 0 4px;
+        font-size: 13px;
+        line-height: 1.4;
+        text-align: center;
+        color: var(--theme-text-tertiary, #9a9a9a);
       }
 
-      .article-pdf-loading-line {
-        height: 0.75em;
-        border-radius: 4px;
-        background: color-mix(in srgb, var(--theme-text-muted, #b5b5b5) 24%, transparent);
+      .article-pdf-loading-overlay-host {
+        width: 100%;
       }
-
-      .article-pdf-loading-line:nth-child(1) { width: 92%; }
-      .article-pdf-loading-line:nth-child(2) { width: 88%; }
-      .article-pdf-loading-line:nth-child(3) { width: 76%; }
-      .article-pdf-loading-line:nth-child(4) { width: 84%; }
 
       .article-pdf-prompt p {
         margin: 0 0 12px;
@@ -136,10 +138,12 @@ class ArticlePdfElement extends HTMLElement {
     void this.beginLoad(trimmed, token);
   }
 
-  cancelPendingWork(): void {
+  cancelPendingWork(options?: { silent?: boolean }): void {
     this.loadToken += 1;
     void this.releaseResources();
-    this.showLoadingState();
+    if (!options?.silent && this.isConnected) {
+      this.showLoadingState();
+    }
   }
 
   disconnectedCallback(): void {
@@ -154,28 +158,33 @@ class ArticlePdfElement extends HTMLElement {
     }
 
     this.showLoadingState();
+    this.dispatchPdfEvent('article-pdf-load-start');
 
-    const result = await loadPdfBytes(url);
+    const [result, pdfjs] = await Promise.all([
+      loadPdfBytes(url),
+      loadPdfJsModule(),
+    ]);
+
     if (token !== this.loadToken) {
       return;
     }
 
     if ('error' in result) {
       this.activeUrl = url;
+      this.clearLoadingState();
       this.showErrorState(result.error);
+      this.dispatchPdfEvent('article-pdf-load-error');
       return;
     }
 
     this.activeUrl = url;
-    await this.renderPdf(result.bytes, token);
+    await this.renderPdf(result.bytes, token, pdfjs);
   }
 
-  private async renderPdf(bytes: Uint8Array, token: number): Promise<void> {
+  private async renderPdf(bytes: Uint8Array, token: number, pdfjs: PdfJsModule): Promise<void> {
     this.clearPrompt();
-    this.pagesContainer.replaceChildren();
 
     try {
-      const pdfjs = await loadPdfJsModule();
       if (token !== this.loadToken) {
         return;
       }
@@ -191,9 +200,14 @@ class ArticlePdfElement extends HTMLElement {
       }
 
       this.pdfDocument = pdf;
-      const fragment = document.createDocumentFragment();
+      const totalPages = pdf.numPages;
+      const containerWidth = this.resolveRenderContainerWidth();
+      const progressFooter = totalPages > 1 ? this.createProgressFooter(totalPages) : null;
+      if (progressFooter) {
+        this.pagesContainer.appendChild(progressFooter);
+      }
 
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
+      for (let pageNum = 1; pageNum <= totalPages; pageNum += 1) {
         if (token !== this.loadToken) {
           break;
         }
@@ -204,7 +218,7 @@ class ArticlePdfElement extends HTMLElement {
           break;
         }
 
-        const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
+        const viewport = this.resolvePageViewport(page, containerWidth);
         const canvas = document.createElement('canvas');
         canvas.className = 'article-pdf-page';
         canvas.width = Math.floor(viewport.width);
@@ -216,10 +230,26 @@ class ArticlePdfElement extends HTMLElement {
           continue;
         }
 
-        await page.render({
+        const renderTask = page.render({
           canvasContext: context,
           viewport,
-        }).promise;
+        });
+        this.activeRenderTask = renderTask;
+
+        try {
+          await renderTask.promise;
+        } catch {
+          page.cleanup();
+          if (token !== this.loadToken) {
+            releaseCanvasMemory(canvas);
+            break;
+          }
+          continue;
+        } finally {
+          if (this.activeRenderTask === renderTask) {
+            this.activeRenderTask = null;
+          }
+        }
 
         if (token !== this.loadToken) {
           releaseCanvasMemory(canvas);
@@ -228,27 +258,100 @@ class ArticlePdfElement extends HTMLElement {
         }
 
         this.renderedPages.push(page);
-        fragment.appendChild(canvas);
+        if (pageNum === 1) {
+          this.clearLoadingState();
+          this.dispatchPdfEvent('article-pdf-first-page-rendered');
+        }
+
+        if (progressFooter) {
+          this.pagesContainer.insertBefore(canvas, progressFooter);
+          progressFooter.textContent = `Rendering page ${pageNum} of ${totalPages}…`;
+        } else {
+          this.pagesContainer.appendChild(canvas);
+        }
+
+        if (pageNum < totalPages) {
+          await this.yieldToUiThread();
+        }
       }
 
       if (token !== this.loadToken) {
-        for (const canvas of fragment.querySelectorAll('canvas')) {
-          releaseCanvasMemory(canvas);
-        }
         return;
       }
 
-      this.pagesContainer.appendChild(fragment);
+      if (progressFooter) {
+        progressFooter.remove();
+      }
+
+      this.dispatchPdfEvent('article-pdf-render-complete');
     } catch (error) {
       if (token !== this.loadToken) {
         return;
       }
       console.error('Failed to render PDF:', error);
+      this.clearLoadingState();
       this.showErrorState('Could not render PDF.');
+      this.dispatchPdfEvent('article-pdf-load-error');
     }
   }
 
+  private resolveRenderContainerWidth(): number {
+    const hostWidth = this.getBoundingClientRect().width;
+    if (hostWidth > 0) {
+      return hostWidth;
+    }
+    const parentWidth = this.parentElement?.getBoundingClientRect().width ?? 0;
+    if (parentWidth > 0) {
+      return parentWidth;
+    }
+    return 720;
+  }
+
+  private resolvePageViewport(page: PdfPage, containerWidth: number) {
+    const unscaled = page.getViewport({ scale: 1 });
+    const maxWidth = Math.max(containerWidth, 320);
+    const scale = Math.min(PDF_RENDER_SCALE, maxWidth / unscaled.width);
+    return page.getViewport({ scale });
+  }
+
+  private dispatchPdfEvent(type: string): void {
+    this.dispatchEvent(new CustomEvent(type, {
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private createProgressFooter(totalPages: number): HTMLDivElement {
+    const progress = document.createElement('div');
+    progress.className = 'article-pdf-progress';
+    progress.textContent = `Rendering page 1 of ${totalPages}…`;
+    return progress;
+  }
+
+  private yieldToUiThread(): Promise<void> {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+  }
+
   private async releaseResources(): Promise<void> {
+    this.releasePromise = this.releasePromise
+      .then(() => this.releaseResourcesInternal())
+      .catch(() => {});
+    return this.releasePromise;
+  }
+
+  private async releaseResourcesInternal(): Promise<void> {
+    const activeRenderTask = this.activeRenderTask;
+    this.activeRenderTask = null;
+    if (activeRenderTask) {
+      try {
+        activeRenderTask.cancel();
+      } catch {
+        // Ignore races when render is already finished.
+      }
+    }
+
     const loadingTask = this.loadingTask;
     this.loadingTask = null;
     if (loadingTask) {
@@ -289,19 +392,32 @@ class ArticlePdfElement extends HTMLElement {
 
   private showLoadingState(): void {
     this.clearPrompt();
-    this.pagesContainer.replaceChildren();
+    this.clearLoadingState();
 
     const loading = document.createElement('div');
-    loading.className = 'article-pdf-loading';
-    for (let index = 0; index < 4; index += 1) {
-      const line = document.createElement('div');
-      line.className = 'article-pdf-loading-line';
-      loading.appendChild(line);
+    loading.className = 'article-pdf-loading-overlay-host';
+    loading.setAttribute('aria-busy', 'true');
+    loading.setAttribute('aria-label', 'Loading PDF');
+    for (let index = 0; index < 6; index += 1) {
+      const block = document.createElement('div');
+      block.className = 'article-pdf-page article-pdf-loading-page';
+      block.style.minHeight = '420px';
+      block.style.background = 'color-mix(in srgb, var(--theme-text-muted, #b5b5b5) 14%, transparent)';
+      loading.appendChild(block);
     }
+    this.loadingElement = loading;
     this.pagesContainer.appendChild(loading);
   }
 
+  private clearLoadingState(): void {
+    if (this.loadingElement) {
+      this.loadingElement.remove();
+      this.loadingElement = null;
+    }
+  }
+
   private showErrorState(message: string): void {
+    this.clearLoadingState();
     for (const canvas of this.pagesContainer.querySelectorAll('canvas')) {
       releaseCanvasMemory(canvas);
     }
@@ -340,5 +456,5 @@ export default ArticlePdfElement;
 
 export interface ArticlePdfElementInstance extends HTMLElement {
   setSource?: (url: string) => void;
-  cancelPendingWork?: () => void;
+  cancelPendingWork?: (options?: { silent?: boolean }) => void;
 }

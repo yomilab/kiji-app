@@ -1037,6 +1037,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   const [readerLoading, setReaderLoading] = useState(false);
   const [readerError, setReaderError] = useState<string | null>(null);
   const [articleResourceType, setArticleResourceType] = useState<'html' | 'pdf' | 'unsupported' | null>(null);
+  const [pdfViewerLoading, setPdfViewerLoading] = useState(false);
   const [clipboardLoading, setClipboardLoading] = useState(false);
   const [clipboardError, setClipboardError] = useState<string | null>(null);
   const [isTemporaryArticle, setIsTemporaryArticle] = useState(false);
@@ -1139,6 +1140,14 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     pendingArticleListUpdateRef.current = null;
     updateArticleInList(pending.hash, pending.updates);
   }, [updateArticleInList]);
+
+  useDependencyEffect(() => {
+    if (articleResourceType === 'pdf' && articleToShow?.link) {
+      setPdfViewerLoading(true);
+    } else {
+      setPdfViewerLoading(false);
+    }
+  }, [articleResourceType, articleToShow?.hash, articleToShow?.link]);
 
   const handleBack = useCallback(() => {
     if (isClosing) return;
@@ -1491,6 +1500,9 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
       readerContentHashRef.current = hash;
       readerFetchKeyRef.current = null;
       setArticleResourceType(result.resourceType);
+      if (result.resourceType === 'pdf') {
+        setPdfViewerLoading(true);
+      }
       setReaderLoading(false);
       return;
     }
@@ -1976,11 +1988,19 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
           exit={{ opacity: 0 }}
         >
           {podcastAudio}
+          {pdfViewerLoading && (
+            <div className="article-view-pdf-loading-overlay reader-loading" aria-busy="true" aria-label="Loading PDF">
+              <ArticleContentSkeleton />
+            </div>
+          )}
           <ArticlePdfViewer
-            key={articleToShow.link}
+            key={`${articleToShow.hash}:${articleToShow.link}`}
             url={articleToShow.link}
             suspendProcessing={isClosing}
             onOpenInBrowser={handleOpenInBrowser}
+            onLoadStart={() => setPdfViewerLoading(true)}
+            onFirstPageRendered={() => setPdfViewerLoading(false)}
+            onLoadError={() => setPdfViewerLoading(false)}
           />
         </motion.div>
       );

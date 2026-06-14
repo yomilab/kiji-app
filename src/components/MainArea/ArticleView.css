@@ -482,7 +482,17 @@
 
 /* Reader mode PDF panel wrapper (rendering lives in article-pdf custom element). */
 .article-view-pdf-panel {
+  position: relative;
   width: 100%;
+}
+
+.article-view-pdf-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background-color: var(--theme-article-bg, var(--theme-bg-primary));
+  overflow: hidden;
+  pointer-events: none;
 }
 
 /* Reader mode button follows shared .is-active style (same as hover) */

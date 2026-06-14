@@ -1,4 +1,10 @@
-use crate::settings::SettingsState;
+use crate::{
+    settings::SettingsState,
+    shell::window_bounds::{
+        fit_window_bounds_to_displays, monitor_work_area_logical, SavedWindowBounds,
+        MAIN_WINDOW_MIN_HEIGHT, MAIN_WINDOW_MIN_WIDTH,
+    },
+};
 use serde_json::Value as JsonValue;
 use std::{
     sync::{Arc, Mutex},
@@ -158,18 +164,49 @@ fn apply_main_window_bounds(
     settings: &SettingsState,
 ) -> Result<(), String> {
     let snapshot = settings.snapshot()?;
-    let size = LogicalSize::new(
-        snapshot.window_size.width as f64,
-        snapshot.window_size.height as f64,
-    );
-    main_window
-        .set_size(size)
-        .map_err(|error| format!("Failed to restore the main window size: {error}"))?;
+    let saved = SavedWindowBounds {
+        width: snapshot.window_size.width,
+        height: snapshot.window_size.height,
+        x: snapshot.window_size.x,
+        y: snapshot.window_size.y,
+    };
 
-    if let (Some(x), Some(y)) = (snapshot.window_size.x, snapshot.window_size.y) {
-        main_window
-            .set_position(LogicalPosition::new(x as f64, y as f64))
-            .map_err(|error| format!("Failed to restore the main window position: {error}"))?;
+    let monitors = main_window
+        .available_monitors()
+        .map_err(|error| format!("Failed to list available monitors: {error}"))?;
+    let work_areas = monitors
+        .iter()
+        .map(monitor_work_area_logical)
+        .collect::<Vec<_>>();
+    let primary = main_window
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .as_ref()
+        .map(monitor_work_area_logical);
+
+    let fitted = fit_window_bounds_to_displays(
+        saved,
+        &work_areas,
+        primary,
+        MAIN_WINDOW_MIN_WIDTH,
+        MAIN_WINDOW_MIN_HEIGHT,
+    );
+
+    main_window
+        .set_size(LogicalSize::new(
+            fitted.width as f64,
+            fitted.height as f64,
+        ))
+        .map_err(|error| format!("Failed to restore the main window size: {error}"))?;
+    main_window
+        .set_position(LogicalPosition::new(fitted.x as f64, fitted.y as f64))
+        .map_err(|error| format!("Failed to restore the main window position: {error}"))?;
+
+    if fitted.adjusted {
+        if let Err(error) = settings.update_window_bounds(fitted.width, fitted.height, Some(fitted.x), Some(fitted.y)) {
+            eprintln!("[WindowBounds] Failed to persist display-safe main window bounds: {error}");
+        }
     }
 
     Ok(())

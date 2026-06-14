@@ -2,6 +2,7 @@ mod context_menu;
 mod menu;
 mod share;
 mod window;
+mod window_bounds;
 mod window_guards;
 
 pub use context_menu::{shell_context_menu_show_image, ImageContextMenuState};
