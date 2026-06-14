@@ -419,4 +419,35 @@ describe("feedSchedulerService", () => {
       vi.useRealTimers();
     }
   });
+
+  it("registers a global wake handler for native eval ticks", async () => {
+    await feedScheduler.start();
+
+    expect((globalThis as Record<string, unknown>).__kijiSchedulerTick).toEqual(expect.any(Function));
+  });
+
+  it("reconfigures the native driver during catch-up after resume", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    try {
+      await feedScheduler.start();
+      const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+      await tickHandler?.();
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(1);
+      });
+
+      schedulerReconfigure.mockClear();
+      await vi.advanceTimersByTimeAsync(6 * 60_000);
+
+      await feedScheduler.catchUpAfterResume();
+
+      expect(schedulerReconfigure).toHaveBeenCalledWith({ mode: "every-5m" });
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(2);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

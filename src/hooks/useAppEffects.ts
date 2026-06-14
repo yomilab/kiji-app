@@ -28,6 +28,29 @@ import { appToastService } from '@/services/ui/appToastService';
 import { confirmDialog } from '@/services/ui/confirmDialogService';
 import { isMainRendererWindow } from '@/utils/rendererWindow';
 
+const BACKGROUND_SCHEDULER_WAKE_LOCK = 'kiji-feed-scheduler-background';
+
+const startBackgroundSchedulerWakeLock = (): (() => void) => {
+  if (typeof navigator === 'undefined' || !('locks' in navigator)) {
+    return () => {};
+  }
+
+  const abortController = new AbortController();
+  void navigator.locks.request(
+    BACKGROUND_SCHEDULER_WAKE_LOCK,
+    { mode: 'shared', signal: abortController.signal },
+    async () => {
+      await new Promise<void>((resolve) => {
+        abortController.signal.addEventListener('abort', () => resolve(), { once: true });
+      });
+    },
+  ).catch(() => {
+    // Ignore platforms or policies that reject background wake locks.
+  });
+
+  return () => abortController.abort();
+};
+
 export const useGlobalFetchLogging = (): void => {
   useMountEffect(() => {
     if (!import.meta.env.DEV) {
@@ -86,6 +109,7 @@ export const useFeedSchedulerLifecycle = (enabled = true): void => {
     }
 
     void feedScheduler.start();
+    const releaseBackgroundWakeLock = startBackgroundSchedulerWakeLock();
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
@@ -113,6 +137,7 @@ export const useFeedSchedulerLifecycle = (enabled = true): void => {
     const removeSettingsChangedListener = window.electronAPI?.onSettingsChanged?.(handleSettingsChanged);
 
     return () => {
+      releaseBackgroundWakeLock();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (typeof removeSettingsChangedListener === 'function') {
         removeSettingsChangedListener();

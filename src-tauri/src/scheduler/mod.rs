@@ -9,6 +9,7 @@ use tokio::sync::watch;
 
 const MAIN_WINDOW_LABEL: &str = "main";
 pub const SCHEDULER_CYCLE_TICK_EVENT: &str = "scheduler:cycle-tick";
+const SCHEDULER_TICK_WAKE_SCRIPT: &str = "globalThis.__kijiSchedulerTick?.()";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SchedulerStartOutcome {
@@ -69,7 +70,7 @@ impl FeedSchedulerState {
         }
 
         if mode == BackgroundUpdateMode::OnLaunch {
-            emit_cycle_tick(&app)?;
+            emit_cycle_tick(&app);
             return Ok(SchedulerStartOutcome::Started);
         }
 
@@ -150,10 +151,7 @@ async fn run_interval_loop(
     interval_ms: u64,
     generation: u64,
 ) {
-    if emit_cycle_tick(&app).is_err() {
-        state.on_loop_exited(generation);
-        return;
-    }
+    emit_cycle_tick(&app);
 
     loop {
         tokio::select! {
@@ -163,9 +161,7 @@ async fn run_interval_loop(
                 }
             }
             _ = tokio::time::sleep(Duration::from_millis(interval_ms)) => {
-                if emit_cycle_tick(&app).is_err() {
-                    break;
-                }
+                emit_cycle_tick(&app);
             }
         }
     }
@@ -173,16 +169,21 @@ async fn run_interval_loop(
     state.on_loop_exited(generation);
 }
 
-fn emit_cycle_tick(app: &AppHandle) -> Result<(), String> {
+fn emit_cycle_tick(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        main_window
-            .emit(SCHEDULER_CYCLE_TICK_EVENT, ())
-            .map_err(|error| format!("Failed to emit scheduler tick: {error}"))?;
-        return Ok(());
+        if let Err(error) = main_window.emit(SCHEDULER_CYCLE_TICK_EVENT, ()) {
+            eprintln!("[Scheduler] Failed to emit scheduler tick to main webview: {error}");
+        }
+
+        if let Err(error) = main_window.eval(SCHEDULER_TICK_WAKE_SCRIPT) {
+            eprintln!("[Scheduler] Failed to wake scheduler tick handler in main webview: {error}");
+        }
+        return;
     }
 
-    app.emit(SCHEDULER_CYCLE_TICK_EVENT, ())
-        .map_err(|error| format!("Failed to emit scheduler tick: {error}"))
+    if let Err(error) = app.emit(SCHEDULER_CYCLE_TICK_EVENT, ()) {
+        eprintln!("[Scheduler] Failed to emit scheduler tick: {error}");
+    }
 }
 
 fn interval_ms_for_mode(mode: BackgroundUpdateMode) -> Result<u64, String> {

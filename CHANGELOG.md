@@ -20,6 +20,7 @@
 
 ### Fixed
 
+- Interval feed refresh runs while KiJi is in the background: main window `backgroundThrottling: disabled`, native tick eval wake handler, resilient Rust interval loop, `ensureNativeDriverRunning` on catch-up, and WebLock fallback in scheduler lifecycle.
 - Saved-article folder sync: append new `.md` files and merge into `articles.md` without overwriting existing on-disk articles or deleting extra files in `articles/`.
 - GitHub Actions `build-desktop.yml` Linux ARM64: use native `ubuntu-24.04-arm` runner and shared Linux apt deps instead of x86_64 cross-compile, which hit Noble arm64 404s on `security.ubuntu.com` during `apt-get update`.
 - GitHub Actions build: FeedContext tests mock `fetchFeedNetworkWithCache` (not legacy `fetchFeed`) and preserve `parseFeed` export; smoke tests use bundled fixtures; skip Vitest subprocess `cargo test` hooks in CI (workflow runs `cargo test` separately); `opmlWorkflowService` ignores undefined feed lookups after station selection.

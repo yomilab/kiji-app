@@ -20,6 +20,7 @@ import type {
 } from './types';
 
 const SCHEDULER_CYCLE_TICK_EVENT = 'scheduler:cycle-tick';
+const SCHEDULER_TICK_WAKE_GLOBAL = '__kijiSchedulerTick';
 const STALE_CYCLE_ABORT_MS = 45 * 60 * 1_000;
 const STATION_SELECTION_PAUSE_MAX_MS = 10 * 60 * 1_000;
 const BOOST_TTL_MS = 5 * 60_000;
@@ -87,13 +88,14 @@ class FeedSchedulerService {
 
       this.mode = settings.backgroundUpdate ?? 'every-15m';
       await this.ensureNativeTickListener(lifecycleId);
+      this.registerNativeTickWakeHandler();
 
       if (!this.isCurrentLifecycle(lifecycleId)) {
         return;
       }
 
       if (this.nativeDriverActive) {
-        await tauriClient.scheduler.reconfigure({ mode: this.mode });
+        await this.ensureNativeDriverRunning(lifecycleId);
         await this.abortStaleLifecycle(lifecycleId);
         if (!this.isCurrentLifecycle(lifecycleId)) {
           return;
@@ -195,6 +197,7 @@ class FeedSchedulerService {
 
   async stop(): Promise<void> {
     this.lifecycleId += 1;
+    this.unregisterNativeTickWakeHandler();
     this.clearAbort();
     this.cycleInProgress = false;
     this.pendingCycleTick = false;
@@ -243,6 +246,11 @@ class FeedSchedulerService {
     }
 
     const lifecycleId = this.lifecycleId;
+    if (!this.isCurrentLifecycle(lifecycleId)) {
+      return;
+    }
+
+    await this.ensureNativeDriverRunning(lifecycleId);
     if (!this.isCurrentLifecycle(lifecycleId)) {
       return;
     }
@@ -359,6 +367,41 @@ class FeedSchedulerService {
       return Number.POSITIVE_INFINITY;
     }
     return MODE_INTERVAL_MS[this.mode];
+  }
+
+  private registerNativeTickWakeHandler(): void {
+    if (typeof globalThis === 'undefined') {
+      return;
+    }
+
+    (globalThis as Record<string, unknown>)[SCHEDULER_TICK_WAKE_GLOBAL] = () => {
+      void this.handleNativeCycleTick(this.lifecycleId);
+    };
+  }
+
+  private unregisterNativeTickWakeHandler(): void {
+    if (typeof globalThis === 'undefined') {
+      return;
+    }
+
+    delete (globalThis as Record<string, unknown>)[SCHEDULER_TICK_WAKE_GLOBAL];
+  }
+
+  private async ensureNativeDriverRunning(lifecycleId: number): Promise<void> {
+    if (
+      !this.isCurrentLifecycle(lifecycleId)
+      || !this.nativeDriverActive
+      || this.mode === 'never'
+      || this.mode === 'on-launch'
+    ) {
+      return;
+    }
+
+    try {
+      await tauriClient.scheduler.reconfigure({ mode: this.mode });
+    } catch (error) {
+      logger.warn('Scheduler', 'Failed to ensure native feed scheduler driver is running', { error });
+    }
   }
 
   private async ensureNativeTickListener(lifecycleId: number): Promise<void> {
