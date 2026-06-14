@@ -1,5 +1,7 @@
+mod accept_language;
 mod errors;
 
+use accept_language::browser_accept_language;
 use errors::{feed_http_status_error, feed_network_error, feed_request_cancelled_error};
 use futures_util::{future::{AbortHandle, Abortable}, StreamExt};
 use once_cell::sync::Lazy;
@@ -404,9 +406,9 @@ fn chrome_like_headers() -> HeaderMap {
     );
     headers.insert(
         ACCEPT_LANGUAGE,
-        "en-US,en;q=0.9"
+        browser_accept_language()
             .parse()
-            .expect("static accept-language header is valid"),
+            .expect("accept-language header is valid"),
     );
     headers.insert(
         ACCEPT_ENCODING,
@@ -629,6 +631,21 @@ mod tests {
         assert!(headers.contains_key(USER_AGENT));
         assert!(headers.contains_key("sec-ch-ua"));
         assert_eq!(headers.get(CACHE_CONTROL).unwrap(), "no-cache");
+        assert_eq!(
+            headers.get(ACCEPT_LANGUAGE).unwrap(),
+            browser_accept_language()
+        );
+        assert!(browser_accept_language().ends_with("*;q=0.1"));
+    }
+
+    #[test]
+    fn accept_language_prefers_system_primary_locale() {
+        use accept_language::build_accept_language_from_locales;
+
+        let header = build_accept_language_from_locales(["ja-JP", "en-US"]);
+        assert!(header.starts_with("ja-JP,"));
+        assert!(header.contains("ja;q=0.9"));
+        assert!(header.contains("en-US;q=0.8"));
     }
 
     #[test]
