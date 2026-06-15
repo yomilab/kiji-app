@@ -295,6 +295,7 @@ export function convertYouTubeIframesInContainer(container: Element, baseUrl: st
 
     iframeElement.setAttribute('loading', 'lazy');
     iframeElement.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    iframeElement.tabIndex = -1;
 
     const normalized = normalizeIframeEmbedSrc(currentSrc, baseUrl);
     if (!normalized.normalizedSrc) {

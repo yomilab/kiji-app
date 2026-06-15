@@ -133,8 +133,8 @@ export function activateLiteYoutubeInPlace(element: HTMLElement): boolean {
   iframe.allowFullscreen = true;
   iframe.referrerPolicy = 'strict-origin-when-cross-origin';
   iframe.setAttribute('loading', 'lazy');
+  iframe.tabIndex = -1;
 
   element.appendChild(iframe);
-  iframe.focus();
   return true;
 }

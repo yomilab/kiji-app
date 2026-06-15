@@ -999,6 +999,46 @@ function useArticleAutofocus(params: {
   }, [articleHash, clipboardLoading, deckOpen, standalone, isClosing, articleToShow, scrollContainerRef]);
 }
 
+const ARTICLE_EMBEDDED_MEDIA_FOCUS_SELECTOR = 'iframe, video, audio, embed, object, lite-youtube';
+
+function isArticleEmbeddedMediaFocusEvent(event: FocusEvent, scrollContainer: HTMLElement): boolean {
+  if (!event.composedPath().includes(scrollContainer)) {
+    return false;
+  }
+
+  return event.composedPath().some((node) =>
+    node instanceof HTMLElement && node.matches(ARTICLE_EMBEDDED_MEDIA_FOCUS_SELECTOR),
+  );
+}
+
+// Keep keyboard focus on the scroll container so article shortcuts work after embed clicks.
+function useArticleEmbeddedMediaFocusGuard(params: {
+  enabled: boolean;
+  scrollContainerRef: React.MutableRefObject<HTMLDivElement | null>;
+}): void {
+  const { enabled, scrollContainerRef } = params;
+
+  useDependencyEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const handleFocusIn = (event: FocusEvent) => {
+      const scrollContainer = scrollContainerRef.current;
+      if (!scrollContainer || !isArticleEmbeddedMediaFocusEvent(event, scrollContainer)) {
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        scrollContainer.focus({ preventScroll: true });
+      });
+    };
+
+    document.addEventListener('focusin', handleFocusIn, true);
+    return () => document.removeEventListener('focusin', handleFocusIn, true);
+  }, [enabled, scrollContainerRef]);
+}
+
 // Phase 5: cleanup timers and preprocess tasks on unmount.
 function useArticleViewCleanup(
   cancelArticleBodyProcessing: () => void,
@@ -1917,6 +1957,10 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     standalone,
     isClosing,
     articleToShow,
+    scrollContainerRef,
+  });
+  useArticleEmbeddedMediaFocusGuard({
+    enabled: !isClosing && !!articleToShow,
     scrollContainerRef,
   });
   useArticleViewCleanup(cancelArticleBodyProcessing, timeoutRef);

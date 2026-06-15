@@ -119,7 +119,9 @@ describe('activateLiteYoutubeInPlace', () => {
     expect(iframe.src).not.toContain('youtube-nocookie.com/embed');
     expect(iframe.src).not.toContain('enablejsapi=1');
     expect(iframe.referrerPolicy).toBe('strict-origin-when-cross-origin');
+    expect(iframe.tabIndex).toBe(-1);
     expect(element.querySelector('.lyt-playbtn')).toBeNull();
+    expect(document.activeElement).not.toBe(iframe);
   });
 
   it('is idempotent after first activation', () => {
