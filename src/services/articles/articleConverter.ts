@@ -27,6 +27,7 @@ export async function convertFeedItemsToArticles(
       const hash = await articleHasher.generateHash(item);
       const publishedDate =
         normalizePublishedDate(item.publishedDate, { now }) ??
+        normalizePublishedDate(item.updatedDate, { now }) ??
         new Date(fallbackBaseTime - index).toISOString();
       const processed = processArticleContent(item, feedUrl);
 

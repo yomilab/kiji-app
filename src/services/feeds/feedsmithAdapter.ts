@@ -1,8 +1,8 @@
 import { parseFeed as parseFeedsmith } from "feedsmith";
 import type { Atom, Json, Rdf, Rss } from "feedsmith";
 import type { Author, Enclosure, MediaThumbnail } from "../../types/article";
-import { normalizePublishedDate } from "../articles/publishedDateNormalizer";
-import { getTextValue } from "./feedValueExtractor";
+import { getOptionalField, getTextValue } from "./feedValueExtractor";
+import { matchPublishedDate, matchUpdatedDate } from "./publishDateMatcher";
 import type { FeedItem } from "./feedsFetcher";
 
 export function parseFeedWithFeedsmith(rawText: string, feedUrl: string): FeedItem[] {
@@ -49,10 +49,21 @@ function convertRssItems(feed: Rss.Feed<unknown>, feedUrl: string): FeedItem[] {
         summary: item.description !== contentValue ? item.description : undefined,
         link: item.link,
         author: item.authors?.[0] || authors?.[0]?.name || item.itunes?.author,
-        publishedDate: normalizePublishedDate(getTextValue(item.pubDate)),
+        publishedDate: matchPublishedDate({
+          explicit: [
+            getTextValue(item.pubDate),
+            getTextValue(item.dc?.dates?.[0]),
+            getOptionalField(item, "published"),
+            getOptionalField(item, "updated"),
+          ],
+          source: item,
+        }),
         guid: item.guid?.value,
         feedId: feedUrl,
-        updatedDate: undefined,
+        updatedDate: matchUpdatedDate({
+          explicit: [getOptionalField(item, "updated")],
+          source: item,
+        }),
         previewImage,
         thumbnail,
         images,
@@ -89,8 +100,14 @@ function convertAtomEntries(feed: Atom.Feed<unknown>, feedUrl: string): FeedItem
         summary: summaryValue !== contentRawValue ? summaryValue : undefined,
         link,
         author: entry.authors?.[0]?.name,
-        publishedDate: normalizePublishedDate(getTextValue(entry.published)),
-        updatedDate: getTextValue(entry.updated),
+        publishedDate: matchPublishedDate({
+          explicit: [getTextValue(entry.published), getTextValue(entry.updated)],
+          source: entry,
+        }),
+        updatedDate: matchUpdatedDate({
+          explicit: [getTextValue(entry.updated)],
+          source: entry,
+        }),
         guid: entry.id,
         feedId: feedUrl,
         previewImage,
@@ -139,10 +156,24 @@ function convertRdfItems(feed: Rdf.Feed<unknown>, feedUrl: string): FeedItem[] {
         content: item.description || "",
         link: item.link,
         author: getTextValue(item.dc?.creators?.[0]),
-        publishedDate: normalizePublishedDate(getTextValue(item.dc?.dates?.[0])),
+        publishedDate: matchPublishedDate({
+          explicit: [
+            getTextValue(item.dc?.dates?.[0]),
+            getOptionalField(item, "published"),
+            getOptionalField(item, "updated"),
+            getTextValue(item.atom?.updated),
+          ],
+          source: item,
+        }),
         guid: item.link,
         feedId: feedUrl,
-        updatedDate: undefined,
+        updatedDate: matchUpdatedDate({
+          explicit: [
+            getOptionalField(item, "updated"),
+            getTextValue(item.atom?.updated),
+          ],
+          source: item,
+        }),
         summary: undefined,
         previewImage,
         thumbnail: undefined,
@@ -197,8 +228,14 @@ function convertJsonItems(feed: Json.Feed<unknown>, feedUrl: string): FeedItem[]
         summary: item.summary,
         link: item.url,
         author,
-        publishedDate: normalizePublishedDate(getTextValue(item.date_published)),
-        updatedDate: getTextValue(item.date_modified),
+        publishedDate: matchPublishedDate({
+          explicit: [getTextValue(item.date_published), getTextValue(item.date_modified)],
+          source: item,
+        }),
+        updatedDate: matchUpdatedDate({
+          explicit: [getTextValue(item.date_modified)],
+          source: item,
+        }),
         guid: item.id,
         feedId: feedUrl,
         previewImage,

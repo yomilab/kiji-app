@@ -18,3 +18,16 @@ export function normalizePublishedDate(
   const now = options.now ?? new Date();
   return new Date(Math.min(date.getTime(), now.getTime())).toISOString();
 }
+
+export function resolvePublishedDate(
+  candidates: Array<string | null | undefined>,
+  options: NormalizePublishedDateOptions = {},
+): string | undefined {
+  for (const candidate of candidates) {
+    const normalized = normalizePublishedDate(candidate, options);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return undefined;
+}

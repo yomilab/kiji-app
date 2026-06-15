@@ -1,7 +1,7 @@
 import type { Author, Enclosure, MediaThumbnail } from "../../types/article";
 import { FEED_FETCH_TIMEOUT_MS } from "../../constants";
 import { tauriClient } from "../../lib/tauriClient";
-import { normalizePublishedDate } from "../articles/publishedDateNormalizer";
+import { enrichFeedItemsWithMatchedDates, matchPublishedDate, matchPublishedDateFromElement, matchUpdatedDate, matchUpdatedDateFromElement } from "./publishDateMatcher";
 import { logger } from "../logger/logger";
 import { parseFeedWithFeedsmith } from "./feedsmithAdapter";
 
@@ -136,7 +136,9 @@ export function parseFeed(rawText: string, feedUrl: string): FeedItem[] {
   }
 
   try {
-    return assertItems(parseFeedWithFeedsmith(trimmed, feedUrl));
+    const items = assertItems(parseFeedWithFeedsmith(trimmed, feedUrl));
+    enrichFeedItemsWithMatchedDates(items, trimmed);
+    return items;
   } catch (feedsmithError) {
     logger.warn("FeedsFetcher", "Feedsmith parsing failed, using fallback parser", {
       feedUrl,
@@ -186,7 +188,9 @@ function parseRssFeed(xmlDoc: Document, feedUrl: string): FeedItem[] {
       summary: textFromSelectors(item, ["description"]) || undefined,
       link,
       author: textFromSelectors(item, ["author", "dc\\:creator", "itunes\\:author"]) || undefined,
-      publishedDate: normalizePublishedDate(textFromSelectors(item, ["pubDate", "dc\\:date", "published"])),
+      publishedDate: matchPublishedDateFromElement(item, {
+        explicit: [textFromSelectors(item, ["pubDate", "dc\\:date", "published", "updated"])],
+      }),
       guid: guid || undefined,
       feedId: feedUrl,
       previewImage: image,
@@ -221,8 +225,15 @@ function parseAtomFeed(xmlDoc: Document, feedUrl: string): FeedItem[] {
       summary: textFromSelectors(entry, ["summary"]) || undefined,
       link: cleanLink(link ?? "", feedUrl),
       author: authors[0]?.name,
-      publishedDate: normalizePublishedDate(textFromSelectors(entry, ["published", "updated"])),
-      updatedDate: normalizePublishedDate(textFromSelectors(entry, ["updated"])),
+      publishedDate: matchPublishedDateFromElement(entry, {
+        explicit: [
+          textFromSelectors(entry, ["published"]),
+          textFromSelectors(entry, ["updated"]),
+        ],
+      }),
+      updatedDate: matchUpdatedDateFromElement(entry, {
+        explicit: [textFromSelectors(entry, ["updated"])],
+      }),
       guid: textFromSelectors(entry, ["id"]) || undefined,
       feedId: feedUrl,
       previewImage: image,
@@ -272,8 +283,14 @@ function parseJsonFeed(rawText: string, feedUrl: string): FeedItem[] {
       summary: item.summary,
       link: item.url,
       author: authors?.[0]?.name,
-      publishedDate: normalizePublishedDate(item.date_published),
-      updatedDate: normalizePublishedDate(item.date_modified),
+      publishedDate: matchPublishedDate({
+        explicit: [item.date_published, item.date_modified],
+        source: item,
+      }),
+      updatedDate: matchUpdatedDate({
+        explicit: [item.date_modified],
+        source: item,
+      }),
       guid: item.id,
       feedId: feedUrl,
       previewImage: item.image,
