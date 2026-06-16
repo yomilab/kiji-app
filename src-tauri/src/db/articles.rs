@@ -331,6 +331,7 @@ pub fn query_articles(
         .or_else(|| request.feed_id.clone().map(|feed_id| vec![feed_id]))
         .unwrap_or_default();
     let has_source_filter = !feed_ids.is_empty() || request.tag_name.is_some();
+    let single_feed_only = feed_ids.len() == 1 && request.tag_name.is_none();
 
     if !feed_ids.is_empty() {
         let placeholders = repeat_placeholders(feed_ids.len());
@@ -459,12 +460,14 @@ pub fn query_articles(
     };
 
     let data_where = where_clause(&conditions);
-    let display_feed_id_sql = if has_source_filter {
-        "a.feed_id"
+    // Single-feed lists resolve metadata from the active subscription (afi), not the
+    // canonical articles.feed_id owner when URLs overlap across feeds.
+    let display_feed_id_sql = if single_feed_only {
+        "afi.feed_id"
     } else {
         "a.feed_id"
     };
-    let group_by = if has_source_filter {
+    let group_by = if has_source_filter && !single_feed_only {
         " GROUP BY a.hash"
     } else {
         ""

@@ -760,6 +760,146 @@ mod tests {
     }
 
     #[test]
+    fn feed_scoped_query_uses_viewing_feed_metadata_for_shared_url_articles() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+
+        for (feed_id, title, url) in [
+            (
+                "feed-hn",
+                "Hacker News",
+                "https://news.ycombinator.com/rss",
+            ),
+            (
+                "feed-runtime",
+                "RuntimeWire",
+                "https://runtimewire.com/rss",
+            ),
+        ] {
+            connection
+                .execute(
+                    r#"
+                    INSERT INTO feeds (
+                      id, title, url, created_at, description, last_fetched, last_failed_fetch_at,
+                      unread_count, article_count, tags_json, favicon, favicon_has_transparency,
+                      favicon_dominant_color, favicon_bg_light, favicon_bg_dark, favicon_fetch_failed,
+                      emoji, image, categories_json, language, is_podcast,
+                      podcast_metadata_json, reader_mode_enabled, etag, last_modified_header
+                    ) VALUES (
+                      ?1, ?2, ?3, '2026-06-16T00:00:00.000Z', '', NULL, NULL, 0, 0, '[]',
+                      NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, '[]', 'en', 0, NULL,
+                      0, NULL, NULL
+                    )
+                    "#,
+                    params![feed_id, title, url],
+                )
+                .expect("insert feed");
+        }
+
+        let shared_hash = "shared-url-article-hash";
+        let shared_link = "https://runtimewire.com/article/microsoft-github-aws-ai-capacity-crunch";
+        connection
+            .execute(
+                r#"
+                INSERT INTO articles (
+                  hash, feed_id, title, description, content, link, author,
+                  published_date, fetched_date, read, starred, saved, saved_article_id,
+                  last_read_at, metadata_json, feed_url, feed_title, feed_favicon,
+                  feed_favicon_has_transparency, feed_favicon_bg_light, feed_favicon_bg_dark, feed_image
+                ) VALUES (
+                  ?1, 'feed-hn', 'Microsoft turns to AWS as GitHub faces AI capacity crunch',
+                  '', '', ?2, NULL, '2026-06-16T02:47:57.000Z', '2026-06-16T02:47:57.000Z',
+                  0, 0, 0, NULL, NULL, NULL,
+                  'https://news.ycombinator.com/rss', 'Hacker News', NULL, NULL, NULL, NULL, NULL
+                )
+                "#,
+                params![shared_hash, shared_link],
+            )
+            .expect("insert shared article");
+
+        for (feed_id, published_date, fetched_date) in [
+            (
+                "feed-hn",
+                "2026-06-16T02:47:57.000Z",
+                "2026-06-16T02:47:57.000Z",
+            ),
+            (
+                "feed-runtime",
+                "2026-06-16T02:19:39.000Z",
+                "2026-06-16T02:19:39.000Z",
+            ),
+        ] {
+            connection
+                .execute(
+                    r#"
+                    INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date)
+                    VALUES (?1, ?2, ?3, ?4)
+                    "#,
+                    params![feed_id, shared_hash, published_date, fetched_date],
+                )
+                .expect("insert article mapping");
+        }
+
+        let runtime_page = query_articles(
+            &connection,
+            ArticleQueryRequest {
+                feed_id: Some("feed-runtime".to_string()),
+                feed_ids: None,
+                tag_name: None,
+                unread_only: None,
+                saved_only: None,
+                read: None,
+                starred: None,
+                saved: None,
+                sort_field: None,
+                sort_order: None,
+                search_text: None,
+                limit: Some(10),
+                offset: None,
+                cursor_date: None,
+                cursor_hash: None,
+                include_total: None,
+            },
+        )
+        .expect("query runtime feed");
+
+        assert_eq!(runtime_page.total, 1);
+        assert_eq!(runtime_page.articles.len(), 1);
+        assert_eq!(runtime_page.articles[0].hash, shared_hash);
+        assert_eq!(runtime_page.articles[0].feed_id, "feed-runtime");
+        assert_eq!(
+            runtime_page.articles[0].feed_title.as_deref(),
+            Some("RuntimeWire")
+        );
+
+        let hn_page = query_articles(
+            &connection,
+            ArticleQueryRequest {
+                feed_id: Some("feed-hn".to_string()),
+                feed_ids: None,
+                tag_name: None,
+                unread_only: None,
+                saved_only: None,
+                read: None,
+                starred: None,
+                saved: None,
+                sort_field: None,
+                sort_order: None,
+                search_text: None,
+                limit: Some(10),
+                offset: None,
+                cursor_date: None,
+                cursor_hash: None,
+                include_total: None,
+            },
+        )
+        .expect("query hn feed");
+
+        assert_eq!(hn_page.articles[0].feed_id, "feed-hn");
+        assert_eq!(hn_page.articles[0].feed_title.as_deref(), Some("Hacker News"));
+    }
+
+    #[test]
     fn sync_feed_article_counts_batch_updates_feed_rows_in_one_transaction() {
         let mut connection = Connection::open_in_memory().expect("open in-memory database");
         run_migrations(&mut connection).expect("run migrations");
