@@ -7,7 +7,10 @@ use crate::{
 };
 use serde_json::Value as JsonValue;
 use std::{
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, State, WebviewWindow, WebviewWindowBuilder, WindowEvent};
@@ -16,6 +19,8 @@ const SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
 const SETTINGS_WINDOW_LABEL: &str = "settings";
 const ARTICLE_WINDOW_LABEL: &str = "article";
 const MAIN_WINDOW_LABEL: &str = "main";
+
+pub struct MainWindowBoundsSaveGuard(pub Arc<AtomicBool>);
 
 pub struct ArticleWindowState {
     payload: Mutex<Option<JsonValue>>,
@@ -51,13 +56,14 @@ impl ArticleWindowState {
 pub fn restore_main_window_bounds(
     app: &AppHandle,
     settings: Arc<SettingsState>,
+    suppress_save: Arc<AtomicBool>,
 ) -> Result<(), String> {
     let Some(main_window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
         return Ok(());
     };
 
-    apply_main_window_bounds(&main_window, &settings)?;
-    attach_main_window_bounds_listener(main_window, settings);
+    apply_main_window_bounds(&main_window, &settings, &suppress_save)?;
+    attach_main_window_bounds_listener(main_window, settings, suppress_save);
     Ok(())
 }
 
@@ -65,12 +71,13 @@ pub fn restore_main_window_bounds(
 pub fn shell_main_window_apply_saved_bounds(
     app: AppHandle,
     settings: State<'_, Arc<SettingsState>>,
+    bounds_guard: State<'_, MainWindowBoundsSaveGuard>,
 ) -> Result<(), String> {
     let Some(main_window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
         return Ok(());
     };
 
-    apply_main_window_bounds(&main_window, settings.inner())?;
+    apply_main_window_bounds(&main_window, settings.inner(), &bounds_guard.0)?;
     Ok(())
 }
 
@@ -162,6 +169,24 @@ pub fn shell_article_window_get_data(
 fn apply_main_window_bounds(
     main_window: &WebviewWindow,
     settings: &SettingsState,
+    suppress_save: &Arc<AtomicBool>,
+) -> Result<(), String> {
+    suppress_save.store(true, Ordering::Release);
+
+    let result = apply_main_window_bounds_inner(main_window, settings);
+
+    let suppress_save_for_clear = Arc::clone(suppress_save);
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(SAVE_DEBOUNCE + Duration::from_millis(100)).await;
+        suppress_save_for_clear.store(false, Ordering::Release);
+    });
+
+    result
+}
+
+fn apply_main_window_bounds_inner(
+    main_window: &WebviewWindow,
+    settings: &SettingsState,
 ) -> Result<(), String> {
     let snapshot = settings.snapshot()?;
     let saved = SavedWindowBounds {
@@ -212,7 +237,44 @@ fn apply_main_window_bounds(
     Ok(())
 }
 
-fn attach_main_window_bounds_listener(window: WebviewWindow, settings: Arc<SettingsState>) {
+fn read_main_window_bounds_logical(
+    window: &WebviewWindow,
+) -> Option<(u32, u32, Option<i32>, Option<i32>)> {
+    let size = window.inner_size().ok()?;
+    if size.width == 0 || size.height == 0 {
+        return None;
+    }
+
+    let scale_factor = window.scale_factor().unwrap_or(1.0);
+    let logical_width = (size.width as f64 / scale_factor).round().max(1.0) as u32;
+    let logical_height = (size.height as f64 / scale_factor).round().max(1.0) as u32;
+    let logical_position = window.outer_position().ok().map(|position| {
+        (
+            (position.x as f64 / scale_factor).round() as i32,
+            (position.y as f64 / scale_factor).round() as i32,
+        )
+    });
+
+    let (x, y) = logical_position
+        .map(|(x, y)| (Some(x), Some(y)))
+        .unwrap_or((None, None));
+
+    Some((logical_width, logical_height, x, y))
+}
+
+fn persist_main_window_bounds(window: &WebviewWindow, settings: &SettingsState) -> Result<(), String> {
+    let Some((width, height, x, y)) = read_main_window_bounds_logical(window) else {
+        return Ok(());
+    };
+
+    settings.update_window_bounds(width, height, x, y)
+}
+
+fn attach_main_window_bounds_listener(
+    window: WebviewWindow,
+    settings: Arc<SettingsState>,
+    suppress_save: Arc<AtomicBool>,
+) {
     let pending = Arc::new(Mutex::new(None::<tauri::async_runtime::JoinHandle<()>>));
     let window_for_events = window.clone();
     let app_handle = window.app_handle().clone();
@@ -220,7 +282,22 @@ fn attach_main_window_bounds_listener(window: WebviewWindow, settings: Arc<Setti
     window.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
+
+            if let Ok(mut guard) = pending.lock() {
+                if let Some(handle) = guard.take() {
+                    handle.abort();
+                }
+            }
+
+            if let Err(error) = persist_main_window_bounds(&window_for_events, &settings) {
+                eprintln!("[WindowBounds] Failed to save main window bounds on close: {error}");
+            }
+
             app_handle.exit(0);
+            return;
+        }
+
+        if suppress_save.load(Ordering::Acquire) {
             return;
         }
 
@@ -230,6 +307,7 @@ fn attach_main_window_bounds_listener(window: WebviewWindow, settings: Arc<Setti
 
         let settings = Arc::clone(&settings);
         let pending = Arc::clone(&pending);
+        let suppress_save = Arc::clone(&suppress_save);
         let window = window_for_events.clone();
 
         let Ok(mut guard) = pending.lock() else {
@@ -243,29 +321,19 @@ fn attach_main_window_bounds_listener(window: WebviewWindow, settings: Arc<Setti
         *guard = Some(tauri::async_runtime::spawn(async move {
             tokio::time::sleep(SAVE_DEBOUNCE).await;
 
-            let Ok(size) = window.outer_size() else {
-                return;
-            };
-
-            if size.width == 0 || size.height == 0 {
+            if suppress_save.load(Ordering::Acquire) {
                 return;
             }
 
-            let scale_factor = window.scale_factor().unwrap_or(1.0);
-            let logical_width = (size.width as f64 / scale_factor).round().max(1.0) as u32;
-            let logical_height = (size.height as f64 / scale_factor).round().max(1.0) as u32;
-            let logical_position = window.inner_position().ok().map(|position| {
-                (
-                    (position.x as f64 / scale_factor).round() as i32,
-                    (position.y as f64 / scale_factor).round() as i32,
-                )
-            });
+            let Some((logical_width, logical_height, x, y)) =
+                read_main_window_bounds_logical(&window)
+            else {
+                return;
+            };
 
-            let (x, y) = logical_position
-                .map(|(x, y)| (Some(x), Some(y)))
-                .unwrap_or((None, None));
-
-            if let Err(error) = settings.update_window_bounds(logical_width, logical_height, x, y) {
+            if let Err(error) =
+                settings.update_window_bounds(logical_width, logical_height, x, y)
+            {
                 eprintln!("[WindowBounds] Failed to save main window bounds: {error}");
             }
         }));

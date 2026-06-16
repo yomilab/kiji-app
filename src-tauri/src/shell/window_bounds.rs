@@ -2,7 +2,6 @@ use tauri::Monitor;
 
 pub const MAIN_WINDOW_MIN_WIDTH: u32 = 600;
 pub const MAIN_WINDOW_MIN_HEIGHT: u32 = 400;
-const WORK_AREA_MARGIN: f64 = 8.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LogicalRect {
@@ -58,8 +57,8 @@ pub fn fit_window_bounds_to_displays(
         });
 
     let target_area = select_target_work_area(saved, work_areas, fallback_area);
-    let max_width = (target_area.width - WORK_AREA_MARGIN * 2.0).max(min_width as f64);
-    let max_height = (target_area.height - WORK_AREA_MARGIN * 2.0).max(min_height as f64);
+    let max_width = target_area.width.max(min_width as f64);
+    let max_height = target_area.height.max(min_height as f64);
 
     let width = clamp_dimension(saved.width, min_width, max_width);
     let height = clamp_dimension(saved.height, min_height, max_height);
@@ -242,10 +241,10 @@ mod tests {
         );
 
         assert!(fitted.adjusted);
-        assert_eq!(fitted.width, 1424);
-        assert_eq!(fitted.height, 884);
-        assert_eq!(fitted.x, 8);
-        assert_eq!(fitted.y, 8);
+        assert_eq!(fitted.width, 1440);
+        assert_eq!(fitted.height, 900);
+        assert_eq!(fitted.x, 0);
+        assert_eq!(fitted.y, 0);
     }
 
     #[test]
@@ -264,10 +263,10 @@ mod tests {
         );
 
         assert!(fitted.adjusted);
-        assert_eq!(fitted.width, 1424);
-        assert_eq!(fitted.height, 884);
-        assert_eq!(fitted.x, 16);
-        assert_eq!(fitted.y, 16);
+        assert_eq!(fitted.width, 1440);
+        assert_eq!(fitted.height, 900);
+        assert_eq!(fitted.x, 0);
+        assert_eq!(fitted.y, 0);
     }
 
     #[test]

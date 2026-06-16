@@ -7,7 +7,10 @@ mod settings;
 mod shell;
 mod system;
 
-use std::sync::Arc;
+use std::sync::{
+    atomic::AtomicBool,
+    Arc,
+};
 
 use db::{
     articles_clean_old_across_feeds, articles_clean_old_by_feed, articles_count_by_feed,
@@ -36,14 +39,14 @@ use saved::{
 };
 use scheduler::{scheduler_reconfigure, scheduler_start, scheduler_stop, FeedSchedulerState};
 use settings::{settings_get, settings_reset, settings_update, SettingsState};
-use shell::{
+use     shell::{
     restore_main_window_bounds, shell_article_window_get_data, shell_article_window_open,
     shell_context_menu_show_image, shell_dialog_confirm, shell_dialog_open_file,
     shell_main_window_apply_saved_bounds, shell_dialog_pick_folder, shell_dialog_save_file,
     shell_file_read_text, shell_file_write_text,
     shell_links_open_external, shell_menu_update_state, shell_settings_window_open, shell_share,
     shell_share_list_services, shell_share_to_service, window_guards_plugin, ApplicationMenu,
-    ArticleWindowState, ImageContextMenuState,
+    ArticleWindowState, ImageContextMenuState, MainWindowBoundsSaveGuard,
 };
 use system::{
     start_accent_color_watch, system_app_icon_get_state, system_app_icon_pick,
@@ -75,14 +78,20 @@ pub fn run() {
 
             ApplicationMenu::install(&app.handle()).map_err(std::io::Error::other)?;
             ImageContextMenuState::install(&app.handle()).map_err(std::io::Error::other)?;
-            restore_main_window_bounds(&app.handle(), Arc::clone(&settings_state))
-                .map_err(std::io::Error::other)?;
+            let bounds_save_guard = Arc::new(AtomicBool::new(false));
+            restore_main_window_bounds(
+                &app.handle(),
+                Arc::clone(&settings_state),
+                Arc::clone(&bounds_save_guard),
+            )
+            .map_err(std::io::Error::other)?;
             app_icon_state
                 .apply_configured_icon(&app.handle())
                 .map_err(std::io::Error::other)?;
             start_accent_color_watch(&app.handle()).map_err(std::io::Error::other)?;
 
             app.manage(settings_state);
+            app.manage(MainWindowBoundsSaveGuard(bounds_save_guard));
             app.manage(Arc::new(ArticleWindowState::new()));
             app.manage(db_state);
             app.manage(sync_state);

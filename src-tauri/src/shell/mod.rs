@@ -11,6 +11,7 @@ pub use share::{shell_share, shell_share_list_services, shell_share_to_service};
 pub use window::{
     restore_main_window_bounds, shell_article_window_get_data, shell_article_window_open,
     shell_main_window_apply_saved_bounds, shell_settings_window_open, ArticleWindowState,
+    MainWindowBoundsSaveGuard,
 };
 pub use window_guards::init as window_guards_plugin;
 
