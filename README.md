@@ -12,26 +12,6 @@ KiJi helps you follow feeds, save articles, sync saved reading to a local Markdo
 
 **[kiji.yomilab.app](https://kiji.yomilab.app)** · [Download](https://kiji.yomilab.app/download/)
 
----
-
-```text
-  📰 KiJi — your local RSS reading desk
-  ────────────────────────────────────────
-
-  Sidebar                    Articles
-  ─────────                  ─────────────────────────────
-  📬 All                     ● New post from your feeds
-  📭 Unread                  ● Saved for later
-  ⭐ Saved                   ○ Already read
-
-  📁 Tech                    Sync saved → ~/Notes/KiJi/
-  📁 News                    Export all saved → .zip
-
-  ────────────────────────────────────────
-  100% local · feeds, articles, and reading state on your device.
-  Download → https://kiji.yomilab.app/download/
-```
-
 ## ✨ Features
 
 - **🔒 Completely local.** Feeds, articles, saved items, Markdown files, and reading state live in a SQLite database on your machine. KiJi does not collect personal reading data.
