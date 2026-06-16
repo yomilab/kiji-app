@@ -1,19 +1,92 @@
-# KiJi
+# 📰 KiJi
 
-A simple, private RSS reader that runs locally.
+### A simple, private RSS reader that runs *entirely on your machine.*
 
-KiJi helps you follow feeds, save articles, sync saved reading to a local Markdown folder, and export your data without tracking or algorithmic noise.
+KiJi helps you follow feeds, save articles, sync saved reading to a local Markdown folder, and export your data — without tracking, accounts, or algorithmic noise. Your subscriptions, reading state, and saved articles stay in a local SQLite database on your device.
 
-## Highlights
+[![Build](https://github.com/yomilab/kiji-app/actions/workflows/build-desktop.yml/badge.svg)](https://github.com/yomilab/kiji-app/actions/workflows/build-desktop.yml)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](./LICENSE)
+[![Tauri](https://img.shields.io/badge/Tauri-2.0-blue.svg)](https://tauri.app)
+[![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org)
+[![Data: 100% local](https://img.shields.io/badge/data-100%25%20local-ff8a3d.svg)](#-privacy)
 
-- **Private by default** — Your feeds, articles, saved items, Markdown files, and reading state stay on your device. KiJi does not collect personal reading data.
-- **Portable subscriptions** — Import and export feeds with OPML so your subscriptions stay portable.
-- **Markdown sync and exports** — Sync saved articles to a local Markdown folder and export all saved articles when you want a portable archive.
+**[kiji.yomilab.app](https://kiji.yomilab.app)** · [Download](https://kiji.yomilab.app/download/)
 
-## Status
+---
 
-All platform versions are currently under development. A public release is coming soon.
+```text
+  📰 KiJi — your local RSS reading desk
+  ────────────────────────────────────────
 
-## License
+  Sidebar                    Articles
+  ─────────                  ─────────────────────────────
+  📬 All                     ● New post from your feeds
+  📭 Unread                  ● Saved for later
+  ⭐ Saved                   ○ Already read
+
+  📁 Tech                    Sync saved → ~/Notes/KiJi/
+  📁 News                    Export all saved → .zip
+
+  ────────────────────────────────────────
+  100% local · feeds, articles, and reading state on your device.
+  Download → https://kiji.yomilab.app/download/
+```
+
+## ✨ Features
+
+- **🔒 Completely local.** Feeds, articles, saved items, Markdown files, and reading state live in a SQLite database on your machine. KiJi does not collect personal reading data.
+- **📥 Portable subscriptions.** Import and export feeds with OPML so your subscriptions stay portable.
+- **📝 Markdown sync and exports.** Sync saved articles to a local Markdown folder and export the full saved archive when you want a portable backup.
+- **📖 Reader mode.** Clean article reading with saved-article support, typography controls, and distraction-free layout.
+- **🏷️ Stations and smart views.** Group feeds into stations; browse All, Unread, and Saved from the sidebar.
+- **🖥️ Native desktop shell.** Built with Tauri 2 — frameless window, macOS vibrancy, and platform-native packaging for macOS, Windows, and Linux.
+
+## 🚀 Quick start
+
+You'll need **[Node.js](https://nodejs.org) 20+**, **[Rust](https://rustup.rs) stable**, and platform build deps for [Tauri 2](https://v2.tauri.app/start/prerequisites/).
+
+### Clone and run in dev
+
+```bash
+git clone https://github.com/yomilab/kiji-app.git
+cd kiji-app
+npm ci
+npm run dev:tauri
+```
+
+### Build a release bundle
+
+```bash
+npm run build
+```
+
+Release artifacts are produced by CI on pushes to `dev` — see [`.github/workflows/build-desktop.yml`](./.github/workflows/build-desktop.yml).
+
+### Verify
+
+```bash
+npm run verify          # type-check, frontend tests, Rust tests, smoke
+npm run test:ci         # frontend unit tests (CI retry policy)
+npm run test:rust       # Rust crate tests
+```
+
+## 🛡️ Privacy
+
+KiJi is **local-first by design.**
+
+- Your feeds, articles, saved items, and reading state stay **on your device** in `kiji.db` and optional local Markdown sync folders.
+- There is **no account**, **no telemetry**, and **no reading analytics** in the app.
+- Network requests are limited to **fetching RSS/Atom feeds** (and optional update checks when you use the built-in updater).
+- OPML import/export and saved-article export give you **portable, user-owned copies** of your data.
+
+## 📋 Status
+
+All platform versions are currently under active development. A public release is coming soon — follow progress on [kiji.yomilab.app](https://kiji.yomilab.app).
+
+## 📄 License
 
 KiJi is free software licensed under [GPL-3.0-or-later](LICENSE). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for major bundled libraries.
+
+<p align="center">
+  <sub>📰 KiJi · <a href="https://kiji.yomilab.app">kiji.yomilab.app</a></sub>
+</p>
