@@ -20,6 +20,17 @@ import { useArticleListPerformanceMetrics } from './hooks/useArticleListPerforma
 import { InteractionProfiler } from '@/components/common/InteractionProfiler';
 import { FeedLineLoader } from '@/components/common/FeedLineLoader';
 import { ARTICLE_LIST_PREVIEW_SCROLL_IDLE_MS } from './articleListPreviewConstants';
+import {
+  ARTICLE_LIST_BOTTOM_SPACER_HEIGHT,
+  ARTICLE_LIST_ESTIMATED_ROW_HEIGHT,
+  ARTICLE_LIST_LOAD_MORE_TAIL_ROW_COUNT,
+  getArticleListLoadMorePaddingEnd,
+  getArticleListLoadMorePriority,
+  getArticleListLoadMoreTailHeight,
+  shouldShowArticleListLoadMoreTail,
+  shouldTriggerArticleListLoadMore,
+  shouldTriggerArticleListLoadMoreFromScroll,
+} from './articleListLoadMore';
 import './ArticleList.css';
 
 interface SharedArticleListProps {
@@ -28,27 +39,6 @@ interface SharedArticleListProps {
 }
 
 const TITLE_LOADER_FOLD_ANIMATION_SECONDS = 0.38;
-const ARTICLE_LIST_BOTTOM_SPACER_HEIGHT = 50;
-const ARTICLE_LIST_PREFETCH_MAX_REMAINING_ROWS = 80;
-const ARTICLE_LIST_PREFETCH_MIN_REMAINING_ROWS = 40;
-const ARTICLE_LIST_CRITICAL_MAX_REMAINING_ROWS = 24;
-const ARTICLE_LIST_CRITICAL_MIN_REMAINING_ROWS = 12;
-
-const getArticleListPrefetchRemainingRows = (loadedRowCount: number): number => {
-  const dynamicThreshold = Math.floor(loadedRowCount * 0.35);
-  return Math.min(
-    ARTICLE_LIST_PREFETCH_MAX_REMAINING_ROWS,
-    Math.max(ARTICLE_LIST_PREFETCH_MIN_REMAINING_ROWS, dynamicThreshold)
-  );
-};
-
-const getArticleListCriticalRemainingRows = (loadedRowCount: number): number => {
-  const dynamicThreshold = Math.floor(loadedRowCount * 0.12);
-  return Math.min(
-    ARTICLE_LIST_CRITICAL_MAX_REMAINING_ROWS,
-    Math.max(ARTICLE_LIST_CRITICAL_MIN_REMAINING_ROWS, dynamicThreshold)
-  );
-};
 
 const measureArticleRowHeight = (
   element: Element,
@@ -73,6 +63,7 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
     articlesTotalCount,
     isLoadingArticles,
     isLoadingMoreArticles,
+    isLoadMoreInFlight,
     isSavedListLoading,
     isGlobalLoadingIndicatorActive,
     loadMoreArticles,
@@ -128,6 +119,11 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
   const isSearchActive = isSearchOpen && searchQuery.trim().length > 0;
 
   const filteredArticles = sourceArticles;
+  const hasMoreArticles = filteredArticles.length < articlesTotalCount;
+  const loadMorePaddingEnd = getArticleListLoadMorePaddingEnd(
+    filteredArticles.length,
+    articlesTotalCount,
+  );
 
   const subtitleCount = articlesTotalCount;
   const subtitleText = `${subtitleCount} Items`;
@@ -151,14 +147,22 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
   const rowVirtualizer = useVirtualizer({
     count: filteredArticles.length,
     getScrollElement: () => articleListItemsRef.current,
-    estimateSize: () => 112,
-    overscan: 10,
+    estimateSize: () => ARTICLE_LIST_ESTIMATED_ROW_HEIGHT,
+    overscan: 12,
+    paddingEnd: loadMorePaddingEnd,
     getItemKey: (index) => filteredArticles[index]?.hash ?? index,
     measureElement: measureArticleRowHeight,
   });
   const virtualItems = rowVirtualizer.getVirtualItems();
   const firstVirtualIndex = virtualItems[0]?.index ?? 0;
   const lastVirtualIndex = virtualItems[virtualItems.length - 1]?.index ?? -1;
+  const showLoadMoreTail = shouldShowArticleListLoadMoreTail({
+    hasMoreArticles,
+    isLoadMoreInFlight,
+    loadedRowCount: filteredArticles.length,
+    lastVisibleIndex: lastVirtualIndex,
+  });
+  const loadMoreTailHeight = getArticleListLoadMoreTailHeight(showLoadMoreTail);
   const isSearchDebouncePending = searchQuery.trim() !== debouncedSearchQuery.trim();
 
   const ensureHashInView = useCallback((hash: string) => {
@@ -253,35 +257,37 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
     setHasListScrollOffset,
   });
 
+  const requestLoadMoreArticles = useCallback((lastVisibleIndex: number) => {
+    if (!shouldTriggerArticleListLoadMore(
+      filteredArticles.length,
+      articlesTotalCount,
+      lastVisibleIndex,
+    )) {
+      return;
+    }
+
+    void loadMoreArticles({
+      showLoadingIndicator: false,
+      priority: getArticleListLoadMorePriority(filteredArticles.length, lastVisibleIndex),
+    });
+  }, [articlesTotalCount, filteredArticles.length, loadMoreArticles]);
+
   useEffect(() => {
-    if (isSearchDebouncePending || lastVirtualIndex < 0) {
+    if (isSearchDebouncePending || lastVirtualIndex < 0 || !hasMoreArticles) {
       return;
     }
 
-    const hasMoreArticles = filteredArticles.length < articlesTotalCount;
-    const remainingLoadedRows = filteredArticles.length - 1 - lastVirtualIndex;
-    if (!hasMoreArticles) {
-      return;
-    }
-
-    const prefetchRemainingRows = getArticleListPrefetchRemainingRows(filteredArticles.length);
-    const criticalRemainingRows = getArticleListCriticalRemainingRows(filteredArticles.length);
-
-    if (remainingLoadedRows <= criticalRemainingRows) {
-      void loadMoreArticles({ showLoadingIndicator: false });
-    } else if (remainingLoadedRows <= prefetchRemainingRows) {
-      void loadMoreArticles({ showLoadingIndicator: false });
-    }
+    requestLoadMoreArticles(lastVirtualIndex);
   }, [
-    articlesTotalCount,
-    filteredArticles.length,
+    hasMoreArticles,
     isSearchDebouncePending,
     lastVirtualIndex,
-    loadMoreArticles,
+    requestLoadMoreArticles,
   ]);
 
   const handleArticleListScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop } = event.currentTarget;
+    const scrollElement = event.currentTarget;
+    const { scrollTop } = scrollElement;
     const isScrolled = scrollTop > 0;
     setHasListScrollOffset((previous) => (previous === isScrolled ? previous : isScrolled));
     setDeferPreviewImages(true);
@@ -293,7 +299,21 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
       setDeferPreviewImages(false);
     }, ARTICLE_LIST_PREVIEW_SCROLL_IDLE_MS);
     syncViewportSnapshot(!isScrolled, true);
-  }, [syncViewportSnapshot]);
+
+    if (
+      !isSearchDebouncePending
+      && shouldTriggerArticleListLoadMoreFromScroll(scrollElement, filteredArticles.length, articlesTotalCount)
+    ) {
+      requestLoadMoreArticles(lastVirtualIndex);
+    }
+  }, [
+    articlesTotalCount,
+    filteredArticles.length,
+    isSearchDebouncePending,
+    lastVirtualIndex,
+    requestLoadMoreArticles,
+    syncViewportSnapshot,
+  ]);
 
   useArticleListScrollOffsetSync({
     articleListItemsRef,
@@ -445,7 +465,7 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
           ) : (
             <div
               className="article-list-virtual-spacer"
-              style={{ height: `${rowVirtualizer.getTotalSize() + ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px` }}
+              style={{ height: `${rowVirtualizer.getTotalSize() + ARTICLE_LIST_BOTTOM_SPACER_HEIGHT + loadMoreTailHeight}px` }}
             >
               {virtualItems.map((virtualRow) => {
                 const article = filteredArticles[virtualRow.index];
@@ -474,16 +494,25 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
                   </div>
                 );
               })}
+              {showLoadMoreTail && (
+                <div
+                  className="article-list-load-more-tail"
+                  style={{ transform: `translateY(${rowVirtualizer.getTotalSize()}px)` }}
+                  aria-hidden={!showLoadMoreTail}
+                >
+                  <ArticleListSkeletonGroup count={ARTICLE_LIST_LOAD_MORE_TAIL_ROW_COUNT} />
+                </div>
+              )}
               {/* Keep a literal trailing block inside the virtual canvas so the
                   spacer only appears once users reach the actual bottom. */}
               <div
                 className="article-list-bottom-spacer"
-                style={{ transform: `translateY(${rowVirtualizer.getTotalSize()}px)`, height: `${ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px` }}
+                style={{ transform: `translateY(${rowVirtualizer.getTotalSize() + loadMoreTailHeight}px)`, height: `${ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px` }}
                 aria-hidden="true"
               />
             </div>
           )}
-          {isLoadingMoreArticles && (
+          {isLoadingMoreArticles && !showLoadMoreTail && (
             <div className="article-list-load-more">
               <FeedLineLoader
                 size="sm"

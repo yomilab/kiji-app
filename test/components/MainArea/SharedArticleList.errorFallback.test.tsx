@@ -40,6 +40,7 @@ type MockFeedState = {
   totalFeeds: number;
   loadMoreArticles: vi.Mock;
   isLoadingMoreArticles: boolean;
+  isLoadMoreInFlight: boolean;
 };
 
 const makeArticle = (index: number): MockArticle => ({
@@ -78,6 +79,7 @@ let mockFeedState: MockFeedState = {
   totalFeeds: 1,
   loadMoreArticles: vi.fn(),
   isLoadingMoreArticles: false,
+  isLoadMoreInFlight: false,
 };
 
 vi.mock('@/contexts/FeedContext', () => ({
@@ -93,6 +95,7 @@ vi.mock('@/contexts/FeedContext', () => ({
     savedArticles: mockFeedState.savedArticles,
     isLoadingArticles: mockFeedState.isLoadingArticles,
     isLoadingMoreArticles: mockFeedState.isLoadingMoreArticles,
+    isLoadMoreInFlight: mockFeedState.isLoadMoreInFlight,
     isSavedListLoading: mockFeedState.isSavedListLoading,
     isGlobalLoadingIndicatorActive: mockFeedState.isGlobalLoadingIndicatorActive,
     loadMoreArticles: mockFeedState.loadMoreArticles,

@@ -53,6 +53,7 @@ import {
   withShortcutHint,
 } from '@/services/shortcuts/shortcutService';
 import { ARTICLE_VIEW_CLOSE_ANIMATION_MS, ARTICLE_VIEW_OPENING_MS } from '@/constants';
+import { isArticleReaderModeRenderable } from './articleViewReaderMode';
 import type { Article } from '@/types/article';
 import { animateElementScrollTop, getScrollableBottom } from '@/utils/fixedTimeScroll';
 import { useDependencyEffect, useUnmountEffect } from '@/hooks/useLifecycleEffects';
@@ -289,7 +290,6 @@ function useEmbeddedArticleOpenBootstrap(params: {
   setProcessedArticleBodyKey: React.Dispatch<React.SetStateAction<string | null>>;
   setArticleBodyProcessing: React.Dispatch<React.SetStateAction<boolean>>;
   setArticleDisplayMode: React.Dispatch<React.SetStateAction<ArticleDisplayMode>>;
-  ensureReaderContentForArticle: (article: Article, requestVersion: number) => void;
   setIsTemporaryArticle: React.Dispatch<React.SetStateAction<boolean>>;
   setClipboardError: React.Dispatch<React.SetStateAction<string | null>>;
   markArticleAsReadOnOpen: (article: Article, isFeedLinked: boolean) => Promise<void>;
@@ -318,7 +318,6 @@ function useEmbeddedArticleOpenBootstrap(params: {
     setProcessedArticleBodyKey,
     setArticleBodyProcessing,
     setArticleDisplayMode,
-    ensureReaderContentForArticle,
     setIsTemporaryArticle,
     setClipboardError,
     markArticleAsReadOnOpen,
@@ -338,7 +337,10 @@ function useEmbeddedArticleOpenBootstrap(params: {
     setIsClosing(false);
     currentArticleHashRef.current = selectedArticle.hash;
     setIsSaved(getInitialSavedState(selectedArticle));
-    
+    setArticleDisplayMode('basic');
+    setReaderLoading(false);
+    setArticleToShow(selectedArticle);
+
     // Ensure we have the full content if it's missing from the list item
     const bootstrapArticle = async () => {
       let fullArticle = selectedArticle;
@@ -367,34 +369,9 @@ function useEmbeddedArticleOpenBootstrap(params: {
           setArticleDisplayMode('basic');
           setReaderLoading(false);
         } else if (selectedIsFeedLinked) {
-          const openRequestVersion = modeRequestVersionRef.current;
-          const cachedMode = feedReaderModeCache.get(fullArticle.feedId);
-          if (cachedMode !== undefined) {
-            setArticleDisplayMode(cachedMode ? 'reader' : 'basic');
-            if (cachedMode) {
-              setReaderLoading(true);
-              if (fullArticle.link) {
-                ensureReaderContentForArticle(fullArticle, openRequestVersion);
-              }
-            } else {
-              setReaderLoading(false);
-            }
-          } else {
-            setArticleDisplayMode('basic');
-            setReaderLoading(false);
-          }
-
           void feedsManager.getFeedById(fullArticle.feedId).then((feed) => {
-            if (articleOpenTrigger === lastOpenTriggerRef.current && openRequestVersion === modeRequestVersionRef.current) {
-              const mode = !!feed?.readerModeEnabled;
-              rememberFeedReaderMode(fullArticle.feedId, mode);
-              setArticleDisplayMode(mode ? 'reader' : 'basic');
-              if (mode && fullArticle.link) {
-                ensureReaderContentForArticle(fullArticle, openRequestVersion);
-              }
-              if (!mode) {
-                setReaderLoading(false);
-              }
+            if (articleOpenTrigger === lastOpenTriggerRef.current) {
+              rememberFeedReaderMode(fullArticle.feedId, !!feed?.readerModeEnabled);
             }
           });
         } else {
@@ -448,7 +425,6 @@ function useEmbeddedArticleOpenBootstrap(params: {
     setProcessedArticleBodyKey,
     setArticleBodyProcessing,
     setArticleDisplayMode,
-    ensureReaderContentForArticle,
     setIsTemporaryArticle,
     setClipboardError,
     markArticleAsReadOnOpen,
@@ -1112,7 +1088,11 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     articleToShow.isFeedLinked ?? (articleToShow.feedId !== 'clipboard' && articleToShow.feedId !== 'saved')
   );
   const canToggleReaderMode = selectedSmartView !== 'saved';
-  const isReaderModeActive = articleDisplayMode === 'reader';
+  const isReaderModeActive = isArticleReaderModeRenderable(
+    articleDisplayMode,
+    articleViewOverlayPhase,
+    standalone,
+  );
   const articleBodyBaseUrl = articleToShow?.link || articleToShow?.feedUrl;
   const useSavedArticleSnapshot = shouldUseSavedArticleSnapshot(articleToShow, selectedSmartView);
   const rawArticleBodyHtml = isReaderModeActive && !useSavedArticleSnapshot
@@ -1580,7 +1560,6 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   }, [fetchReaderContent]);
 
   const configureReaderModeForArticle = useCallback(async (article: Article, isFeedLinked: boolean) => {
-    // Phase 2 logic: Actually fetch reader content if mode is enabled
     if (!isFeedLinked || shouldUseSavedArticleSnapshot(article, selectedSmartView)) {
       setArticleDisplayMode('basic');
       setReaderLoading(false);
@@ -1588,21 +1567,39 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     }
 
     const requestVersion = modeRequestVersionRef.current;
+    const applyReaderMode = (shouldUseReaderMode: boolean) => {
+      if (requestVersion !== modeRequestVersionRef.current || currentArticleHashRef.current !== article.hash) {
+        return false;
+      }
+
+      rememberFeedReaderMode(article.feedId, shouldUseReaderMode);
+      setArticleDisplayMode(shouldUseReaderMode ? 'reader' : 'basic');
+
+      if (shouldUseReaderMode && article.link) {
+        ensureReaderContentForArticle(article, requestVersion);
+      } else {
+        setReaderLoading(false);
+      }
+
+      return true;
+    };
+
+    const cachedMode = feedReaderModeCache.get(article.feedId);
+    if (cachedMode !== undefined) {
+      applyReaderMode(cachedMode);
+    }
+
     const feed = await feedsManager.getFeedById(article.feedId);
     if (requestVersion !== modeRequestVersionRef.current || currentArticleHashRef.current !== article.hash) {
       return;
     }
-    const shouldUseReaderMode = feed?.readerModeEnabled || false;
-    
-    // Update cache and state just in case Phase 1 missed it
-    rememberFeedReaderMode(article.feedId, shouldUseReaderMode);
-    setArticleDisplayMode(shouldUseReaderMode ? 'reader' : 'basic');
 
-    if (shouldUseReaderMode && article.link) {
-      ensureReaderContentForArticle(article, requestVersion);
-    } else {
-      setReaderLoading(false);
+    const shouldUseReaderMode = feed?.readerModeEnabled || false;
+    if (cachedMode === shouldUseReaderMode) {
+      return;
     }
+
+    applyReaderMode(shouldUseReaderMode);
   }, [ensureReaderContentForArticle, selectedSmartView]);
 
   const handleClipboardLoad = useCallback(async () => {
@@ -1853,7 +1850,6 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     setProcessedArticleBodyKey,
     setArticleBodyProcessing,
     setArticleDisplayMode,
-    ensureReaderContentForArticle,
     setIsTemporaryArticle,
     setClipboardError,
     markArticleAsReadOnOpen,

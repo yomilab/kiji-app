@@ -36,6 +36,7 @@ const mockCollectionState = {
   savedArticles: [] as Article[],
   isLoadingArticles: true,
   isLoadingMoreArticles: false,
+  isLoadMoreInFlight: false,
   isSavedListLoading: false,
   isGlobalLoadingIndicatorActive: true,
   loadMoreArticles: mockLoadMoreArticles,

@@ -44,6 +44,7 @@ vi.mock('@/contexts/FeedContext', () => ({
     savedArticles: [],
     isLoadingArticles: false,
     isLoadingMoreArticles: false,
+    isLoadMoreInFlight: false,
     isSavedListLoading: false,
     isGlobalLoadingIndicatorActive: false,
     loadMoreArticles: mockLoadMoreArticles,
@@ -148,7 +149,8 @@ describe('SharedArticleList virtualization', () => {
 
     expect(mockUseVirtualizer).toHaveBeenCalledWith(expect.objectContaining({
       count: 100,
-      overscan: 10,
+      overscan: 12,
+      paddingEnd: 0,
     }));
     expect(getAllByTestId('mock-article-row')).toHaveLength(5);
     expect(queryByText('Article 50')).not.toBeInTheDocument();
@@ -193,7 +195,10 @@ describe('SharedArticleList virtualization', () => {
 
     fireEvent.scroll(listElement);
 
-    expect(mockLoadMoreArticles).toHaveBeenCalledWith({ showLoadingIndicator: false });
+    expect(mockLoadMoreArticles).toHaveBeenCalledWith({
+      showLoadingIndicator: false,
+      priority: 'prefetch',
+    });
     expect(mockSearchCurrentSource).toHaveBeenCalledWith('article');
   });
 
@@ -212,7 +217,10 @@ describe('SharedArticleList virtualization', () => {
 
     fireEvent.scroll(listElement);
 
-    expect(mockLoadMoreArticles).toHaveBeenCalledWith({ showLoadingIndicator: false });
+    expect(mockLoadMoreArticles).toHaveBeenCalledWith({
+      showLoadingIndicator: false,
+      priority: 'prefetch',
+    });
   });
 
   it('does not start pagination around the middle of the loaded rows', () => {
@@ -230,7 +238,10 @@ describe('SharedArticleList virtualization', () => {
 
     renderSharedArticleList();
 
-    expect(mockLoadMoreArticles).toHaveBeenCalledWith({ showLoadingIndicator: false });
+    expect(mockLoadMoreArticles).toHaveBeenCalledWith({
+      showLoadingIndicator: false,
+      priority: 'urgent',
+    });
   });
 
   it('prefers ResizeObserver entry height for row measurement', () => {

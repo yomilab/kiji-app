@@ -93,6 +93,14 @@
   pointer-events: none;
 }
 
+.article-list-load-more-tail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+}
+
 /* Article List Title Section */
 .article-list-title-section {
   padding: 32px 0 10px 0;

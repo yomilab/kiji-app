@@ -40,6 +40,7 @@ export type ArticleViewOverlayPhase = 'closed' | 'opening' | 'open' | 'closing';
 export type ArticleListUpdatePayload = Partial<Pick<Article, 'read' | 'saved' | 'savedArticleId' | 'starred' | 'lastReadAt'>>;
 type LoadMoreArticlesOptions = {
   showLoadingIndicator?: boolean;
+  priority?: 'prefetch' | 'urgent';
 };
 
 type LoadMoreQueryMetric = {
@@ -156,6 +157,7 @@ interface CollectionState {
   articlesTotalCount: number;
   isLoadingArticles: boolean;
   isLoadingMoreArticles: boolean;
+  isLoadMoreInFlight: boolean;
   isSavedListLoading: boolean;
   isFetchingNew: boolean;
   newArticleCount: number;
@@ -455,6 +457,7 @@ function collectionReducer(state: CollectionState, action: CollectionAction): Co
         && !state.isSavedListLoading
         && !state.isFetchingNew
         && !state.isLoadingMoreArticles
+        && !state.isLoadMoreInFlight
       ) {
         return state;
       }
@@ -469,6 +472,7 @@ function collectionReducer(state: CollectionState, action: CollectionAction): Co
         isSavedListLoading: false,
         isFetchingNew: false,
         isLoadingMoreArticles: false,
+        isLoadMoreInFlight: false,
       };
     case 'RESET_FOR_SOURCE_SWITCH':
       if (
@@ -478,6 +482,7 @@ function collectionReducer(state: CollectionState, action: CollectionAction): Co
         && !state.isSavedListLoading
         && !state.isFetchingNew
         && !state.isLoadingMoreArticles
+        && !state.isLoadMoreInFlight
       ) {
         return state;
       }
@@ -492,6 +497,7 @@ function collectionReducer(state: CollectionState, action: CollectionAction): Co
         isSavedListLoading: false,
         isFetchingNew: false,
         isLoadingMoreArticles: false,
+        isLoadMoreInFlight: false,
       };
     default:
       return state;
@@ -613,6 +619,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     articlesTotalCount: 0,
     isLoadingArticles: false,
     isLoadingMoreArticles: false,
+    isLoadMoreInFlight: false,
     isSavedListLoading: false,
     isFetchingNew: false,
     newArticleCount: 0,
@@ -1974,6 +1981,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           isSavedListLoading: false,
           isFetchingNew: false,
           isLoadingMoreArticles: false,
+          isLoadMoreInFlight: false,
         },
       });
       return;
@@ -1994,6 +2002,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isSavedListLoading: false,
         isFetchingNew: false,
         isLoadingMoreArticles: false,
+        isLoadMoreInFlight: false,
       },
     });
   }, [navigationState, queryArticleListSource]);
@@ -2069,6 +2078,8 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const loadMoreArticles = useCallback(async (options: LoadMoreArticlesOptions = {}) => {
     const showLoadingIndicator = options.showLoadingIndicator ?? true;
+    const priority = options.priority ?? (showLoadingIndicator ? 'urgent' : 'prefetch');
+    const isUrgentLoadMore = priority === 'urgent';
     if (collectionState.isLoadingMoreArticles || loadMoreInFlightRef.current) return;
     if (collectionState.articles.length >= collectionState.articlesTotalCount) return;
 
@@ -2078,11 +2089,15 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const offset = collectionState.articles.length;
     const requestedLimit = ARTICLE_LIST_LOAD_MORE_LIMIT;
     const sourceKey = activeSourceRef.current?.key ?? null;
-    if (showLoadingIndicator) {
-      collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingMoreArticles: true } });
-    }
+    collectionDispatch({
+      type: 'SET_LOADING',
+      payload: {
+        isLoadMoreInFlight: true,
+        ...(showLoadingIndicator ? { isLoadingMoreArticles: true } : {}),
+      },
+    });
     try {
-      if (!showLoadingIndicator) {
+      if (!isUrgentLoadMore && !showLoadingIndicator) {
         await yieldToArticleListPrefetchFrame();
         if (token !== selectionTokenRef.current || activeSearchText !== articleListSearchQueryRef.current) {
           return;
@@ -2127,7 +2142,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         queryDurationMs,
         buffered: false,
       };
-      if (showLoadingIndicator) {
+      if (isUrgentLoadMore || showLoadingIndicator) {
         queueLoadMoreCommitMetric(metric, 'urgent');
         collectionDispatch({ type: 'APPEND_ARTICLES', payload: more.articles });
       } else {
@@ -2140,9 +2155,15 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Always release the lock. Only mutate visible loading flags if this
       // request still belongs to the active navigation token.
       loadMoreInFlightRef.current = false;
-      if (showLoadingIndicator && token === selectionTokenRef.current) {
-        collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingMoreArticles: false } });
-      }
+      collectionDispatch({
+        type: 'SET_LOADING',
+        payload: {
+          isLoadMoreInFlight: false,
+          ...(showLoadingIndicator && token === selectionTokenRef.current
+            ? { isLoadingMoreArticles: false }
+            : {}),
+        },
+      });
     }
   }, [
     collectionState.articles.length,
