@@ -864,6 +864,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   const stationMenuRef = useRef<HTMLDivElement | null>(null);
   const opmlActionToastTimerRef = useRef<number | null>(null);
   const stationsRef = useLatestRef(stations);
+  const feedsRef = useLatestRef(feeds);
   const feedToStationsMapRef = useLatestRef(feedToStationsMap);
   const libraryItemsRef = useLatestRef(libraryItems);
   const dragStateRef = useRef<DragState | null>(null);
@@ -2104,6 +2105,145 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     }
   };
 
+  const handleDeleteStationWithFeeds = async () => {
+    if (!stationToDelete || isStationDeleteActionLoading) return;
+
+    setIsStationDeleteActionLoading(true);
+    try {
+      const targetStationName = stationToDelete.name;
+      const deletedStation = stationsRef.current.find((station) => station.name === targetStationName);
+      const affectedFeedIds = deletedStation?.feedIds ?? [];
+      const feedsToDelete: string[] = [];
+      const feedsToUnlink: string[] = [];
+
+      for (const feedId of affectedFeedIds) {
+        const feed = feedsRef.current.find((entry) => entry.id === feedId);
+        if (!feed) {
+          feedsToDelete.push(feedId);
+          continue;
+        }
+
+        const hasOtherStations = feed.tags.some((stationName) => stationName !== targetStationName);
+        if (hasOtherStations) {
+          feedsToUnlink.push(feedId);
+        } else {
+          feedsToDelete.push(feedId);
+        }
+      }
+
+      const deletedFeedIdSet = new Set(feedsToDelete);
+
+      for (const feedId of feedsToDelete) {
+        await articlesManager.deleteArticlesByFeed(feedId);
+        await feedsManager.deleteFeed(feedId);
+
+        if (selectedFeedId === feedId) {
+          clearFeedSelection();
+        }
+      }
+
+      await tagsManager.deleteTag(targetStationName);
+
+      setStations((current) => current
+        .filter((station) => station.name !== targetStationName)
+        .map((station) => ({
+          ...station,
+          feedIds: station.feedIds.filter((feedId) => !deletedFeedIdSet.has(feedId)),
+        })));
+      setFeeds((current) => current
+        .filter((feed) => !deletedFeedIdSet.has(feed.id))
+        .map((feed) => {
+          if (!feed.tags.includes(targetStationName)) {
+            return feed;
+          }
+
+          return {
+            ...feed,
+            tags: feed.tags.filter((stationName) => stationName !== targetStationName),
+          };
+        }));
+      setFeedToStationsMap((current) => {
+        const next = new Map(current);
+
+        for (const feedId of feedsToDelete) {
+          next.delete(feedId);
+        }
+
+        for (const feedId of feedsToUnlink) {
+          const stationNames = next.get(feedId);
+          if (!stationNames) continue;
+
+          const filteredNames = stationNames.filter((stationName) => stationName !== targetStationName);
+          if (filteredNames.length === 0) {
+            next.delete(feedId);
+            continue;
+          }
+
+          next.set(feedId, filteredNames);
+        }
+
+        return next;
+      });
+
+      for (const feedId of feedsToDelete) {
+        if (titleEditState?.feedId === feedId) {
+          setTitleEditState(null);
+        }
+        if (urlEditState?.feedId === feedId) {
+          setUrlEditState(null);
+        }
+        if (stationEditState?.feedId === feedId) {
+          setStationEditState(null);
+        }
+        if (emojiMenuState?.kind === 'feed' && emojiMenuState.id === feedId) {
+          setEmojiMenuState(null);
+        }
+        if (activeEmojiTarget?.kind === 'feed' && activeEmojiTarget.id === feedId) {
+          setActiveEmojiTarget(null);
+        }
+
+        const affectedStations = stationsRef.current.filter(
+          (station) => station.feedIds.includes(feedId) && station.name !== targetStationName,
+        );
+        for (const station of affectedStations) {
+          feedLibraryMutationBus.publishStationPatched(station.name, {
+            ...station,
+            feedIds: station.feedIds.filter((id) => id !== feedId),
+          });
+        }
+
+        feedLibraryMutationBus.publishFeedDeleted(feedId);
+      }
+
+      if (stationNameEditState?.stationName === targetStationName) {
+        setStationNameEditState(null);
+      }
+      if (stationEditState) {
+        setStationEditState(null);
+      }
+      if (emojiMenuState?.kind === 'station' && emojiMenuState.id === targetStationName) {
+        setEmojiMenuState(null);
+      }
+      if (activeEmojiTarget?.kind === 'station' && activeEmojiTarget.id === targetStationName) {
+        setActiveEmojiTarget(null);
+      }
+
+      feedLibraryMutationBus.publishStationDeleted(
+        deletedStation?.name ?? targetStationName,
+        affectedFeedIds,
+      );
+      setStationToDelete(null);
+    } catch (deleteError) {
+      const message = deleteError instanceof Error
+        ? deleteError.message
+        : 'Failed to delete station and feeds.';
+      appToastService.show(message);
+      void loadData();
+    } finally {
+      setIsStationDeleteActionLoading(false);
+    }
+  };
+
   const selectedEmoji = useMemo(() => {
     if (!emojiMenuState) return undefined;
 
@@ -2494,6 +2634,9 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
           <p className="feed-edit-delete-modal-description">
             Feeds in this station will stay in your library and become unstationed.
           </p>
+          <p className="feed-edit-delete-modal-description">
+            To remove feeds that belong only to this station (and their articles), use Delete Station and Feeds. Feeds shared with other stations are unlinked only.
+          </p>
           <div className="feed-edit-delete-modal-actions">
             <button
               type="button"
@@ -2502,6 +2645,14 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
               disabled={isStationDeleteActionLoading}
             >
               {isStationDeleteActionLoading ? 'Deleting...' : 'Confirm'}
+            </button>
+            <button
+              type="button"
+              className="modal-confirm-button modal-confirm-button-danger feed-edit-delete-modal-button"
+              onClick={() => { void handleDeleteStationWithFeeds(); }}
+              disabled={isStationDeleteActionLoading}
+            >
+              {isStationDeleteActionLoading ? 'Deleting...' : 'Delete Station and Feeds'}
             </button>
             <button
               type="button"

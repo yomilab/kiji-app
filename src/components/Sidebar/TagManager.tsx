@@ -20,6 +20,10 @@ import { useFeedFaviconRefreshed, useFeedNavigation, type FeedEditTarget } from 
 import { ButtonStack, type ButtonConfig } from '@/components/common/ButtonStack';
 import { FaviconImage } from '@/components/common/FaviconImage';
 import type { Tag } from '@/types/tag';
+import {
+  applyStationLibraryPatchToExpandedStations,
+  applyStationLibraryPatchToTags,
+} from '@/services/ui/applyStationLibraryPatch';
 import './TagManager.css';
 
 interface StationFeedItemProps {
@@ -358,55 +362,19 @@ export const TagManager: React.FC = () => {
   useEffect(() => {
     if (!patchedStation) return;
 
-    setTags((prev) => {
-      let hasPatchedStation = false;
-      const nextTags = prev.map((tag) => {
-        if (tag.name !== patchedStation.previousName) {
-          return tag;
-        }
+    setTags((prev) => applyStationLibraryPatchToTags(prev, patchedStation));
 
-        hasPatchedStation = true;
-        return {
-          ...tag,
-          ...patchedStation.station,
-        };
-      });
-
-      if (hasPatchedStation) {
-        return nextTags;
-      }
-
-      return [...prev, {
-        ...patchedStation.station,
-        color: undefined,
-      }].sort((left, right) => {
-        const sortOrderDiff = (left.sortOrder ?? Number.MAX_SAFE_INTEGER) - (right.sortOrder ?? Number.MAX_SAFE_INTEGER);
-        if (sortOrderDiff !== 0) {
-          return sortOrderDiff;
-        }
-
-        return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
-      });
-    });
-
+    let shouldRefreshExpandedFeeds = false;
     setExpandedStations((prev) => {
-      if (
-        patchedStation.previousName === patchedStation.station.name
-        || !prev.has(patchedStation.previousName)
-      ) {
-        return prev;
-      }
-
-      const next = new Set(prev);
-      next.delete(patchedStation.previousName);
-      next.add(patchedStation.station.name);
-      return next;
+      const expandedPatch = applyStationLibraryPatchToExpandedStations(prev, patchedStation);
+      shouldRefreshExpandedFeeds = expandedPatch.shouldRefreshExpandedFeeds;
+      return expandedPatch.expandedStations;
     });
 
-    if (expandedStations.has(patchedStation.station.name)) {
+    if (shouldRefreshExpandedFeeds) {
       void ensureFeedsCached(patchedStation.station.feedIds);
     }
-  }, [ensureFeedsCached, expandedStations, patchedStation]);
+  }, [ensureFeedsCached, patchedStation]);
 
   useEffect(() => {
     if (!deletedStation) return;
@@ -424,7 +392,7 @@ export const TagManager: React.FC = () => {
       next.delete(deletedStation.stationName);
       return next;
     });
-  }, [clearFeedSelection, deletedStation, selectedTag]);
+  }, [clearFeedSelection, deletedStation]);
 
   useEffect(() => {
     if (!hydratedStations) return;
