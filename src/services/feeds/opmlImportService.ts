@@ -7,6 +7,13 @@ import {
   OPML_STATION_NAME_ATTRIBUTE,
   readOpmlOutlineEmoji,
 } from './opmlAttributes';
+import { parseOpmlXmlDocument } from './opmlDocument';
+import {
+  deriveOpmlDefaultStationName,
+  isFlatOpmlRoot,
+  normalizeStationName,
+  resolveOutlineStationName,
+} from './opmlStationResolution';
 
 export interface OpmlImportEntry {
   title?: string;
@@ -29,9 +36,14 @@ export interface OpmlImportedFeedRef {
   url: string;
 }
 
+export type OpmlImportNavigationTarget =
+  | { type: 'station'; stationName: string }
+  | { type: 'feed'; feedId: string; feedUrl: string; feedTitle: string };
+
 export interface OpmlImportResult {
   summary: OpmlImportSummary;
   importedFeeds: OpmlImportedFeedRef[];
+  navigationTarget?: OpmlImportNavigationTarget;
 }
 
 export type OpmlBackgroundTask = () => Promise<void>;
@@ -51,12 +63,6 @@ const getDirectOutlineChildren = (node: Element): Element[] => {
   return Array.from(node.children).filter(
     (child) => child.tagName.toLowerCase() === 'outline'
   );
-};
-
-const normalizeStationName = (value?: string): string | undefined => {
-  if (!value) return undefined;
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  return normalized || undefined;
 };
 
 export const normalizeFeedUrl = (url?: string): string | null => {
@@ -80,23 +86,39 @@ export const normalizeFeedUrl = (url?: string): string | null => {
   }
 };
 
-export const parseOpmlEntries = (opmlText: string): OpmlImportEntry[] => {
+export interface ParseOpmlEntriesOptions {
+  defaultStationName?: string;
+  fileName?: string;
+  url?: string;
+}
+
+export const parseOpmlEntries = (
+  opmlText: string,
+  options: ParseOpmlEntriesOptions = {},
+): OpmlImportEntry[] => {
   if (!opmlText.trim()) {
     throw new Error('OPML file is empty.');
   }
 
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(opmlText, 'text/xml');
-  const parseError = xmlDoc.querySelector('parsererror');
-
-  if (parseError) {
-    throw new Error('Invalid OPML file.');
-  }
-
+  const xmlDoc = parseOpmlXmlDocument(opmlText);
   const body = xmlDoc.querySelector('opml > body') || xmlDoc.querySelector('body');
   if (!body) {
     throw new Error('Invalid OPML file: missing body section.');
   }
+
+  const rootOutlines = getDirectOutlineChildren(body);
+  const rootOutlineHasXmlUrl = rootOutlines.map((outline) => Boolean(outline.getAttribute('xmlUrl')?.trim()));
+  const opmlHeadTitle = xmlDoc.querySelector('opml > head > title')?.textContent?.trim();
+  const flatImportStation = isFlatOpmlRoot(rootOutlineHasXmlUrl)
+    ? (
+      normalizeStationName(options.defaultStationName)
+      ?? deriveOpmlDefaultStationName({
+        fileName: options.fileName,
+        url: options.url,
+        opmlHeadTitle,
+      })
+    )
+    : undefined;
 
   const entries: OpmlImportEntry[] = [];
 
@@ -108,9 +130,14 @@ export const parseOpmlEntries = (opmlText: string): OpmlImportEntry[] => {
   ) => {
     const label = getOutlineLabel(outline);
     const xmlUrl = outline.getAttribute('xmlUrl')?.trim();
-    const stationName = depth === 0
-      ? normalizeStationName(getOutlineStationName(outline) || label)
-      : topStation;
+    const stationName = resolveOutlineStationName({
+      depth,
+      hasXmlUrl: Boolean(xmlUrl),
+      label,
+      explicitStationName: getOutlineStationName(outline),
+      inheritedStation: topStation,
+      flatImportStation,
+    });
     const stationEmoji = depth === 0
       ? readOpmlOutlineEmoji(outline)
       : topStationEmoji;
@@ -131,7 +158,6 @@ export const parseOpmlEntries = (opmlText: string): OpmlImportEntry[] => {
     }
   };
 
-  const rootOutlines = getDirectOutlineChildren(body);
   for (const outline of rootOutlines) {
     walkOutline(outline, undefined, undefined, 0);
   }
@@ -172,6 +198,8 @@ class OpmlImportService {
     let invalid = 0;
     let failed = 0;
     const importedFeeds: OpmlImportedFeedRef[] = [];
+    const importedStations: string[] = [];
+    let firstImportedFeedNavigation: Extract<OpmlImportNavigationTarget, { type: 'feed' }> | null = null;
     let nextSortOrder = existingFeeds.length;
 
     for (const entry of entries) {
@@ -212,10 +240,27 @@ class OpmlImportService {
 
         importedFeeds.push({ id: feed.id, url: feed.url });
         imported += 1;
+
+        if (entry.station && !importedStations.includes(entry.station)) {
+          importedStations.push(entry.station);
+        }
+
+        if (!firstImportedFeedNavigation) {
+          firstImportedFeedNavigation = {
+            type: 'feed',
+            feedId: feed.id,
+            feedUrl: feed.url,
+            feedTitle: feed.title || entry.title || feed.url,
+          };
+        }
       } catch {
         failed += 1;
       }
     }
+
+    const navigationTarget: OpmlImportNavigationTarget | undefined = importedStations.length > 0
+      ? { type: 'station', stationName: importedStations[0] }
+      : firstImportedFeedNavigation ?? undefined;
 
     return {
       summary: {
@@ -226,11 +271,15 @@ class OpmlImportService {
         failed,
       },
       importedFeeds,
+      navigationTarget,
     };
   }
 
-  async importFromText(opmlText: string): Promise<OpmlImportResult> {
-    const entries = parseOpmlEntries(opmlText);
+  async importFromText(
+    opmlText: string,
+    options: ParseOpmlEntriesOptions = {},
+  ): Promise<OpmlImportResult> {
+    const entries = parseOpmlEntries(opmlText, options);
     return this.importEntries(entries);
   }
 }

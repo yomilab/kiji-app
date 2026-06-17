@@ -11,6 +11,8 @@ export interface SchedulerRunPlan {
 export interface SchedulerRunPlanOptions {
   frontloadFeedIds?: ReadonlySet<string>;
   skipFeedIdsForThisCycle?: ReadonlySet<string>;
+  onlyFeedIds?: ReadonlySet<string>;
+  excludeFeedIds?: ReadonlySet<string>;
 }
 
 export const isSchedulerEntryInBackoff = (
@@ -30,6 +32,14 @@ export const createSchedulerRunPlan = (
   let skippedSuppressedCount = 0;
 
   for (const entry of entries) {
+    if (options.onlyFeedIds && !options.onlyFeedIds.has(entry.feedId)) {
+      continue;
+    }
+
+    if (options.excludeFeedIds?.has(entry.feedId)) {
+      continue;
+    }
+
     if (options.skipFeedIdsForThisCycle?.has(entry.feedId)) {
       skippedSuppressedCount += 1;
       continue;

@@ -27,6 +27,9 @@ export interface ParsedOpmlEntry {
 
 export interface OpmlParseTaskPayload {
   opmlText: string;
+  defaultStationName?: string;
+  fileName?: string;
+  url?: string;
 }
 
 export interface OpmlParseTaskResult {

@@ -9,6 +9,12 @@ import {
   OPML_STATION_NAME_ATTRIBUTE,
   readOpmlOutlineEmoji,
 } from '@/services/feeds/opmlAttributes';
+import {
+  deriveOpmlDefaultStationName,
+  isFlatOpmlRoot,
+  normalizeStationName,
+  resolveOutlineStationName,
+} from '@/services/feeds/opmlStationResolution';
 import { filenameService } from '@/services/text/filenameService';
 import { tauriClient } from '@/lib/tauriClient';
 import {
@@ -105,12 +111,6 @@ const toArray = <T>(value: T | T[] | undefined): T[] => {
   return Array.isArray(value) ? value : [value];
 };
 
-const normalizeStationName = (value?: string): string | undefined => {
-  if (!value) return undefined;
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  return normalized || undefined;
-};
-
 interface OpmlOutlineNode {
   text?: string;
   title?: string;
@@ -148,6 +148,19 @@ const parseOpmlTask = (payload: OpmlParseTaskPayload): OpmlParseTaskResult => {
   }
 
   const rootOutlines = toArray(body.outline as OpmlOutlineNode | OpmlOutlineNode[] | undefined);
+  const rootOutlineHasXmlUrl = rootOutlines.map((outline) => Boolean(outline.xmlUrl?.trim()));
+  const head = opmlRoot.head as Record<string, unknown> | undefined;
+  const opmlHeadTitle = typeof head?.title === 'string' ? head.title : undefined;
+  const flatImportStation = isFlatOpmlRoot(rootOutlineHasXmlUrl)
+    ? (
+      normalizeStationName(payload.defaultStationName)
+      ?? deriveOpmlDefaultStationName({
+        fileName: payload.fileName,
+        url: payload.url,
+        opmlHeadTitle,
+      })
+    )
+    : undefined;
   const entries: ParsedOpmlEntry[] = [];
 
   const walkOutline = (
@@ -158,9 +171,14 @@ const parseOpmlTask = (payload: OpmlParseTaskPayload): OpmlParseTaskResult => {
   ) => {
     const label = getOutlineLabel(outline);
     const xmlUrl = outline.xmlUrl?.trim();
-    const stationName = depth === 0
-      ? normalizeStationName(getOutlineStationName(outline) || label)
-      : topStation;
+    const stationName = resolveOutlineStationName({
+      depth,
+      hasXmlUrl: Boolean(xmlUrl),
+      label,
+      explicitStationName: getOutlineStationName(outline),
+      inheritedStation: topStation,
+      flatImportStation,
+    });
     const stationEmoji = depth === 0
       ? readOpmlOutlineEmoji(outline as Record<string, string | undefined>)
       : topStationEmoji;

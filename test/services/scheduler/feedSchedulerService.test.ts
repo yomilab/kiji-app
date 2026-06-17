@@ -4,6 +4,11 @@ const schedulerStart = vi.hoisted(() => vi.fn().mockResolvedValue("started"));
 const schedulerStop = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const schedulerReconfigure = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const listen = vi.hoisted(() => vi.fn());
+const eventHandlers = vi.hoisted(() => new Map<string, () => void>());
+
+const getSchedulerEventHandler = (event: string): (() => void) | undefined => {
+  return eventHandlers.get(event);
+};
 const getAll = vi.hoisted(() => vi.fn().mockResolvedValue([
   {
     id: "feed-1",
@@ -134,7 +139,11 @@ describe("feedSchedulerService", () => {
       etag: "etag-1",
       lastModified: "date-1",
     });
-    listen.mockResolvedValue(vi.fn());
+    listen.mockImplementation(async (event: string, handler: () => void) => {
+      eventHandlers.set(event, handler);
+      return vi.fn();
+    });
+    eventHandlers.clear();
     schedulerStart.mockResolvedValue("started");
   });
 
@@ -149,6 +158,8 @@ describe("feedSchedulerService", () => {
     expect(schedulerStart).toHaveBeenCalledTimes(1);
     expect(schedulerReconfigure).toHaveBeenCalledTimes(1);
     expect(listen).toHaveBeenCalledWith("scheduler:cycle-tick", expect.any(Function));
+    expect(listen).toHaveBeenCalledWith("scheduler:system-sleep", expect.any(Function));
+    expect(listen).toHaveBeenCalledWith("scheduler:system-resume", expect.any(Function));
   });
 
   it("stops native driver when lifecycle becomes stale during start", async () => {
@@ -167,7 +178,7 @@ describe("feedSchedulerService", () => {
     await feedScheduler.start();
 
     expect(listen).toHaveBeenCalledWith("scheduler:cycle-tick", expect.any(Function));
-    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+    const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
     expect(tickHandler).toBeTypeOf("function");
 
     await tickHandler?.();
@@ -192,7 +203,7 @@ describe("feedSchedulerService", () => {
     }));
 
     await feedScheduler.start();
-    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+    const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
 
     const firstTick = tickHandler?.();
     await vi.waitFor(() => {
@@ -221,7 +232,7 @@ describe("feedSchedulerService", () => {
     }));
 
     await feedScheduler.start();
-    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+    const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
 
     const firstTick = tickHandler?.();
     await vi.waitFor(() => {
@@ -240,7 +251,7 @@ describe("feedSchedulerService", () => {
 
   it("defers native ticks while station selection pauses the scheduler", async () => {
     await feedScheduler.start();
-    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+    const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
 
     feedScheduler.pauseForStationSelection();
     await tickHandler?.();
@@ -282,7 +293,7 @@ describe("feedSchedulerService", () => {
     }));
 
     await feedScheduler.start();
-    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+    const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
 
     feedScheduler.setActiveStationFocus("tag:Station", ["feed-station"]);
     await tickHandler?.();
@@ -295,7 +306,7 @@ describe("feedSchedulerService", () => {
 
   it("suppresses foreground-refreshed station feeds for only the next cycle", async () => {
     await feedScheduler.start();
-    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+    const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
 
     feedScheduler.suppressFeedsForNextCycle(["feed-1"]);
     await tickHandler?.();
@@ -321,7 +332,7 @@ describe("feedSchedulerService", () => {
     }));
 
     await feedScheduler.start();
-    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+    const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
 
     const firstTick = tickHandler?.();
     await vi.waitFor(() => {
@@ -340,7 +351,7 @@ describe("feedSchedulerService", () => {
 
   it("keeps the scheduler paused until nested station selections finish", async () => {
     await feedScheduler.start();
-    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+    const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
 
     feedScheduler.pauseForStationSelection();
     feedScheduler.pauseForStationSelection();
@@ -374,7 +385,7 @@ describe("feedSchedulerService", () => {
 
     try {
       await feedScheduler.start();
-      const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+      const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
 
       await tickHandler?.();
       await vi.waitFor(() => {
@@ -398,7 +409,7 @@ describe("feedSchedulerService", () => {
 
   it("releases station pause on background and runs deferred scheduler tick", async () => {
     await feedScheduler.start();
-    const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+    const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
 
     feedScheduler.pauseForStationSelection();
     await tickHandler?.();
@@ -444,7 +455,7 @@ describe("feedSchedulerService", () => {
 
     try {
       await feedScheduler.start();
-      const tickHandler = listen.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+      const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
       await tickHandler?.();
       await vi.waitFor(() => {
         expect(getAll).toHaveBeenCalledTimes(1);
@@ -462,5 +473,131 @@ describe("feedSchedulerService", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("aborts a stuck cycle after repeated deferred native ticks", async () => {
+    let releaseRefresh!: () => void;
+    fetchFeedNetworkWithCache.mockImplementation((_url, options?: { signal?: AbortSignal }) => new Promise((resolve, reject) => {
+      const onAbort = (): void => {
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      options?.signal?.addEventListener("abort", onAbort, { once: true });
+      releaseRefresh = () => {
+        options?.signal?.removeEventListener("abort", onAbort);
+        resolve({
+          notModified: true,
+          etag: "etag-1",
+          lastModified: "date-1",
+        });
+      };
+    }));
+
+    await feedScheduler.start();
+    const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
+
+    void tickHandler?.();
+    await vi.waitFor(() => {
+      expect(fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
+    });
+
+    await tickHandler?.();
+    await tickHandler?.();
+    await tickHandler?.();
+    expect(getAll).toHaveBeenCalledTimes(1);
+
+    await tickHandler?.();
+    await vi.waitFor(() => {
+      expect(getAll).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("runs station-first catch-up after resume when a station is active", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    getAll.mockResolvedValue([
+      {
+        id: "feed-rest",
+        title: "Rest",
+        url: "https://feed-rest.example.com/rss",
+        tags: [],
+        sortOrder: 0,
+        updateFrequencyScore: 1,
+        consecutiveFailures: 0,
+      },
+      {
+        id: "feed-station",
+        title: "Station",
+        url: "https://feed-station.example.com/rss",
+        tags: ["Station"],
+        sortOrder: 2,
+        updateFrequencyScore: 0.1,
+        consecutiveFailures: 0,
+      },
+    ]);
+    getById.mockImplementation((feedId: string) => Promise.resolve({
+      id: feedId,
+      title: feedId,
+      url: `https://${feedId}.example.com/rss`,
+      tags: feedId === "feed-station" ? ["Station"] : [],
+    }));
+
+    try {
+      await feedScheduler.start();
+      const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
+      await tickHandler?.();
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(1);
+      });
+
+      feedScheduler.setActiveStationFocus("tag:Station", ["feed-station"]);
+      fetchFeedNetworkWithCache.mockClear();
+      getAll.mockClear();
+
+      await vi.advanceTimersByTimeAsync(6 * 60_000);
+      await feedScheduler.catchUpAfterResume();
+
+      await vi.waitFor(() => {
+        expect(fetchFeedNetworkWithCache).toHaveBeenCalledTimes(2);
+      });
+      expect(fetchFeedNetworkWithCache.mock.calls[0]?.[0]).toBe("https://feed-station.example.com/rss");
+      expect(fetchFeedNetworkWithCache.mock.calls[1]?.[0]).toBe("https://feed-rest.example.com/rss");
+      expect(getAll).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts in-flight refresh on system sleep", async () => {
+    let releaseRefresh!: () => void;
+    fetchFeedNetworkWithCache.mockImplementation((_url, options?: { signal?: AbortSignal }) => new Promise((resolve, reject) => {
+      const onAbort = (): void => {
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      options?.signal?.addEventListener("abort", onAbort, { once: true });
+      releaseRefresh = () => {
+        options?.signal?.removeEventListener("abort", onAbort);
+        resolve({
+          notModified: true,
+          etag: "etag-1",
+          lastModified: "date-1",
+        });
+      };
+    }));
+
+    await feedScheduler.start();
+    const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
+    const sleepHandler = getSchedulerEventHandler("scheduler:system-sleep");
+
+    void tickHandler?.();
+    await vi.waitFor(() => {
+      expect(fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
+    });
+
+    await sleepHandler?.();
+    await tickHandler?.();
+
+    await vi.waitFor(() => {
+      expect(getAll).toHaveBeenCalledTimes(2);
+    });
   });
 });

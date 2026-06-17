@@ -297,7 +297,9 @@ type CollectionAction =
   | { type: 'APPEND_ARTICLES'; payload: Article[] }
   | { type: 'UPDATE_ARTICLE'; payload: { hash: string; updates: ArticleListUpdatePayload; removeFromUnread?: boolean; removeFromSaved?: boolean } }
   | { type: 'SET_LOADING'; payload: Partial<CollectionState> }
-  | { type: 'RESET_ARTICLES' };
+  | { type: 'RESET_ARTICLES' }
+  | { type: 'RESTORE_SOURCE_SNAPSHOT'; payload: { list: Article[]; total: number } }
+  | { type: 'RESET_FOR_SOURCE_SWITCH' };
 
 const areArticleListsEquivalent = (current: Article[], next: Article[]): boolean => {
   if (current === next) return true;
@@ -444,6 +446,52 @@ function collectionReducer(state: CollectionState, action: CollectionAction): Co
         newArticleCount: 0,
         newArticleHashes: new Set<string>(),
         articleListScrollRequest: null,
+      };
+    case 'RESTORE_SOURCE_SNAPSHOT':
+      if (
+        state.articlesTotalCount === action.payload.total
+        && areArticleListsEquivalent(state.articles, action.payload.list)
+        && !state.isLoadingArticles
+        && !state.isSavedListLoading
+        && !state.isFetchingNew
+        && !state.isLoadingMoreArticles
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        articles: action.payload.list,
+        articlesTotalCount: action.payload.total,
+        newArticleCount: 0,
+        newArticleHashes: new Set<string>(),
+        articleListScrollRequest: null,
+        isLoadingArticles: false,
+        isSavedListLoading: false,
+        isFetchingNew: false,
+        isLoadingMoreArticles: false,
+      };
+    case 'RESET_FOR_SOURCE_SWITCH':
+      if (
+        state.articles.length === 0
+        && state.articlesTotalCount === 0
+        && state.isLoadingArticles
+        && !state.isSavedListLoading
+        && !state.isFetchingNew
+        && !state.isLoadingMoreArticles
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        articles: [],
+        articlesTotalCount: 0,
+        newArticleCount: 0,
+        newArticleHashes: new Set<string>(),
+        articleListScrollRequest: null,
+        isLoadingArticles: true,
+        isSavedListLoading: false,
+        isFetchingNew: false,
+        isLoadingMoreArticles: false,
       };
     default:
       return state;
@@ -747,6 +795,33 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, [startTransition]);
 
+  const dispatchArticlesTransitionIfChanged = useCallback((list: Article[], total: number): boolean => {
+    const isSearchActive = articleListSearchQueryRef.current !== null;
+
+    if (isSearchActive) {
+      if (areArticleListsEquivalent(currentArticlesRef.current, list)) {
+        return false;
+      }
+
+      currentArticlesRef.current = list;
+      dispatchArticlesTransition(list, total);
+      return true;
+    }
+
+    if (
+      nonSearchArticlesTotalCountRef.current === total
+      && areArticleListsEquivalent(currentArticlesRef.current, list)
+    ) {
+      return false;
+    }
+
+    currentArticlesRef.current = list;
+    nonSearchArticlesRef.current = list;
+    nonSearchArticlesTotalCountRef.current = total;
+    dispatchArticlesTransition(list, total);
+    return true;
+  }, [dispatchArticlesTransition]);
+
   const rememberSourceArticleSnapshot = useCallback((
     sourceKey: string,
     list: Article[],
@@ -785,15 +860,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     nonSearchArticlesRef.current = snapshot.list;
     nonSearchArticlesTotalCountRef.current = snapshot.total;
     lastQueryRef.current = snapshot.query;
-    collectionDispatch({ type: 'SET_ARTICLES', payload: { list: snapshot.list, total: snapshot.total } });
     collectionDispatch({
-      type: 'SET_LOADING',
-      payload: {
-        isLoadingArticles: false,
-        isSavedListLoading: false,
-        isFetchingNew: false,
-        isLoadingMoreArticles: false,
-      },
+      type: 'RESTORE_SOURCE_SNAPSHOT',
+      payload: { list: snapshot.list, total: snapshot.total },
     });
 
     return snapshot;
@@ -1394,11 +1463,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     if (shouldReset) {
-      collectionDispatch({ type: 'RESET_ARTICLES' });
-      collectionDispatch({
-        type: 'SET_LOADING',
-        payload: { isLoadingArticles: true, isSavedListLoading: false, isFetchingNew: false },
-      });
+      collectionDispatch({ type: 'RESET_FOR_SOURCE_SWITCH' });
       setActiveArticle(null);
     }
 
@@ -1416,7 +1481,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (!isSelectionActive(token)) return;
         lastQueryRef.current = feedQuery;
 
-        dispatchArticlesTransition(stored, total);
+        dispatchArticlesTransitionIfChanged(stored, total);
         collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
         interactionPerformance.markTimedInteractionStage('sidebar-switch', `feed:${feedId}`, 'cachedReady', {
           cachedArticleCount: stored.length,
@@ -1459,7 +1524,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       const { articles: fresh, total: freshTotal } = await articleStore.query(feedQuery);
       if (!isSelectionActive(token)) return;
-      dispatchArticlesTransition(fresh, freshTotal);
+      dispatchArticlesTransitionIfChanged(fresh, freshTotal);
       interactionPerformance.markTimedInteractionStage('sidebar-switch', `feed:${feedId}`, 'freshReady', {
         freshArticleCount: fresh.length,
         freshArticleTotal: freshTotal,
@@ -1483,7 +1548,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [
     clearError,
-    dispatchArticlesTransition,
+    dispatchArticlesTransitionIfChanged,
     isSelectionActive,
     notifyFeedLibraryChanged,
     recordFeedRefreshFailure,
@@ -1511,11 +1576,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (shouldReset) {
       restoredSnapshot = restoreSourceArticleSnapshot(sourceKey);
       if (!restoredSnapshot) {
-        collectionDispatch({ type: 'RESET_ARTICLES' });
-        collectionDispatch({
-          type: 'SET_LOADING',
-          payload: { isLoadingArticles: true, isSavedListLoading: false, isFetchingNew: false },
-        });
+        collectionDispatch({ type: 'RESET_FOR_SOURCE_SWITCH' });
       }
       closeActiveArticleForSourceSwitch();
     }
@@ -1548,7 +1609,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const { articles: stored, total } = await articleStore.query({ ...tagQuery, limit: cachedVisibleCount });
         if (!isSelectionActive(token)) return;
 
-        dispatchArticlesTransition(stored, total);
+        dispatchArticlesTransitionIfChanged(stored, total);
         collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
         interactionPerformance.markTimedInteractionStage('sidebar-switch', `tag:${tagName}`, 'cachedReady', {
           cachedArticleCount: stored.length,
@@ -1578,7 +1639,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (!isSelectionActive(token)) return;
       const visibleCount = Math.max(currentArticlesRef.current.length, SMART_VIEW_ARTICLE_LIMIT);
       let freshArticleCount = currentArticlesRef.current.length;
-      let freshArticleTotal = collectionState.articlesTotalCount;
+      let freshArticleTotal = nonSearchArticlesTotalCountRef.current;
       if (insertedCount === 0) {
         // Cached content is already current, so avoid a second full DB query and
         // virtualized list publish on the station-switch path.
@@ -1589,7 +1650,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (!isSelectionActive(token)) return;
         freshArticleCount = fresh.length;
         freshArticleTotal = freshTotal;
-        dispatchArticlesTransition(fresh, freshTotal);
+        dispatchArticlesTransitionIfChanged(fresh, freshTotal);
       }
       interactionPerformance.markTimedInteractionStage('sidebar-switch', `tag:${tagName}`, 'freshReady', {
         freshArticleCount,
@@ -1615,8 +1676,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     }
   }, [
-    dispatchArticlesTransition,
-    collectionState.articlesTotalCount,
+    dispatchArticlesTransitionIfChanged,
     isArticleViewTransitioning,
     isSelectionActive,
     refreshStationFeeds,
@@ -1649,7 +1709,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const { articles: saved, total } = await savedArticlesService.querySavedViewArticles(SMART_VIEW_ARTICLE_LIMIT);
         if (!isSelectionActive(token)) return;
 
-        dispatchArticlesTransition(saved, total);
+        dispatchArticlesTransitionIfChanged(saved, total);
         interactionPerformance.markTimedInteractionStage('sidebar-switch', `smart:${type}`, 'cachedReady', {
           cachedArticleCount: saved.length,
           cachedArticleTotal: total,
@@ -1657,7 +1717,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         const enriched = await savedArticlesService.enrichSavedViewArticlesMeta(saved);
         if (isSelectionActive(token)) {
-          dispatchArticlesTransition(enriched, total);
+          dispatchArticlesTransitionIfChanged(enriched, total);
           interactionPerformance.markTimedInteractionStage('sidebar-switch', `smart:${type}`, 'enrichedReady', {
             enrichedArticleCount: enriched.length,
             enrichedArticleTotal: total,
@@ -1686,7 +1746,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const { articles: list, total } = await articleStore.query(query);
       if (!isSelectionActive(token)) return;
       lastQueryRef.current = query;
-      dispatchArticlesTransition(list, total);
+      dispatchArticlesTransitionIfChanged(list, total);
       interactionPerformance.markTimedInteractionStage('sidebar-switch', `smart:${type}`, 'cachedReady', {
         cachedArticleCount: list.length,
         cachedArticleTotal: total,
@@ -1699,7 +1759,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         });
       }
     }
-  }, [dispatchArticlesTransition, isSelectionActive, setActiveArticle, startTransition, yieldToSelectionCoalescing]);
+  }, [dispatchArticlesTransitionIfChanged, isSelectionActive, setActiveArticle, startTransition, yieldToSelectionCoalescing]);
 
   if (!hasBootstrappedTotalFeedsRef.current) {
     hasBootstrappedTotalFeedsRef.current = true;
@@ -1967,8 +2027,8 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return;
     }
 
-    dispatchArticlesTransition(result.articles, result.total);
-  }, [dispatchArticlesTransition, navigationState, queryArticleListSource]);
+    dispatchArticlesTransitionIfChanged(result.articles, result.total);
+  }, [dispatchArticlesTransitionIfChanged, navigationState, queryArticleListSource]);
 
   const clearArticleListSearch = useCallback(async () => {
     if (articleListSearchQueryRef.current === null) {
@@ -2003,12 +2063,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return;
     }
 
-    currentArticlesRef.current = list;
-    nonSearchArticlesRef.current = list;
-    nonSearchArticlesTotalCountRef.current = total;
     lastQueryRef.current = query;
-    dispatchArticlesTransition(list, total);
-  }, [dispatchArticlesTransition, navigationState, queryArticleListSource]);
+    dispatchArticlesTransitionIfChanged(list, total);
+  }, [dispatchArticlesTransitionIfChanged, navigationState, queryArticleListSource]);
 
   const loadMoreArticles = useCallback(async (options: LoadMoreArticlesOptions = {}) => {
     const showLoadingIndicator = options.showLoadingIndicator ?? true;

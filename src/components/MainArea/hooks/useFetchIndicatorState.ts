@@ -21,10 +21,16 @@ export const useFetchIndicatorState = ({
   sourceKey = 'none',
 }: UseFetchIndicatorStateOptions) => {
   const [isFetchIndicatorVisible, setIsFetchIndicatorVisible] = useState(false);
+  const isFetchIndicatorVisibleRef = useRef(false);
   const fetchIndicatorStartedAtRef = useRef<number>(0);
   const fetchIndicatorHideTimerRef = useRef<number | null>(null);
   const fetchIndicatorShowTimerRef = useRef<number | null>(null);
   const fetchIndicatorSwitchGraceUntilRef = useRef<number>(0);
+
+  const setFetchIndicatorVisible = useCallback((visible: boolean) => {
+    isFetchIndicatorVisibleRef.current = visible;
+    setIsFetchIndicatorVisible(visible);
+  }, []);
 
   const clearHideTimer = useCallback(() => {
     if (fetchIndicatorHideTimerRef.current !== null) {
@@ -47,10 +53,10 @@ export const useFetchIndicatorState = ({
 
     fetchIndicatorShowTimerRef.current = window.setTimeout(() => {
       fetchIndicatorStartedAtRef.current = Date.now();
-      setIsFetchIndicatorVisible(true);
+      setFetchIndicatorVisible(true);
       fetchIndicatorShowTimerRef.current = null;
     }, FETCH_INDICATOR_SHOW_DELAY_MS);
-  }, [enabled, clearShowTimer]);
+  }, [enabled, clearShowTimer, setFetchIndicatorVisible]);
 
   const applySourceSwitchGrace = useCallback(() => {
     if (!enabled) return;
@@ -64,13 +70,13 @@ export const useFetchIndicatorState = ({
     if (!enabled) {
       clearHideTimer();
       clearShowTimer();
-      setIsFetchIndicatorVisible(false);
+      setFetchIndicatorVisible(false);
       return;
     }
 
     if (isActive) {
       clearHideTimer();
-      if (!isFetchIndicatorVisible) {
+      if (!isFetchIndicatorVisibleRef.current) {
         scheduleFetchIndicatorShow();
       }
       return;
@@ -84,7 +90,7 @@ export const useFetchIndicatorState = ({
     const hideDelay = Math.max(remainingMinVisible, FETCH_INDICATOR_HIDE_DEBOUNCE_MS, remainingSwitchGrace);
 
     fetchIndicatorHideTimerRef.current = window.setTimeout(() => {
-      setIsFetchIndicatorVisible(false);
+      setFetchIndicatorVisible(false);
       fetchIndicatorHideTimerRef.current = null;
     }, hideDelay);
 
@@ -95,10 +101,10 @@ export const useFetchIndicatorState = ({
     enabled,
     isActive,
     sourceKey,
-    isFetchIndicatorVisible,
     clearHideTimer,
     clearShowTimer,
     scheduleFetchIndicatorShow,
+    setFetchIndicatorVisible,
   ]);
 
   useEffect(() => {

@@ -9,6 +9,7 @@ import { opmlExportService } from '@/services/feeds/opmlExportService';
 import {
   formatOpmlImportSummary,
   importOpmlTextIntoLibrary,
+  navigateAfterOpmlImport,
   openOpmlFileForImport,
 } from '@/services/feeds/opmlUiWorkflow';
 import { APP_DOWNLOADS_URL } from '@/config/appIdentity';
@@ -34,6 +35,8 @@ interface UseApplicationMenuCommandsInput {
   selectedSmartView: SmartViewId | 'pinned' | null;
   selectSmartView: (viewType: 'saved' | 'unread' | 'all' | 'pinned') => Promise<void>;
   clearFeedSelection: () => void;
+  selectFeed: (feedId: string, feedUrl: string, feedTitle: string, options?: { forceNetwork?: boolean }) => Promise<void>;
+  selectTag: (tagName: string) => Promise<void>;
   refreshTotalFeeds: () => Promise<void>;
   notifyFeedLibraryChanged: () => void;
   updateArticleInList: (hash: string, updates?: ArticleListUpdatePayload) => void;
@@ -48,6 +51,8 @@ export const useApplicationMenuCommands = ({
   selectedSmartView,
   selectSmartView,
   clearFeedSelection,
+  selectFeed,
+  selectTag,
   refreshTotalFeeds,
   notifyFeedLibraryChanged,
   updateArticleInList,
@@ -138,22 +143,24 @@ export const useApplicationMenuCommands = ({
 
   const handleImportFeeds = useCallback(async () => {
     try {
-      const opmlText = await openOpmlFileForImport();
-      if (!opmlText) {
+      const selectedFile = await openOpmlFileForImport();
+      if (!selectedFile) {
         return;
       }
 
-      const importResult = await importOpmlTextIntoLibrary(opmlText, {
+      const importResult = await importOpmlTextIntoLibrary(selectedFile.opmlText, {
         refreshTotalFeeds,
         notifyFeedLibraryChanged,
+        fileName: selectedFile.fileName,
       });
+      await navigateAfterOpmlImport(importResult, { selectFeed, selectTag });
       appToastService.show(formatOpmlImportSummary(importResult.summary));
     } catch (importError) {
       appToastService.show(
         importError instanceof Error ? importError.message : 'Failed to import OPML file.'
       );
     }
-  }, [notifyFeedLibraryChanged, refreshTotalFeeds]);
+  }, [notifyFeedLibraryChanged, refreshTotalFeeds, selectFeed, selectTag]);
 
   const handleClearSavedArticles = useCallback(async () => {
     const savedArticles = await savedArticlesManager.getAllSavedArticles();

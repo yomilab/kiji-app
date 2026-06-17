@@ -8,11 +8,13 @@ import {
   importOpmlFromUrlIntoLibrary,
   importOpmlTextIntoLibrary,
   isLikelyOpmlUrl,
+  navigateAfterOpmlImport,
   openOpmlFileForImport,
 } from '@/services/feeds/opmlUiWorkflow';
 import { faviconFetcher } from '@/services/favicons/faviconFetcher';
 import { httpClient } from '@/services/http/httpClientFactory';
 import { appToastService } from '@/services/ui/appToastService';
+import { useFeedNavigation } from '@/contexts/FeedContext';
 import './AddFeedModal.css';
 
 interface AddFeedModalProps {
@@ -30,6 +32,7 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
   const [activeAction, setActiveAction] = useState<'adding' | 'importing' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { refreshTotalFeeds, notifyFeedLibraryChanged } = useFeedUIActions();
+  const { selectFeed, selectTag } = useFeedNavigation();
   const isLoading = activeAction !== null;
 
   const validateUrl = (url: string): boolean => {
@@ -56,11 +59,13 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
   const trimmedInput = feedUrl.trim();
   const isOpmlInput = isLikelyOpmlUrl(trimmedInput);
 
-  const applyOpmlImport = async (opmlText: string) => {
+  const applyOpmlImport = async (opmlText: string, fileName?: string) => {
     const importResult = await importOpmlTextIntoLibrary(opmlText, {
       refreshTotalFeeds,
       notifyFeedLibraryChanged,
+      fileName,
     });
+    await navigateAfterOpmlImport(importResult, { selectFeed, selectTag });
     appToastService.show(formatOpmlImportSummary(importResult.summary));
     setFeedUrl('');
     setError(null);
@@ -90,6 +95,7 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
           refreshTotalFeeds,
           notifyFeedLibraryChanged,
         });
+        await navigateAfterOpmlImport(importResult, { selectFeed, selectTag });
         appToastService.show(formatOpmlImportSummary(importResult.summary));
         setFeedUrl('');
         setError(null);
@@ -233,15 +239,15 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
     setActiveAction('importing');
 
     try {
-      const opmlText = await openOpmlFileForImport();
-      if (!opmlText) {
+      const selectedFile = await openOpmlFileForImport();
+      if (!selectedFile) {
         // Reset immediately on file-picker cancel so reopening the modal does
         // not depend on the surrounding async control flow to re-enable inputs.
         setActiveAction(null);
         return;
       }
 
-      await applyOpmlImport(opmlText);
+      await applyOpmlImport(selectedFile.opmlText, selectedFile.fileName);
     } catch (importError) {
       appToastService.show(
         importError instanceof Error ? importError.message : 'Failed to import OPML file.'

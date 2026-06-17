@@ -21,8 +21,11 @@ import type {
 } from './types';
 
 const SCHEDULER_CYCLE_TICK_EVENT = 'scheduler:cycle-tick';
+const SCHEDULER_SYSTEM_SLEEP_EVENT = 'scheduler:system-sleep';
+const SCHEDULER_SYSTEM_RESUME_EVENT = 'scheduler:system-resume';
 const SCHEDULER_TICK_WAKE_GLOBAL = '__kijiSchedulerTick';
 const STALE_CYCLE_ABORT_MS = 45 * 60 * 1_000;
+const MAX_DEFERRED_TICKS_BEFORE_FORCE_ABORT = 3;
 const STATION_SELECTION_PAUSE_MAX_MS = 10 * 60 * 1_000;
 const BOOST_TTL_MS = 5 * 60_000;
 
@@ -46,6 +49,11 @@ interface ActiveStationFocus {
   feedIds: Set<string>;
 }
 
+interface SchedulerCycleScope {
+  onlyFeedIds?: ReadonlySet<string>;
+  excludeFeedIds?: ReadonlySet<string>;
+}
+
 class FeedSchedulerService {
   private cycleInProgress = false;
   private pendingCycleTick = false;
@@ -62,6 +70,12 @@ class FeedSchedulerService {
   private stationSelectionPauseTimer: ReturnType<typeof setTimeout> | null = null;
   private activeStationFocus: ActiveStationFocus | null = null;
   private skipOnceFeedIds = new Set<string>();
+  private consecutiveDeferredTicks = 0;
+  private activeCycleId = 0;
+  private activeCycleDrain: Promise<void> | null = null;
+  private resolveActiveCycleDrain: (() => void) | null = null;
+  private systemPowerUnlistenSleep: UnlistenFn | null = null;
+  private systemPowerUnlistenResume: UnlistenFn | null = null;
 
   on(listener: (event: SchedulerEvent) => void): () => void {
     this.listeners.add(listener);
@@ -86,6 +100,7 @@ class FeedSchedulerService {
 
       this.mode = settings.backgroundUpdate ?? 'every-15m';
       await this.ensureNativeTickListener(lifecycleId);
+      await this.ensureSystemPowerListener(lifecycleId);
       this.registerNativeTickWakeHandler();
 
       if (!this.isCurrentLifecycle(lifecycleId)) {
@@ -124,7 +139,10 @@ class FeedSchedulerService {
       logger.info('Scheduler', 'Pausing background refresh for station selection');
       if (this.cycleInProgress) {
         this.pendingCycleTick = true;
+        this.invalidateActiveCycle();
         this.clearAbort();
+        this.cycleInProgress = false;
+        void this.awaitCycleDrain();
       }
       this.stationSelectionPauseTimer = setTimeout(() => {
         this.releaseStationSelectionPause('timeout');
@@ -203,6 +221,19 @@ class FeedSchedulerService {
     this.clearStationSelectionPauseTimer();
     this.activeStationFocus = null;
     this.skipOnceFeedIds.clear();
+    this.consecutiveDeferredTicks = 0;
+    this.invalidateActiveCycle();
+    this.finishCycleDrain();
+
+    if (this.systemPowerUnlistenSleep) {
+      this.systemPowerUnlistenSleep();
+      this.systemPowerUnlistenSleep = null;
+    }
+
+    if (this.systemPowerUnlistenResume) {
+      this.systemPowerUnlistenResume();
+      this.systemPowerUnlistenResume = null;
+    }
 
     if (this.nativeTickUnlisten) {
       this.nativeTickUnlisten();
@@ -261,28 +292,56 @@ class FeedSchedulerService {
     }
 
     if (this.cycleInProgress) {
-      const startedAt = this.lastCycleStartedAt;
-      if (startedAt !== null && Date.now() - startedAt >= STALE_CYCLE_ABORT_MS) {
-        logger.warn('Scheduler', 'Aborting stale background refresh cycle after resume', {
-          mode: this.mode,
-          stallDurationMs: Date.now() - startedAt,
-        });
-        this.clearAbort();
-        this.cycleInProgress = false;
-        this.pendingCycleTick = true;
+      if (this.shouldAbortStaleCycle()) {
+        await this.forceAbortActiveCycle('resume');
       } else {
         return;
       }
     }
 
-    if (!this.shouldScheduleCatchUpCycle()) {
+    const wasOverdue = this.shouldScheduleCatchUpCycle() || this.pendingCycleTick;
+    if (!wasOverdue) {
       return;
     }
 
+    await this.runResumeCatchUpCycles(lifecycleId, wasOverdue);
+  }
+
+  async handleSystemSleep(): Promise<void> {
+    const lifecycleId = this.lifecycleId;
+    if (!this.isCurrentLifecycle(lifecycleId)) {
+      return;
+    }
+
+    logger.info('Scheduler', 'Handling system sleep for background refresh');
+    if (this.cycleInProgress) {
+      await this.forceAbortActiveCycle('system-sleep');
+    }
+  }
+
+  private async runResumeCatchUpCycles(lifecycleId: number, wasOverdue: boolean): Promise<void> {
+    const stationFeedIds = this.activeStationFocus?.feedIds;
     const intervalMs = this.getIntervalMs();
     const overdueMs = this.lastCycleCompletedAt === null
       ? intervalMs
       : Date.now() - this.lastCycleCompletedAt;
+
+    if (wasOverdue && stationFeedIds && stationFeedIds.size > 0) {
+      logger.info('Scheduler', 'Running station-first catch-up after resume', {
+        mode: this.mode,
+        overdueMs,
+        stationFeedCount: stationFeedIds.size,
+      });
+      this.pendingCycleTick = false;
+      await this.runScheduledCycle(lifecycleId, { onlyFeedIds: stationFeedIds });
+      if (!this.isCurrentLifecycle(lifecycleId)) {
+        return;
+      }
+    }
+
+    if (!wasOverdue && !this.pendingCycleTick) {
+      return;
+    }
 
     logger.info('Scheduler', 'Running catch-up background refresh after resume', {
       mode: this.mode,
@@ -290,7 +349,9 @@ class FeedSchedulerService {
       pendingCycleTick: this.pendingCycleTick,
     });
     this.pendingCycleTick = false;
-    await this.runScheduledCycle(lifecycleId);
+    await this.runScheduledCycle(lifecycleId, {
+      excludeFeedIds: stationFeedIds && stationFeedIds.size > 0 ? stationFeedIds : undefined,
+    });
   }
 
   private pruneExpiredBoosts(now = Date.now()): void {
@@ -431,13 +492,20 @@ class FeedSchedulerService {
     }
 
     if (this.cycleInProgress) {
-      this.pendingCycleTick = true;
-      logger.info('Scheduler', 'Deferred native scheduler tick until current refresh cycle completes', {
-        mode: this.mode,
-      });
-      return;
+      if (this.shouldAbortStaleCycle()) {
+        await this.forceAbortActiveCycle('deferred-tick');
+      } else {
+        this.pendingCycleTick = true;
+        this.consecutiveDeferredTicks += 1;
+        logger.info('Scheduler', 'Deferred native scheduler tick until current refresh cycle completes', {
+          mode: this.mode,
+          consecutiveDeferredTicks: this.consecutiveDeferredTicks,
+        });
+        return;
+      }
     }
 
+    this.consecutiveDeferredTicks = 0;
     await this.runScheduledCycle(lifecycleId);
   }
 
@@ -454,7 +522,10 @@ class FeedSchedulerService {
     this.nativeDriverActive = false;
   }
 
-  private async runScheduledCycle(lifecycleId: number): Promise<void> {
+  private async runScheduledCycle(
+    lifecycleId: number,
+    scope: SchedulerCycleScope = {},
+  ): Promise<void> {
     if (!this.isCurrentLifecycle(lifecycleId) || this.cycleInProgress) {
       return;
     }
@@ -464,7 +535,103 @@ class FeedSchedulerService {
       return;
     }
 
-    await this.refreshAllFeeds(lifecycleId);
+    await this.refreshAllFeeds(lifecycleId, scope);
+  }
+
+  private getStaleCycleThresholdMs(): number {
+    const intervalMs = this.getIntervalMs();
+    if (!Number.isFinite(intervalMs)) {
+      return STALE_CYCLE_ABORT_MS;
+    }
+    return Math.min(STALE_CYCLE_ABORT_MS, intervalMs * 2);
+  }
+
+  private shouldAbortStaleCycle(): boolean {
+    if (!this.cycleInProgress) {
+      return false;
+    }
+
+    if (this.consecutiveDeferredTicks >= MAX_DEFERRED_TICKS_BEFORE_FORCE_ABORT) {
+      return true;
+    }
+
+    const startedAt = this.lastCycleStartedAt;
+    if (startedAt === null) {
+      return false;
+    }
+
+    return Date.now() - startedAt >= this.getStaleCycleThresholdMs();
+  }
+
+  private beginCycleDrain(): void {
+    this.finishCycleDrain();
+    this.activeCycleDrain = new Promise<void>((resolve) => {
+      this.resolveActiveCycleDrain = resolve;
+    });
+  }
+
+  private finishCycleDrain(): void {
+    this.resolveActiveCycleDrain?.();
+    this.resolveActiveCycleDrain = null;
+    this.activeCycleDrain = null;
+  }
+
+  private async awaitCycleDrain(): Promise<void> {
+    const drain = this.activeCycleDrain;
+    if (!drain) {
+      return;
+    }
+    await drain;
+  }
+
+  private invalidateActiveCycle(): void {
+    this.activeCycleId += 1;
+  }
+
+  private async forceAbortActiveCycle(trigger: string): Promise<boolean> {
+    const wasActive = this.cycleInProgress || this.activeCycleDrain !== null;
+    if (!wasActive) {
+      return false;
+    }
+
+    const stallDurationMs = this.lastCycleStartedAt === null
+      ? 0
+      : Date.now() - this.lastCycleStartedAt;
+
+    logger.warn('Scheduler', 'Aborting stale background refresh cycle', {
+      trigger,
+      mode: this.mode,
+      stallDurationMs,
+      consecutiveDeferredTicks: this.consecutiveDeferredTicks,
+    });
+
+    this.invalidateActiveCycle();
+    this.clearAbort();
+    this.cycleInProgress = false;
+    this.consecutiveDeferredTicks = 0;
+    this.pendingCycleTick = true;
+    await this.awaitCycleDrain();
+    return true;
+  }
+
+  private async ensureSystemPowerListener(lifecycleId: number): Promise<void> {
+    if (this.systemPowerUnlistenSleep && this.systemPowerUnlistenResume) {
+      return;
+    }
+
+    this.systemPowerUnlistenSleep = await listen(SCHEDULER_SYSTEM_SLEEP_EVENT, () => {
+      void this.handleSystemSleep();
+    });
+    this.systemPowerUnlistenResume = await listen(SCHEDULER_SYSTEM_RESUME_EVENT, () => {
+      void this.catchUpAfterResume();
+    });
+
+    if (!this.isCurrentLifecycle(lifecycleId)) {
+      this.systemPowerUnlistenSleep();
+      this.systemPowerUnlistenSleep = null;
+      this.systemPowerUnlistenResume();
+      this.systemPowerUnlistenResume = null;
+    }
   }
 
   private clearStationSelectionPauseTimer(): void {
@@ -483,17 +650,27 @@ class FeedSchedulerService {
     return lifecycleId === this.lifecycleId;
   }
 
-  private async refreshAllFeeds(lifecycleId: number): Promise<void> {
+  private async refreshAllFeeds(
+    lifecycleId: number,
+    scope: SchedulerCycleScope = {},
+  ): Promise<void> {
     if (this.cycleInProgress || !this.isCurrentLifecycle(lifecycleId)) {
       return;
     }
 
+    const cycleId = this.activeCycleId + 1;
+    this.activeCycleId = cycleId;
+    this.beginCycleDrain();
     this.cycleInProgress = true;
     this.lastCycleStartedAt = Date.now();
     this.abortController = new AbortController();
     const { signal } = this.abortController;
     this.emit({ type: 'cycle-start' });
-    logger.info('Scheduler', 'Background refresh cycle started', { mode: this.mode });
+    logger.info('Scheduler', 'Background refresh cycle started', {
+      mode: this.mode,
+      scopedFeedCount: scope.onlyFeedIds?.size ?? null,
+      excludedFeedCount: scope.excludeFeedIds?.size ?? null,
+    });
 
     const cycleStats: SchedulerCycleStats = {
       notModifiedFeeds: 0,
@@ -509,6 +686,10 @@ class FeedSchedulerService {
         return;
       }
 
+      if (cycleId !== this.activeCycleId) {
+        return;
+      }
+
       const totalFeeds = feeds.length;
       const entries: SchedulerFeedEntry[] = feeds.map((feed) => ({
         feedId: feed.id,
@@ -521,7 +702,7 @@ class FeedSchedulerService {
         consecutiveFailures: feed.consecutiveFailures ?? 0,
       }));
 
-      const frontloadFeedIds = this.activeStationFocus?.feedIds;
+      const frontloadFeedIds = scope.onlyFeedIds ?? this.activeStationFocus?.feedIds;
       const skipFeedIdsForThisCycle = this.consumeSkipOnceFeedIds();
       const now = Date.now();
       this.pruneExpiredBoosts(now);
@@ -533,6 +714,8 @@ class FeedSchedulerService {
         {
           frontloadFeedIds,
           skipFeedIdsForThisCycle,
+          onlyFeedIds: scope.onlyFeedIds,
+          excludeFeedIds: scope.excludeFeedIds,
         },
       );
 
@@ -543,7 +726,7 @@ class FeedSchedulerService {
       try {
         const pool = createTaskPool({ concurrency: getSchedulerConcurrency() });
         for (const entry of prioritized) {
-          if (signal.aborted || !this.isCurrentLifecycle(lifecycleId)) {
+          if (signal.aborted || !this.isCurrentLifecycle(lifecycleId) || cycleId !== this.activeCycleId) {
             break;
           }
           pool.enqueue(() => this.fetchSingleFeed(
@@ -562,6 +745,7 @@ class FeedSchedulerService {
           feedsNeedingCountSync.size > 0
           && !signal.aborted
           && this.isCurrentLifecycle(lifecycleId)
+          && cycleId === this.activeCycleId
         ) {
           const syncedCounts = await articleStore.syncFeedCountsBatch(Array.from(feedsNeedingCountSync));
           if (syncedCounts.length > 0) {
@@ -592,9 +776,21 @@ class FeedSchedulerService {
       const durationMs = this.lastCycleStartedAt === null
         ? null
         : Date.now() - this.lastCycleStartedAt;
+      this.finishCycleDrain();
+
+      if (cycleId !== this.activeCycleId) {
+        logger.info('Scheduler', 'Discarded superseded background refresh cycle completion', {
+          mode: this.mode,
+          cycleId,
+          activeCycleId: this.activeCycleId,
+        });
+        return;
+      }
+
       this.cycleInProgress = false;
       this.abortController = null;
       this.lastCycleCompletedAt = Date.now();
+      this.consecutiveDeferredTicks = 0;
       this.emit({ type: 'cycle-complete' });
       logger.info('Scheduler', 'Background refresh cycle completed', {
         mode: this.mode,

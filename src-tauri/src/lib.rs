@@ -49,8 +49,8 @@ use     shell::{
     ArticleWindowState, ImageContextMenuState, MainWindowBoundsSaveGuard,
 };
 use system::{
-    start_accent_color_watch, system_app_icon_get_state, system_app_icon_pick,
-    system_app_icon_reset, system_app_icon_set_variant, system_app_relaunch,
+    start_accent_color_watch, start_system_power_watch, system_app_icon_get_state,
+    system_app_icon_pick, system_app_icon_reset, system_app_icon_set_variant, system_app_relaunch,
     system_clipboard_read_text, system_clipboard_write_text, system_theme_get_accent_color,
     AppIconState,
 };
@@ -89,6 +89,7 @@ pub fn run() {
                 .apply_configured_icon(&app.handle())
                 .map_err(std::io::Error::other)?;
             start_accent_color_watch(&app.handle()).map_err(std::io::Error::other)?;
+            start_system_power_watch(&app.handle()).map_err(std::io::Error::other)?;
 
             app.manage(settings_state);
             app.manage(MainWindowBoundsSaveGuard(bounds_save_guard));

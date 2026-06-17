@@ -1,5 +1,5 @@
 import { feedsManager } from '@/services/feeds/feedsManager';
-import { opmlImportService, type OpmlImportResult } from '@/services/feeds/opmlImportService';
+import { opmlImportService, type OpmlImportResult, type ParseOpmlEntriesOptions } from '@/services/feeds/opmlImportService';
 import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
 import { helperTaskClient } from '@/services/tasks/helperTaskClient';
 import {
@@ -74,7 +74,10 @@ class OpmlWorkflowService {
     void this.enqueueFaviconTasks(targets, 'normal');
   }
 
-  async importFromOpmlText(opmlText: string): Promise<OpmlImportResult> {
+  async importFromOpmlText(
+    opmlText: string,
+    parseOptions: ParseOpmlEntriesOptions = {},
+  ): Promise<OpmlImportResult> {
     await helperTaskClient.clearTasks();
     this.faviconTaskFeedMap.clear();
     this.visibleStationFaviconBoosted.clear();
@@ -82,7 +85,12 @@ class OpmlWorkflowService {
     const parsedOpml = await helperTaskClient.runTask({
       kind: HELPER_TASK_KIND.OPML_PARSE,
       priority: 'high',
-      payload: { opmlText },
+      payload: {
+        opmlText,
+        defaultStationName: parseOptions.defaultStationName,
+        fileName: parseOptions.fileName,
+        url: parseOptions.url,
+      },
     });
 
     sidebarIndicatorService.show(

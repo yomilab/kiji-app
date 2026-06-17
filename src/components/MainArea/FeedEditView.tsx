@@ -12,6 +12,7 @@ import { feedsManager, type Feed } from '@/services/feeds/feedsManager';
 import {
   formatOpmlImportSummary,
   importOpmlTextIntoLibrary,
+  navigateAfterOpmlImport,
   openOpmlFileForImport,
 } from '@/services/feeds/opmlUiWorkflow';
 import { articlesManager } from '@/services/articles/articlesManager';
@@ -818,6 +819,8 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     clearFeedSelection,
     feedEditTarget,
     clearFeedEditTarget,
+    selectFeed,
+    selectTag,
   } = useFeedNavigation();
 
   const { refreshTotalFeeds, notifyFeedLibraryChanged } = useFeedUIActions();
@@ -1929,15 +1932,17 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   const handleImportFeeds = async () => {
     setIsOpmlActionLoading(true);
     try {
-      const opmlText = await openOpmlFileForImport();
-      if (!opmlText) {
+      const selectedFile = await openOpmlFileForImport();
+      if (!selectedFile) {
         return;
       }
 
-      const importResult = await importOpmlTextIntoLibrary(opmlText, {
+      const importResult = await importOpmlTextIntoLibrary(selectedFile.opmlText, {
         refreshTotalFeeds,
         notifyFeedLibraryChanged,
+        fileName: selectedFile.fileName,
       });
+      await navigateAfterOpmlImport(importResult, { selectFeed, selectTag });
       showOpmlActionMessage(formatOpmlImportSummary(importResult.summary));
     } catch (importError) {
       showOpmlActionMessage(importError instanceof Error ? importError.message : 'Failed to import OPML file.');
