@@ -21,6 +21,7 @@ export interface OpmlImportEntry {
   station?: string;
   emoji?: string;
   stationEmoji?: string;
+  rootOutlineIndex?: number;
 }
 
 export interface OpmlImportSummary {
@@ -127,6 +128,7 @@ export const parseOpmlEntries = (
     topStation: string | undefined,
     topStationEmoji: string | undefined,
     depth: number,
+    rootOutlineIndex: number,
   ) => {
     const label = getOutlineLabel(outline);
     const xmlUrl = outline.getAttribute('xmlUrl')?.trim();
@@ -149,18 +151,19 @@ export const parseOpmlEntries = (
         station: stationName,
         emoji: readOpmlOutlineEmoji(outline),
         stationEmoji,
+        rootOutlineIndex,
       });
     }
 
     const childOutlines = getDirectOutlineChildren(outline);
     for (const child of childOutlines) {
-      walkOutline(child, stationName, stationEmoji, depth + 1);
+      walkOutline(child, stationName, stationEmoji, depth + 1, rootOutlineIndex);
     }
   };
 
-  for (const outline of rootOutlines) {
-    walkOutline(outline, undefined, undefined, 0);
-  }
+  rootOutlines.forEach((outline, rootOutlineIndex) => {
+    walkOutline(outline, undefined, undefined, 0, rootOutlineIndex);
+  });
 
   return entries;
 };
@@ -185,12 +188,34 @@ class OpmlImportService {
   }
 
   async importEntries(entries: OpmlImportEntry[]): Promise<OpmlImportResult> {
-    const existingFeeds = await feedsManager.getAllFeeds();
+    const [existingFeeds, existingTags] = await Promise.all([
+      feedsManager.getAllFeeds(),
+      tagsManager.getAllTags(),
+    ]);
     const existingNormalizedUrls = new Set(
       existingFeeds
         .map((feed) => normalizeFeedUrl(feed.url))
         .filter((url): url is string => Boolean(url))
     );
+
+    const stationOrderInFile = new Map<string, number>();
+    for (const entry of entries) {
+      if (!entry.station || entry.rootOutlineIndex === undefined) {
+        continue;
+      }
+
+      const currentOrder = stationOrderInFile.get(entry.station);
+      if (currentOrder === undefined || entry.rootOutlineIndex < currentOrder) {
+        stationOrderInFile.set(entry.station, entry.rootOutlineIndex);
+      }
+    }
+
+    const maxExistingStationSortOrder = existingTags.reduce(
+      (max, tag) => Math.max(max, tag.sortOrder ?? 0),
+      -1,
+    );
+    const stationSortOrderBase = maxExistingStationSortOrder + 1;
+    const assignedStationSortOrders = new Map<string, number>();
 
     const seenInFileUrls = new Set<string>();
     let imported = 0;
@@ -225,6 +250,15 @@ class OpmlImportService {
 
         if (entry.station) {
           await tagsManager.addTagToFeed(feed.id, entry.station);
+          if (!assignedStationSortOrders.has(entry.station)) {
+            const fileOrder = stationOrderInFile.get(entry.station) ?? assignedStationSortOrders.size;
+            assignedStationSortOrders.set(entry.station, stationSortOrderBase + fileOrder);
+          }
+
+          await tagsManager.updateTag(entry.station, {
+            sortOrder: assignedStationSortOrders.get(entry.station),
+          });
+
           if (entry.stationEmoji) {
             const stationTag = (await tagsManager.getAllTags())
               .find((tag) => tag.name === entry.station);

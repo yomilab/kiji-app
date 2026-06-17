@@ -16,6 +16,8 @@ vi.mock('@/services/feeds/feedsManager', () => ({
 vi.mock('@/services/tags/tagsManager', () => ({
   tagsManager: {
     addTagToFeed: vi.fn(),
+    getAllTags: vi.fn(),
+    updateTag: vi.fn(),
   },
 }));
 
@@ -39,6 +41,8 @@ describe('opmlImportService', () => {
     vi.mocked(feedsManager.getAllFeeds).mockResolvedValue([
       { id: 'existing-1', url: 'https://existing.com/feed', tags: [] } as never,
     ]);
+    vi.mocked(tagsManager.getAllTags).mockResolvedValue([]);
+    vi.mocked(tagsManager.updateTag).mockResolvedValue(null);
     vi.mocked(feedsManager.addFeedWithoutMetadata).mockImplementation(async (url: string, title?: string) => ({
       id: `feed-${title || 'untitled'}`,
       url,
@@ -85,6 +89,7 @@ describe('opmlImportService', () => {
     expect(feedsManager.addFeedWithoutMetadata).toHaveBeenCalledTimes(1);
     expect(feedsManager.addFeedWithoutMetadata).toHaveBeenCalledWith('https://new.com/rss/', 'New Feed');
     expect(tagsManager.addTagToFeed).toHaveBeenCalledWith('feed-New Feed', 'Tech');
+    expect(tagsManager.updateTag).toHaveBeenCalledWith('Tech', { sortOrder: 0 });
     expect(faviconFetcher.fetchFavicon).not.toHaveBeenCalled();
     expect(feedsManager.updateFeed).not.toHaveBeenCalled();
   });

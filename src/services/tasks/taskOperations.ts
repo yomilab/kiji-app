@@ -168,6 +168,7 @@ const parseOpmlTask = (payload: OpmlParseTaskPayload): OpmlParseTaskResult => {
     topStation: string | undefined,
     topStationEmoji: string | undefined,
     depth: number,
+    rootOutlineIndex: number,
   ) => {
     const label = getOutlineLabel(outline);
     const xmlUrl = outline.xmlUrl?.trim();
@@ -190,18 +191,19 @@ const parseOpmlTask = (payload: OpmlParseTaskPayload): OpmlParseTaskResult => {
         station: stationName,
         emoji: readOpmlOutlineEmoji(outline as Record<string, string | undefined>),
         stationEmoji,
+        rootOutlineIndex,
       });
     }
 
     const childOutlines = toArray(outline.outline);
     for (const child of childOutlines) {
-      walkOutline(child, stationName, stationEmoji, depth + 1);
+      walkOutline(child, stationName, stationEmoji, depth + 1, rootOutlineIndex);
     }
   };
 
-  for (const outline of rootOutlines) {
-    walkOutline(outline, undefined, undefined, 0);
-  }
+  rootOutlines.forEach((outline, rootOutlineIndex) => {
+    walkOutline(outline, undefined, undefined, 0, rootOutlineIndex);
+  });
 
   return { entries };
 };

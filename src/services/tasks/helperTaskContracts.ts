@@ -23,6 +23,7 @@ export interface ParsedOpmlEntry {
   station?: string;
   emoji?: string;
   stationEmoji?: string;
+  rootOutlineIndex?: number;
 }
 
 export interface OpmlParseTaskPayload {

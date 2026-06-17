@@ -27,6 +27,35 @@ const buildFeedSortLabel = (feed: Feed): string => {
   return `${emoji} ${title}`.trim();
 };
 
+const compareSortOrder = (
+  left: { sortOrder?: number },
+  right: { sortOrder?: number },
+): number => (
+  (left.sortOrder ?? Number.MAX_SAFE_INTEGER) - (right.sortOrder ?? Number.MAX_SAFE_INTEGER)
+);
+
+const sortTagsByManualOrder = (tags: Tag[]): Tag[] => (
+  [...tags].sort((left, right) => {
+    const sortOrderDiff = compareSortOrder(left, right);
+    if (sortOrderDiff !== 0) {
+      return sortOrderDiff;
+    }
+
+    return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
+  })
+);
+
+const sortFeedsByManualOrder = (feeds: Feed[]): Feed[] => (
+  [...feeds].sort((left, right) => {
+    const sortOrderDiff = compareSortOrder(left, right);
+    if (sortOrderDiff !== 0) {
+      return sortOrderDiff;
+    }
+
+    return buildFeedSortLabel(left).localeCompare(buildFeedSortLabel(right), undefined, { sensitivity: 'base' });
+  })
+);
+
 const buildFeedOutline = (feed: Feed): string => {
   const title = normalizeLabel(feed.title) || normalizeLabel(feed.url);
   const emoji = normalizeLabel(feed.emoji);
@@ -43,14 +72,6 @@ const buildFeedOutline = (feed: Feed): string => {
   }
 
   return `<outline ${attributes.join(' ')} />`;
-};
-
-const sortFeedsByLabel = (feeds: Feed[]): Feed[] => {
-  return [...feeds].sort((a, b) => {
-    const aLabel = buildFeedSortLabel(a);
-    const bLabel = buildFeedSortLabel(b);
-    return aLabel.localeCompare(bLabel, undefined, { sensitivity: 'base' });
-  });
 };
 
 class OpmlExportService {
@@ -72,12 +93,12 @@ class OpmlExportService {
       }
     }
 
-    const sortedTags = [...allTags].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    const orderedTags = sortTagsByManualOrder(allTags);
 
     const bodyLines: string[] = [];
 
-    for (const tag of sortedTags) {
-      const memberFeeds = sortFeedsByLabel(
+    for (const tag of orderedTags) {
+      const memberFeeds = sortFeedsByManualOrder(
         tag.feedIds
           .map((feedId) => feedById.get(feedId))
           .filter((feed): feed is Feed => Boolean(feed))
@@ -104,7 +125,7 @@ class OpmlExportService {
       bodyLines.push('  </outline>');
     }
 
-    const unstationedFeeds = sortFeedsByLabel(
+    const unstationedFeeds = sortFeedsByManualOrder(
       allFeeds.filter((feed) => {
         const stationNames = stationNamesByFeedId.get(feed.id) || [];
         return stationNames

@@ -20,6 +20,33 @@ describe("opmlExportService", () => {
     vi.clearAllMocks();
   });
 
+  it("exports stations and feeds in manual sort order instead of alphabetically", async () => {
+    (feedsManager.getAllFeeds as Mock).mockResolvedValue([
+      { id: "feed-1", title: "Zebra Feed", url: "https://example.com/z.xml", tags: [], sortOrder: 1 },
+      { id: "feed-2", title: "Alpha Feed", url: "https://example.com/a.xml", tags: [], sortOrder: 0 },
+      { id: "feed-3", title: "Solo Feed", url: "https://example.com/solo.xml", tags: [], sortOrder: 0 },
+    ]);
+
+    (tagsManager.getAllTags as Mock).mockResolvedValue([
+      { name: "Zebra", emoji: "🦓", feedIds: ["feed-1", "feed-2"], createdAt: "2026-01-01T00:00:00.000Z", sortOrder: 0 },
+      { name: "Apple", feedIds: ["feed-2"], createdAt: "2026-01-01T00:00:00.000Z", sortOrder: 1 },
+    ]);
+
+    const opmlText = await opmlExportService.buildOpmlText();
+    const xmlDoc = new DOMParser().parseFromString(opmlText, "text/xml");
+    const body = xmlDoc.querySelector("opml > body");
+    const topLevelOutlines = Array.from(body!.children).filter((node) => node.tagName.toLowerCase() === "outline");
+
+    expect(topLevelOutlines[0]?.getAttribute("kijiStationName")).toBe("Zebra");
+    expect(topLevelOutlines[1]?.getAttribute("kijiStationName")).toBe("Apple");
+    expect(topLevelOutlines[2]?.getAttribute("xmlUrl")).toBe("https://example.com/solo.xml");
+
+    const zebraStation = topLevelOutlines[0]!;
+    const zebraFeeds = Array.from(zebraStation.children).filter((node) => node.tagName.toLowerCase() === "outline");
+    expect(zebraFeeds[0]?.getAttribute("xmlUrl")).toBe("https://example.com/a.xml");
+    expect(zebraFeeds[1]?.getAttribute("xmlUrl")).toBe("https://example.com/z.xml");
+  });
+
   it("exports OPML with two-level station structure and duplicates multi-station feeds", async () => {
     (feedsManager.getAllFeeds as Mock).mockResolvedValue([
       { id: "feed-1", title: "Alpha Feed", url: "https://example.com/a.xml", tags: [], emoji: "🛰️" },
