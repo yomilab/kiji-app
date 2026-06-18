@@ -85,67 +85,6 @@
   width: 100%;
 }
 
-.article-list-phantom-row,
-.article-list-scroll-gap-row {
-  pointer-events: none;
-}
-
-/* DEV-only: obvious styling to verify scroll-gap skeleton rows are mounted. */
-.article-list-phantom-debug .article-list-phantom-row,
-.article-list-phantom-debug .article-list-scroll-gap-row {
-  outline: 3px solid #ff00ff;
-  outline-offset: -1px;
-  background: rgba(255, 0, 255, 0.18);
-}
-
-.article-list-phantom-debug .article-list-phantom-skeleton .article-list-item-content {
-  background: rgba(255, 0, 255, 0.12);
-  border: 2px dashed #ff00ff;
-}
-
-.article-list-phantom-debug .article-list-phantom-skeleton .skeleton-placeholder {
-  background: #ff00ff !important;
-  opacity: 1 !important;
-}
-
-.article-list-phantom-debug .article-list-phantom-skeleton .skeleton-placeholder::after {
-  background-image: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 0, 0.9) 50%,
-    rgba(255, 255, 255, 0) 100%
-  ) !important;
-}
-
-.article-list-phantom-debug-label {
-  position: absolute;
-  top: 8px;
-  right: 40px;
-  z-index: 2;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: #ff00ff;
-  color: #000;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  pointer-events: none;
-}
-
-.article-list-phantom-skeleton .skeleton-placeholder {
-  background: var(--article-list-phantom-skeleton-bg, var(--article-list-skeleton-bg));
-}
-
-.article-list-phantom-skeleton .skeleton-placeholder::after {
-  background-image: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    color-mix(in srgb, var(--article-list-phantom-skeleton-shimmer-mid, var(--article-list-skeleton-shimmer-mid)) 50%, transparent) 40%,
-    var(--article-list-phantom-skeleton-shimmer-mid, var(--article-list-skeleton-shimmer-mid)) 60%,
-    rgba(255, 255, 255, 0) 100%
-  );
-}
-
 .article-list-bottom-spacer {
   position: absolute;
   top: 0;
@@ -337,15 +276,11 @@
 .article-list-items {
   --article-list-skeleton-bg: color-mix(in srgb, var(--theme-text-secondary) 16%, transparent);
   --article-list-skeleton-shimmer-mid: rgba(255, 255, 255, 0.35);
-  --article-list-phantom-skeleton-bg: color-mix(in srgb, var(--theme-text-secondary) 22%, transparent);
-  --article-list-phantom-skeleton-shimmer-mid: rgba(255, 255, 255, 0.42);
 }
 
 [data-theme="dark"] .article-list-items {
   --article-list-skeleton-bg: rgba(255, 255, 255, 0.12);
   --article-list-skeleton-shimmer-mid: rgba(255, 255, 255, 0.34);
-  --article-list-phantom-skeleton-bg: rgba(255, 255, 255, 0.16);
-  --article-list-phantom-skeleton-shimmer-mid: rgba(255, 255, 255, 0.4);
 }
 
 .article-list-items .skeleton-placeholder,

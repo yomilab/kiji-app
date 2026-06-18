@@ -1,11 +1,5 @@
 export const ARTICLE_LIST_ESTIMATED_ROW_HEIGHT = 112;
 export const ARTICLE_LIST_BOTTOM_SPACER_HEIGHT = 50;
-/** Minimum phantom skeleton rows below the loaded page while more articles exist. */
-export const ARTICLE_LIST_PHANTOM_MIN_ROW_COUNT = 6;
-/** Upper bound so tall viewports do not reserve unbounded placeholder rows. */
-export const ARTICLE_LIST_PHANTOM_MAX_ROW_COUNT = 14;
-/** Extra rows beyond one viewport height to cover fast scroll + virtualizer overscan. */
-export const ARTICLE_LIST_PHANTOM_OVERSCAN_ROWS = 4;
 export const ARTICLE_LIST_PREFETCH_MAX_REMAINING_ROWS = 80;
 export const ARTICLE_LIST_PREFETCH_MIN_REMAINING_ROWS = 40;
 export const ARTICLE_LIST_CRITICAL_MAX_REMAINING_ROWS = 24;
@@ -102,28 +96,4 @@ export const shouldTriggerArticleListLoadMoreFromScroll = (
 
   const triggerDistancePx = getArticleListScrollLoadDistancePx(scrollElement.clientHeight);
   return getDistanceFromScrollBottom(scrollElement) <= triggerDistancePx;
-};
-
-/**
- * Virtual placeholder rows rendered as skeletons below the loaded page.
- * Sized to roughly one viewport (+ overscan) so fast scroll does not expose empty space.
- */
-export const getArticleListPhantomRowCount = (
-  loadedRowCount: number,
-  totalRowCount: number,
-  viewportHeightPx: number,
-): number => {
-  if (loadedRowCount >= totalRowCount) {
-    return 0;
-  }
-
-  const remainingRows = totalRowCount - loadedRowCount;
-  const viewportRows = Math.ceil(Math.max(0, viewportHeightPx) / ARTICLE_LIST_ESTIMATED_ROW_HEIGHT)
-    + ARTICLE_LIST_PHANTOM_OVERSCAN_ROWS;
-  const desiredRows = Math.min(
-    ARTICLE_LIST_PHANTOM_MAX_ROW_COUNT,
-    Math.max(ARTICLE_LIST_PHANTOM_MIN_ROW_COUNT, viewportRows),
-  );
-
-  return Math.min(remainingRows, desiredRows);
 };

@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   ARTICLE_LIST_ESTIMATED_ROW_HEIGHT,
-  ARTICLE_LIST_PHANTOM_MIN_ROW_COUNT,
   ARTICLE_LIST_SCROLL_LOAD_MAX_DISTANCE_PX,
   ARTICLE_LIST_SCROLL_LOAD_MIN_DISTANCE_PX,
   ARTICLE_LIST_SCROLL_LOAD_VIEWPORT_FACTOR,
   getArticleListLoadMorePriority,
-  getArticleListPhantomRowCount,
   getArticleListScrollLoadDistancePx,
   getDistanceFromScrollBottom,
   getRemainingLoadedRows,
@@ -28,13 +26,6 @@ describe('articleListLoadMore', () => {
   it('triggers prefetch before the loaded list is exhausted', () => {
     expect(shouldTriggerArticleListLoadMore(100, 200, 59)).toBe(true);
     expect(shouldTriggerArticleListLoadMore(100, 200, 35)).toBe(false);
-  });
-
-  it('reserves phantom skeleton rows sized to the list viewport while more articles exist', () => {
-    expect(getArticleListPhantomRowCount(100, 200, 0)).toBe(ARTICLE_LIST_PHANTOM_MIN_ROW_COUNT);
-    expect(getArticleListPhantomRowCount(100, 200, 560)).toBe(9);
-    expect(getArticleListPhantomRowCount(200, 200, 560)).toBe(0);
-    expect(getArticleListPhantomRowCount(198, 200, 560)).toBe(2);
   });
 
   it('triggers scroll-based prefetch when the viewport nears the loaded bottom', () => {
