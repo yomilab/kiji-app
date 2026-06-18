@@ -444,10 +444,13 @@ describe("feedSchedulerService", () => {
     }
   });
 
-  it("registers a global wake handler for native eval ticks", async () => {
+  it("registers global wake handlers for native eval ticks and power events", async () => {
     await feedScheduler.start();
 
-    expect((globalThis as Record<string, unknown>).__kijiSchedulerTick).toEqual(expect.any(Function));
+    const globalScope = globalThis as Record<string, unknown>;
+    expect(globalScope.__kijiSchedulerTick).toEqual(expect.any(Function));
+    expect(globalScope.__kijiSchedulerSleep).toEqual(expect.any(Function));
+    expect(globalScope.__kijiSchedulerResume).toEqual(expect.any(Function));
   });
 
   it("reconfigures the native driver during catch-up after resume", async () => {
@@ -598,6 +601,129 @@ describe("feedSchedulerService", () => {
 
     await vi.waitFor(() => {
       expect(getAll).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("runs catch-up when the system resume event fires after an overdue interval", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    try {
+      await feedScheduler.start();
+      const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
+      const resumeHandler = getSchedulerEventHandler("scheduler:system-resume");
+
+      await tickHandler?.();
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(1);
+      });
+
+      getAll.mockClear();
+      await vi.advanceTimersByTimeAsync(6 * 60_000);
+
+      await resumeHandler?.();
+
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  describe("native eval wake delivery (simulates throttled webview)", () => {
+    const getGlobalWakeHandler = (name: string): (() => void) => {
+      const handler = (globalThis as Record<string, unknown>)[name];
+      expect(handler).toEqual(expect.any(Function));
+      return handler as () => void;
+    };
+
+    beforeEach(() => {
+      listen.mockImplementation(async () => vi.fn());
+      eventHandlers.clear();
+    });
+
+    it("runs a refresh cycle via __kijiSchedulerTick when Tauri listen never registers", async () => {
+      await feedScheduler.start();
+
+      expect(eventHandlers.has("scheduler:cycle-tick")).toBe(false);
+
+      getGlobalWakeHandler("__kijiSchedulerTick")();
+
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it("runs overdue catch-up via __kijiSchedulerResume when listen is unavailable", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+
+      try {
+        await feedScheduler.start();
+
+        getGlobalWakeHandler("__kijiSchedulerTick")();
+        await vi.waitFor(() => {
+          expect(getAll).toHaveBeenCalledTimes(1);
+        });
+
+        getAll.mockClear();
+        await vi.advanceTimersByTimeAsync(6 * 60_000);
+
+        getGlobalWakeHandler("__kijiSchedulerResume")();
+
+        await vi.waitFor(() => {
+          expect(getAll).toHaveBeenCalledTimes(1);
+        });
+        expect(eventHandlers.has("scheduler:system-resume")).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("aborts in-flight refresh via __kijiSchedulerSleep when listen is unavailable", async () => {
+      let releaseRefresh!: () => void;
+      fetchFeedNetworkWithCache.mockImplementation((_url, options?: { signal?: AbortSignal }) => new Promise((resolve, reject) => {
+        const onAbort = (): void => {
+          reject(new DOMException("Aborted", "AbortError"));
+        };
+        options?.signal?.addEventListener("abort", onAbort, { once: true });
+        releaseRefresh = () => {
+          options?.signal?.removeEventListener("abort", onAbort);
+          resolve({
+            notModified: true,
+            etag: "etag-1",
+            lastModified: "date-1",
+          });
+        };
+      }));
+
+      await feedScheduler.start();
+
+      void getGlobalWakeHandler("__kijiSchedulerTick")();
+      await vi.waitFor(() => {
+        expect(fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
+      });
+
+      await getGlobalWakeHandler("__kijiSchedulerSleep")();
+      getGlobalWakeHandler("__kijiSchedulerTick")();
+
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(2);
+      });
+      expect(eventHandlers.has("scheduler:system-sleep")).toBe(false);
+
+      releaseRefresh();
+    });
+
+    it("removes eval wake globals when the scheduler lifecycle stops", async () => {
+      await feedScheduler.start();
+      expect((globalThis as Record<string, unknown>).__kijiSchedulerResume).toEqual(expect.any(Function));
+
+      await feedScheduler.stop();
+
+      const globalScope = globalThis as Record<string, unknown>;
+      expect(globalScope.__kijiSchedulerTick).toBeUndefined();
+      expect(globalScope.__kijiSchedulerSleep).toBeUndefined();
+      expect(globalScope.__kijiSchedulerResume).toBeUndefined();
     });
   });
 });

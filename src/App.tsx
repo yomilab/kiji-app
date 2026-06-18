@@ -19,6 +19,7 @@ import {
   useOpmlWorkflowListener,
   useStartupMigration,
 } from './hooks/useAppEffects';
+import { useE2eHarness } from './hooks/useE2eHarness';
 import { useMountEffect } from './hooks/useLifecycleEffects';
 import {
   useFeedNavigation,
@@ -101,6 +102,8 @@ export const App: React.FC = () => {
     selectFeed,
     selectTag,
   } = useFeedNavigation();
+
+  useE2eHarness();
 
   const { refreshFeed, updateArticleInList, reloadCurrentSourceFromStore } = useFeedCollection();
 

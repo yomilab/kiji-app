@@ -73,11 +73,12 @@ if (typeof performance !== "undefined") {
   }
 }
 
-globalThis.ResizeObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}));
+globalThis.ResizeObserver = class ResizeObserverMock {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+  constructor(_callback: ResizeObserverCallback) {}
+} as unknown as typeof ResizeObserver;
 
 vi.mock("@/services/feeds/opmlWorkflowService", () => ({
   opmlWorkflowService: {

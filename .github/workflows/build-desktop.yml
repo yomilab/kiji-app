@@ -65,6 +65,8 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Run frontend tests
+        env:
+          KIJI_SKIP_E2E: "1"
         run: npm run test:ci
 
       - name: Run Rust tests

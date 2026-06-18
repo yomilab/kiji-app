@@ -3,7 +3,7 @@ mod app_icon;
 mod power;
 
 pub use accent::{start_accent_color_watch, system_theme_get_accent_color};
-pub use power::start_system_power_watch;
+pub use power::{start_system_power_watch, SCHEDULER_SYSTEM_RESUME_EVENT};
 pub use app_icon::{
     system_app_icon_get_state, system_app_icon_pick, system_app_icon_reset,
     system_app_icon_set_variant, system_app_relaunch, AppIconState,

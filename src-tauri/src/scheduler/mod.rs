@@ -1,15 +1,16 @@
+pub mod webview_delivery;
+
 use crate::settings::BackgroundUpdateMode;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc, Mutex,
 };
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::AppHandle;
 use tokio::sync::watch;
+use webview_delivery::{emit_scheduler_event_to_main_webview, TICK_WAKE_SCRIPT};
 
-const MAIN_WINDOW_LABEL: &str = "main";
 pub const SCHEDULER_CYCLE_TICK_EVENT: &str = "scheduler:cycle-tick";
-const SCHEDULER_TICK_WAKE_SCRIPT: &str = "globalThis.__kijiSchedulerTick?.()";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SchedulerStartOutcome {
@@ -170,20 +171,12 @@ async fn run_interval_loop(
 }
 
 fn emit_cycle_tick(app: &AppHandle) {
-    if let Some(main_window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        if let Err(error) = main_window.emit(SCHEDULER_CYCLE_TICK_EVENT, ()) {
-            eprintln!("[Scheduler] Failed to emit scheduler tick to main webview: {error}");
-        }
-
-        if let Err(error) = main_window.eval(SCHEDULER_TICK_WAKE_SCRIPT) {
-            eprintln!("[Scheduler] Failed to wake scheduler tick handler in main webview: {error}");
-        }
-        return;
-    }
-
-    if let Err(error) = app.emit(SCHEDULER_CYCLE_TICK_EVENT, ()) {
-        eprintln!("[Scheduler] Failed to emit scheduler tick: {error}");
-    }
+    emit_scheduler_event_to_main_webview(
+        app,
+        SCHEDULER_CYCLE_TICK_EVENT,
+        TICK_WAKE_SCRIPT,
+        "Scheduler",
+    );
 }
 
 fn interval_ms_for_mode(mode: BackgroundUpdateMode) -> Result<u64, String> {

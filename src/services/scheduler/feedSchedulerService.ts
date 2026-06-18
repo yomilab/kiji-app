@@ -11,6 +11,7 @@ import { settingsManager } from '@/services/settings';
 import { createTaskPool } from '@/services/tasks/taskPool';
 import { logger } from '@/services/logger';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
+import { getE2eConfig } from '@/services/e2e/e2eHarness';
 import { createSchedulerRunPlan } from './schedulerRunPlan';
 import { getSchedulerConcurrency, setSchedulerRuntimeUiState } from './schedulerConcurrency';
 import type {
@@ -24,6 +25,8 @@ const SCHEDULER_CYCLE_TICK_EVENT = 'scheduler:cycle-tick';
 const SCHEDULER_SYSTEM_SLEEP_EVENT = 'scheduler:system-sleep';
 const SCHEDULER_SYSTEM_RESUME_EVENT = 'scheduler:system-resume';
 const SCHEDULER_TICK_WAKE_GLOBAL = '__kijiSchedulerTick';
+const SCHEDULER_SLEEP_WAKE_GLOBAL = '__kijiSchedulerSleep';
+const SCHEDULER_RESUME_WAKE_GLOBAL = '__kijiSchedulerResume';
 const STALE_CYCLE_ABORT_MS = 45 * 60 * 1_000;
 const MAX_DEFERRED_TICKS_BEFORE_FORCE_ABORT = 3;
 const STATION_SELECTION_PAUSE_MAX_MS = 10 * 60 * 1_000;
@@ -101,7 +104,7 @@ class FeedSchedulerService {
       this.mode = settings.backgroundUpdate ?? 'every-15m';
       await this.ensureNativeTickListener(lifecycleId);
       await this.ensureSystemPowerListener(lifecycleId);
-      this.registerNativeTickWakeHandler();
+      this.registerNativeWakeHandlers();
 
       if (!this.isCurrentLifecycle(lifecycleId)) {
         return;
@@ -213,7 +216,7 @@ class FeedSchedulerService {
 
   async stop(): Promise<void> {
     this.lifecycleId += 1;
-    this.unregisterNativeTickWakeHandler();
+    this.unregisterNativeWakeHandlers();
     this.clearAbort();
     this.cycleInProgress = false;
     this.pendingCycleTick = false;
@@ -422,28 +425,43 @@ class FeedSchedulerService {
   }
 
   private getIntervalMs(): number {
+    const e2eConfig = getE2eConfig();
+    if (e2eConfig?.schedulerIntervalMs && e2eConfig.schedulerIntervalMs > 0) {
+      return e2eConfig.schedulerIntervalMs;
+    }
+
     if (this.mode === 'on-launch' || this.mode === 'never') {
       return Number.POSITIVE_INFINITY;
     }
     return MODE_INTERVAL_MS[this.mode];
   }
 
-  private registerNativeTickWakeHandler(): void {
+  private registerNativeWakeHandlers(): void {
     if (typeof globalThis === 'undefined') {
       return;
     }
 
-    (globalThis as Record<string, unknown>)[SCHEDULER_TICK_WAKE_GLOBAL] = () => {
+    const globalScope = globalThis as Record<string, unknown>;
+    globalScope[SCHEDULER_TICK_WAKE_GLOBAL] = () => {
       void this.handleNativeCycleTick(this.lifecycleId);
+    };
+    globalScope[SCHEDULER_SLEEP_WAKE_GLOBAL] = () => {
+      void this.handleSystemSleep();
+    };
+    globalScope[SCHEDULER_RESUME_WAKE_GLOBAL] = () => {
+      void this.catchUpAfterResume();
     };
   }
 
-  private unregisterNativeTickWakeHandler(): void {
+  private unregisterNativeWakeHandlers(): void {
     if (typeof globalThis === 'undefined') {
       return;
     }
 
-    delete (globalThis as Record<string, unknown>)[SCHEDULER_TICK_WAKE_GLOBAL];
+    const globalScope = globalThis as Record<string, unknown>;
+    delete globalScope[SCHEDULER_TICK_WAKE_GLOBAL];
+    delete globalScope[SCHEDULER_SLEEP_WAKE_GLOBAL];
+    delete globalScope[SCHEDULER_RESUME_WAKE_GLOBAL];
   }
 
   private async ensureNativeDriverRunning(lifecycleId: number): Promise<void> {

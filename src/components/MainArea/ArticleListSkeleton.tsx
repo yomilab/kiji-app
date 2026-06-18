@@ -2,6 +2,10 @@ import React from 'react';
 import { motion } from 'motion/react';
 import './ArticleList.css';
 
+interface ArticleListSkeletonProps {
+  className?: string;
+}
+
 export const ArticleListHeaderSkeleton: React.FC = () => {
   return (
     <div className="article-list-header-skeleton">
@@ -15,9 +19,13 @@ export const ArticleListHeaderSkeleton: React.FC = () => {
   );
 };
 
-export const ArticleListSkeleton: React.FC = () => {
+export const ArticleListSkeleton: React.FC<ArticleListSkeletonProps> = ({ className }) => {
+  const rootClassName = className
+    ? `article-list-item skeleton-item ${className}`
+    : 'article-list-item skeleton-item';
+
   return (
-    <div className="article-list-item skeleton-item">
+    <div className={rootClassName}>
       <div className="article-list-item-content">
         <div className="article-list-item-source-wrapper">
           <div className="article-list-item-source-left">
@@ -40,20 +48,31 @@ export const ArticleListSkeleton: React.FC = () => {
   );
 };
 
-export const ArticleListSkeletonGroup = React.forwardRef<HTMLDivElement, { count?: number }>(
-  ({ count = 6 }, ref) => {
+export const ArticleListSkeletonGroup = React.forwardRef<HTMLDivElement, { count?: number; animateEntry?: boolean }>(
+  ({ count = 6, animateEntry = true }, ref) => {
+    const items = Array.from({ length: count }).map((_, i) => (
+      <ArticleListSkeleton key={i} />
+    ));
+
+    if (!animateEntry) {
+      return (
+        <div ref={ref} className="article-list-skeleton-group" style={{ width: '100%' }}>
+          {items}
+        </div>
+      );
+    }
+
     return (
       <motion.div
         ref={ref}
+        className="article-list-skeleton-group"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.3 }}
         style={{ width: '100%' }}
       >
-        {Array.from({ length: count }).map((_, i) => (
-          <ArticleListSkeleton key={i} />
-        ))}
+        {items}
       </motion.div>
     );
   }

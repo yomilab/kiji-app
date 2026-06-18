@@ -14,10 +14,10 @@
     "build:tauri": "npm run build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "vitest run",
-    "test:ci": "vitest run --retry 2",
+    "test": "vitest run --config vitest.config.ts",
+    "test:ci": "vitest run --config vitest.config.ts --retry 2",
     "release:test": "node scripts/monitor-release-test.mjs",
-    "test:watch": "vitest",
+    "test:watch": "vitest --config vitest.config.ts",
     "test:parity": "vitest run test/parity",
     "test:parity:db": "cargo test --manifest-path src-tauri/Cargo.toml synthetic_v13 synthetic_v15",
     "test:smoke": "vitest run test/smoke",
@@ -25,7 +25,11 @@
     "test:memory": "NODE_OPTIONS='--expose-gc' vitest run test/services/articles/articleListMemory.load.test.ts test/contexts/FeedContext.loadMore.memory.test.tsx test/services/scheduler/feedSchedulerBoostRetention.test.ts",
     "test:memory:report": "KIJI_MEMORY_TEST_REPORT=1 NODE_OPTIONS='--expose-gc' vitest run test/services/articles/articleListMemory.load.test.ts test/contexts/FeedContext.loadMore.memory.test.tsx test/services/scheduler/feedSchedulerBoostRetention.test.ts",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "verify": "node scripts/verify.mjs"
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:e2e:scheduler-wake": "node scripts/e2e/scheduler-wake.mjs",
+    "test:local": "npm run test && npm run test:e2e",
+    "verify": "node scripts/verify.mjs",
+    "verify:local": "node scripts/verify-local.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

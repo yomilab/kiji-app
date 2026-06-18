@@ -1,5 +1,6 @@
 mod db;
 mod diagnostics;
+mod e2e;
 mod net;
 mod saved;
 mod scheduler;
@@ -7,6 +8,7 @@ mod settings;
 mod shell;
 mod system;
 
+use e2e::{e2e_get_config, e2e_write_event};
 use std::sync::{
     atomic::AtomicBool,
     Arc,
@@ -90,6 +92,7 @@ pub fn run() {
                 .map_err(std::io::Error::other)?;
             start_accent_color_watch(&app.handle()).map_err(std::io::Error::other)?;
             start_system_power_watch(&app.handle()).map_err(std::io::Error::other)?;
+            e2e::start_e2e_harness(&app.handle());
 
             app.manage(settings_state);
             app.manage(MainWindowBoundsSaveGuard(bounds_save_guard));
@@ -124,6 +127,8 @@ pub fn run() {
             articles_update_saved_state,
             db_get_status,
             diagnostics_export_bundle,
+            e2e_get_config,
+            e2e_write_event,
             diagnostics_log_get_path,
             diagnostics_log_write_entry,
             diagnostics_performance_snapshot,

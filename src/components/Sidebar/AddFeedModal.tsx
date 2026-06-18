@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { useFeedUIActions } from '@/contexts/FeedContext';
+import * as articleStore from '@/stores/articleStore';
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { feedsFetcher } from '@/services/feeds/feedsFetcher';
+import { storeParsedFeedContent } from '@/services/feeds/feedRefreshPipeline';
+import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 import {
   formatOpmlImportSummary,
   importOpmlFromUrlIntoLibrary,
@@ -12,7 +15,6 @@ import {
   openOpmlFileForImport,
 } from '@/services/feeds/opmlUiWorkflow';
 import { faviconFetcher } from '@/services/favicons/faviconFetcher';
-import { httpClient } from '@/services/http/httpClientFactory';
 import { appToastService } from '@/services/ui/appToastService';
 import { useFeedNavigation } from '@/contexts/FeedContext';
 import './AddFeedModal.css';
@@ -34,6 +36,22 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
   const { refreshTotalFeeds, notifyFeedLibraryChanged } = useFeedUIActions();
   const { selectFeed, selectTag } = useFeedNavigation();
   const isLoading = activeAction !== null;
+
+  const extractFeedTitleFromXml = (xmlText: string): string | null => {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+    const parseError = xmlDoc.querySelector('parsererror');
+    if (parseError) {
+      return null;
+    }
+
+    const titleElement =
+      xmlDoc.querySelector('channel > title') ||
+      xmlDoc.querySelector('feed > title') ||
+      xmlDoc.querySelector('title');
+
+    return titleElement?.textContent?.trim() || null;
+  };
 
   const validateUrl = (url: string): boolean => {
     try {
@@ -132,51 +150,23 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
         return;
       }
 
-      // Try to fetch and parse the feed to validate it
-      const feedItems = await feedsFetcher.fetchFeed(trimmedFeedUrl);
+      // Fetch once, validate parse, and reuse the same payload for initial article storage.
+      const fetchResult = await feedsFetcher.fetchFeedWithCache(trimmedFeedUrl);
+      if (fetchResult.notModified || !fetchResult.data) {
+        throw new Error('Failed to load feed. Please check the URL and try again.');
+      }
+
+      const feedItems = fetchResult.items ?? [];
+      const xmlText = fetchResult.data;
 
       // Pre-generate feed ID so we can use it for article conversion
       const feedId = feedsManager.generateId();
 
-      // Even if feed is empty, we can still add it (it might have items later)
-      // But warn the user if it's empty
       if (feedItems.length === 0) {
-        // Still allow adding empty feeds, but show a warning
         console.warn('Feed appears to be empty, but adding it anyway');
       }
 
-      // Extract feed title and parse XML document for favicon extraction
-      let feedTitle: string | null = null;
-      let xmlText: string | undefined;
-      try {
-        xmlText = await httpClient.get(trimmedFeedUrl, {
-          headers: {
-            'Accept': 'application/rss+xml, application/xml, text/xml, application/atom+xml, */*',
-          },
-        });
-
-        if (xmlText && xmlText.trim()) {
-          const parser = new DOMParser();
-          const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-
-          // Check for parsing errors
-          const parseError = xmlDoc.querySelector('parsererror');
-          if (!parseError) {
-            // Extract title from valid XML
-            const titleElement =
-              xmlDoc.querySelector('channel > title') || // RSS
-              xmlDoc.querySelector('feed > title') ||     // Atom
-              xmlDoc.querySelector('title');              // Generic
-
-            if (titleElement) {
-              feedTitle = titleElement.textContent?.trim() || null;
-            }
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to extract feed title, will use URL:', error);
-        // Continue without title - it will default to URL
-      }
+      const feedTitle = extractFeedTitleFromXml(xmlText);
 
       // Fetch favicon asynchronously (non-blocking if it fails)
       let favicon: string | undefined;
@@ -197,14 +187,43 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
         faviconFetchFailed = true;
       }
 
-      // Convert items to articles before adding the feed
-      // Add the feed through the Tauri manager. The manager performs the first
-      // refresh after insertion, keeping article persistence in one place.
       const addedFeed = await feedsManager.addFeed(
         trimmedFeedUrl,
         feedTitle || undefined,
-        { id: feedId }
+        {
+          id: feedId,
+          skipMetadataFetch: true,
+          skipFaviconRefresh: true,
+        },
       );
+
+      if (feedItems.length > 0) {
+        await storeParsedFeedContent({
+          feedId: addedFeed.id,
+          feedUrl: addedFeed.url,
+          feed: addedFeed,
+          feedTitle: addedFeed.title,
+          rawText: xmlText,
+        });
+
+        const syncedCounts = await articleStore.syncFeedCountsBatch([addedFeed.id]);
+        const counts = syncedCounts[0];
+        await feedsManager.updateFeed(addedFeed.id, {
+          lastFetched: new Date(),
+          etag: fetchResult.etag,
+          lastModifiedHeader: fetchResult.lastModified,
+          articleCount: counts?.articleCount ?? feedItems.length,
+          unreadCount: counts?.unreadCount ?? feedItems.length,
+        });
+
+        if (counts) {
+          feedLibraryMutationBus.publishFeedsCountsUpdated([{
+            feedId: addedFeed.id,
+            unreadCount: counts.unreadCount,
+            articleCount: counts.articleCount,
+          }]);
+        }
+      }
 
       if (favicon || faviconFetchFailed) {
         await feedsManager.updateFeed(addedFeed.id, {

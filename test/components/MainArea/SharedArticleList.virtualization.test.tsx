@@ -104,6 +104,16 @@ vi.mock('@/components/MainArea/ArticleListItem', () => ({
   ),
 }));
 
+vi.mock('@/components/MainArea/ArticleListSkeleton', () => ({
+  ArticleListHeaderSkeleton: () => <div data-testid="header-skeleton">Header Skeleton</div>,
+  ArticleListSkeleton: () => <div data-testid="mock-phantom-skeleton">Phantom Skeleton</div>,
+  ArticleListSkeletonGroup: ({ count = 1 }: { count?: number }) => (
+    <div data-testid="mock-skeleton-group">{Array.from({ length: count }).map((_, index) => (
+      <div key={index} data-testid="mock-phantom-skeleton">Phantom Skeleton</div>
+    ))}</div>
+  ),
+}));
+
 vi.mock('@/components/common/FeedLineLoader', () => ({
   FeedLineLoader: () => <div data-testid="mock-feed-line-loader" />,
 }));
@@ -133,6 +143,7 @@ describe('SharedArticleList virtualization', () => {
 
   const makeVirtualizerMock = (indexes = [0, 1, 2, 3, 4]) => ({
     getTotalSize: () => 2000,
+    getOffsetForIndex: (index: number) => index * 100,
     getVirtualItems: () => indexes.map((index) => ({
       key: `k-${index}`,
       index,
@@ -149,8 +160,7 @@ describe('SharedArticleList virtualization', () => {
 
     expect(mockUseVirtualizer).toHaveBeenCalledWith(expect.objectContaining({
       count: 100,
-      overscan: 12,
-      paddingEnd: 0,
+      overscan: 16,
     }));
     expect(getAllByTestId('mock-article-row')).toHaveLength(5);
     expect(queryByText('Article 50')).not.toBeInTheDocument();

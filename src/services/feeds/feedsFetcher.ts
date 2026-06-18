@@ -38,6 +38,7 @@ export interface FeedNetworkFetchResult {
 
 export interface FeedFetchResult {
   notModified: boolean;
+  data?: string;
   items?: FeedItem[];
   etag?: string;
   lastModified?: string;
@@ -112,6 +113,7 @@ class FeedsFetcher {
 
     return {
       notModified: false,
+      data: networkResult.data,
       items: parseFeed(networkResult.data, normalizedUrl),
       etag: networkResult.etag,
       lastModified: networkResult.lastModified,

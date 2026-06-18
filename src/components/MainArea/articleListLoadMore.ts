@@ -1,6 +1,11 @@
 export const ARTICLE_LIST_ESTIMATED_ROW_HEIGHT = 112;
 export const ARTICLE_LIST_BOTTOM_SPACER_HEIGHT = 50;
-export const ARTICLE_LIST_LOAD_MORE_TAIL_ROW_COUNT = 3;
+/** Minimum phantom skeleton rows below the loaded page while more articles exist. */
+export const ARTICLE_LIST_PHANTOM_MIN_ROW_COUNT = 6;
+/** Upper bound so tall viewports do not reserve unbounded placeholder rows. */
+export const ARTICLE_LIST_PHANTOM_MAX_ROW_COUNT = 14;
+/** Extra rows beyond one viewport height to cover fast scroll + virtualizer overscan. */
+export const ARTICLE_LIST_PHANTOM_OVERSCAN_ROWS = 4;
 export const ARTICLE_LIST_PREFETCH_MAX_REMAINING_ROWS = 80;
 export const ARTICLE_LIST_PREFETCH_MIN_REMAINING_ROWS = 40;
 export const ARTICLE_LIST_CRITICAL_MAX_REMAINING_ROWS = 24;
@@ -99,39 +104,26 @@ export const shouldTriggerArticleListLoadMoreFromScroll = (
   return getDistanceFromScrollBottom(scrollElement) <= triggerDistancePx;
 };
 
-export const getArticleListLoadMorePaddingEnd = (
+/**
+ * Virtual placeholder rows rendered as skeletons below the loaded page.
+ * Sized to roughly one viewport (+ overscan) so fast scroll does not expose empty space.
+ */
+export const getArticleListPhantomRowCount = (
   loadedRowCount: number,
   totalRowCount: number,
+  viewportHeightPx: number,
 ): number => {
   if (loadedRowCount >= totalRowCount) {
     return 0;
   }
 
   const remainingRows = totalRowCount - loadedRowCount;
-  const placeholderRows = Math.min(remainingRows, ARTICLE_LIST_LOAD_MORE_TAIL_ROW_COUNT);
-
-  return placeholderRows * ARTICLE_LIST_ESTIMATED_ROW_HEIGHT;
-};
-
-export const getArticleListLoadMoreTailHeight = (showTail: boolean): number => (
-  showTail ? ARTICLE_LIST_LOAD_MORE_TAIL_ROW_COUNT * ARTICLE_LIST_ESTIMATED_ROW_HEIGHT : 0
-);
-
-export const shouldShowArticleListLoadMoreTail = (options: {
-  hasMoreArticles: boolean;
-  isLoadMoreInFlight: boolean;
-  loadedRowCount: number;
-  lastVisibleIndex: number;
-}): boolean => {
-  if (!options.hasMoreArticles || !options.isLoadMoreInFlight) {
-    return false;
-  }
-
-  const remainingLoadedRows = getRemainingLoadedRows(
-    options.loadedRowCount,
-    options.lastVisibleIndex,
+  const viewportRows = Math.ceil(Math.max(0, viewportHeightPx) / ARTICLE_LIST_ESTIMATED_ROW_HEIGHT)
+    + ARTICLE_LIST_PHANTOM_OVERSCAN_ROWS;
+  const desiredRows = Math.min(
+    ARTICLE_LIST_PHANTOM_MAX_ROW_COUNT,
+    Math.max(ARTICLE_LIST_PHANTOM_MIN_ROW_COUNT, viewportRows),
   );
-  const criticalRemainingRows = getArticleListCriticalRemainingRows(options.loadedRowCount);
 
-  return remainingLoadedRows <= criticalRemainingRows;
+  return Math.min(remainingRows, desiredRows);
 };

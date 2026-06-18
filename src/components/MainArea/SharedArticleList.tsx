@@ -6,7 +6,7 @@ import { LayoutType } from '@/services/settings/types';
 import { ArticleListWidgets } from './ArticleListWidgets';
 import { ArticleListSearchInput } from './ArticleListSearchInput';
 import { ArticleListItem } from './ArticleListItem';
-import { ArticleListSkeletonGroup, ArticleListHeaderSkeleton } from './ArticleListSkeleton';
+import { ArticleListSkeletonGroup, ArticleListHeaderSkeleton, ArticleListSkeleton } from './ArticleListSkeleton';
 import { useFetchIndicatorState } from './hooks/useFetchIndicatorState';
 import { useArticleListKeyboardNavigation } from './hooks/useArticleListKeyboardNavigation';
 import { useArticleListSearch } from './hooks/useArticleListSearch';
@@ -17,20 +17,28 @@ import { useArticleListScrollReset } from './hooks/useArticleListScrollReset';
 import { useArticleListScrollOffsetSync } from './hooks/useArticleListScrollOffsetSync';
 import { useArticleListBackgroundScrollSync } from './hooks/useArticleListBackgroundScrollSync';
 import { useArticleListPerformanceMetrics } from './hooks/useArticleListPerformanceMetrics';
+import { useResizeObserverEffect } from '@/hooks/useLifecycleEffects';
 import { InteractionProfiler } from '@/components/common/InteractionProfiler';
 import { FeedLineLoader } from '@/components/common/FeedLineLoader';
+import { isDev } from '@/services/system/env';
+import {
+  logArticleListPhantomScroll,
+  logArticleListPhantomState,
+} from './articleListPhantomDebug';
 import { ARTICLE_LIST_PREVIEW_SCROLL_IDLE_MS } from './articleListPreviewConstants';
 import {
   ARTICLE_LIST_BOTTOM_SPACER_HEIGHT,
   ARTICLE_LIST_ESTIMATED_ROW_HEIGHT,
-  ARTICLE_LIST_LOAD_MORE_TAIL_ROW_COUNT,
-  getArticleListLoadMorePaddingEnd,
+} from './articleListLoadMore';
+import {
   getArticleListLoadMorePriority,
-  getArticleListLoadMoreTailHeight,
-  shouldShowArticleListLoadMoreTail,
   shouldTriggerArticleListLoadMore,
   shouldTriggerArticleListLoadMoreFromScroll,
 } from './articleListLoadMore';
+import {
+  getArticleListScrollGapRowStartPx,
+  getArticleListScrollGapSkeletonIndexes,
+} from './articleListScrollGapSkeleton';
 import './ArticleList.css';
 
 interface SharedArticleListProps {
@@ -63,7 +71,6 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
     articlesTotalCount,
     isLoadingArticles,
     isLoadingMoreArticles,
-    isLoadMoreInFlight,
     isSavedListLoading,
     isGlobalLoadingIndicatorActive,
     loadMoreArticles,
@@ -85,9 +92,13 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
 
   const [hasListScrollOffset, setHasListScrollOffset] = useState(false);
   const [deferPreviewImages, setDeferPreviewImages] = useState(false);
+  const [listViewportHeight, setListViewportHeight] = useState(0);
+  const [listScrollTop, setListScrollTop] = useState(0);
+  const [listScrollHeight, setListScrollHeight] = useState(0);
   const articleListRef = useRef<HTMLDivElement>(null);
   const articleListItemsRef = useRef<HTMLDivElement>(null);
   const previewImageScrollIdleTimerRef = useRef<number | null>(null);
+  const phantomScrollLogAtRef = useRef(0);
   
   const {
     searchQuery,
@@ -120,10 +131,7 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
 
   const filteredArticles = sourceArticles;
   const hasMoreArticles = filteredArticles.length < articlesTotalCount;
-  const loadMorePaddingEnd = getArticleListLoadMorePaddingEnd(
-    filteredArticles.length,
-    articlesTotalCount,
-  );
+  const virtualRowCount = filteredArticles.length;
 
   const subtitleCount = articlesTotalCount;
   const subtitleText = `${subtitleCount} Items`;
@@ -145,24 +153,50 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
   }, [filteredArticles, newArticleHashes]);
   
   const rowVirtualizer = useVirtualizer({
-    count: filteredArticles.length,
+    count: virtualRowCount,
     getScrollElement: () => articleListItemsRef.current,
     estimateSize: () => ARTICLE_LIST_ESTIMATED_ROW_HEIGHT,
-    overscan: 12,
-    paddingEnd: loadMorePaddingEnd,
+    overscan: deferPreviewImages ? 28 : 16,
     getItemKey: (index) => filteredArticles[index]?.hash ?? index,
     measureElement: measureArticleRowHeight,
   });
   const virtualItems = rowVirtualizer.getVirtualItems();
   const firstVirtualIndex = virtualItems[0]?.index ?? 0;
   const lastVirtualIndex = virtualItems[virtualItems.length - 1]?.index ?? -1;
-  const showLoadMoreTail = shouldShowArticleListLoadMoreTail({
-    hasMoreArticles,
-    isLoadMoreInFlight,
-    loadedRowCount: filteredArticles.length,
-    lastVisibleIndex: lastVirtualIndex,
-  });
-  const loadMoreTailHeight = getArticleListLoadMoreTailHeight(showLoadMoreTail);
+  const mountedVirtualIndexes = useMemo(
+    () => new Set(virtualItems.map((virtualRow) => virtualRow.index)),
+    [virtualItems],
+  );
+  const scrollGapSkeletonIndexes = useMemo(
+    () => getArticleListScrollGapSkeletonIndexes({
+      scrollTopPx: listScrollTop,
+      viewportHeightPx: listViewportHeight,
+      scrollHeightPx: listScrollHeight,
+      loadedRowCount: filteredArticles.length,
+      totalRowCount: articlesTotalCount,
+      mountedIndexes: mountedVirtualIndexes,
+    }),
+    [
+      articlesTotalCount,
+      filteredArticles.length,
+      listScrollHeight,
+      listScrollTop,
+      listViewportHeight,
+      mountedVirtualIndexes,
+    ],
+  );
+  const loadedVirtualSizePx = rowVirtualizer.getTotalSize();
+  const virtualStartByIndex = useMemo(() => {
+    const startByIndex = new Map<number, number>();
+    for (const virtualRow of virtualItems) {
+      startByIndex.set(virtualRow.index, virtualRow.start);
+    }
+    return startByIndex;
+  }, [virtualItems]);
+  const getLoadedRowOffsetPx = useCallback(
+    (index: number) => virtualStartByIndex.get(index) ?? index * ARTICLE_LIST_ESTIMATED_ROW_HEIGHT,
+    [virtualStartByIndex],
+  );
   const isSearchDebouncePending = searchQuery.trim() !== debouncedSearchQuery.trim();
 
   const ensureHashInView = useCallback((hash: string) => {
@@ -187,6 +221,53 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
     if (selectedSmartView) return `smart:${selectedSmartView}`;
     return 'none';
   }, [selectedFeedId, selectedTag, selectedSmartView]);
+
+  useEffect(() => {
+    logArticleListPhantomState({
+      sourceKey,
+      loadedCount: filteredArticles.length,
+      totalCount: articlesTotalCount,
+      hasMoreArticles,
+      listViewportHeight,
+      listScrollTop,
+      scrollGapSkeletonCount: scrollGapSkeletonIndexes.length,
+      scrollGapSkeletonIndexes,
+      mountedVirtualCount: virtualItems.length,
+      lastVirtualIndex,
+      visibleVirtualRowCount: virtualItems.length,
+      totalVirtualSizePx: loadedVirtualSizePx,
+    });
+  }, [
+    articlesTotalCount,
+    filteredArticles.length,
+    hasMoreArticles,
+    lastVirtualIndex,
+    listScrollHeight,
+    listScrollTop,
+    listViewportHeight,
+    loadedVirtualSizePx,
+    scrollGapSkeletonIndexes,
+    sourceKey,
+    virtualItems.length,
+  ]);
+
+  const syncListViewportHeight = useCallback((element: HTMLDivElement) => {
+    const height = element.clientHeight;
+    setListViewportHeight((previous) => (previous === height ? previous : height));
+    setListScrollTop(element.scrollTop);
+    setListScrollHeight(element.scrollHeight);
+  }, []);
+
+  useResizeObserverEffect(articleListItemsRef, syncListViewportHeight);
+
+  useEffect(() => {
+    const listElement = articleListItemsRef.current;
+    if (!listElement) {
+      return;
+    }
+
+    syncListViewportHeight(listElement);
+  }, [filteredArticles.length, sourceKey, syncListViewportHeight]);
 
   useEffect(() => {
     const query = debouncedSearchQuery.trim();
@@ -287,7 +368,26 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
 
   const handleArticleListScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
     const scrollElement = event.currentTarget;
+    syncListViewportHeight(scrollElement);
     const { scrollTop } = scrollElement;
+    if (hasMoreArticles) {
+      const distanceFromBottom = scrollElement.scrollHeight - scrollTop - scrollElement.clientHeight;
+      if (distanceFromBottom <= 600) {
+        const now = Date.now();
+        if (now - phantomScrollLogAtRef.current >= 750) {
+          phantomScrollLogAtRef.current = now;
+          logArticleListPhantomScroll({
+            scrollTop,
+            scrollHeight: scrollElement.scrollHeight,
+            clientHeight: scrollElement.clientHeight,
+            distanceFromBottom,
+            scrollGapSkeletonCount: scrollGapSkeletonIndexes.length,
+            scrollGapSkeletonIndexes,
+            lastVirtualIndex,
+          });
+        }
+      }
+    }
     const isScrolled = scrollTop > 0;
     setHasListScrollOffset((previous) => (previous === isScrolled ? previous : isScrolled));
     setDeferPreviewImages(true);
@@ -309,9 +409,12 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
   }, [
     articlesTotalCount,
     filteredArticles.length,
+    hasMoreArticles,
     isSearchDebouncePending,
     lastVirtualIndex,
     requestLoadMoreArticles,
+    scrollGapSkeletonIndexes,
+    syncListViewportHeight,
     syncViewportSnapshot,
   ]);
 
@@ -442,7 +545,7 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
 
         <div
           ref={articleListItemsRef}
-          className={`article-list-items ${totalFeeds === 0 || filteredArticles.length === 0 ? 'no-scrollbar' : ''}`}
+          className={`article-list-items ${totalFeeds === 0 || filteredArticles.length === 0 ? 'no-scrollbar' : ''}${isDev && scrollGapSkeletonIndexes.length > 0 ? ' article-list-phantom-debug' : ''}`}
           onScroll={(event) => {
             handleScrollPerformanceEvent(event.currentTarget.scrollTop);
             handleArticleListScroll(event);
@@ -465,7 +568,7 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
           ) : (
             <div
               className="article-list-virtual-spacer"
-              style={{ height: `${rowVirtualizer.getTotalSize() + ARTICLE_LIST_BOTTOM_SPACER_HEIGHT + loadMoreTailHeight}px` }}
+              style={{ height: `${loadedVirtualSizePx + ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px` }}
             >
               {virtualItems.map((virtualRow) => {
                 const article = filteredArticles[virtualRow.index];
@@ -494,25 +597,40 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
                   </div>
                 );
               })}
-              {showLoadMoreTail && (
+              {scrollGapSkeletonIndexes.map((index) => (
                 <div
-                  className="article-list-load-more-tail"
-                  style={{ transform: `translateY(${rowVirtualizer.getTotalSize()}px)` }}
-                  aria-hidden={!showLoadMoreTail}
+                  key={`scroll-gap-${index}`}
+                  className="article-list-virtual-row article-list-scroll-gap-row"
+                  data-scroll-gap-index={index}
+                  style={{
+                    transform: `translateY(${getArticleListScrollGapRowStartPx(
+                      index,
+                      filteredArticles.length,
+                      loadedVirtualSizePx,
+                      ARTICLE_LIST_ESTIMATED_ROW_HEIGHT,
+                      getLoadedRowOffsetPx,
+                    )}px)`,
+                  }}
+                  aria-hidden="true"
                 >
-                  <ArticleListSkeletonGroup count={ARTICLE_LIST_LOAD_MORE_TAIL_ROW_COUNT} />
+                  <ArticleListSkeleton className="article-list-phantom-skeleton" />
+                  {isDev && (
+                    <div className="article-list-phantom-debug-label" aria-hidden="true">
+                      GAP #{index}
+                    </div>
+                  )}
                 </div>
-              )}
+              ))}
               {/* Keep a literal trailing block inside the virtual canvas so the
                   spacer only appears once users reach the actual bottom. */}
               <div
                 className="article-list-bottom-spacer"
-                style={{ transform: `translateY(${rowVirtualizer.getTotalSize() + loadMoreTailHeight}px)`, height: `${ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px` }}
+                style={{ transform: `translateY(${loadedVirtualSizePx}px)`, height: `${ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px` }}
                 aria-hidden="true"
               />
             </div>
           )}
-          {isLoadingMoreArticles && !showLoadMoreTail && (
+          {isLoadingMoreArticles && (
             <div className="article-list-load-more">
               <FeedLineLoader
                 size="sm"

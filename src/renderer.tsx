@@ -176,6 +176,21 @@ async function bootstrapRenderer(): Promise<void> {
   logger.info("Renderer", "Renderer bootstrap starting", { windowType });
 
   try {
+    const e2eConfig = await invoke<{
+      dir: string;
+      feedUrl: string;
+      feedId: string;
+      schedulerIntervalMs: number;
+    } | null>("e2e_get_config");
+    if (e2eConfig) {
+      (globalThis as Record<string, unknown>).__KIJI_E2E__ = e2eConfig;
+      logger.info("Renderer", "E2E harness config loaded", { feedId: e2eConfig.feedId });
+    }
+  } catch {
+    // Harness inactive outside e2e runs.
+  }
+
+  try {
     await initializeAppSettings();
     if (windowType === "main") {
       try {

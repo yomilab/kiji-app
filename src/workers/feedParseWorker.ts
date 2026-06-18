@@ -1,4 +1,4 @@
-import { parseFeedWithFeedsmith } from '@/services/feeds/feedsmithAdapter';
+import { parseFeed } from '@/services/feeds/feedsFetcher';
 import type { FeedItem } from '@/services/feeds/feedsFetcher';
 
 interface ParseRequest {
@@ -23,7 +23,7 @@ self.onmessage = (event: MessageEvent<ParseRequest>) => {
   const { id, rawText, feedUrl } = event.data;
 
   try {
-    const items = parseFeedWithFeedsmith(rawText, feedUrl);
+    const items = parseFeed(rawText, feedUrl);
     const response: ParseSuccess = { id, ok: true, items };
     self.postMessage(response);
   } catch (error) {

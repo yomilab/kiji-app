@@ -15,11 +15,15 @@
 
 ### Changed
 
+- Test layout: split Vitest into `vitest.config.ts` (unit, `npm test` / CI) and `vitest.e2e.config.ts` (real-app E2E, `npm run test:e2e`); `verify:local` runs full macOS E2E gate; CI verify sets `KIJI_SKIP_E2E=1` so GitHub Actions stays fast.
+- E2E harness hides the main window by default (`KIJI_E2E_HIDE_UI=1`) so scheduler wake tests do not pop KiJi to the foreground during local runs.
 - Add Feed modal: `.opml` URLs fetch and import feeds via the same OPML workflow as Import Feeds.
 - GitHub Actions `build-desktop.yml` runs on `dev` pushes (integration/release-test); use `workflow_dispatch` on `main` for production verification. `npm run release:test` defaults to the `dev` branch.
 
 ### Fixed
 
+- Scheduler wake E2E harness: `npm run test:e2e` spawns debug `KiJi.app`, mock feed server, and Rust `emit-system-resume` path; asserts catch-up imports post-wake articles in ~3s.
+- macOS sleep/wake scheduler hooks: `scheduler:system-sleep` / `scheduler:system-resume` now emit to the main webview and eval-wake `__kijiSchedulerSleep` / `__kijiSchedulerResume` (same delivery as native cycle ticks) so overnight wake catch-up runs when the renderer was background-throttled.
 - Station refresh now batch-syncs feed counts and patches the sidebar (same pattern as scheduler), after worker pool completes.
 - Favicon discovery rejects blank placeholder icons (tiny monochrome ICO, near-empty/near-white rasters), expands WordPress `?w=` feed icons to larger sizes, and clears stored placeholders on retry (fixes TechCrunch blank sidebar icon).
 
