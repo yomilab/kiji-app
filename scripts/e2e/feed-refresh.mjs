@@ -1,14 +1,9 @@
 #!/usr/bin/env node
 /**
- * End-to-end scheduler wake harness.
- *
- * Spawns a real KiJi debug bundle with an isolated HOME, serves a mock Atom feed,
- * waits for the first scheduler cycle, triggers the Rust system-resume emit path,
- * and asserts a second catch-up cycle inserts the post-wake article.
+ * E2E: scheduled feed refresh — second cycle fetches phase-2 mock feed articles.
  */
-import fs from "node:fs";
-import path from "node:path";
 import { pathToFileURL } from "node:url";
+import path from "node:path";
 import {
   assertE2eNotSkipped,
   ensureE2eBundledBinary,
@@ -26,7 +21,7 @@ import {
   waitForEvent,
 } from "./e2eRunner.mjs";
 
-export async function runSchedulerWakeE2e() {
+export async function runFeedRefreshE2e() {
   const skipReason = getE2eSkipReason();
   if (skipReason) {
     return { skipped: true, reason: skipReason };
@@ -41,47 +36,41 @@ export async function runSchedulerWakeE2e() {
   }
 
   const mockFeed = createMockFeedServer();
-  const { feedUrl } = await mockFeed.start();
+  const { feedUrl, fetchCount } = await mockFeed.start();
   const { homeDir, e2eDir } = createE2eSessionDirs();
   const { child, stderr } = startE2eApp(binaryPath, { homeDir, e2eDir, feedUrl });
 
   try {
-    const readyEvent = await waitForEvent(
+    await waitForEvent(
       e2eDir,
       "scheduler-ready",
       (event) => (event.payload?.articleCount ?? 0) >= 1,
     );
 
-    const initialArticleCount = readyEvent.payload?.articleCount ?? 0;
-    if (initialArticleCount < 1) {
-      throw new Error(`Expected at least one article after first cycle, got ${initialArticleCount}`);
-    }
+    await sleep(Number(E2E_SCHEDULER_INTERVAL_MS) + 300);
 
-    await sleep(Number(E2E_SCHEDULER_INTERVAL_MS) + 200);
-
-    fs.writeFileSync(path.join(e2eDir, "commands", "emit-system-resume"), "");
-    await waitForEvent(e2eDir, "resume-emitted");
-
-    const catchUpEvent = await waitForEvent(
+    const refreshEvent = await waitForEvent(
       e2eDir,
       "cycle-complete",
       (event) => (event.payload?.cycleCount ?? 0) >= 2,
     );
 
-    const articleCountAfterWake = catchUpEvent.payload?.articleCount ?? 0;
-    if (articleCountAfterWake < 2) {
-      throw new Error(
-        `Expected post-wake article import (>=2 articles), got ${articleCountAfterWake}`,
-      );
+    const articleCount = refreshEvent.payload?.articleCount ?? 0;
+    const serverFetchCount = fetchCount();
+    if (serverFetchCount < 2) {
+      throw new Error(`Expected mock feed fetch count >= 2, got ${serverFetchCount}`);
+    }
+    if (articleCount < 2) {
+      throw new Error(`Expected >= 2 articles after refresh cycle, got ${articleCount}`);
     }
 
     return {
       skipped: false,
       binaryPath,
       feedUrl,
-      initialArticleCount,
-      articleCountAfterWake,
-      cycleCount: catchUpEvent.payload?.cycleCount ?? 0,
+      articleCount,
+      fetchCount: serverFetchCount,
+      cycleCount: refreshEvent.payload?.cycleCount ?? 0,
     };
   } catch (error) {
     throw new Error(formatE2eFailure(error, e2eDir, stderr));
@@ -95,20 +84,20 @@ const isMainModule =
   import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 
 if (isMainModule) {
-  runSchedulerWakeE2e()
+  runFeedRefreshE2e()
     .then((result) => {
       assertE2eNotSkipped(result);
       if (result.skipped) {
-        console.log(`[e2e:scheduler-wake] Skipped: ${result.reason}`);
+        console.log(`[e2e:feed-refresh] Skipped: ${result.reason}`);
         process.exit(0);
       }
       console.log(
-        `[e2e:scheduler-wake] Passed: cycles=${result.cycleCount} articles=${result.articleCountAfterWake}`,
+        `[e2e:feed-refresh] Passed: fetches=${result.fetchCount} articles=${result.articleCount}`,
       );
       process.exit(0);
     })
     .catch((error) => {
-      console.error(`[e2e:scheduler-wake] Failed: ${error instanceof Error ? error.message : error}`);
+      console.error(`[e2e:feed-refresh] Failed: ${error instanceof Error ? error.message : error}`);
       process.exit(1);
     });
 }

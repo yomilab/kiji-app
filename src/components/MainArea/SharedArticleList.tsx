@@ -545,6 +545,7 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
 
         <div
           ref={articleListItemsRef}
+          data-section="article-list-items"
           className={`article-list-items ${totalFeeds === 0 || filteredArticles.length === 0 ? 'no-scrollbar' : ''}${isDev && scrollGapSkeletonIndexes.length > 0 ? ' article-list-phantom-debug' : ''}`}
           onScroll={(event) => {
             handleScrollPerformanceEvent(event.currentTarget.scrollTop);

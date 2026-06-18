@@ -11,12 +11,11 @@
 
 - GPL-3.0-or-later license (`LICENSE`, copyright Yomi Lab) and `THIRD_PARTY_NOTICES.md` (major npm/Rust deps and copyleft components).
 - `src-tauri/Entitlements.plist` (WebKit hardened-runtime JIT flags) wired via `bundle.macOS.entitlements` for signed/notarized builds.
-- Bundled Electron parity fixtures under `test/data` for CI smoke/parity coverage.
+- User-interaction E2E harnesses (Phases A–E): navigation switch, article deck, reader mode, OPML import/export, article-list scroll/load-more, feed-edit rename, feed-delete, PDF render (`test/e2e/userInteractions.e2e.test.ts`, `useE2eCommandHandler`, `e2e_take_command`).
 
 ### Changed
 
-- Test layout: split Vitest into `vitest.config.ts` (unit, `npm test` / CI) and `vitest.e2e.config.ts` (real-app E2E, `npm run test:e2e`); `verify:local` runs full macOS E2E gate; CI verify sets `KIJI_SKIP_E2E=1` so GitHub Actions stays fast.
-- E2E harness hides the main window by default (`KIJI_E2E_HIDE_UI=1`) so scheduler wake tests do not pop KiJi to the foreground during local runs.
+- Test layout: split Vitest unit/e2e projects; CI parity + macOS `e2e-macos` job; cross-platform launch smoke in release build matrix; feed-refresh E2E; `verify:local` runs memory + required E2E.
 - Add Feed modal: `.opml` URLs fetch and import feeds via the same OPML workflow as Import Feeds.
 - GitHub Actions `build-desktop.yml` runs on `dev` pushes (integration/release-test); use `workflow_dispatch` on `main` for production verification. `npm run release:test` defaults to the `dev` branch.
 

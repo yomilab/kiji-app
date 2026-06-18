@@ -17,6 +17,7 @@ import { feedsManager } from '@/services/feeds/feedsManager';
 import { logger } from '@/services/logger';
 import { appToastService } from '@/services/ui/appToastService';
 import { readerModeService, type ReaderModeContent } from '@/services/articles/readerModeService';
+import { useE2eArticleViewProbes } from '@/hooks/useE2eArticleViewProbes';
 import { postlightParserService } from '@/services/articles/postlightParserService';
 import { faviconFetcher } from '@/services/favicons/faviconFetcher';
 import { extractUrlFromText } from '@/utils/urlValidator';
@@ -1775,6 +1776,16 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     }
   }, [articleToShow, isTemporaryArticle, isFeedLinkedArticle, ensureReaderContentForArticle]);
 
+  const { onPdfFirstPageRendered } = useE2eArticleViewProbes({
+    standalone,
+    articleToShow,
+    articleViewOverlayPhase,
+    articleDisplayMode,
+    readerContent,
+    articleResourceType,
+    onToggleReaderMode: handleReaderModeToggle,
+  });
+
   // Define reader mode button states
   const readerModeStates: ButtonState[] = [
     {
@@ -2039,7 +2050,10 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
             suspendProcessing={isClosing}
             onOpenInBrowser={handleOpenInBrowser}
             onLoadStart={() => setPdfViewerLoading(true)}
-            onFirstPageRendered={() => setPdfViewerLoading(false)}
+            onFirstPageRendered={() => {
+              setPdfViewerLoading(false);
+              onPdfFirstPageRendered();
+            }}
             onLoadError={() => setPdfViewerLoading(false)}
           />
         </motion.div>

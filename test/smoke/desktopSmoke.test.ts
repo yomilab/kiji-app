@@ -89,11 +89,7 @@ describeWithFixtures("Desktop smoke (todo 22)", () => {
 });
 
 describe("Desktop launch smoke (todo 22)", () => {
-  it("launches KiJi briefly on macOS when a built binary exists", async () => {
-    if (process.platform !== "darwin") {
-      return;
-    }
-
+  it("launches KiJi briefly when a built binary exists", async () => {
     const { runLaunchSmoke } = await import("../../scripts/smoke-launch.mjs");
     const result = await runLaunchSmoke();
 
@@ -103,6 +99,6 @@ describe("Desktop launch smoke (todo 22)", () => {
     }
 
     expect(result.pid).toBeGreaterThan(0);
-    expect(result.binaryPath).toContain("kiji-app");
+    expect(result.binaryPath).toBeTruthy();
   }, 20_000);
 });

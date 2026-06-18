@@ -8,7 +8,9 @@ mod settings;
 mod shell;
 mod system;
 
-use e2e::{e2e_get_config, e2e_write_event};
+use e2e::{
+    e2e_get_config, e2e_read_text_file, e2e_take_command, e2e_write_event, e2e_write_harness_text,
+};
 use std::sync::{
     atomic::AtomicBool,
     Arc,
@@ -128,7 +130,10 @@ pub fn run() {
             db_get_status,
             diagnostics_export_bundle,
             e2e_get_config,
+            e2e_read_text_file,
+            e2e_take_command,
             e2e_write_event,
+            e2e_write_harness_text,
             diagnostics_log_get_path,
             diagnostics_log_write_entry,
             diagnostics_performance_snapshot,

@@ -5,6 +5,9 @@ export interface KijiE2eConfig {
   feedUrl: string;
   feedId: string;
   schedulerIntervalMs: number;
+  opmlPath?: string | null;
+  bootstrap?: string;
+  autoConfirm?: boolean;
 }
 
 interface E2eHarnessConfigResponse {
@@ -12,6 +15,9 @@ interface E2eHarnessConfigResponse {
   feedUrl: string;
   feedId: string;
   schedulerIntervalMs: number;
+  opmlPath?: string | null;
+  bootstrap?: string;
+  autoConfirm?: boolean;
 }
 
 let cachedConfig: KijiE2eConfig | null | undefined;
@@ -22,13 +28,16 @@ function normalizeConfig(config: E2eHarnessConfigResponse): KijiE2eConfig {
     feedUrl: config.feedUrl,
     feedId: config.feedId,
     schedulerIntervalMs: config.schedulerIntervalMs,
+    opmlPath: config.opmlPath ?? null,
+    bootstrap: config.bootstrap ?? 'feed',
+    autoConfirm: config.autoConfirm ?? false,
   };
 }
 
 async function readE2eConfigFromBackend(): Promise<KijiE2eConfig | null> {
   try {
     const response = await invoke<E2eHarnessConfigResponse | null>('e2e_get_config');
-    if (!response?.feedUrl) {
+    if (!response?.dir) {
       return null;
     }
     return normalizeConfig(response);
@@ -59,6 +68,9 @@ export function getE2eConfig(): KijiE2eConfig | null {
     schedulerIntervalMs: typeof config.schedulerIntervalMs === 'number'
       ? config.schedulerIntervalMs
       : Number(config.schedulerIntervalMs ?? 500),
+    opmlPath: typeof config.opmlPath === 'string' ? config.opmlPath : null,
+    bootstrap: typeof config.bootstrap === 'string' ? config.bootstrap : 'feed',
+    autoConfirm: config.autoConfirm === true,
   };
 }
 

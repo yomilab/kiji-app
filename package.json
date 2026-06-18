@@ -26,10 +26,22 @@
     "test:memory:report": "KIJI_MEMORY_TEST_REPORT=1 NODE_OPTIONS='--expose-gc' vitest run test/services/articles/articleListMemory.load.test.ts test/contexts/FeedContext.loadMore.memory.test.tsx test/services/scheduler/feedSchedulerBoostRetention.test.ts",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:e2e:app-bootstrap": "node scripts/e2e/app-bootstrap.mjs",
+    "test:e2e:feed-refresh": "node scripts/e2e/feed-refresh.mjs",
     "test:e2e:scheduler-wake": "node scripts/e2e/scheduler-wake.mjs",
+    "test:e2e:navigation-switch": "node scripts/e2e/navigation-switch.mjs",
+    "test:e2e:article-deck": "node scripts/e2e/article-deck.mjs",
+    "test:e2e:reader-mode": "node scripts/e2e/reader-mode.mjs",
+    "test:e2e:opml-import": "node scripts/e2e/opml-import.mjs",
+    "test:e2e:opml-export": "node scripts/e2e/opml-export.mjs",
+    "test:e2e:article-list-scroll": "node scripts/e2e/article-list-scroll.mjs",
+    "test:e2e:feed-edit": "node scripts/e2e/feed-edit.mjs",
+    "test:e2e:feed-delete": "node scripts/e2e/feed-delete.mjs",
+    "test:e2e:pdf-article": "node scripts/e2e/pdf-article.mjs",
     "test:local": "npm run test && npm run test:e2e",
     "verify": "node scripts/verify.mjs",
-    "verify:local": "node scripts/verify-local.mjs"
+    "verify:local": "node scripts/verify-local.mjs",
+    "test:includes": "node scripts/check-test-includes.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

@@ -20,6 +20,8 @@ import {
   useStartupMigration,
 } from './hooks/useAppEffects';
 import { useE2eHarness } from './hooks/useE2eHarness';
+import { useE2eCommandHandler } from './hooks/useE2eCommandHandler';
+import { useE2eUiProbes } from './hooks/useE2eUiProbes';
 import { useMountEffect } from './hooks/useLifecycleEffects';
 import {
   useFeedNavigation,
@@ -104,6 +106,8 @@ export const App: React.FC = () => {
   } = useFeedNavigation();
 
   useE2eHarness();
+  useE2eUiProbes();
+  useE2eCommandHandler();
 
   const { refreshFeed, updateArticleInList, reloadCurrentSourceFromStore } = useFeedCollection();
 

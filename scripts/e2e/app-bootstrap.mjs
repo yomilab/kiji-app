@@ -1,14 +1,9 @@
 #!/usr/bin/env node
 /**
- * End-to-end scheduler wake harness.
- *
- * Spawns a real KiJi debug bundle with an isolated HOME, serves a mock Atom feed,
- * waits for the first scheduler cycle, triggers the Rust system-resume emit path,
- * and asserts a second catch-up cycle inserts the post-wake article.
+ * E2E: app bootstrap — real KiJi.app starts, imports mock feed, mounts shell, shows articles.
  */
-import fs from "node:fs";
-import path from "node:path";
 import { pathToFileURL } from "node:url";
+import path from "node:path";
 import {
   assertE2eNotSkipped,
   ensureE2eBundledBinary,
@@ -18,15 +13,13 @@ import {
 import { createMockFeedServer } from "./mockFeedServer.mjs";
 import {
   createE2eSessionDirs,
-  E2E_SCHEDULER_INTERVAL_MS,
   formatE2eFailure,
-  sleep,
   startE2eApp,
   stopE2eApp,
   waitForEvent,
 } from "./e2eRunner.mjs";
 
-export async function runSchedulerWakeE2e() {
+export async function runAppBootstrapE2e() {
   const skipReason = getE2eSkipReason();
   if (skipReason) {
     return { skipped: true, reason: skipReason };
@@ -46,42 +39,26 @@ export async function runSchedulerWakeE2e() {
   const { child, stderr } = startE2eApp(binaryPath, { homeDir, e2eDir, feedUrl });
 
   try {
-    const readyEvent = await waitForEvent(
+    await waitForEvent(e2eDir, "main-shell-ready");
+    await waitForEvent(e2eDir, "scheduler-bootstrap");
+    await waitForEvent(
       e2eDir,
       "scheduler-ready",
       (event) => (event.payload?.articleCount ?? 0) >= 1,
     );
 
-    const initialArticleCount = readyEvent.payload?.articleCount ?? 0;
-    if (initialArticleCount < 1) {
-      throw new Error(`Expected at least one article after first cycle, got ${initialArticleCount}`);
-    }
-
-    await sleep(Number(E2E_SCHEDULER_INTERVAL_MS) + 200);
-
-    fs.writeFileSync(path.join(e2eDir, "commands", "emit-system-resume"), "");
-    await waitForEvent(e2eDir, "resume-emitted");
-
-    const catchUpEvent = await waitForEvent(
+    const listSnapshot = await waitForEvent(
       e2eDir,
-      "cycle-complete",
-      (event) => (event.payload?.cycleCount ?? 0) >= 2,
+      "article-list-snapshot",
+      (event) => (event.payload?.articleCount ?? 0) >= 1,
     );
-
-    const articleCountAfterWake = catchUpEvent.payload?.articleCount ?? 0;
-    if (articleCountAfterWake < 2) {
-      throw new Error(
-        `Expected post-wake article import (>=2 articles), got ${articleCountAfterWake}`,
-      );
-    }
 
     return {
       skipped: false,
       binaryPath,
       feedUrl,
-      initialArticleCount,
-      articleCountAfterWake,
-      cycleCount: catchUpEvent.payload?.cycleCount ?? 0,
+      articleCount: listSnapshot.payload?.articleCount ?? 0,
+      selectedFeedId: listSnapshot.payload?.selectedFeedId ?? null,
     };
   } catch (error) {
     throw new Error(formatE2eFailure(error, e2eDir, stderr));
@@ -95,20 +72,20 @@ const isMainModule =
   import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 
 if (isMainModule) {
-  runSchedulerWakeE2e()
+  runAppBootstrapE2e()
     .then((result) => {
       assertE2eNotSkipped(result);
       if (result.skipped) {
-        console.log(`[e2e:scheduler-wake] Skipped: ${result.reason}`);
+        console.log(`[e2e:app-bootstrap] Skipped: ${result.reason}`);
         process.exit(0);
       }
       console.log(
-        `[e2e:scheduler-wake] Passed: cycles=${result.cycleCount} articles=${result.articleCountAfterWake}`,
+        `[e2e:app-bootstrap] Passed: articles=${result.articleCount} feed=${result.selectedFeedId}`,
       );
       process.exit(0);
     })
     .catch((error) => {
-      console.error(`[e2e:scheduler-wake] Failed: ${error instanceof Error ? error.message : error}`);
+      console.error(`[e2e:app-bootstrap] Failed: ${error instanceof Error ? error.message : error}`);
       process.exit(1);
     });
 }

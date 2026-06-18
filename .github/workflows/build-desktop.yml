@@ -69,6 +69,9 @@ jobs:
           KIJI_SKIP_E2E: "1"
         run: npm run test:ci
 
+      - name: Run parity tests
+        run: npm run test:parity
+
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
@@ -90,31 +93,43 @@ jobs:
             rust_target: aarch64-apple-darwin
             profile: release
             bundle_args: ""
+            launch_binary: src-tauri/target/aarch64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app
+            launch_use_xvfb: "false"
           - os: macos-14
             platform_id: macos-x86_64
             rust_target: x86_64-apple-darwin
             profile: release
             bundle_args: ""
+            launch_binary: src-tauri/target/x86_64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app
+            launch_use_xvfb: "false"
           - os: windows-latest
             platform_id: windows-x86_64
             rust_target: x86_64-pc-windows-msvc
             profile: release
             bundle_args: ""
+            launch_binary: src-tauri/target/x86_64-pc-windows-msvc/release/kiji-app.exe
+            launch_use_xvfb: "false"
           - os: windows-latest
             platform_id: windows-aarch64
             rust_target: aarch64-pc-windows-msvc
             profile: release
             bundle_args: ""
+            launch_binary: src-tauri/target/aarch64-pc-windows-msvc/release/kiji-app.exe
+            launch_use_xvfb: "false"
           - os: ubuntu-24.04
             platform_id: linux-x86_64
             rust_target: x86_64-unknown-linux-gnu
             profile: release
             bundle_args: ""
+            launch_binary: src-tauri/target/x86_64-unknown-linux-gnu/release/kiji-app
+            launch_use_xvfb: "true"
           - os: ubuntu-24.04-arm
             platform_id: linux-aarch64
             rust_target: aarch64-unknown-linux-gnu
             profile: release
             bundle_args: "--bundles deb,rpm"
+            launch_binary: src-tauri/target/aarch64-unknown-linux-gnu/release/kiji-app
+            launch_use_xvfb: "true"
 
     steps:
       - uses: actions/checkout@v5
@@ -142,7 +157,8 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            xvfb
 
       - name: Log toolchain versions
         shell: bash
@@ -188,10 +204,19 @@ jobs:
           grep -q "Sealed Resources" /tmp/codesign-info.txt
 
       - name: Desktop launch smoke
-        if: matrix.platform_id == 'macos-aarch64' && matrix.profile == 'release'
+        if: matrix.profile == 'release'
+        shell: bash
         env:
-          KIJI_APP_BINARY: src-tauri/target/aarch64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app
-        run: npm run test:smoke:launch
+          KIJI_APP_BINARY: ${{ matrix.launch_binary }}
+          KIJI_PLATFORM_ID: ${{ matrix.platform_id }}
+          KIJI_RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.launch_use_xvfb }}" == "true" ]]; then
+            xvfb-run -a npm run test:smoke:launch
+          else
+            npm run test:smoke:launch
+          fi
 
       - name: Collect bundle artifacts
         shell: bash
@@ -207,6 +232,42 @@ jobs:
           name: kiji-${{ matrix.platform_id }}-${{ matrix.profile }}
           path: src-tauri/target/${{ matrix.rust_target }}/${{ matrix.profile }}/bundle/artifacts/${{ matrix.platform_id }}/${{ matrix.profile }}/*
           if-no-files-found: error
+
+  e2e-macos:
+    name: E2E macOS (debug)
+    needs: verify
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build debug bundle for E2E
+        env:
+          CI: true
+        run: npm run build:debug
+
+      - name: Run macOS real-app E2E
+        env:
+          CI: true
+          KIJI_RUN_E2E_IN_CI: "1"
+          KIJI_E2E_REQUIRED: "1"
+        run: npm run test:e2e
 
   build-debug-linux:
     name: Build debug (linux-x86_64)

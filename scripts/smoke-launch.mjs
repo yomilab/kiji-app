@@ -1,44 +1,19 @@
 #!/usr/bin/env node
 /**
- * Brief macOS launch smoke for KiJi (todo 22).
+ * Brief desktop launch smoke for KiJi (todo 22).
  *
  * Starts a built KiJi binary with an isolated HOME profile, verifies the process
- * stays alive briefly, then terminates it cleanly.
+ * stays alive briefly, then terminates it cleanly. Supports macOS, Windows, and Linux.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolveLaunchBinary } from "./smoke-launch-resolve.mjs";
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const LAUNCH_TIMEOUT_MS = 12_000;
 const STABLE_RUNTIME_MS = 3_000;
-
-function resolveAppBinary() {
-  if (process.env.KIJI_APP_BINARY && fs.existsSync(process.env.KIJI_APP_BINARY)) {
-    return process.env.KIJI_APP_BINARY;
-  }
-
-  const candidates = [
-    path.join(
-      rootDir,
-      "src-tauri/target/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app",
-    ),
-    path.join(
-      rootDir,
-      "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app",
-    ),
-    path.join(
-      rootDir,
-      "src-tauri/target/x86_64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app",
-    ),
-    path.join(rootDir, "src-tauri/target/release/kiji-app"),
-    path.join(rootDir, "src-tauri/target/debug/kiji-app"),
-  ];
-
-  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
-}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -49,7 +24,11 @@ function terminateProcess(child) {
     return Promise.resolve();
   }
 
-  child.kill("SIGTERM");
+  if (process.platform === "win32") {
+    child.kill("SIGTERM");
+  } else {
+    child.kill("SIGTERM");
+  }
 
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
@@ -66,16 +45,35 @@ function terminateProcess(child) {
   });
 }
 
-export async function runLaunchSmoke() {
-  if (process.platform !== "darwin") {
-    return { skipped: true, reason: "macOS only" };
+function isolatedHomeDir() {
+  if (process.platform === "win32") {
+    return fs.mkdtempSync(path.join(os.tmpdir(), "kiji-smoke-home-"));
+  }
+  return fs.mkdtempSync(path.join(os.tmpdir(), "kiji-smoke-home-"));
+}
+
+function launchEnv(homeDir) {
+  if (process.platform === "win32") {
+    return {
+      ...process.env,
+      USERPROFILE: homeDir,
+      APPDATA: path.join(homeDir, "AppData", "Roaming"),
+      LOCALAPPDATA: path.join(homeDir, "AppData", "Local"),
+    };
   }
 
+  return {
+    ...process.env,
+    HOME: homeDir,
+  };
+}
+
+export async function runLaunchSmoke() {
   if (process.env.KIJI_SKIP_LAUNCH_SMOKE === "1") {
     return { skipped: true, reason: "KIJI_SKIP_LAUNCH_SMOKE=1" };
   }
 
-  const binaryPath = resolveAppBinary();
+  const binaryPath = resolveLaunchBinary();
   if (!binaryPath) {
     return {
       skipped: true,
@@ -83,13 +81,11 @@ export async function runLaunchSmoke() {
     };
   }
 
-  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "kiji-smoke-home-"));
+  const homeDir = isolatedHomeDir();
   const child = spawn(binaryPath, [], {
-    env: {
-      ...process.env,
-      HOME: homeDir,
-    },
+    env: launchEnv(homeDir),
     stdio: "ignore",
+    detached: process.platform !== "win32",
   });
 
   let exitedEarly = false;
@@ -126,6 +122,7 @@ export async function runLaunchSmoke() {
       binaryPath,
       homeDir,
       pid: child.pid,
+      platform: process.platform,
     };
   } finally {
     await terminateProcess(child);
@@ -146,7 +143,7 @@ if (isMainModule) {
       }
 
       console.log(
-        `[smoke-launch] Passed: ${result.binaryPath} stayed alive for ${STABLE_RUNTIME_MS}ms`,
+        `[smoke-launch] Passed: ${result.binaryPath} stayed alive for ${STABLE_RUNTIME_MS}ms (${result.platform})`,
       );
       process.exit(0);
     })

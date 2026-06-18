@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Full local verification gate: verify + macOS real-app E2E when available.
+ * Full local verification gate: verify + macOS real-app E2E + memory regressions.
  *
- * CI uses scripts/verify.mjs instead (no E2E) to keep GitHub Actions fast.
+ * CI uses scripts/verify.mjs instead (no E2E / memory) to keep GitHub Actions fast.
  */
 import { spawnSync } from "node:child_process";
 
@@ -14,6 +14,7 @@ function run(command, args, env = process.env) {
 }
 
 run("node", ["scripts/verify.mjs"]);
+run("npm", ["run", "test:memory"]);
 
 if (process.platform === "darwin") {
   run("npm", ["run", "test:e2e"], {
