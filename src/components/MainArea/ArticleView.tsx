@@ -400,8 +400,8 @@ function useEmbeddedArticleOpenBootstrap(params: {
     setProcessedArticleBodyKey(null);
     setArticleBodyProcessing(false);
 
-    if (window.electronAPI) {
-      window.electronAPI.hideTrafficLights();
+    if (window.kijiAPI) {
+      window.kijiAPI.hideTrafficLights();
     }
   }, [
     standalone,
@@ -494,8 +494,8 @@ function useEmbeddedArticleCloseFlow(params: {
       setProcessedArticleBodyHtml(null);
       setProcessedArticleBodyKey(null);
       setArticleBodyProcessing(false);
-      if (window.electronAPI) {
-        window.electronAPI.showTrafficLights();
+      if (window.kijiAPI) {
+        window.kijiAPI.showTrafficLights();
       }
       completeArticleClose();
     }, ARTICLE_VIEW_CLOSE_ANIMATION_MS);
@@ -1176,7 +1176,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   }, [isClosing, requestCloseArticle]);
 
   const handleOpenInBrowser = useCallback((withPressedFeedback = false) => {
-    if (!articleToShow?.link || !window.electronAPI) {
+    if (!articleToShow?.link || !window.kijiAPI) {
       return;
     }
 
@@ -1184,12 +1184,12 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
       triggerTitlePressFeedback();
     }
 
-    void window.electronAPI.openExternal(articleToShow.link);
+    void window.kijiAPI.openExternal(articleToShow.link);
   }, [articleToShow?.link, triggerTitlePressFeedback]);
 
   const handleOpenInNewWindow = useCallback(async () => {
-    if (articleToShow && window.electronAPI) {
-      await window.electronAPI.openArticleWindow({
+    if (articleToShow && window.kijiAPI) {
+      await window.kijiAPI.openArticleWindow({
         article: articleToShow,
       });
       // Close the article view after the window is opened
@@ -1350,10 +1350,10 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
 
   const handleShareClick = useCallback(async () => {
     // Show native share menu directly
-    if (articleToShow?.title && articleToShow?.link && window.electronAPI && shareButtonRef.current) {
+    if (articleToShow?.title && articleToShow?.link && window.kijiAPI && shareButtonRef.current) {
       try {
         const rect = shareButtonRef.current.getBoundingClientRect();
-        await window.electronAPI.showShareSheet({
+        await window.kijiAPI.showShareSheet({
           title: articleToShow.title,
           url: articleToShow.link,
           buttonRect: {
@@ -1375,12 +1375,12 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     }
 
     try {
-      if (!window.electronAPI?.writeClipboard) {
+      if (!window.kijiAPI?.writeClipboard) {
         appToastService.show('Copy is not available in this environment.');
         return;
       }
 
-      await window.electronAPI.writeClipboard(articleToShow.link);
+      await window.kijiAPI.writeClipboard(articleToShow.link);
     } catch (error) {
       console.error('Error copying article URL:', error);
       appToastService.show('Failed to copy article URL.');
@@ -1388,15 +1388,15 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   }, [articleToShow]);
 
   const handleArticleLinkClick = useCallback((href: string) => {
-    if (!window.electronAPI) {
+    if (!window.kijiAPI) {
       return;
     }
 
-    void window.electronAPI.openExternal(resolveYouTubeWatchUrl(href) ?? href);
+    void window.kijiAPI.openExternal(resolveYouTubeWatchUrl(href) ?? href);
   }, []);
 
   const handleArticleContextMenu = useCallback((detail: { kind: 'link' | 'image'; url: string }) => {
-    if (!window.electronAPI?.showImageContextMenu) {
+    if (!window.kijiAPI?.showImageContextMenu) {
       return;
     }
 
@@ -1409,7 +1409,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
       }
 
       try {
-        await window.electronAPI.showImageContextMenu({
+        await window.kijiAPI.showImageContextMenu({
           url: detail.url,
           kind: detail.kind,
           windowLabel,
@@ -1604,7 +1604,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   }, [ensureReaderContentForArticle, selectedSmartView]);
 
   const handleClipboardLoad = useCallback(async () => {
-    if (!window.electronAPI) return;
+    if (!window.kijiAPI) return;
 
     // Clear old article metadata immediately
     setArticleToShow(null);
@@ -1616,7 +1616,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
 
     try {
       // Read clipboard
-      const clipboardText = await window.electronAPI.readClipboard();
+      const clipboardText = await window.kijiAPI.readClipboard();
 
       // Validate and extract URL
       const url = extractUrlFromText(clipboardText);

@@ -137,12 +137,12 @@ const getRendererHeapSnapshot = (): RendererHeapSnapshot | null => {
 };
 
 const requestMainProcessSnapshot = async (): Promise<MainProcessPerfSnapshot | null> => {
-  if (!window.electronAPI?.perfSnapshot) {
+  if (!window.kijiAPI?.perfSnapshot) {
     return null;
   }
 
   try {
-    return await window.electronAPI.perfSnapshot();
+    return await window.kijiAPI.perfSnapshot();
   } catch (error) {
     logger.warn('InteractionFreezeWatchdog', 'Failed to capture main-process snapshot for freeze report', {
       event: 'interaction-freeze-snapshot-failed',

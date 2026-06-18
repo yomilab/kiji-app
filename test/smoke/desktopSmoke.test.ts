@@ -9,13 +9,13 @@ import * as feedStore from "@/stores/feedStore";
 import { feedsFetcher } from "@/services/feeds/feedsFetcher";
 import { feedNetworkDataResult } from "../helpers/feedNetworkFetchMock";
 import {
-  electronFixturesAreAvailable,
-  readElectronFixture,
-} from "../parity/electronFixtures";
+  parityFixturesAreAvailable,
+  readParityFixture,
+} from "../parity/parityFixtures";
 import { describeRustIntegration } from "../helpers/rustIntegrationTest";
 
 const manifestPath = path.join(process.cwd(), "src-tauri/Cargo.toml");
-const describeWithFixtures = electronFixturesAreAvailable() ? describe : describe.skip;
+const describeWithFixtures = parityFixturesAreAvailable() ? describe : describe.skip;
 
 describeRustIntegration("Desktop smoke (todo 22)", () => {
   it(
@@ -48,7 +48,7 @@ describeRustIntegration("Desktop smoke (todo 22)", () => {
 
 describeWithFixtures("Desktop smoke (todo 22)", () => {
   it("refreshes a feed from fixture XML through the service layer", async () => {
-    const fixtureXml = readElectronFixture("simon.xml");
+    const fixtureXml = readParityFixture("simon.xml");
     const parsedItems = parseFeed(fixtureXml, "https://example.com/simon.xml");
     expect(parsedItems.length).toBeGreaterThan(0);
 

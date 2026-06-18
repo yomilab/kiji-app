@@ -5,7 +5,7 @@ const mockFetchHtmlSafe = vi.fn();
 describe("readerModeService", () => {
   beforeEach(() => {
     mockFetchHtmlSafe.mockReset();
-    Object.defineProperty(window, "electronAPI", {
+    Object.defineProperty(window, "kijiAPI", {
       configurable: true,
       value: { fetchHtmlSafe: mockFetchHtmlSafe },
     });

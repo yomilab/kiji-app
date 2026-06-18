@@ -24,7 +24,7 @@ export const FEED_FETCH_COOLDOWN_MS = 60_000;
 
 /**
  * Network timeout (ms) for RSS/Atom/JSON feed HTTP fetches.
- * Matches Electron `httpService.FEED_FETCH_TIMEOUT`.
+ * Feed fetch timeout for native HTTP requests (milliseconds).
  */
 export const FEED_FETCH_TIMEOUT_MS = 5_000;
 

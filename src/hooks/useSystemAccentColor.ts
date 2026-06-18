@@ -28,9 +28,9 @@ export const useSystemAccentColor = () => {
 
     // Get initial accent color
     const getInitialColor = async () => {
-      if (window.electronAPI?.getSystemAccentColor) {
+      if (window.kijiAPI?.getSystemAccentColor) {
         try {
-          const color = await window.electronAPI.getSystemAccentColor();
+          const color = await window.kijiAPI.getSystemAccentColor();
           applyAccentColor(color);
           console.log('🎨 System accent color:', color ?? 'not available');
         } catch (error) {
@@ -46,8 +46,8 @@ export const useSystemAccentColor = () => {
     getInitialColor();
 
     // Listen for accent color changes
-    if (window.electronAPI?.onSystemAccentColorChanged) {
-      return window.electronAPI.onSystemAccentColorChanged((color: string) => {
+    if (window.kijiAPI?.onSystemAccentColorChanged) {
+      return window.kijiAPI.onSystemAccentColorChanged((color: string) => {
         applyAccentColor(color);
         console.log('🎨 System accent color changed:', color);
       });

@@ -63,8 +63,8 @@ export class FaviconFetcher {
       throw new DOMException('Task aborted', 'AbortError');
     }
 
-    if (window.electronAPI?.fetchHtmlSafe) {
-      const result = await window.electronAPI.fetchHtmlSafe(url);
+    if (window.kijiAPI?.fetchHtmlSafe) {
+      const result = await window.kijiAPI.fetchHtmlSafe(url);
       if (result.resourceType === 'html' && result.html) {
         return result.html;
       }

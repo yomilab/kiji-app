@@ -180,7 +180,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
   // Listen for settings changes from other windows
   useEffect(() => {
-    if (!window.electronAPI?.onSettingsChanged) return;
+    if (!window.kijiAPI?.onSettingsChanged) return;
 
     const handleSettingsChanged = async () => {
       try {
@@ -197,7 +197,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       }
     };
 
-    return window.electronAPI.onSettingsChanged(handleSettingsChanged);
+    return window.kijiAPI.onSettingsChanged(handleSettingsChanged);
   }, []);
 
   return (

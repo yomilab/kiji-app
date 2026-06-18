@@ -174,12 +174,12 @@ const requestMainProcessSnapshot = async (): Promise<MainProcessPerfSnapshot | n
     return null;
   }
 
-  if (!window.electronAPI?.perfSnapshot) {
+  if (!window.kijiAPI?.perfSnapshot) {
     return null;
   }
 
   try {
-    return await window.electronAPI.perfSnapshot();
+    return await window.kijiAPI.perfSnapshot();
   } catch (error) {
     logger.warn('InteractionPerformance', 'Failed to capture main-process performance snapshot', {
       specialInteractionLog: true,

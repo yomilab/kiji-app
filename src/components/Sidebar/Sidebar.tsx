@@ -142,11 +142,11 @@ export const Sidebar: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!window.electronAPI?.onAppMenuCommand) {
+    if (!window.kijiAPI?.onAppMenuCommand) {
       return;
     }
 
-    return window.electronAPI.onAppMenuCommand((command) => {
+    return window.kijiAPI.onAppMenuCommand((command) => {
       if (command.type === 'openAddSubscription') {
         setShowAddModal(true);
       }

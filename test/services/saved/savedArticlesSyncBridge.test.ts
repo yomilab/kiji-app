@@ -10,9 +10,9 @@ describe("savedArticlesSyncBridge", () => {
     queueMock.mockReset();
     queueMock.mockResolvedValue(undefined);
     savedArticlesSyncBridge.stop();
-    window.electronAPI = {
+    window.kijiAPI = {
       queueSavedArticlesFolderSync: queueMock,
-    } as unknown as typeof window.electronAPI;
+    } as unknown as typeof window.kijiAPI;
     vi.useFakeTimers();
   });
 
@@ -40,7 +40,7 @@ describe("savedArticlesSyncBridge", () => {
   });
 
   it("does not start when queueSavedArticlesFolderSync is unavailable", () => {
-    window.electronAPI = {} as typeof window.electronAPI;
+    window.kijiAPI = {} as typeof window.kijiAPI;
     savedArticlesSyncBridge.start();
 
     savedArticlesSyncEventBus.publish({

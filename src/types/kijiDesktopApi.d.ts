@@ -19,7 +19,7 @@ import type {
 
 type SystemAppIconVariant = 'light' | 'dark';
 
-export interface ElectronAPI {
+export interface KijiDesktopAPI {
   fetchFeed: (url: string, options?: { requestId?: string }) => Promise<string>;
   fetchFeedWithCache: (
     url: string,
@@ -125,6 +125,6 @@ export interface ElectronAPI {
 
 declare global {
   interface Window {
-    electronAPI: ElectronAPI;
+    kijiAPI: KijiDesktopAPI;
   }
 }

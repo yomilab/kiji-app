@@ -1953,7 +1953,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   };
 
   const handleExportAllFeeds = async () => {
-    if (!window.electronAPI?.saveOpmlFile) {
+    if (!window.kijiAPI?.saveOpmlFile) {
       showOpmlActionMessage('Export is only available in the desktop app.');
       return;
     }
@@ -1961,7 +1961,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     setIsOpmlActionLoading(true);
     try {
       const opmlText = await opmlExportService.buildOpmlText();
-      const saveResult = await window.electronAPI.saveOpmlFile(opmlText, 'Feeds.opml');
+      const saveResult = await window.kijiAPI.saveOpmlFile(opmlText, 'Feeds.opml');
       if (saveResult.canceled) return;
       showOpmlActionMessage('Exported feeds to OPML successfully.');
     } catch (exportError) {

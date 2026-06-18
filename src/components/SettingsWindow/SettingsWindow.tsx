@@ -142,8 +142,8 @@ export const SettingsWindow: React.FC = () => {
         setContentParser(settings.contentParser ?? DEFAULT_SETTINGS.contentParser);
         setSavedArticlesSyncFolder(settings.savedArticlesSyncFolder ?? null);
 
-        if (window.electronAPI?.getSystemAppIconState) {
-          setSystemAppIcon(await window.electronAPI.getSystemAppIconState());
+        if (window.kijiAPI?.getSystemAppIconState) {
+          setSystemAppIcon(await window.kijiAPI.getSystemAppIconState());
         }
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -156,7 +156,7 @@ export const SettingsWindow: React.FC = () => {
       void loadSettings();
     };
 
-    const removeSettingsChangedListener = window.electronAPI?.onSettingsChanged?.(reloadFromPersistedSettings);
+    const removeSettingsChangedListener = window.kijiAPI?.onSettingsChanged?.(reloadFromPersistedSettings);
     const removeFocusListener = subscribeToWindowFocus(() => {
       void loadSettings();
     });
@@ -423,14 +423,14 @@ export const SettingsWindow: React.FC = () => {
   }, []);
 
   const notifySettingsChanged = () => {
-    if (!window.electronAPI?.notifySettingsChanged) {
+    if (!window.kijiAPI?.notifySettingsChanged) {
       return;
     }
 
     // Keep the settings UI responsive by letting the broadcast and any
     // follow-up sync scheduling happen outside the current interaction turn.
     window.setTimeout(() => {
-      void window.electronAPI.notifySettingsChanged().catch((error) => {
+      void window.kijiAPI.notifySettingsChanged().catch((error) => {
         console.error('Error notifying settings change:', error);
       });
     }, 0);
@@ -594,13 +594,13 @@ export const SettingsWindow: React.FC = () => {
   };
 
   const handleSavedArticlesSyncFolderPick = async () => {
-    if (!window.electronAPI?.pickSavedArticlesSyncFolder || isPickingSavedArticlesSyncFolder) {
+    if (!window.kijiAPI?.pickSavedArticlesSyncFolder || isPickingSavedArticlesSyncFolder) {
       return;
     }
 
     setIsPickingSavedArticlesSyncFolder(true);
     try {
-      const result = await window.electronAPI.pickSavedArticlesSyncFolder(savedArticlesSyncFolder ?? undefined);
+      const result = await window.kijiAPI.pickSavedArticlesSyncFolder(savedArticlesSyncFolder ?? undefined);
       if (result.canceled || !result.folderPath) {
         return;
       }
@@ -633,14 +633,14 @@ export const SettingsWindow: React.FC = () => {
   };
 
   const handleSystemAppIconPick = async () => {
-    if (!window.electronAPI?.pickSystemAppIcon || isPickingSystemAppIcon) {
+    if (!window.kijiAPI?.pickSystemAppIcon || isPickingSystemAppIcon) {
       return;
     }
 
     setAppIconStatus(null);
     setIsPickingSystemAppIcon(true);
     try {
-      const result = await window.electronAPI.pickSystemAppIcon();
+      const result = await window.kijiAPI.pickSystemAppIcon();
       if (result.canceled) {
         return;
       }
@@ -657,13 +657,13 @@ export const SettingsWindow: React.FC = () => {
   };
 
   const handleSystemAppIconVariantChange = async (variant: SystemAppIconVariant) => {
-    if (!window.electronAPI?.setSystemAppIconVariant) {
+    if (!window.kijiAPI?.setSystemAppIconVariant) {
       return;
     }
 
     setAppIconStatus(null);
     try {
-      const nextState = await window.electronAPI.setSystemAppIconVariant(variant);
+      const nextState = await window.kijiAPI.setSystemAppIconVariant(variant);
       setSystemAppIcon(nextState);
       setAppIconStatus('Saved. Relaunch to refresh the Dock icon.');
       notifySettingsChanged();
@@ -674,14 +674,14 @@ export const SettingsWindow: React.FC = () => {
   };
 
   const handleSystemAppIconReset = async () => {
-    if (!window.electronAPI?.resetSystemAppIcon || isResettingSystemAppIcon) {
+    if (!window.kijiAPI?.resetSystemAppIcon || isResettingSystemAppIcon) {
       return;
     }
 
     setAppIconStatus(null);
     setIsResettingSystemAppIcon(true);
     try {
-      const nextState = await window.electronAPI.resetSystemAppIcon();
+      const nextState = await window.kijiAPI.resetSystemAppIcon();
       setSystemAppIcon(nextState);
       setAppIconStatus('Cleared. Relaunch to restore the default Dock icon.');
       notifySettingsChanged();
@@ -694,14 +694,14 @@ export const SettingsWindow: React.FC = () => {
   };
 
   const handleAppRelaunch = async () => {
-    if (!window.electronAPI?.relaunchApplication || isRelaunching) {
+    if (!window.kijiAPI?.relaunchApplication || isRelaunching) {
       return;
     }
 
     setAppIconStatus(null);
     setIsRelaunching(true);
     try {
-      await window.electronAPI.relaunchApplication();
+      await window.kijiAPI.relaunchApplication();
     } catch (error) {
       setAppIconStatus('Failed to relaunch the app.');
       console.error('Error relaunching app:', error);
@@ -711,7 +711,7 @@ export const SettingsWindow: React.FC = () => {
 
   // Route contact actions through the user's default mail app so the email target stays configurable.
   const openMailClient = async (subject: string, body?: string): Promise<void> => {
-    if (!window.electronAPI?.openExternal) {
+    if (!window.kijiAPI?.openExternal) {
       throw new Error('openExternal is not available');
     }
 
@@ -720,7 +720,7 @@ export const SettingsWindow: React.FC = () => {
       params.set('body', body);
     }
 
-    await window.electronAPI.openExternal(`mailto:${CONTACT_EMAIL_ADDRESS}?${params.toString()}`);
+    await window.kijiAPI.openExternal(`mailto:${CONTACT_EMAIL_ADDRESS}?${params.toString()}`);
   };
 
   const handleContactEmailOpen = async () => {

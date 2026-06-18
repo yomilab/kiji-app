@@ -11,7 +11,7 @@ class SavedArticlesSyncBridge {
   private unsubscribe: (() => void) | null = null;
 
   start(): void {
-    if (this.started || !window.electronAPI?.queueSavedArticlesFolderSync) {
+    if (this.started || !window.kijiAPI?.queueSavedArticlesFolderSync) {
       return;
     }
 
@@ -31,7 +31,7 @@ class SavedArticlesSyncBridge {
     // Defer the renderer-to-main IPC hop so save/unsave interactions finish
     // before folder-sync bookkeeping begins.
     window.setTimeout(() => {
-      void window.electronAPI?.queueSavedArticlesFolderSync(event).catch((error) => {
+      void window.kijiAPI?.queueSavedArticlesFolderSync(event).catch((error) => {
         logger.error('SavedArticlesSync', 'Failed to queue saved article folder sync', {
           error,
           event,

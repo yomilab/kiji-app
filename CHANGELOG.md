@@ -11,7 +11,8 @@
 
 - GPL-3.0-or-later license (`LICENSE`, copyright Yomi Lab) and `THIRD_PARTY_NOTICES.md` (major npm/Rust deps and copyleft components).
 - `src-tauri/Entitlements.plist` (WebKit hardened-runtime JIT flags) wired via `bundle.macOS.entitlements` for signed/notarized builds.
-- User-interaction E2E harnesses (Phases A–E): navigation switch, article deck, reader mode, OPML import/export, article-list scroll/load-more, feed-edit rename, feed-delete, PDF render (`test/e2e/userInteractions.e2e.test.ts`, `useE2eCommandHandler`, `e2e_take_command`).
+- Renamed renderer desktop API surface from `window.electronAPI` to `window.kijiAPI` (`kijiDesktopApi.ts`, `kijiDesktopApi.d.ts`); removed Electron-named parity fixtures and comments.
+- User-interaction E2E harnesses: navigation, article deck, reader mode, OPML import/export, article-list scroll, feed-edit/delete, PDF (`userInteractions.e2e.test.ts`).
 
 ### Changed
 
@@ -45,7 +46,7 @@
 
 ### Added
 - Tauri scheduler pause on station selection: ref-counted `pauseForStationSelection` / `resumeAfterStationSelection` in `feedSchedulerService`, wired from `handleTagSelection` to abort in-flight cycles and defer ticks until station selection completes; pause now starts at `handleTagSelection` entry (covers cached paint, animation, network, and list apply); overdue `catchUpAfterResume` sets `pendingCycleTick` while paused.
-- Bootstrapped the KiJi Tauri migration workspace with the renamed app identity, a macOS GitHub Actions build, a typed `src/lib/tauriClient` entry point that centralizes renderer-to-Tauri command calls, and a committed command catalog that maps the Electron preload surface into planned Tauri domains.
+- Bootstrapped the KiJi Tauri workspace with a macOS GitHub Actions build, a typed `src/lib/tauriClient` entry point, and a committed command catalog mapping renderer API methods to Tauri domains.
 
 ### Changed
 - Updated the macOS workflow artifact upload step to `actions/upload-artifact@v6` so the Tauri CI path stays on Node 24-native GitHub Actions runtimes.

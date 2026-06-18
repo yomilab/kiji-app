@@ -22,7 +22,7 @@ export async function clearAllConfigs(): Promise<void> {
     // Clear all storage keys
     await storage.clear();
 
-    // Clear localStorage directly (in case using Electron store)
+    // Clear localStorage directly when not using the native settings store.
     if (typeof localStorage !== 'undefined') {
       localStorage.clear();
     }

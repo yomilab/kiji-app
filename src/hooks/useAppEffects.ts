@@ -134,7 +134,7 @@ export const useFeedSchedulerLifecycle = (enabled = true): void => {
       }
     };
 
-    const removeSettingsChangedListener = window.electronAPI?.onSettingsChanged?.(handleSettingsChanged);
+    const removeSettingsChangedListener = window.kijiAPI?.onSettingsChanged?.(handleSettingsChanged);
 
     return () => {
       releaseBackgroundWakeLock();
@@ -295,8 +295,8 @@ export const useAppShortcuts = ({
       const run = async () => {
         if (isOpenSettingsShortcut(event)) {
           event.preventDefault();
-          if (window.electronAPI) {
-            window.electronAPI.openSettings();
+          if (window.kijiAPI) {
+            window.kijiAPI.openSettings();
           }
         }
 

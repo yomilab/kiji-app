@@ -146,11 +146,11 @@ export interface OpmlFileImportResult {
 }
 
 export const openOpmlFileForImport = async (): Promise<OpmlFileImportResult | null> => {
-  if (!window.electronAPI?.openOpmlFile) {
+  if (!window.kijiAPI?.openOpmlFile) {
     throw new Error('Import is only available in the desktop app.');
   }
 
-  const selectedFile = await window.electronAPI.openOpmlFile();
+  const selectedFile = await window.kijiAPI.openOpmlFile();
   if (selectedFile.canceled) {
     return null;
   }

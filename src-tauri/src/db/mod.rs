@@ -243,7 +243,7 @@ mod tests {
     use rusqlite::{params, Connection};
 
     #[test]
-    fn synthetic_v15_electron_fixture_round_trips_repository_rows() {
+    fn synthetic_v15_legacy_fixture_round_trips_repository_rows() {
         let mut connection = Connection::open_in_memory().expect("open in-memory database");
         run_migrations(&mut connection).expect("run migrations");
         seed_repository_fixture(&connection);
@@ -391,11 +391,11 @@ mod tests {
     }
 
     #[test]
-    fn synthetic_v13_electron_fixture_migrates_without_identity_loss() {
+    fn synthetic_v13_legacy_fixture_migrates_without_identity_loss() {
         let mut connection = Connection::open_in_memory().expect("open in-memory database");
         connection
             .execute_batch(CREATE_TABLES)
-            .expect("create synthetic electron schema");
+            .expect("create synthetic legacy schema");
         connection
             .execute_batch(
                 r#"

@@ -13,9 +13,7 @@ class HttpClientFactory {
   /**
    * Get the HTTP client instance
    * 
-   * Automatically detects the environment and returns:
-   * - ElectronHttpClient if running in Electron
-   * - BrowserHttpClient otherwise
+   * Returns BrowserHttpClient for the Tauri renderer.
    */
   static getClient(): IHttpClient {
     if (this.instance) {

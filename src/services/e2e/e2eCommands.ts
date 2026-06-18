@@ -7,9 +7,10 @@ export interface E2eCommand {
 
 export async function takeE2eCommand(): Promise<E2eCommand | null> {
   try {
-    const response = await invoke<{ name: string; payload: Record<string, unknown> } | null>(
-      'e2e_take_command',
-    );
+    const response = (await invoke('e2e_take_command')) as {
+      name: string;
+      payload: Record<string, unknown>;
+    } | null;
     if (!response?.name) {
       return null;
     }

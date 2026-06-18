@@ -3,7 +3,7 @@
  *
  * Provides a single source of truth for the Chrome user-agent string and
  * utilities that ensure outgoing HTTP requests carry browser-like headers
- * instead of Electron's local origins (which trigger hotlink protection).
+ * instead of desktop app local origins (which trigger hotlink protection).
  */
 
 /** Chrome 144 on macOS — used everywhere a browser-like UA is needed. */
@@ -119,7 +119,7 @@ export function isLocalOrigin(url: string): boolean {
 }
 
 // Case-insensitive lookup for an existing header key. Header objects in this
-// codebase mix casings ("User-Agent" from us, "user-agent" from net/Electron).
+// codebase mix casings ("User-Agent" from us, "user-agent" from native fetch).
 function hasHeader(headers: Record<string, string>, name: string): boolean {
   const target = name.toLowerCase();
   for (const key of Object.keys(headers)) {

@@ -44,7 +44,7 @@ describe("article window open/reopen flow", () => {
     storedPayload = null;
     emitMock.mockClear();
     invokeMock.mockReset();
-    delete (window as Window & { electronAPI?: unknown }).electronAPI;
+    delete (window as Window & { kijiAPI?: unknown }).kijiAPI;
 
     invokeMock.mockImplementation(async (command: string, args?: { article?: ArticleRecord }) => {
       if (command === "shell_article_window_open") {
@@ -68,11 +68,11 @@ describe("article window open/reopen flow", () => {
   });
 
   it("stores article records on open and round-trips them through getArticleWindowData", async () => {
-    const { installElectronApiCompat } = await import("@/services/tauri/electronApiCompat");
-    installElectronApiCompat();
+    const { installKijiDesktopApi } = await import("@/services/tauri/kijiDesktopApi");
+    installKijiDesktopApi();
 
-    await window.electronAPI.openArticleWindow({ article: sampleArticle });
-    const loaded = await window.electronAPI.getArticleWindowData();
+    await window.kijiAPI.openArticleWindow({ article: sampleArticle });
+    const loaded = await window.kijiAPI.getArticleWindowData();
 
     expect(invokeMock).toHaveBeenCalledWith(
       "shell_article_window_open",
@@ -85,13 +85,13 @@ describe("article window open/reopen flow", () => {
   });
 
   it("replaces the stored payload when reopening with a different article", async () => {
-    const { installElectronApiCompat } = await import("@/services/tauri/electronApiCompat");
-    installElectronApiCompat();
+    const { installKijiDesktopApi } = await import("@/services/tauri/kijiDesktopApi");
+    installKijiDesktopApi();
 
-    await window.electronAPI.openArticleWindow({ article: sampleArticle });
-    await window.electronAPI.openArticleWindow({ article: secondArticle });
+    await window.kijiAPI.openArticleWindow({ article: sampleArticle });
+    await window.kijiAPI.openArticleWindow({ article: secondArticle });
 
-    const loaded = await window.electronAPI.getArticleWindowData();
+    const loaded = await window.kijiAPI.getArticleWindowData();
     const expected = recordToArticle(articleToRecord(secondArticle));
 
     expect(loaded.hash).toBe(expected.hash);

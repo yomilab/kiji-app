@@ -60,12 +60,12 @@ class ReaderModeService {
       // 2. Fetch HTML using fetchHtmlSafe with Content-Type detection
       logger.info('ReaderMode', 'Fetching article', { url });
 
-      if (!window.electronAPI?.fetchHtmlSafe) {
+      if (!window.kijiAPI?.fetchHtmlSafe) {
         logger.error('ReaderMode', 'fetchHtmlSafe not available', { url });
         return { success: false, error: 'Error' };
       }
 
-      const fetchResult = await window.electronAPI.fetchHtmlSafe(url);
+      const fetchResult = await window.kijiAPI.fetchHtmlSafe(url);
 
       // Handle non-HTML resource types
       if (fetchResult.resourceType === 'pdf') {

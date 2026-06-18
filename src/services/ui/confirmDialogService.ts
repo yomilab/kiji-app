@@ -10,8 +10,8 @@ export async function confirmDialog(request: ConfirmDialogRequest): Promise<bool
     return true;
   }
 
-  if (window.electronAPI?.confirmDialog) {
-    return window.electronAPI.confirmDialog(request);
+  if (window.kijiAPI?.confirmDialog) {
+    return window.kijiAPI.confirmDialog(request);
   }
 
   return window.confirm(request.message);

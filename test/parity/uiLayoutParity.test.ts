@@ -22,7 +22,7 @@ describe("UI layout parity (21b)", () => {
     document.documentElement.style.cssText = "";
   });
 
-  it("maps renderer window query params to Electron window branches", () => {
+  it("maps renderer window query params to desktop window branches", () => {
     expect(resolveRendererWindowType("")).toBe("main");
     expect(resolveRendererWindowType("?window=settings")).toBe("settings");
     expect(resolveRendererWindowType("?window=article")).toBe("article");

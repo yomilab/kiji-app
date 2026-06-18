@@ -234,8 +234,8 @@ const fetchHtmlForUrl = async (url: string, signal: AbortSignal): Promise<string
     throw new DOMException('Task aborted', 'AbortError');
   }
 
-  if (window.electronAPI?.fetchHtmlSafe) {
-    const result = await window.electronAPI.fetchHtmlSafe(url);
+  if (window.kijiAPI?.fetchHtmlSafe) {
+    const result = await window.kijiAPI.fetchHtmlSafe(url);
     if (result.resourceType !== 'html' || !result.html) {
       throw new Error(`Non-HTML content type: ${result.contentType}`);
     }
