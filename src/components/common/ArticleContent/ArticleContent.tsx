@@ -6,8 +6,18 @@ interface ArticleContentProps {
   baseUrl?: string;
   onLinkClick?: (href: string) => void;
   onArticleContextMenu?: (detail: { kind: 'link' | 'image'; url: string }) => void;
+  onContentMetrics?: (detail: ArticleContentMetricsDetail) => void;
   mediaProcessingDelayMs?: number;
   suspendProcessing?: boolean;
+}
+
+export interface ArticleContentMetricsDetail {
+  htmlChars: number;
+  shadowElementCount: number;
+  imageElementCount: number;
+  mediaElementCount: number;
+  linkElementCount: number;
+  textChars: number;
 }
 
 interface ArticleContentElement extends HTMLElement {
@@ -25,6 +35,7 @@ const ArticleContent = ({
   baseUrl,
   onLinkClick,
   onArticleContextMenu,
+  onContentMetrics,
   mediaProcessingDelayMs = 0,
   suspendProcessing = false,
 }: ArticleContentProps) => {
@@ -82,6 +93,22 @@ const ArticleContent = ({
       element.removeEventListener('article-content-context-menu', handleArticleContextMenu);
     };
   }, [onArticleContextMenu]);
+
+  useEffect(() => {
+    const element = elementRef.current;
+    if (!element || !onContentMetrics) return;
+
+    const handleContentMetrics = (event: Event) => {
+      const customEvent = event as CustomEvent<ArticleContentMetricsDetail>;
+      onContentMetrics(customEvent.detail);
+    };
+
+    element.addEventListener('article-content-metrics', handleContentMetrics);
+
+    return () => {
+      element.removeEventListener('article-content-metrics', handleContentMetrics);
+    };
+  }, [onContentMetrics]);
 
   // Keep article-content accent color in sync with root/system accent color updates.
   useEffect(() => {

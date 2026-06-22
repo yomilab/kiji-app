@@ -1,5 +1,5 @@
-import { parseFeed } from '@/services/feeds/feedsFetcher';
-import type { FeedItem } from '@/services/feeds/feedsFetcher';
+import { parseFeedWithDiagnostics } from '@/services/feeds/feedsFetcher';
+import type { FeedItem, FeedParseResultWithDiagnostics } from '@/services/feeds/feedsFetcher';
 
 interface ParseRequest {
   id: number;
@@ -11,6 +11,7 @@ interface ParseSuccess {
   id: number;
   ok: true;
   items: FeedItem[];
+  diagnostics: FeedParseResultWithDiagnostics["diagnostics"];
 }
 
 interface ParseFailure {
@@ -23,8 +24,8 @@ self.onmessage = (event: MessageEvent<ParseRequest>) => {
   const { id, rawText, feedUrl } = event.data;
 
   try {
-    const items = parseFeed(rawText, feedUrl);
-    const response: ParseSuccess = { id, ok: true, items };
+    const { items, diagnostics } = parseFeedWithDiagnostics(rawText, feedUrl);
+    const response: ParseSuccess = { id, ok: true, items, diagnostics };
     self.postMessage(response);
   } catch (error) {
     const response: ParseFailure = {

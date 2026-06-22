@@ -235,22 +235,29 @@ export function matchUpdatedDateFromElement(
   );
 }
 
-export function enrichFeedItemsWithMatchedDates(items: FeedItemLike[], rawXml: string): void {
+export interface FeedDateEnrichmentResult {
+  domParserUsed: boolean;
+  elementCount: number;
+  enrichedCount: number;
+}
+
+export function enrichFeedItemsWithMatchedDates(items: FeedItemLike[], rawXml: string): FeedDateEnrichmentResult {
   const missingDates = items.filter((item) => !item.publishedDate);
   if (missingDates.length === 0) {
-    return;
+    return { domParserUsed: false, elementCount: 0, enrichedCount: 0 };
   }
 
   const xmlDoc = new DOMParser().parseFromString(rawXml, "text/xml");
   if (xmlDoc.querySelector("parsererror")) {
-    return;
+    return { domParserUsed: true, elementCount: 0, enrichedCount: 0 };
   }
 
   const elements = Array.from(xmlDoc.querySelectorAll("item, entry"));
   if (elements.length === 0) {
-    return;
+    return { domParserUsed: true, elementCount: 0, enrichedCount: 0 };
   }
 
+  let enrichedCount = 0;
   items.forEach((item, index) => {
     if (item.publishedDate) {
       return;
@@ -262,10 +269,15 @@ export function enrichFeedItemsWithMatchedDates(items: FeedItemLike[], rawXml: s
     }
 
     item.publishedDate = matchPublishedDateFromElement(element);
+    if (item.publishedDate) {
+      enrichedCount += 1;
+    }
     if (!item.updatedDate) {
       item.updatedDate = matchUpdatedDateFromElement(element);
     }
   });
+
+  return { domParserUsed: true, elementCount: elements.length, enrichedCount };
 }
 
 interface FeedItemLike {

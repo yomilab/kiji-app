@@ -38,6 +38,15 @@ import '../AudioPlayer/FeedAudioPlayerElement';
 import { staticResourceService } from '@/services/system/staticResourceService';
 import { wrapNonAsciiTextNodes } from '@/utils/nonAsciiTypography';
 
+interface ArticleContentMetricsDetail {
+  htmlChars: number;
+  shadowElementCount: number;
+  imageElementCount: number;
+  mediaElementCount: number;
+  linkElementCount: number;
+  textChars: number;
+}
+
 // Normalize the bundled placeholder SVG once so every broken-image fallback
 // inherits article text color without rebuilding or restyling the markup later.
 const BROKEN_IMAGE_PLACEHOLDER_SVG = brokenImagePlaceholderSvg
@@ -442,6 +451,7 @@ class ArticleContentElement extends HTMLElement {
         unwrapEmbeddedMediaAnchors(container);
         convertYouTubeIframesInContainer(container, options?.baseUrl ?? window.location.href);
         finalizeYouTubePlaceholders(container);
+        this.dispatchContentMetrics(container, html);
         return;
       }
 
@@ -452,6 +462,7 @@ class ArticleContentElement extends HTMLElement {
       this.applySyntaxHighlighting(container);
       this.suppressListMarkersForImageItems(container);
       this.scheduleMediaEnhancements(container, options?.deferMediaProcessingMs ?? 0, options?.baseUrl);
+      this.dispatchContentMetrics(container, html);
     }
   }
 
@@ -593,6 +604,7 @@ class ArticleContentElement extends HTMLElement {
       this.disableMediaAutoplay(container, baseUrl);
       this.replaceAudioElements(container);
       this.normalizeMediaFigureWrappers(container);
+      this.dispatchContentMetrics(container, this.lastContent);
       this.mediaEnhancementTimer = null;
     };
 
@@ -602,6 +614,25 @@ class ArticleContentElement extends HTMLElement {
     }
 
     runEnhancements();
+  }
+
+  private collectContentMetrics(container: Element, html: string): ArticleContentMetricsDetail {
+    return {
+      htmlChars: html.length,
+      shadowElementCount: container.querySelectorAll('*').length,
+      imageElementCount: container.querySelectorAll('img, picture, source[srcset], source[src]').length,
+      mediaElementCount: container.querySelectorAll('img, picture, iframe, video, audio, feed-audio-player, lite-youtube, embed, object, source').length,
+      linkElementCount: container.querySelectorAll('a[href]').length,
+      textChars: (container.textContent ?? '').length,
+    };
+  }
+
+  private dispatchContentMetrics(container: Element, html: string): void {
+    this.dispatchEvent(new CustomEvent<ArticleContentMetricsDetail>('article-content-metrics', {
+      detail: this.collectContentMetrics(container, html),
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   private replaceAudioElements(container: Element): void {

@@ -32,7 +32,7 @@ import {
 import { normalizePublishedDate } from '@/services/articles/publishedDateNormalizer';
 import { renderTextWithNonAsciiFont } from '@/utils/nonAsciiTypography';
 import { StatefulButtonGroup, type ButtonState } from '@/components/common/StatefulButtonGroup';
-import { ArticleContent, ArticleContentSkeleton } from '@/components/common/ArticleContent';
+import { ArticleContent, ArticleContentSkeleton, type ArticleContentMetricsDetail } from '@/components/common/ArticleContent';
 import { ArticlePdfViewer } from '@/components/common/ArticlePdf';
 import { InteractionProfiler } from '@/components/common/InteractionProfiler';
 import { TOOLTIPS } from '@/config/tooltips';
@@ -59,6 +59,10 @@ import type { Article } from '@/types/article';
 import { animateElementScrollTop, getScrollableBottom } from '@/utils/fixedTimeScroll';
 import { useDependencyEffect, useUnmountEffect } from '@/hooks/useLifecycleEffects';
 import { useArticleViewPerformanceMetrics } from './hooks/useArticleViewPerformanceMetrics';
+import {
+  estimateUtf8Bytes,
+  logArticleRenderAttribution,
+} from '@/services/diagnostics/webKitAttribution';
 import './ArticleView.css';
 
 interface ArticleViewProps {
@@ -1424,6 +1428,33 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     })();
   }, []);
 
+  const handleArticleContentMetrics = useCallback((detail: ArticleContentMetricsDetail) => {
+    if (!articleToShow) {
+      return;
+    }
+
+    logArticleRenderAttribution({
+      articleHash: articleToShow.hash,
+      feedId: articleToShow.feedId,
+      feedTitle: articleToShow.feedTitle,
+      articleUrl: articleToShow.link,
+      mode: isReaderModeActive ? 'reader' : 'basic',
+      standalone,
+      htmlBytes: estimateUtf8Bytes(rawArticleBodyHtml),
+      htmlChars: detail.htmlChars,
+      shadowElementCount: detail.shadowElementCount,
+      imageElementCount: detail.imageElementCount,
+      mediaElementCount: detail.mediaElementCount,
+      linkElementCount: detail.linkElementCount,
+      textChars: detail.textChars,
+    });
+  }, [
+    articleToShow,
+    isReaderModeActive,
+    rawArticleBodyHtml,
+    standalone,
+  ]);
+
   const handleArticleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
     if (isClosing) return;
 
@@ -2144,6 +2175,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
             baseUrl={articleToShow?.link || articleToShow?.feedUrl}
             onLinkClick={handleArticleLinkClick}
             onArticleContextMenu={handleArticleContextMenu}
+            onContentMetrics={handleArticleContentMetrics}
             mediaProcessingDelayMs={mediaProcessingDelayMs}
             suspendProcessing={isClosing}
           />
@@ -2172,6 +2204,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
           baseUrl={articleToShow?.link || articleToShow?.feedUrl}
           onLinkClick={handleArticleLinkClick}
           onArticleContextMenu={handleArticleContextMenu}
+          onContentMetrics={handleArticleContentMetrics}
           mediaProcessingDelayMs={mediaProcessingDelayMs}
           suspendProcessing={isClosing}
         />
