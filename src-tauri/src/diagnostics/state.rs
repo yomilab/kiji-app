@@ -43,11 +43,22 @@ pub struct LogEntry {
 #[derive(Clone, Debug, Serialize)]
 pub struct ProcessSnapshot {
     pub pid: u32,
+    pub name: String,
     #[serde(rename = "type")]
     pub process_type: String,
     pub cpu: f64,
     #[serde(rename = "mem")]
     pub memory_mb: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceTotalsSnapshot {
+    pub cpu: f64,
+    pub memory_mb: f64,
+    pub native_memory_mb: f64,
+    pub webkit_memory_mb: f64,
+    pub process_count: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -67,6 +78,7 @@ pub struct MainProcessSnapshot {
 pub struct PerformanceSnapshot {
     pub timestamp: String,
     pub processes: Vec<ProcessSnapshot>,
+    pub totals: ResourceTotalsSnapshot,
     pub main: MainProcessSnapshot,
 }
 

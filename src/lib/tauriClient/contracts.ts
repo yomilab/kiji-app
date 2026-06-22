@@ -439,10 +439,18 @@ export interface PerformanceSnapshot {
   timestamp: ISODateString;
   processes: Array<{
     pid: number;
+    name: string;
     type: string;
     cpu: number;
     mem: number;
   }>;
+  totals: {
+    cpu: number;
+    memoryMb: number;
+    nativeMemoryMb: number;
+    webkitMemoryMb: number;
+    processCount: number;
+  };
   main: {
     pid: number;
     rssMb: number;
