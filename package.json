@@ -38,6 +38,7 @@
     "test:e2e:feed-edit": "node scripts/e2e/feed-edit.mjs",
     "test:e2e:feed-delete": "node scripts/e2e/feed-delete.mjs",
     "test:e2e:pdf-article": "node scripts/e2e/pdf-article.mjs",
+    "test:e2e:webkit-memory-stress": "KIJI_E2E_WEBKIT_STRESS=1 vitest run --config vitest.e2e.config.ts test/e2e/webkitMemoryStress.e2e.test.ts",
     "test:local": "npm run test && npm run test:e2e",
     "verify": "node scripts/verify.mjs",
     "verify:local": "node scripts/verify-local.mjs",
