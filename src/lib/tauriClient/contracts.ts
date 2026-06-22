@@ -274,6 +274,10 @@ export interface FeedFetchWithCacheResponse {
   etag: string | null;
   lastModified: string | null;
   notModified: boolean;
+  byteLength?: number;
+  contentLengthHeader?: number | null;
+  fetchDurationMs?: number;
+  exceededSoftWarn?: boolean;
 }
 
 export interface FeedFetchDataUrlRequest extends FeedFetchRequest {

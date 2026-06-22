@@ -43,6 +43,15 @@ describe("commandError", () => {
     expect(isExpectedFeedCommandFailure("feeds_fetch", error)).toBe(true);
   });
 
+  it("treats structured body-too-large feed failures as expected", () => {
+    const error = new Error(JSON.stringify({
+      code: "FEED_BODY_TOO_LARGE",
+      message: "Feed response exceeded the 33554432 byte limit after reading 40000000 bytes (content-length header: Some(40000000)).",
+    }));
+
+    expect(isExpectedFeedCommandFailure("feeds_fetch_with_cache", error)).toBe(true);
+  });
+
   it("keeps unexpected 500 feed failures at error severity", () => {
     const error = new Error(JSON.stringify({
       code: "FEED_HTTP_STATUS",

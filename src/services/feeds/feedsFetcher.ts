@@ -109,9 +109,9 @@ class FeedsFetcher {
         feedUrl: normalizedUrl,
         requestId,
         notModified: false,
-        responseBytes: estimateUtf8Bytes(response.data),
+        responseBytes: response.byteLength ?? estimateUtf8Bytes(response.data),
         responseChars: response.data.length,
-        durationMs,
+        durationMs: response.fetchDurationMs ?? durationMs,
       });
 
       return {

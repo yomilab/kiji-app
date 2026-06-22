@@ -2,7 +2,10 @@ mod accept_language;
 mod errors;
 
 use accept_language::browser_accept_language;
-use errors::{feed_http_status_error, feed_network_error, feed_request_cancelled_error};
+use errors::{
+    feed_body_too_large_error, feed_http_status_error, feed_network_error,
+    feed_request_cancelled_error,
+};
 use futures_util::{future::{AbortHandle, Abortable}, StreamExt};
 use once_cell::sync::Lazy;
 use reqwest::{
@@ -23,6 +26,8 @@ const DEFAULT_TIMEOUT_MS: u64 = 15_000;
 const FEED_FETCH_DEFAULT_TIMEOUT_MS: u64 = 5_000;
 const MAX_DATA_URL_BYTES: u64 = 1024 * 1024;
 const MAX_PDF_INLINE_BYTES: u64 = 25 * 1024 * 1024;
+const FEED_BODY_HARD_CAP_BYTES: u64 = 32 * 1024 * 1024;
+const FEED_BODY_SOFT_WARN_BYTES: u64 = 10 * 1024 * 1024;
 const PDF_MAGIC: &[u8] = b"%PDF-";
 const CHROME_LIKE_USER_AGENT: &str =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 KiJi/0.1";
@@ -44,6 +49,14 @@ pub struct FeedFetchWithCacheResponse {
     pub etag: Option<String>,
     pub last_modified: Option<String>,
     pub not_modified: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub byte_length: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_length_header: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fetch_duration_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exceeded_soft_warn: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -198,6 +211,103 @@ async fn drain_response_body(response: reqwest::Response) -> Result<(), String> 
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy)]
+struct FeedBodyLimits {
+    hard_cap_bytes: u64,
+    soft_warn_bytes: u64,
+}
+
+#[derive(Debug)]
+enum FeedBodyReadError {
+    TooLarge {
+        bytes_read: u64,
+        cap_reason: &'static str,
+    },
+    Network(String),
+}
+
+fn feed_body_limits() -> FeedBodyLimits {
+    FeedBodyLimits {
+        hard_cap_bytes: read_env_u64("KIJI_FEED_BODY_HARD_CAP_BYTES", FEED_BODY_HARD_CAP_BYTES),
+        soft_warn_bytes: read_env_u64("KIJI_FEED_BODY_SOFT_WARN_BYTES", FEED_BODY_SOFT_WARN_BYTES),
+    }
+}
+
+fn read_env_u64(name: &str, default: u64) -> u64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
+}
+
+fn would_exceed_cap(current_len: usize, chunk_len: usize, hard_cap: u64) -> bool {
+    current_len as u64 + chunk_len as u64 > hard_cap
+}
+
+async fn read_feed_body_with_limits(
+    response: reqwest::Response,
+    content_length_header: Option<u64>,
+    hard_cap: u64,
+) -> Result<(Vec<u8>, u64), FeedBodyReadError> {
+    if let Some(content_length) = content_length_header {
+        if content_length > hard_cap {
+            if let Err(error) = drain_response_body(response).await {
+                return Err(FeedBodyReadError::Network(error));
+            }
+            return Err(FeedBodyReadError::TooLarge {
+                bytes_read: content_length,
+                cap_reason: "content-length-header",
+            });
+        }
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut body = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(error) => {
+                return Err(FeedBodyReadError::Network(format!(
+                    "Failed to read HTTP response body: {error}"
+                )));
+            }
+        };
+        if would_exceed_cap(body.len(), chunk.len(), hard_cap) {
+            while let Some(rest) = stream.next().await {
+                if let Err(error) = rest {
+                    return Err(FeedBodyReadError::Network(format!(
+                        "Failed to drain HTTP response body: {error}"
+                    )));
+                }
+            }
+            return Err(FeedBodyReadError::TooLarge {
+                bytes_read: body.len() as u64 + chunk.len() as u64,
+                cap_reason: "streaming-body",
+            });
+        }
+        body.extend_from_slice(&chunk);
+    }
+
+    let bytes_read = body.len() as u64;
+    Ok((body, bytes_read))
+}
+
+fn log_feed_fetch_attribution(
+    url: &str,
+    status: u16,
+    content_length_header: Option<u64>,
+    bytes_read: u64,
+    duration_ms: u64,
+    cap_reason: Option<&str>,
+    soft_warn: bool,
+) {
+    eprintln!(
+        "[FeedFetchAttribution] url={url} status={status} contentLengthHeader={content_length_header:?} bytesRead={bytes_read} durationMs={duration_ms} capReason={} softWarn={soft_warn}",
+        cap_reason.unwrap_or("none")
+    );
+}
+
 async fn read_html_safe_body(response: reqwest::Response) -> Result<(ResourceType, String), String> {
     let mut stream = response.bytes_stream();
     let mut body = Vec::new();
@@ -327,6 +437,8 @@ async fn fetch_with_cache(
 async fn execute_fetch(
     request: FeedFetchWithCacheRequest,
 ) -> Result<FeedFetchWithCacheResponse, String> {
+    let started_at = std::time::Instant::now();
+    let limits = feed_body_limits();
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()
@@ -363,13 +475,28 @@ async fn execute_fetch(
         .get(LAST_MODIFIED)
         .and_then(|value| value.to_str().ok())
         .map(ToOwned::to_owned);
+    let content_length_header = response.content_length();
+    let duration_ms = started_at.elapsed().as_millis() as u64;
 
     if status == StatusCode::NOT_MODIFIED {
+        log_feed_fetch_attribution(
+            &request.url,
+            status.as_u16(),
+            content_length_header,
+            0,
+            duration_ms,
+            None,
+            false,
+        );
         return Ok(FeedFetchWithCacheResponse {
             data: None,
             etag,
             last_modified,
             not_modified: true,
+            byte_length: Some(0),
+            content_length_header,
+            fetch_duration_ms: Some(duration_ms),
+            exceeded_soft_warn: Some(false),
         });
     }
 
@@ -377,16 +504,56 @@ async fn execute_fetch(
         return Err(feed_http_status_error(status));
     }
 
-    let data = response
-        .text()
-        .await
-        .map_err(|error| format!("Failed to read HTTP response body: {error}"))?;
+    let (body, bytes_read) = match read_feed_body_with_limits(
+        response,
+        content_length_header,
+        limits.hard_cap_bytes,
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(FeedBodyReadError::Network(message)) => return Err(message),
+        Err(FeedBodyReadError::TooLarge { bytes_read, cap_reason }) => {
+            log_feed_fetch_attribution(
+                &request.url,
+                status.as_u16(),
+                content_length_header,
+                bytes_read,
+                duration_ms,
+                Some(cap_reason),
+                false,
+            );
+            return Err(feed_body_too_large_error(
+                bytes_read,
+                limits.hard_cap_bytes,
+                content_length_header,
+            ));
+        }
+    };
+
+    let exceeded_soft_warn = bytes_read > limits.soft_warn_bytes;
+    log_feed_fetch_attribution(
+        &request.url,
+        status.as_u16(),
+        content_length_header,
+        bytes_read,
+        duration_ms,
+        None,
+        exceeded_soft_warn,
+    );
+
+    let data = String::from_utf8(body)
+        .map_err(|error| format!("Failed to decode feed response body: {error}"))?;
 
     Ok(FeedFetchWithCacheResponse {
         data: Some(data),
         etag,
         last_modified,
         not_modified: false,
+        byte_length: Some(bytes_read as usize),
+        content_length_header,
+        fetch_duration_ms: Some(duration_ms),
+        exceeded_soft_warn: Some(exceeded_soft_warn),
     })
 }
 
@@ -707,5 +874,214 @@ mod tests {
             "image/webp"
         );
         assert_eq!(mime_type_from_url("https://example.com/icon"), "image/png");
+    }
+
+    #[test]
+    fn would_exceed_cap_detects_overflow() {
+        assert!(!would_exceed_cap(10, 5, 20));
+        assert!(would_exceed_cap(10, 11, 20));
+    }
+
+    #[test]
+    fn feed_body_limits_use_defaults_without_env() {
+        let limits = feed_body_limits();
+        assert_eq!(limits.hard_cap_bytes, FEED_BODY_HARD_CAP_BYTES);
+        assert_eq!(limits.soft_warn_bytes, FEED_BODY_SOFT_WARN_BYTES);
+    }
+
+    async fn serve_one_http_response(response: String) -> std::net::SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let _ = socket.write_all(response.as_bytes()).await;
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn read_feed_body_with_limits_reads_normal_body() {
+        let body = "<feed>ok</feed>";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/atom+xml\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        let addr = serve_one_http_response(response).await;
+        let client = reqwest::Client::new();
+        let http_response = client
+            .get(format!("http://{addr}/feed.xml"))
+            .send()
+            .await
+            .expect("request");
+
+        let (bytes, bytes_read) = read_feed_body_with_limits(
+            http_response,
+            Some(body.len() as u64),
+            1024,
+        )
+        .await
+        .expect("read body");
+
+        assert_eq!(bytes_read, body.len() as u64);
+        assert_eq!(String::from_utf8(bytes).expect("utf8"), body);
+    }
+
+    #[tokio::test]
+    async fn read_feed_body_with_limits_reads_body_without_content_length() {
+        let body = "<feed>no-length</feed>";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/atom+xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let addr = serve_one_http_response(response).await;
+        let client = reqwest::Client::new();
+        let http_response = client
+            .get(format!("http://{addr}/feed.xml"))
+            .send()
+            .await
+            .expect("request");
+
+        let (_, bytes_read) = read_feed_body_with_limits(http_response, None, 1024)
+            .await
+            .expect("read body");
+
+        assert_eq!(bytes_read, body.len() as u64);
+    }
+
+    #[tokio::test]
+    async fn read_feed_body_with_limits_rejects_oversized_content_length() {
+        let body = "small";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let addr = serve_one_http_response(response).await;
+        let client = reqwest::Client::new();
+        let http_response = client
+            .get(format!("http://{addr}/feed.xml"))
+            .send()
+            .await
+            .expect("request");
+
+        let error = read_feed_body_with_limits(http_response, Some(999_999), 1024)
+            .await
+            .expect_err("expected cap error");
+
+        assert!(matches!(
+            error,
+            FeedBodyReadError::TooLarge {
+                cap_reason: "content-length-header",
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn read_feed_body_with_limits_rejects_oversized_streaming_body() {
+        let body = "x".repeat(64);
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let addr = serve_one_http_response(response).await;
+        let client = reqwest::Client::new();
+        let http_response = client
+            .get(format!("http://{addr}/feed.xml"))
+            .send()
+            .await
+            .expect("request");
+
+        let error = read_feed_body_with_limits(http_response, None, 32)
+            .await
+            .expect_err("expected cap error");
+
+        assert!(matches!(
+            error,
+            FeedBodyReadError::TooLarge {
+                cap_reason: "streaming-body",
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn execute_fetch_returns_http_status_error() {
+        let response = "HTTP/1.1 404 Not Found\r\n\r\n".to_string();
+        let addr = serve_one_http_response(response).await;
+        let error = execute_fetch(FeedFetchWithCacheRequest {
+            url: format!("http://{addr}/missing.xml"),
+            request_id: None,
+            etag: None,
+            last_modified: None,
+            timeout: Some(5_000),
+        })
+        .await
+        .expect_err("expected http error");
+
+        let parsed: errors::FeedCommandError =
+            serde_json::from_str(&error).expect("structured error");
+        assert_eq!(parsed.code, "FEED_HTTP_STATUS");
+        assert_eq!(parsed.http_status, Some(404));
+    }
+
+    #[tokio::test]
+    async fn execute_fetch_returns_timeout_error() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            if listener.accept().await.is_ok() {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        });
+
+        let error = execute_fetch(FeedFetchWithCacheRequest {
+            url: format!("http://{addr}/slow.xml"),
+            request_id: None,
+            etag: None,
+            last_modified: None,
+            timeout: Some(100),
+        })
+        .await
+        .expect_err("expected timeout");
+
+        let parsed: errors::FeedCommandError =
+            serde_json::from_str(&error).expect("structured error");
+        assert!(
+            parsed.code == "FEED_NETWORK_TIMEOUT" || parsed.code == "FEED_NETWORK_ERROR",
+            "expected timeout-class error, got {}",
+            parsed.code
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_fetch_preserves_etag_and_last_modified() {
+        let body = "<feed>etag</feed>";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nETag: \"etag-1\"\r\nLast-Modified: Tue, 22 Jun 2026 00:00:00 GMT\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        let addr = serve_one_http_response(response).await;
+        let result = execute_fetch(FeedFetchWithCacheRequest {
+            url: format!("http://{addr}/feed.xml"),
+            request_id: None,
+            etag: None,
+            last_modified: None,
+            timeout: Some(5_000),
+        })
+        .await
+        .expect("fetch");
+
+        assert_eq!(result.etag.as_deref(), Some("\"etag-1\""));
+        assert_eq!(
+            result.last_modified.as_deref(),
+            Some("Tue, 22 Jun 2026 00:00:00 GMT")
+        );
+        assert_eq!(result.byte_length, Some(body.len()));
     }
 }

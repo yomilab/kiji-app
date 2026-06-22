@@ -20,6 +20,54 @@ export function readEvent(e2eDir, name) {
   return JSON.parse(fs.readFileSync(eventPath, "utf8"));
 }
 
+export function getEventAtMs(event) {
+  const at = event?.at;
+  return typeof at === "number" && Number.isFinite(at) ? at : null;
+}
+
+export function isEventAfter(event, afterAtMs) {
+  const eventAt = getEventAtMs(event);
+  return eventAt !== null && eventAt >= afterAtMs;
+}
+
+export function readEventIfBefore(e2eDir, name, beforeAtMs) {
+  const event = readEvent(e2eDir, name);
+  if (!event) {
+    return null;
+  }
+  const eventAt = getEventAtMs(event);
+  if (eventAt === null || eventAt >= beforeAtMs) {
+    return null;
+  }
+  return event;
+}
+
+export function readEventIfAfter(e2eDir, name, afterAtMs) {
+  const event = readEvent(e2eDir, name);
+  if (!event || !isEventAfter(event, afterAtMs)) {
+    return null;
+  }
+  return event;
+}
+
+export async function waitForPostImportEvent(
+  e2eDir,
+  name,
+  postImportAtMs,
+  predicate = () => true,
+  timeoutMs = EVENT_TIMEOUT_MS,
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const event = readEvent(e2eDir, name);
+    if (event && isEventAfter(event, postImportAtMs) && predicate(event)) {
+      return event;
+    }
+    await sleep(POLL_INTERVAL_MS);
+  }
+  throw new Error(`Timed out waiting for post-import e2e event: ${name}`);
+}
+
 export async function waitForEvent(e2eDir, name, predicate = () => true, timeoutMs = EVENT_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

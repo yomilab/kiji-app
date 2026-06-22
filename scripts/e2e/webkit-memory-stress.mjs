@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
+import { writeE2eCommand } from "./e2eCommands.mjs";
 import {
   assertE2eNotSkipped,
   ensureE2eBundledBinary,
@@ -23,15 +24,21 @@ import {
   createE2eSessionDirs,
   E2E_SCHEDULER_INTERVAL_MS,
   formatE2eFailure,
+  getEventAtMs,
+  readEvent,
+  readEventIfAfter,
+  readEventIfBefore,
   sleep,
   startE2eApp,
   stopE2eApp,
   waitForEvent,
+  waitForPostImportEvent,
 } from "./e2eRunner.mjs";
 
 const execFileAsync = promisify(execFile);
 
 const STRESS_STATION_NAME = "E2E WebKit Stress";
+const DEFAULT_PROFILE_NAME = "amplified";
 const DEFAULT_FEED_COUNT = 560;
 const DEFAULT_ENTRIES_PER_FEED = 20;
 const DEFAULT_CONTENT_KB_PER_ENTRY = 1024;
@@ -42,6 +49,53 @@ const DEFAULT_PRESSURE_WINDOW_MS = 180_000;
 const DEFAULT_IDLE_PLATEAU_MS = 60_000;
 const DEFAULT_IDLE_DELTA_MB = 64;
 const SAMPLE_INTERVAL_MS = 1000;
+const STRESS_PROFILE_DEFAULTS = {
+  amplified: {
+    feedCount: DEFAULT_FEED_COUNT,
+    entriesPerFeed: DEFAULT_ENTRIES_PER_FEED,
+    contentKbPerEntry: DEFAULT_CONTENT_KB_PER_ENTRY,
+    minWebKitMemoryMb: DEFAULT_MIN_WEBKIT_MB,
+    targetCycles: DEFAULT_TARGET_CYCLES,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+    schedulerIntervalMs: Number(E2E_SCHEDULER_INTERVAL_MS),
+    pressureWindowMs: DEFAULT_PRESSURE_WINDOW_MS,
+    idlePlateauMs: DEFAULT_IDLE_PLATEAU_MS,
+    idleDeltaMb: DEFAULT_IDLE_DELTA_MB,
+    settleMs: 0,
+    captureHeap: true,
+    hideUi: "1",
+    runUiInteractions: false,
+    readerMode: false,
+    minPostImportArticleCount: 1,
+    acceptance: {
+      minWebKitMemoryMb: DEFAULT_MIN_WEBKIT_MB,
+      purpose: "reproduce multi-GB WebContent pressure from large feed fetch/parse payloads",
+    },
+  },
+  realistic: {
+    feedCount: 80,
+    entriesPerFeed: 30,
+    contentKbPerEntry: 16,
+    minWebKitMemoryMb: 256,
+    targetCycles: 1,
+    timeoutMs: 10 * 60 * 1000,
+    schedulerIntervalMs: Number(E2E_SCHEDULER_INTERVAL_MS),
+    pressureWindowMs: 120_000,
+    idlePlateauMs: 45_000,
+    idleDeltaMb: 32,
+    settleMs: 0,
+    captureHeap: true,
+    hideUi: "0",
+    runUiInteractions: true,
+    readerMode: false,
+    minPostImportArticleCount: 1,
+    acceptance: {
+      minWebKitMemoryMb: 256,
+      maxWebKitMemoryMb: 1536,
+      purpose: "compare feed-ingestion pressure against visible station/list/article-view behavior",
+    },
+  },
+};
 const ONE_BY_ONE_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/ax8gL8AAAAASUVORK5CYII=",
   "base64",
@@ -88,7 +142,7 @@ export async function runWebKitMemoryStressE2e() {
       KIJI_E2E_BOOTSTRAP: "opml",
       KIJI_E2E_OPML_PATH: opmlPath,
       KIJI_E2E_SCHEDULER_INTERVAL_MS: String(profile.schedulerIntervalMs),
-      KIJI_E2E_HIDE_UI: process.env.KIJI_E2E_HIDE_UI ?? "1",
+      KIJI_E2E_HIDE_UI: profile.hideUi,
     },
   });
 
@@ -98,6 +152,8 @@ export async function runWebKitMemoryStressE2e() {
     outputPath: path.join(artifactsDir, "webkit-memory-samples.jsonl"),
   });
 
+  let postImportAtMs = null;
+
   try {
     const imported = await waitForEvent(
       e2eDir,
@@ -105,6 +161,20 @@ export async function runWebKitMemoryStressE2e() {
       (event) => (event.payload?.feedCount ?? 0) >= profile.feedCount,
       profile.timeoutMs,
     );
+    postImportAtMs = getEventAtMs(imported) ?? Date.now();
+    const preImportCycle = readEventIfBefore(e2eDir, "cycle-complete", postImportAtMs);
+    const postImportCycleTimeoutMs = Math.min(profile.timeoutMs, 120_000);
+    const postImportScheduler = await waitForPostImportEvent(
+      e2eDir,
+      "cycle-complete",
+      postImportAtMs,
+      (event) => (event.payload?.articleCount ?? 0) >= profile.minPostImportArticleCount,
+      postImportCycleTimeoutMs,
+    ).catch(() => null);
+
+    const uiSummary = profile.runUiInteractions
+      ? await runRealisticUiSteps({ e2eDir, profile })
+      : null;
 
     const pressureSummary = await waitForMemoryPressure({ sampler, profile });
 
@@ -117,17 +187,33 @@ export async function runWebKitMemoryStressE2e() {
     await sampler.stop();
     const summary = summarizeSamples(sampler.samples);
     const logSummary = copyStressLogs(homeDir, artifactsDir);
-    const heapSummary = await captureHeapSummaryIfNeeded(summary, artifactsDir);
+    const eventSequence = copyEventSequence(e2eDir, artifactsDir);
+    const heapSummary = await captureHeapSummaryIfNeeded(summary, artifactsDir, profile);
+    const postImportCycle = readEventIfAfter(e2eDir, "cycle-complete", postImportAtMs);
 
     const result = {
       skipped: false,
       binaryPath,
       e2eDir,
       artifactsDir,
+      profileName: profile.name,
+      uiSummary,
+      postImportAtMs,
+      postImportSummary: {
+        postImportAtMs,
+        preImportCycle: summarizeHarnessEvent(preImportCycle),
+        firstPostImportCycle: summarizeHarnessEvent(postImportScheduler),
+        finalPostImportCycle: summarizeHarnessEvent(postImportCycle),
+        waitedForFirstPostImportCycle: postImportScheduler !== null,
+      },
       feedCount: imported.payload?.feedCount ?? 0,
-      articleCount: readEventPayload(e2eDir, "cycle-complete")?.articleCount ?? 0,
+      articleCount: postImportCycle?.payload?.articleCount
+        ?? postImportScheduler?.payload?.articleCount
+        ?? 0,
       expectedStressArticleCount: profile.feedCount * profile.entriesPerFeed,
-      cycleCount: readEventPayload(e2eDir, "cycle-complete")?.cycleCount ?? 0,
+      cycleCount: postImportCycle?.payload?.cycleCount
+        ?? postImportScheduler?.payload?.cycleCount
+        ?? 0,
       totalFetchCount: sumFetchCounts(fetchCounts()),
       maxWebKitMemoryMb: summary.maxWebKitMemoryMb,
       maxTotalMemoryMb: summary.maxTotalMemoryMb,
@@ -135,6 +221,8 @@ export async function runWebKitMemoryStressE2e() {
       pressureSummary,
       heapSummaryPath: heapSummary.path,
       logSummary,
+      eventSequence,
+      acceptance: profile.acceptance,
       profile,
     };
 
@@ -154,18 +242,22 @@ export async function runWebKitMemoryStressE2e() {
     await sampler.stop();
     const summary = summarizeSamples(sampler.samples);
     const logSummary = copyStressLogs(homeDir, artifactsDir);
-    const heapSummary = await captureHeapSummaryIfNeeded(summary, artifactsDir);
+    const eventSequence = copyEventSequence(e2eDir, artifactsDir);
+    const heapSummary = await captureHeapSummaryIfNeeded(summary, artifactsDir, profile);
     fs.writeFileSync(
       path.join(artifactsDir, "failure-summary.json"),
       JSON.stringify(
         {
           error: error instanceof Error ? error.message : String(error),
+          profileName: profile.name,
+          postImportAtMs,
           maxWebKitMemoryMb: summary.maxWebKitMemoryMb,
           maxTotalMemoryMb: summary.maxTotalMemoryMb,
           webKitPidCount: summary.webKitPidCount,
           expectedStressArticleCount: profile.feedCount * profile.entriesPerFeed,
           heapSummaryPath: heapSummary.path,
           logSummary,
+          eventSequence,
           profile,
         },
         null,
@@ -180,19 +272,32 @@ export async function runWebKitMemoryStressE2e() {
 }
 
 function readStressProfile() {
+  const requestedProfile = process.env.KIJI_E2E_WEBKIT_STRESS_PROFILE ?? DEFAULT_PROFILE_NAME;
+  const defaults = STRESS_PROFILE_DEFAULTS[requestedProfile] ?? STRESS_PROFILE_DEFAULTS[DEFAULT_PROFILE_NAME];
+  const name = STRESS_PROFILE_DEFAULTS[requestedProfile] ? requestedProfile : DEFAULT_PROFILE_NAME;
+
   return {
-    feedCount: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_FEEDS", DEFAULT_FEED_COUNT),
-    entriesPerFeed: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_ENTRIES", DEFAULT_ENTRIES_PER_FEED),
-    contentKbPerEntry: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_CONTENT_KB", DEFAULT_CONTENT_KB_PER_ENTRY),
-    minWebKitMemoryMb: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_MIN_MB", DEFAULT_MIN_WEBKIT_MB),
-    targetCycles: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_CYCLES", DEFAULT_TARGET_CYCLES),
-    timeoutMs: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_TIMEOUT_MS", DEFAULT_TIMEOUT_MS),
-    schedulerIntervalMs: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_INTERVAL_MS", Number(E2E_SCHEDULER_INTERVAL_MS)),
-    pressureWindowMs: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_PRESSURE_MS", DEFAULT_PRESSURE_WINDOW_MS),
-    idlePlateauMs: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_IDLE_MS", DEFAULT_IDLE_PLATEAU_MS),
-    idleDeltaMb: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_IDLE_DELTA_MB", DEFAULT_IDLE_DELTA_MB),
-    settleMs: readNonNegativeInt("KIJI_E2E_WEBKIT_STRESS_SETTLE_MS", 0),
-    captureHeap: process.env.KIJI_E2E_WEBKIT_STRESS_HEAP !== "0",
+    name,
+    feedCount: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_FEEDS", defaults.feedCount),
+    entriesPerFeed: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_ENTRIES", defaults.entriesPerFeed),
+    contentKbPerEntry: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_CONTENT_KB", defaults.contentKbPerEntry),
+    minWebKitMemoryMb: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_MIN_MB", defaults.minWebKitMemoryMb),
+    targetCycles: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_CYCLES", defaults.targetCycles),
+    timeoutMs: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_TIMEOUT_MS", defaults.timeoutMs),
+    schedulerIntervalMs: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_INTERVAL_MS", defaults.schedulerIntervalMs),
+    pressureWindowMs: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_PRESSURE_MS", defaults.pressureWindowMs),
+    idlePlateauMs: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_IDLE_MS", defaults.idlePlateauMs),
+    idleDeltaMb: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_IDLE_DELTA_MB", defaults.idleDeltaMb),
+    settleMs: readNonNegativeInt("KIJI_E2E_WEBKIT_STRESS_SETTLE_MS", defaults.settleMs),
+    captureHeap: readBoolean("KIJI_E2E_WEBKIT_STRESS_HEAP", defaults.captureHeap),
+    hideUi: process.env.KIJI_E2E_HIDE_UI ?? defaults.hideUi,
+    runUiInteractions: readBoolean("KIJI_E2E_WEBKIT_STRESS_UI_STEPS", defaults.runUiInteractions),
+    readerMode: readBoolean("KIJI_E2E_WEBKIT_STRESS_READER_MODE", defaults.readerMode),
+    minPostImportArticleCount: readPositiveInt(
+      "KIJI_E2E_WEBKIT_STRESS_MIN_POST_IMPORT_ARTICLES",
+      defaults.minPostImportArticleCount,
+    ),
+    acceptance: defaults.acceptance,
   };
 }
 
@@ -246,6 +351,99 @@ async function waitForMemoryPressure({ sampler, profile }) {
   };
 }
 
+async function runRealisticUiSteps({ e2eDir, profile }) {
+  writeE2eCommand(e2eDir, "select-station", { stationName: STRESS_STATION_NAME });
+  await waitForEvent(
+    e2eDir,
+    "navigation-changed",
+    (event) => event.payload?.selectedTag === STRESS_STATION_NAME,
+    profile.timeoutMs,
+  );
+
+  const listSnapshot = await waitForEvent(
+    e2eDir,
+    "article-list-snapshot",
+    (event) => (
+      event.payload?.selectedTag === STRESS_STATION_NAME
+      && (event.payload?.articleCount ?? 0) >= 1
+    ),
+    profile.timeoutMs,
+  );
+
+  writeE2eCommand(e2eDir, "scroll-list", { toEnd: true });
+  const scrollState = await waitForEvent(
+    e2eDir,
+    "scroll-state",
+    (event) => event.payload?.toEnd === true,
+    profile.timeoutMs,
+  );
+  const loadMore = await waitForEvent(e2eDir, "load-more-complete", () => true, profile.timeoutMs);
+
+  writeE2eCommand(e2eDir, "open-article", { index: 0 });
+  await waitForEvent(e2eDir, "article-deck-phase", (event) => event.payload?.phase === "open", profile.timeoutMs);
+  const content = await waitForEvent(e2eDir, "article-content-ready", () => true, profile.timeoutMs);
+
+  let readerReady = null;
+  if (profile.readerMode) {
+    writeE2eCommand(e2eDir, "toggle-reader-mode");
+    await waitForEvent(e2eDir, "reader-mode-changed", (event) => event.payload?.mode === "reader", profile.timeoutMs);
+    readerReady = await waitForEvent(
+      e2eDir,
+      "reader-content-ready",
+      (event) => (event.payload?.wordCount ?? 0) > 0,
+      profile.timeoutMs,
+    );
+  }
+
+  writeE2eCommand(e2eDir, "close-article");
+  await waitForEvent(e2eDir, "article-deck-phase", (event) => event.payload?.phase === "closed", profile.timeoutMs);
+
+  return {
+    selectedStation: STRESS_STATION_NAME,
+    initialArticleCount: listSnapshot.payload?.articleCount ?? 0,
+    initialTotalCount: listSnapshot.payload?.articlesTotalCount ?? 0,
+    loadedAfterScroll: loadMore.payload?.loadedCount ?? scrollState.payload?.loadedCount ?? 0,
+    openedArticleTitle: content.payload?.title ?? null,
+    readerModeWordCount: readerReady?.payload?.wordCount ?? null,
+  };
+}
+
+function summarizeHarnessEvent(event) {
+  if (!event) {
+    return null;
+  }
+  return {
+    name: event.name ?? null,
+    at: getEventAtMs(event),
+    payload: event.payload ?? null,
+  };
+}
+
+function copyEventSequence(e2eDir, artifactsDir) {
+  const eventsDir = path.join(e2eDir, "events");
+  const sequence = [];
+  if (!fs.existsSync(eventsDir)) {
+    return { path: null, events: sequence };
+  }
+
+  for (const fileName of fs.readdirSync(eventsDir).sort()) {
+    if (!fileName.endsWith(".json")) {
+      continue;
+    }
+    const event = JSON.parse(fs.readFileSync(path.join(eventsDir, fileName), "utf8"));
+    sequence.push({
+      fileName,
+      name: event.name ?? fileName.replace(/\.json$/, ""),
+      at: getEventAtMs(event),
+      payload: event.payload ?? null,
+    });
+  }
+
+  const outputPath = path.join(artifactsDir, "event-sequence.json");
+  fs.writeFileSync(outputPath, JSON.stringify(sequence, null, 2));
+  return { path: outputPath, events: sequence };
+}
+
 function readEventPayload(e2eDir, name) {
   const eventPath = path.join(e2eDir, "events", `${name}.json`);
   if (!fs.existsSync(eventPath)) {
@@ -268,6 +466,14 @@ function readNonNegativeInt(name, fallback) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+function readBoolean(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined) {
+    return fallback;
+  }
+  return raw !== "0" && raw.toLowerCase() !== "false";
+}
+
 function createStressFeedServer(profile) {
   const requestCounts = new Map();
   let baseUrl = "";
@@ -279,6 +485,19 @@ function createStressFeedServer(profile) {
         "cache-control": "public, max-age=3600",
       });
       response.end(ONE_BY_ONE_PNG);
+      return;
+    }
+
+    const articleMatch = pathname.match(/^\/articles\/stress-(\d+)-(\d+)-(\d+)\.html$/);
+    if (articleMatch) {
+      const feedIndex = Number(articleMatch[1]);
+      const requestCount = Number(articleMatch[2]);
+      const entryIndex = Number(articleMatch[3]);
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end(buildStressReaderHtml(feedIndex, requestCount, entryIndex, profile.contentKbPerEntry));
       return;
     }
 
@@ -358,7 +577,7 @@ function buildStressAtomFeed({ feedIndex, requestCount, profile, baseUrl }) {
   <title>E2E stress article ${feedIndex}-${requestCount}-${entryIndex}</title>
   <id>${articleId}</id>
   <updated>${updated}</updated>
-  <link href="https://example.com/stress/${feedIndex}/${requestCount}/${entryIndex}" />
+  <link href="${escapeXml(`${baseUrl}/articles/${articleId}.html`)}" />
   <content type="html"><![CDATA[${html}]]></content>
 </entry>`;
   }).join("\n");
@@ -388,6 +607,18 @@ function buildStressArticleHtml(feedIndex, requestCount, entryIndex, contentKb) 
     blockIndex += 1;
   }
   return `<article><h1>Stress ${feedIndex}-${requestCount}-${entryIndex}</h1>${body}</article>`;
+}
+
+function buildStressReaderHtml(feedIndex, requestCount, entryIndex, contentKb) {
+  return `<!doctype html>
+<html>
+  <head>
+    <title>Stress ${feedIndex}-${requestCount}-${entryIndex}</title>
+  </head>
+  <body>
+    ${buildStressArticleHtml(feedIndex, requestCount, entryIndex, contentKb)}
+  </body>
+</html>`;
 }
 
 function startMemorySampler({ appPid, initialWebKitPids, outputPath }) {
@@ -502,11 +733,11 @@ function summarizeSamples(samples) {
   };
 }
 
-async function captureHeapSummaryIfNeeded(summary, artifactsDir) {
+async function captureHeapSummaryIfNeeded(summary, artifactsDir, profile) {
   const pid = summary.maxSample?.webKitProcesses
     ?.filter((process) => process.type === "webkit-webcontent")
     ?.sort((a, b) => b.rssMb - a.rssMb)[0]?.pid;
-  if (!pid || process.env.KIJI_E2E_WEBKIT_STRESS_HEAP === "0") {
+  if (!pid || !profile.captureHeap) {
     return { path: null };
   }
 
