@@ -28,6 +28,7 @@ const mockNavigationState = {
   selectedFeedTitle: 'Test Feed' as string | null,
   selectedTag: null as string | null,
   selectedSmartView: null as 'saved' | 'pinned' | 'unread' | 'all' | null,
+  navigationNonce: 0,
 };
 
 const mockCollectionState = {
@@ -62,6 +63,30 @@ const mockUIState = {
 
 vi.mock('@/contexts/FeedContext', () => ({
   useFeedNavigation: () => mockNavigationState,
+  useFeedCollectionArticles: () => ({
+    articles: mockCollectionState.articles,
+    articlesTotalCount: mockCollectionState.articlesTotalCount,
+    newArticleCount: 0,
+    newArticleHashes: mockCollectionState.newArticleHashes,
+    articleListScrollRequest: mockCollectionState.articleListScrollRequest,
+  }),
+  useFeedCollectionLoading: () => ({
+    isLoadingArticles: mockCollectionState.isLoadingArticles,
+    isLoadingMoreArticles: mockCollectionState.isLoadingMoreArticles,
+    isLoadMoreInFlight: false,
+    isSavedListLoading: mockCollectionState.isSavedListLoading,
+    isFetchingNew: false,
+    isGlobalLoadingIndicatorActive: mockCollectionState.isGlobalLoadingIndicatorActive,
+  }),
+  useFeedCollectionActions: () => ({
+    loadMoreArticles: mockCollectionState.loadMoreArticles,
+    updateArticleInList: mockCollectionState.updateArticleInList,
+    searchCurrentSource: mockCollectionState.searchCurrentSource,
+    clearArticleListSearch: mockCollectionState.clearArticleListSearch,
+    syncArticleListViewport: mockCollectionState.syncArticleListViewport,
+    refreshFeed: vi.fn(),
+    reloadCurrentSourceFromStore: vi.fn(),
+  }),
   useFeedCollection: () => mockCollectionState,
   useFeedOverlay: () => mockOverlayState,
   useFeedUI: () => mockUIState,

@@ -1,6 +1,7 @@
 import { useRef, type Dispatch, type RefObject, type SetStateAction } from 'react';
 
 import { useDependencyEffect } from '@/hooks/useLifecycleEffects';
+import { ARTICLE_LIST_ESTIMATED_ROW_HEIGHT } from '../articleListLoadMore';
 
 interface RowVirtualizerLike {
   scrollToIndex: (index: number, options?: { align?: 'auto' | 'center' | 'end' | 'start' }) => void;
@@ -10,6 +11,8 @@ interface ArticleListScrollRequestLike {
   revision: number;
   mode: 'top' | 'anchor';
   anchorHash: string | null;
+  preserveScrollTop?: number;
+  prependedItemCount?: number;
 }
 
 interface UseArticleListBackgroundScrollSyncOptions {
@@ -51,14 +54,19 @@ export const useArticleListBackgroundScrollSync = ({
       }
       lastAppliedRevisionRef.current = scrollRequest.revision;
 
-      // Keep the visible viewport anchored after background inserts so users
-      // either see the fresh top entries immediately or stay near their row.
       if (scrollRequest.mode === 'top') {
         currentListElement.scrollTop = 0;
         if (filteredCount > 0) {
           rowVirtualizer.scrollToIndex(0, { align: 'start' });
         }
         setHasListScrollOffset(false);
+        return;
+      }
+
+      if (typeof scrollRequest.preserveScrollTop === 'number') {
+        const prependedDelta = (scrollRequest.prependedItemCount ?? 0) * ARTICLE_LIST_ESTIMATED_ROW_HEIGHT;
+        currentListElement.scrollTop = scrollRequest.preserveScrollTop + prependedDelta;
+        setHasListScrollOffset(currentListElement.scrollTop > 0);
         return;
       }
 

@@ -254,7 +254,7 @@ describe('SharedArticleList hooks', () => {
         }));
 
       expect(setHasListScrollOffset).toHaveBeenCalledWith(true);
-      expect(syncViewportSnapshot).toHaveBeenCalledWith(false);
+      expect(syncViewportSnapshot).toHaveBeenCalledWith(false, false, 60);
     });
   });
 
@@ -301,7 +301,7 @@ describe('SharedArticleList hooks', () => {
       expect(setHasListScrollOffset).toHaveBeenCalledWith(false);
     });
 
-    it('re-anchors the visible article when background inserts arrive away from the top', () => {
+    it('preserves scroll offset when background inserts arrive away from the top', () => {
       const scrollToIndex = vi.fn();
       const ensureHashInView = vi.fn();
       const setHasListScrollOffset = vi.fn();
@@ -318,14 +318,17 @@ describe('SharedArticleList hooks', () => {
           revision: 2,
           mode: 'anchor',
           anchorHash: 'hash-2',
+          preserveScrollTop: 180,
+          prependedItemCount: 2,
         },
         rowVirtualizer: { scrollToIndex },
         ensureHashInView,
         setHasListScrollOffset,
       }));
 
+      expect(articleListItemsRef.current?.scrollTop).toBe(180 + (2 * 112));
       expect(scrollToIndex).not.toHaveBeenCalled();
-      expect(ensureHashInView).toHaveBeenCalledWith('hash-2');
+      expect(ensureHashInView).not.toHaveBeenCalled();
       expect(setHasListScrollOffset).toHaveBeenCalledWith(true);
     });
 

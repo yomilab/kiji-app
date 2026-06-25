@@ -183,21 +183,39 @@ interface CollectionState {
   isFetchingNew: boolean;
   newArticleCount: number;
   newArticleHashes: Set<string>;
-  isGlobalLoadingIndicatorActive: boolean;
   articleListScrollRequest: ArticleListScrollRequest | null;
 }
+
+export type CollectionArticlesState = Pick<
+  CollectionState,
+  'articles' | 'articlesTotalCount' | 'newArticleCount' | 'newArticleHashes' | 'articleListScrollRequest'
+>;
+
+export type CollectionLoadingState = Pick<
+  CollectionState,
+  | 'isLoadingArticles'
+  | 'isLoadingMoreArticles'
+  | 'isLoadMoreInFlight'
+  | 'isSavedListLoading'
+  | 'isFetchingNew'
+> & {
+  isGlobalLoadingIndicatorActive: boolean;
+};
 
 interface ArticleListViewportSnapshot {
   isSearchActive: boolean;
   isAtTop: boolean;
   anchorHash: string | null;
+  scrollTop?: number;
   isScrolling?: boolean;
 }
 
-interface ArticleListScrollRequest {
+export interface ArticleListScrollRequest {
   revision: number;
   mode: 'top' | 'anchor';
   anchorHash: string | null;
+  preserveScrollTop?: number;
+  prependedItemCount?: number;
 }
 
 interface CollectionActions {
@@ -241,10 +259,12 @@ interface UIActions {
 
 // ─── Unified Context Type (Backward Compatibility) ───
 
-export interface FeedContextType extends NavigationState, NavigationActions, CollectionState, CollectionActions, OverlayState, OverlayActions, UIState, UIActions {}
+export interface FeedContextType extends NavigationState, NavigationActions, CollectionArticlesState, CollectionLoadingState, CollectionActions, OverlayState, OverlayActions, UIState, UIActions {}
 
 const NavigationContext = createContext<(NavigationState & NavigationActions) | undefined>(undefined);
-const CollectionContext = createContext<(CollectionState & CollectionActions) | undefined>(undefined);
+const CollectionArticlesContext = createContext<CollectionArticlesState | undefined>(undefined);
+const CollectionLoadingContext = createContext<CollectionLoadingState | undefined>(undefined);
+const CollectionActionsContext = createContext<CollectionActions | undefined>(undefined);
 const OverlayContext = createContext<(OverlayState & OverlayActions) | undefined>(undefined);
 const UIContext = createContext<(UIState & UIActions) | undefined>(undefined);
 const UIActionsContext = createContext<UIActions | undefined>(undefined);
@@ -595,7 +615,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     isFetchingNew: false,
     newArticleCount: 0,
     newArticleHashes: new Set<string>(),
-    isGlobalLoadingIndicatorActive: false,
     articleListScrollRequest: null,
   });
   const [overlayState, overlayDispatch] = useReducer(overlayReducer, {
@@ -627,6 +646,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const articleListSearchRevisionRef = useRef(0);
   const articleListAtTopRef = useRef(true);
   const articleListAnchorHashRef = useRef<string | null>(null);
+  const articleListScrollTopRef = useRef(0);
   const articleListScrollActiveRef = useRef(false);
   const articleListScrollIdleTimerRef = useRef<number | null>(null);
   const pendingLoadMoreCommitMetricRef = useRef<PendingLoadMoreCommitMetric | null>(null);
@@ -1093,13 +1113,16 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const createBackgroundScrollRequest = useCallback((
     mode: ArticleListScrollRequest['mode'],
-    anchorHash: string | null = null
+    anchorHash: string | null = null,
+    options?: Pick<ArticleListScrollRequest, 'preserveScrollTop' | 'prependedItemCount'>,
   ): ArticleListScrollRequest => {
     backgroundScrollRequestRevisionRef.current += 1;
     return {
       revision: backgroundScrollRequestRevisionRef.current,
       mode,
       anchorHash,
+      preserveScrollTop: options?.preserveScrollTop,
+      prependedItemCount: options?.prependedItemCount,
     };
   }, []);
 
@@ -1222,9 +1245,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           // when they are already there, otherwise preserve a nearby row.
           const scrollRequest = articleListAtTopRef.current
             ? createBackgroundScrollRequest('top')
-            : (articleListAnchorHashRef.current
-              ? createBackgroundScrollRequest('anchor', articleListAnchorHashRef.current)
-              : null);
+            : createBackgroundScrollRequest('anchor', articleListAnchorHashRef.current, {
+              preserveScrollTop: articleListScrollTopRef.current,
+              prependedItemCount: newHashes.length,
+            });
 
           startTransition(() => {
             collectionDispatch({
@@ -1553,6 +1577,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     articleListSearchActiveRef.current = snapshot.isSearchActive;
     articleListAtTopRef.current = snapshot.isAtTop;
     articleListAnchorHashRef.current = snapshot.anchorHash;
+    if (typeof snapshot.scrollTop === 'number') {
+      articleListScrollTopRef.current = snapshot.scrollTop;
+    }
 
     if (snapshot.isScrolling) {
       articleListScrollActiveRef.current = true;
@@ -2829,9 +2856,37 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     || collectionState.isSavedListLoading
     || (collectionState.isLoadingArticles && navigationState.selectedSmartView !== 'saved');
 
-  const collectionValue = useMemo(() => ({
-    ...collectionState,
+  const collectionArticlesValue = useMemo((): CollectionArticlesState => ({
+    articles: collectionState.articles,
+    articlesTotalCount: collectionState.articlesTotalCount,
+    newArticleCount: collectionState.newArticleCount,
+    newArticleHashes: collectionState.newArticleHashes,
+    articleListScrollRequest: collectionState.articleListScrollRequest,
+  }), [
+    collectionState.articles,
+    collectionState.articlesTotalCount,
+    collectionState.newArticleCount,
+    collectionState.newArticleHashes,
+    collectionState.articleListScrollRequest,
+  ]);
+
+  const collectionLoadingValue = useMemo((): CollectionLoadingState => ({
+    isLoadingArticles: collectionState.isLoadingArticles,
+    isLoadingMoreArticles: collectionState.isLoadingMoreArticles,
+    isLoadMoreInFlight: collectionState.isLoadMoreInFlight,
+    isSavedListLoading: collectionState.isSavedListLoading,
+    isFetchingNew: collectionState.isFetchingNew,
     isGlobalLoadingIndicatorActive,
+  }), [
+    collectionState.isLoadingArticles,
+    collectionState.isLoadingMoreArticles,
+    collectionState.isLoadMoreInFlight,
+    collectionState.isSavedListLoading,
+    collectionState.isFetchingNew,
+    isGlobalLoadingIndicatorActive,
+  ]);
+
+  const collectionActionsValue = useMemo((): CollectionActions => ({
     refreshFeed,
     reloadCurrentSourceFromStore,
     loadMoreArticles,
@@ -2840,8 +2895,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     searchCurrentSource,
     clearArticleListSearch,
   }), [
-    collectionState,
-    isGlobalLoadingIndicatorActive,
     refreshFeed,
     reloadCurrentSourceFromStore,
     loadMoreArticles,
@@ -2879,9 +2932,13 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         <UIContext.Provider value={uiValue}>
           <OverlayContext.Provider value={overlayValue}>
             <NavigationContext.Provider value={navigationValue}>
-              <CollectionContext.Provider value={collectionValue}>
-                {children}
-              </CollectionContext.Provider>
+              <CollectionActionsContext.Provider value={collectionActionsValue}>
+                <CollectionArticlesContext.Provider value={collectionArticlesValue}>
+                  <CollectionLoadingContext.Provider value={collectionLoadingValue}>
+                    {children}
+                  </CollectionLoadingContext.Provider>
+                </CollectionArticlesContext.Provider>
+              </CollectionActionsContext.Provider>
             </NavigationContext.Provider>
           </OverlayContext.Provider>
         </UIContext.Provider>
@@ -2898,17 +2955,55 @@ export const useFeedNavigation = () => {
   return context;
 };
 
-export const useFeedCollection = () => {
-  const context = useContext(CollectionContext);
+export const useFeedCollectionArticles = (): CollectionArticlesState => {
+  const context = useContext(CollectionArticlesContext);
   if (!context) {
-    const error = new Error('useFeedCollection must be used within CollectionProvider');
-    logger.error('FeedContext', 'Collection context was missing during render', {
+    const error = new Error('useFeedCollectionArticles must be used within CollectionArticlesProvider');
+    logger.error('FeedContext', 'Collection articles context was missing during render', {
       search: typeof window !== 'undefined' ? window.location.search : null,
       stack: error.stack,
     });
     throw error;
   }
   return context;
+};
+
+export const useFeedCollectionLoading = (): CollectionLoadingState => {
+  const context = useContext(CollectionLoadingContext);
+  if (!context) {
+    const error = new Error('useFeedCollectionLoading must be used within CollectionLoadingProvider');
+    logger.error('FeedContext', 'Collection loading context was missing during render', {
+      search: typeof window !== 'undefined' ? window.location.search : null,
+      stack: error.stack,
+    });
+    throw error;
+  }
+  return context;
+};
+
+export const useFeedCollectionActions = (): CollectionActions => {
+  const context = useContext(CollectionActionsContext);
+  if (!context) {
+    const error = new Error('useFeedCollectionActions must be used within CollectionActionsProvider');
+    logger.error('FeedContext', 'Collection actions context was missing during render', {
+      search: typeof window !== 'undefined' ? window.location.search : null,
+      stack: error.stack,
+    });
+    throw error;
+  }
+  return context;
+};
+
+export const useFeedCollection = (): CollectionArticlesState & CollectionLoadingState & CollectionActions => {
+  const articles = useFeedCollectionArticles();
+  const loading = useFeedCollectionLoading();
+  const actions = useFeedCollectionActions();
+
+  return useMemo(() => ({
+    ...articles,
+    ...loading,
+    ...actions,
+  }), [actions, articles, loading]);
 };
 
 export const useFeedOverlay = () => {
@@ -2939,14 +3034,18 @@ export const useFeedFaviconRefreshed = () => {
 
 export const useFeed = (): FeedContextType => {
   const nav = useFeedNavigation();
-  const coll = useFeedCollection();
+  const articles = useFeedCollectionArticles();
+  const loading = useFeedCollectionLoading();
+  const actions = useFeedCollectionActions();
   const overlay = useFeedOverlay();
   const ui = useFeedUI();
 
   return useMemo(() => ({
     ...nav,
-    ...coll,
+    ...articles,
+    ...loading,
+    ...actions,
     ...overlay,
     ...ui,
-  }), [nav, coll, overlay, ui]);
+  }), [actions, articles, loading, nav, overlay, ui]);
 };

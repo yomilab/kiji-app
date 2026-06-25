@@ -389,6 +389,8 @@ describe('FeedContext scheduler refresh', () => {
       expect(latestContext!.articleListScrollRequest).toEqual(expect.objectContaining({
         mode: 'anchor',
         anchorHash: 'hash-a1',
+        preserveScrollTop: expect.any(Number),
+        prependedItemCount: 1,
       }));
     });
   });
