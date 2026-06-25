@@ -16,20 +16,20 @@ import { animateElementScrollTop, getScrollableBottom } from '@/utils/fixedTimeS
 interface UseArticleListKeyboardNavigationOptions {
   articleListRef: RefObject<HTMLDivElement>;
   filteredArticles: Article[];
-  activeArticleHash: string | null;
+  keyboardFocusHash: string | null;
   articleViewOverlayPhase: ArticleViewOverlayPhase;
   selectArticle: (hash: string) => void;
-  setActiveArticle: (hash: string | null) => void;
+  setKeyboardFocusHash: (hash: string | null) => void;
   ensureHashInView: (hash: string) => void;
 }
 
 export const useArticleListKeyboardNavigation = ({
   articleListRef,
   filteredArticles,
-  activeArticleHash,
+  keyboardFocusHash,
   articleViewOverlayPhase,
   selectArticle,
-  setActiveArticle,
+  setKeyboardFocusHash,
   ensureHashInView,
 }: UseArticleListKeyboardNavigationOptions) => {
   useEffect(() => {
@@ -40,6 +40,18 @@ export const useArticleListKeyboardNavigation = ({
     let lastStepAt = 0;
     let pendingTopSequenceTimerId: number | null = null;
     let cancelScrollAnimation: (() => void) | null = null;
+    const focusIndexRef = { current: -1 };
+
+    const syncFocusIndexRef = (): void => {
+      if (!keyboardFocusHash) {
+        focusIndexRef.current = -1;
+        return;
+      }
+      const index = filteredArticles.findIndex((article) => article.hash === keyboardFocusHash);
+      focusIndexRef.current = index;
+    };
+
+    syncFocusIndexRef();
 
     const isEditableTarget = (target: EventTarget | null): boolean => {
       if (!(target instanceof HTMLElement)) return false;
@@ -129,9 +141,7 @@ export const useArticleListKeyboardNavigation = ({
     const stepActiveArticle = (direction: -1 | 1) => {
       if (filteredArticles.length === 0) return;
 
-      const currentIndex = activeArticleHash
-        ? filteredArticles.findIndex((article) => article.hash === activeArticleHash)
-        : -1;
+      const currentIndex = focusIndexRef.current;
       const fallbackIndex = direction > 0 ? 0 : filteredArticles.length - 1;
       const nextIndex = currentIndex === -1
         ? fallbackIndex
@@ -140,14 +150,15 @@ export const useArticleListKeyboardNavigation = ({
       const nextArticle = filteredArticles[nextIndex];
       if (!nextArticle) return;
 
-      if (nextArticle.hash === activeArticleHash) {
+      if (nextArticle.hash === keyboardFocusHash) {
         requestAnimationFrame(() => {
           keepHashInView(nextArticle.hash);
         });
         return;
       }
 
-      setActiveArticle(nextArticle.hash);
+      focusIndexRef.current = nextIndex;
+      setKeyboardFocusHash(nextArticle.hash);
       requestAnimationFrame(() => {
         keepHashInView(nextArticle.hash);
       });
@@ -181,23 +192,24 @@ export const useArticleListKeyboardNavigation = ({
       if (handleVimScrollShortcut(e)) return;
 
       if (isOpenArticleShortcut(e)) {
-        const activeHashInList = activeArticleHash && filteredArticles.some((article) => article.hash === activeArticleHash)
-          ? activeArticleHash
+        const focusedHash = keyboardFocusHash && filteredArticles.some((article) => article.hash === keyboardFocusHash)
+          ? keyboardFocusHash
           : null;
         const firstHash = filteredArticles[0]?.hash;
 
-        if (!activeHashInList && firstHash) {
+        if (!focusedHash && firstHash) {
           e.preventDefault();
-          setActiveArticle(firstHash);
+          focusIndexRef.current = 0;
+          setKeyboardFocusHash(firstHash);
           requestAnimationFrame(() => {
             keepHashInView(firstHash);
           });
           return;
         }
 
-        if (activeHashInList) {
+        if (focusedHash) {
           e.preventDefault();
-          selectArticle(activeHashInList);
+          selectArticle(focusedHash);
         }
         return;
       }
@@ -244,5 +256,5 @@ export const useArticleListKeyboardNavigation = ({
         cancelAnimationFrame(holdRafId);
       }
     };
-  }, [articleListRef, filteredArticles, activeArticleHash, articleViewOverlayPhase, selectArticle, setActiveArticle, ensureHashInView]);
+  }, [articleListRef, filteredArticles, keyboardFocusHash, articleViewOverlayPhase, selectArticle, setKeyboardFocusHash, ensureHashInView]);
 };

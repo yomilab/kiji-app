@@ -1,6 +1,9 @@
 export const E2E_STATION_ALPHA = "E2E Station Alpha";
 export const E2E_STATION_BETA = "E2E Station Beta";
 export const E2E_STATION_MANAGE = "E2E Station";
+export const E2E_STATION_DAILY = "E2E Station Daily";
+export const E2E_STATION_COMPACT = "E2E Station Compact";
+export const E2E_LARGE_STATION_FEED_COUNT = 30;
 
 export function buildAtomFeed({ feedId, title, entries }) {
   const entryXml = entries
@@ -112,6 +115,44 @@ export function buildManageStationOpml(baseUrl) {
 
 export function buildImportOpml(baseUrl) {
   return buildMultiStationOpml(baseUrl);
+}
+
+export function buildLargeStationPerformanceOpml(baseUrl, feedCount = E2E_LARGE_STATION_FEED_COUNT) {
+  const dailyFeeds = Array.from({ length: feedCount }, (_, index) => {
+    const slug = `daily-${index}`;
+    return `    <outline type="rss" title="E2E Daily Feed ${index}" text="E2E Daily Feed ${index}" xmlUrl="${baseUrl}/${slug}.xml" htmlUrl="${baseUrl}/${slug}.xml" />`;
+  }).join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+<head><title>E2E Large Station Performance</title></head>
+<body>
+  <outline text="${E2E_STATION_COMPACT}" title="${E2E_STATION_COMPACT}">
+    <outline type="rss" title="E2E Compact Feed" text="E2E Compact Feed" xmlUrl="${baseUrl}/compact.xml" htmlUrl="${baseUrl}/compact.xml" />
+  </outline>
+  <outline text="${E2E_STATION_DAILY}" title="${E2E_STATION_DAILY}">
+${dailyFeeds}
+  </outline>
+</body>
+</opml>`;
+}
+
+export function buildAtomFeedEntryRoutes(baseUrl, slug, feedId, titlePrefix, entryCount = 1) {
+  const entries = Array.from({ length: entryCount }, (_, index) => ({
+    id: `${feedId}-entry-${index}`,
+    title: `${titlePrefix} article ${index}`,
+    link: `${baseUrl}/${slug}/articles/${index}`,
+    summary: `${titlePrefix} fixture article ${index}`,
+  }));
+
+  return {
+    contentType: "application/atom+xml; charset=utf-8",
+    body: buildAtomFeed({
+      feedId,
+      title: `${titlePrefix} Feed`,
+      entries,
+    }),
+  };
 }
 
 export const READER_HTML = `<!DOCTYPE html>

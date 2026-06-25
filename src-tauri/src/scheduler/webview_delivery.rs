@@ -1,4 +1,5 @@
 use tauri::{AppHandle, Emitter, Manager};
+use serde::Serialize;
 
 pub const MAIN_WEBVIEW_LABEL: &str = "main";
 
@@ -25,6 +26,24 @@ pub fn emit_scheduler_event_to_main_webview(
 
     if let Err(error) = app.emit(event, ()) {
         eprintln!("[{log_label}] Failed to emit {event}: {error}");
+    }
+}
+
+pub fn emit_scheduler_payload_to_main_webview<T: Serialize>(
+    app: &AppHandle,
+    event: &str,
+    payload: &T,
+    log_label: &str,
+) {
+    if let Some(main_window) = app.get_webview_window(MAIN_WEBVIEW_LABEL) {
+        if let Err(error) = main_window.emit(event, payload) {
+            eprintln!("[{log_label}] Failed to emit {event} payload to main webview: {error}");
+        }
+        return;
+    }
+
+    if let Err(error) = app.emit(event, payload) {
+        eprintln!("[{log_label}] Failed to emit {event} payload: {error}");
     }
 }
 

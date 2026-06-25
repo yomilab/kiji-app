@@ -70,7 +70,10 @@ vi.mock('@/services/logger', () => ({
   },
 }));
 
-const RESTORE_REFRESH_DELAY_MS = 1200;
+import {
+  SOURCE_SELECTION_MIN_REFRESH_DELAY_MS,
+  advanceSourceSelectionRefreshSchedule,
+} from '@/services/feeds/sourceSelectionPaintGate';
 
 const waitForExpectation = async (
   expectation: () => void,
@@ -177,7 +180,7 @@ describe('FeedContext restore selection', () => {
     });
 
     await act(async () => {
-      vi.advanceTimersByTime(420);
+      advanceSourceSelectionRefreshSchedule(vi.advanceTimersByTime.bind(vi));
       await Promise.resolve();
     });
 
@@ -191,7 +194,7 @@ describe('FeedContext restore selection', () => {
     expect(feedsFetcher.fetchFeed).not.toHaveBeenCalled();
 
     await act(async () => {
-      vi.advanceTimersByTime(RESTORE_REFRESH_DELAY_MS);
+      vi.advanceTimersByTime(SOURCE_SELECTION_MIN_REFRESH_DELAY_MS + 200);
       await Promise.resolve();
     });
 

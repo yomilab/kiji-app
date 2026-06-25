@@ -3,6 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const schedulerStart = vi.hoisted(() => vi.fn().mockResolvedValue("started"));
 const schedulerStop = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const schedulerReconfigure = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const previewNativeCycle = vi.hoisted(() => vi.fn().mockResolvedValue({
+  plan: { prioritized: [], skippedBackoffCount: 0, skippedSuppressedCount: 0 },
+  queuedCount: 0,
+  executedFeedCount: 0,
+  changedFeeds: 0,
+  notModifiedFeeds: 0,
+  failedFeeds: 0,
+  insertedArticles: 0,
+  feedResults: [],
+}));
+const isNativeFeedIngestionEnabled = vi.hoisted(() => vi.fn(() => false));
 const listen = vi.hoisted(() => vi.fn());
 const eventHandlers = vi.hoisted(() => new Map<string, () => void>());
 
@@ -42,9 +53,20 @@ vi.mock("@/lib/tauriClient", () => ({
       start: schedulerStart,
       stop: schedulerStop,
       reconfigure: schedulerReconfigure,
+      previewNativeCycle,
     },
   },
 }));
+
+vi.mock("@/services/scheduler/nativeSchedulerCycle", async () => {
+  const actual = await vi.importActual<typeof import("@/services/scheduler/nativeSchedulerCycle")>(
+    "@/services/scheduler/nativeSchedulerCycle",
+  );
+  return {
+    ...actual,
+    isNativeFeedIngestionEnabled,
+  };
+});
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen,
@@ -724,6 +746,104 @@ describe("feedSchedulerService", () => {
       expect(globalScope.__kijiSchedulerTick).toBeUndefined();
       expect(globalScope.__kijiSchedulerSleep).toBeUndefined();
       expect(globalScope.__kijiSchedulerResume).toBeUndefined();
+    });
+  });
+
+  describe("native feed ingestion cycle", () => {
+    beforeEach(() => {
+      isNativeFeedIngestionEnabled.mockReturnValue(true);
+      previewNativeCycle.mockResolvedValue({
+        plan: {
+          prioritized: [{ feedId: "feed-1", score: 1 }],
+          skippedBackoffCount: 0,
+          skippedSuppressedCount: 0,
+        },
+        queuedCount: 1,
+        executedFeedCount: 1,
+        changedFeeds: 1,
+        notModifiedFeeds: 0,
+        failedFeeds: 0,
+        insertedArticles: 2,
+        feedResults: [{ feedId: "feed-1", status: "changed", insertedCount: 2 }],
+      });
+    });
+
+    it("runs previewNativeCycle instead of renderer fetch/store on scheduler tick", async () => {
+      await feedScheduler.start();
+
+      getSchedulerEventHandler("scheduler:cycle-tick")?.();
+      await vi.waitFor(() => {
+        expect(previewNativeCycle).toHaveBeenCalledTimes(1);
+      });
+
+      expect(fetchFeedNetworkWithCache).not.toHaveBeenCalled();
+      expect(storeParsedFeedContent).not.toHaveBeenCalled();
+      expect(previewNativeCycle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          execute: true,
+          concurrency: expect.any(Number),
+        }),
+      );
+    });
+
+    it("scopes post-import refresh to boosted feed ids", async () => {
+      await feedScheduler.start();
+
+      feedScheduler.boostMany(["feed-1", "feed-2"]);
+      await vi.waitFor(() => {
+        expect(previewNativeCycle).toHaveBeenCalledTimes(1);
+      });
+
+      expect(previewNativeCycle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          execute: true,
+          options: expect.objectContaining({
+            onlyFeedIds: ["feed-1", "feed-2"],
+          }),
+        }),
+      );
+    });
+
+    it("defers boosted import refresh until the native cycle completes", async () => {
+      let resolveCycle!: () => void;
+      previewNativeCycle.mockImplementation(() => new Promise((resolve) => {
+        resolveCycle = () => {
+          resolve({
+            plan: { prioritized: [], skippedBackoffCount: 0, skippedSuppressedCount: 0 },
+            queuedCount: 0,
+            executedFeedCount: 0,
+            changedFeeds: 0,
+            notModifiedFeeds: 0,
+            failedFeeds: 0,
+            insertedArticles: 0,
+            feedResults: [],
+          });
+        };
+      }));
+
+      await feedScheduler.start();
+      getSchedulerEventHandler("scheduler:cycle-tick")?.();
+      await vi.waitFor(() => {
+        expect(previewNativeCycle).toHaveBeenCalledTimes(1);
+      });
+
+      feedScheduler.boostMany(["feed-2"]);
+      getSchedulerEventHandler("scheduler:cycle-tick")?.();
+      expect(previewNativeCycle).toHaveBeenCalledTimes(1);
+
+      resolveCycle();
+      await vi.waitFor(() => {
+        expect(previewNativeCycle).toHaveBeenCalledTimes(2);
+      });
+
+      expect(previewNativeCycle).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          execute: true,
+          options: expect.objectContaining({
+            onlyFeedIds: ["feed-2"],
+          }),
+        }),
+      );
     });
   });
 });

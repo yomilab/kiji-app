@@ -7,9 +7,11 @@ import {
   roundPerformanceValue,
   type RenderCommitMetric,
 } from '@/services/performance/interactionPerformance';
+import { sidebarSwitchTrace } from '@/services/performance/sidebarSwitchTrace';
 
 interface UseArticleListPerformanceMetricsParams {
   sourceKey: string;
+  navigationNonce: number;
   sourceLabel: string | null;
   variant: 'common' | 'saved';
   filteredCount: number;
@@ -66,6 +68,7 @@ const createRenderCommitMetric = (
 
 export const useArticleListPerformanceMetrics = ({
   sourceKey,
+  navigationNonce,
   sourceLabel,
   variant,
   filteredCount,
@@ -238,9 +241,14 @@ export const useArticleListPerformanceMetrics = ({
     latestRenderCommitRef.current = createRenderCommitMetric(phase, actualDuration, baseDuration, startTime, commitTime);
   }, []);
 
+  const getListSnapshotRef = useRef(getListSnapshot);
+  getListSnapshotRef.current = getListSnapshot;
+
   // Close sidebar-switch samples on the first committed list render for the new
   // source so we measure the user's visible handoff, not only async fetch work.
   useDependencyEffect(() => {
+    sidebarSwitchTrace.completeInteractive(sourceKey, latestRenderCommitRef.current);
+
     if (!isInteractionPerformanceEnabled) {
       return;
     }
@@ -249,13 +257,13 @@ export const useArticleListPerformanceMetrics = ({
     interactionPerformance.completeTimedInteraction('sidebar-switch', sourceKey, {
       summaryMessage: 'Sidebar switch performance sample',
       lagMessage: 'Sidebar switch lag detected',
-      additionalContext: getListSnapshot(),
+      additionalContext: getListSnapshotRef.current(),
       isLagging: (summary) => {
         return summary.totalDurationMs >= INTERACTION_PERFORMANCE_BUDGETS.sidebarSwitch.firstCommitLagMs
           || (summary.renderCommit?.actualDurationMs ?? 0) >= INTERACTION_PERFORMANCE_BUDGETS.sidebarSwitch.renderCommitLagMs;
       },
     });
-  }, [getListSnapshot, sourceKey]);
+  }, [sourceKey, navigationNonce]);
 
   const handleScrollPerformanceEvent = useCallback((scrollTop: number) => {
     if (!isInteractionPerformanceEnabled) {

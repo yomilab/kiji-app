@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   ARTICLE_LIST_ESTIMATED_ROW_HEIGHT,
+  ARTICLE_LIST_FAST_SCROLL_MAX_DISTANCE_PX,
+  ARTICLE_LIST_FAST_SCROLL_MIN_VELOCITY_PX_PER_MS,
   ARTICLE_LIST_SCROLL_LOAD_MAX_DISTANCE_PX,
   ARTICLE_LIST_SCROLL_LOAD_MIN_DISTANCE_PX,
   ARTICLE_LIST_SCROLL_LOAD_VIEWPORT_FACTOR,
+  getArticleListFastScrollPrefetchBoost,
   getArticleListLoadMorePriority,
   getArticleListScrollLoadDistancePx,
+  getArticleListScrollLoadDistancePxForVelocity,
   getDistanceFromScrollBottom,
   getRemainingLoadedRows,
+  measureArticleListScrollVelocity,
   shouldTriggerArticleListLoadMore,
   shouldTriggerArticleListLoadMoreFromScroll,
 } from '@/components/MainArea/articleListLoadMore';
@@ -72,5 +77,43 @@ describe('articleListLoadMore', () => {
     expect(ARTICLE_LIST_SCROLL_LOAD_MIN_DISTANCE_PX).toBe(ARTICLE_LIST_ESTIMATED_ROW_HEIGHT);
     expect(ARTICLE_LIST_SCROLL_LOAD_MAX_DISTANCE_PX).toBe(ARTICLE_LIST_ESTIMATED_ROW_HEIGHT * 5);
     expect(ARTICLE_LIST_SCROLL_LOAD_VIEWPORT_FACTOR).toBe(1.5);
+  });
+
+  it('measures downward scroll velocity from recent samples', () => {
+    const first = measureArticleListScrollVelocity(null, 100, 0);
+    expect(first.velocityPxPerMs).toBe(0);
+
+    const second = measureArticleListScrollVelocity(first.sample, 190, 100);
+    expect(second.velocityPxPerMs).toBe(0.9);
+
+    const upward = measureArticleListScrollVelocity(second.sample, 150, 150);
+    expect(upward.velocityPxPerMs).toBe(0);
+  });
+
+  it('extends virtual prefetch thresholds during fast downward scroll near the loaded end', () => {
+    expect(shouldTriggerArticleListLoadMore(100, 200, 35)).toBe(false);
+    expect(shouldTriggerArticleListLoadMore(100, 200, 35, {
+      scrollVelocityPxPerMs: ARTICLE_LIST_FAST_SCROLL_MIN_VELOCITY_PX_PER_MS * 2,
+    })).toBe(true);
+    expect(shouldTriggerArticleListLoadMore(100, 200, 10, {
+      scrollVelocityPxPerMs: ARTICLE_LIST_FAST_SCROLL_MIN_VELOCITY_PX_PER_MS * 2,
+    })).toBe(false);
+  });
+
+  it('boosts scroll trigger distance during fast downward scroll', () => {
+    const baseDistance = getArticleListScrollLoadDistancePx(500);
+    const fastDistance = getArticleListScrollLoadDistancePxForVelocity(
+      500,
+      ARTICLE_LIST_FAST_SCROLL_MIN_VELOCITY_PX_PER_MS * 2,
+    );
+
+    expect(fastDistance).toBeGreaterThan(baseDistance);
+    expect(fastDistance).toBeLessThanOrEqual(ARTICLE_LIST_FAST_SCROLL_MAX_DISTANCE_PX);
+  });
+
+  it('caps fast-scroll row boost to the approaching-end window', () => {
+    const prefetchRows = 40;
+    expect(getArticleListFastScrollPrefetchBoost(2, prefetchRows, 90)).toBe(0);
+    expect(getArticleListFastScrollPrefetchBoost(2, prefetchRows, 70)).toBeGreaterThan(0);
   });
 });

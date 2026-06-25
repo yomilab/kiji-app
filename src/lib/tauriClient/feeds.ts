@@ -31,6 +31,18 @@ export async function fetchPdfDataUrl(
   return invokeContract<FeedsContract["fetchPdfDataUrl"]>("feeds_fetch_pdf_data_url", request);
 }
 
+export async function parsePreview(
+  request: FeedsContract["parsePreview"]["request"],
+): Promise<FeedsContract["parsePreview"]["response"]> {
+  return invokeContract<FeedsContract["parsePreview"]>("feeds_parse_preview", request);
+}
+
+export async function storeParsedContent(
+  request: FeedsContract["storeParsedContent"]["request"],
+): Promise<FeedsContract["storeParsedContent"]["response"]> {
+  return invokeContract<FeedsContract["storeParsedContent"]>("feeds_store_parsed_content", request);
+}
+
 export async function abortRequest(
   request: FeedsContract["abortRequest"]["request"],
 ): Promise<FeedsContract["abortRequest"]["response"]> {

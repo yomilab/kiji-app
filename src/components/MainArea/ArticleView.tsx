@@ -126,8 +126,12 @@ function shouldUseSavedArticleSnapshot(
 }
 
 function isAudioEnclosure(articleEnclosure: ArticleEnclosure): boolean {
-  return articleEnclosure.type.toLowerCase().startsWith('audio/')
-    || AUDIO_EXTENSION_PATTERN.test(articleEnclosure.url);
+  const mimeType = typeof articleEnclosure.type === 'string'
+    ? articleEnclosure.type.toLowerCase()
+    : '';
+  const url = articleEnclosure.url ?? '';
+  return mimeType.startsWith('audio/')
+    || AUDIO_EXTENSION_PATTERN.test(url);
 }
 
 function selectPrimaryAudioEnclosure(article: Article | null): ArticleEnclosure | undefined {

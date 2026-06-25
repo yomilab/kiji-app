@@ -6,7 +6,7 @@ export interface MediaThumbnail {
 
 export interface Enclosure {
   url: string;
-  type: string;
+  type?: string | null;
   length?: number;
   duration?: number;
 }

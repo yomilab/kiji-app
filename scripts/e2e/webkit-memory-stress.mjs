@@ -49,12 +49,43 @@ const DEFAULT_PRESSURE_WINDOW_MS = 180_000;
 const DEFAULT_IDLE_PLATEAU_MS = 60_000;
 const DEFAULT_IDLE_DELTA_MB = 64;
 const SAMPLE_INTERVAL_MS = 1000;
+const DEFAULT_VERIFY_MAX_WEBKIT_MB = 1536;
+const DEFAULT_VERIFY_MAX_NATIVE_MB = 4096;
 const STRESS_PROFILE_DEFAULTS = {
   amplified: {
     feedCount: DEFAULT_FEED_COUNT,
     entriesPerFeed: DEFAULT_ENTRIES_PER_FEED,
     contentKbPerEntry: DEFAULT_CONTENT_KB_PER_ENTRY,
+    verificationMode: true,
+    minWebKitMemoryMb: 0,
+    maxWebKitMemoryMb: DEFAULT_VERIFY_MAX_WEBKIT_MB,
+    maxNativeMemoryMb: DEFAULT_VERIFY_MAX_NATIVE_MB,
+    targetCycles: DEFAULT_TARGET_CYCLES,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+    schedulerIntervalMs: Number(E2E_SCHEDULER_INTERVAL_MS),
+    pressureWindowMs: DEFAULT_PRESSURE_WINDOW_MS,
+    idlePlateauMs: DEFAULT_IDLE_PLATEAU_MS,
+    idleDeltaMb: DEFAULT_IDLE_DELTA_MB,
+    settleMs: 30_000,
+    captureHeap: true,
+    hideUi: "1",
+    runUiInteractions: false,
+    readerMode: false,
+    minPostImportArticleCount: 1,
+    acceptance: {
+      maxWebKitMemoryMb: DEFAULT_VERIFY_MAX_WEBKIT_MB,
+      maxNativeMemoryMb: DEFAULT_VERIFY_MAX_NATIVE_MB,
+      purpose: "verify native ingestion keeps WebKit bounded under large changed-feed refresh",
+    },
+  },
+  "amplified-repro": {
+    feedCount: DEFAULT_FEED_COUNT,
+    entriesPerFeed: DEFAULT_ENTRIES_PER_FEED,
+    contentKbPerEntry: DEFAULT_CONTENT_KB_PER_ENTRY,
+    verificationMode: false,
     minWebKitMemoryMb: DEFAULT_MIN_WEBKIT_MB,
+    maxWebKitMemoryMb: null,
+    maxNativeMemoryMb: null,
     targetCycles: DEFAULT_TARGET_CYCLES,
     timeoutMs: DEFAULT_TIMEOUT_MS,
     schedulerIntervalMs: Number(E2E_SCHEDULER_INTERVAL_MS),
@@ -69,30 +100,33 @@ const STRESS_PROFILE_DEFAULTS = {
     minPostImportArticleCount: 1,
     acceptance: {
       minWebKitMemoryMb: DEFAULT_MIN_WEBKIT_MB,
-      purpose: "reproduce multi-GB WebContent pressure from large feed fetch/parse payloads",
+      purpose: "legacy repro: multi-GB WebContent pressure from renderer feed fetch/parse (VITE_KIJI_NATIVE_FEED_INGESTION=0)",
     },
   },
   realistic: {
     feedCount: 80,
     entriesPerFeed: 30,
     contentKbPerEntry: 16,
-    minWebKitMemoryMb: 256,
+    verificationMode: true,
+    minWebKitMemoryMb: 0,
+    maxWebKitMemoryMb: 1536,
+    maxNativeMemoryMb: 2048,
     targetCycles: 1,
     timeoutMs: 10 * 60 * 1000,
     schedulerIntervalMs: Number(E2E_SCHEDULER_INTERVAL_MS),
     pressureWindowMs: 120_000,
     idlePlateauMs: 45_000,
     idleDeltaMb: 32,
-    settleMs: 0,
-    captureHeap: true,
+    settleMs: 15_000,
+    captureHeap: false,
     hideUi: "0",
     runUiInteractions: true,
     readerMode: false,
     minPostImportArticleCount: 1,
     acceptance: {
-      minWebKitMemoryMb: 256,
       maxWebKitMemoryMb: 1536,
-      purpose: "compare feed-ingestion pressure against visible station/list/article-view behavior",
+      maxNativeMemoryMb: 2048,
+      purpose: "verify bounded WebKit during visible station/list/article navigation",
     },
   },
 };
@@ -187,6 +221,7 @@ export async function runWebKitMemoryStressE2e() {
     await sampler.stop();
     const summary = summarizeSamples(sampler.samples);
     const logSummary = copyStressLogs(homeDir, artifactsDir);
+    const attributionSummary = summarizeAttributionLogs(logSummary);
     const eventSequence = copyEventSequence(e2eDir, artifactsDir);
     const heapSummary = await captureHeapSummaryIfNeeded(summary, artifactsDir, profile);
     const postImportCycle = readEventIfAfter(e2eDir, "cycle-complete", postImportAtMs);
@@ -216,9 +251,11 @@ export async function runWebKitMemoryStressE2e() {
         ?? 0,
       totalFetchCount: sumFetchCounts(fetchCounts()),
       maxWebKitMemoryMb: summary.maxWebKitMemoryMb,
+      maxNativeMemoryMb: summary.maxNativeMemoryMb,
       maxTotalMemoryMb: summary.maxTotalMemoryMb,
       webKitPidCount: summary.webKitPidCount,
       pressureSummary,
+      attributionSummary,
       heapSummaryPath: heapSummary.path,
       logSummary,
       eventSequence,
@@ -231,17 +268,14 @@ export async function runWebKitMemoryStressE2e() {
       JSON.stringify(result, null, 2),
     );
 
-    if (summary.maxWebKitMemoryMb < profile.minWebKitMemoryMb) {
-      throw new Error(
-        `WebKit stress did not reach threshold: max=${summary.maxWebKitMemoryMb.toFixed(1)}MB threshold=${profile.minWebKitMemoryMb}MB artifacts=${artifactsDir}`,
-      );
-    }
+    assertStressResult({ summary, profile, attributionSummary, artifactsDir });
 
     return result;
   } catch (error) {
     await sampler.stop();
     const summary = summarizeSamples(sampler.samples);
     const logSummary = copyStressLogs(homeDir, artifactsDir);
+    const attributionSummary = summarizeAttributionLogs(logSummary);
     const eventSequence = copyEventSequence(e2eDir, artifactsDir);
     const heapSummary = await captureHeapSummaryIfNeeded(summary, artifactsDir, profile);
     fs.writeFileSync(
@@ -281,7 +315,10 @@ function readStressProfile() {
     feedCount: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_FEEDS", defaults.feedCount),
     entriesPerFeed: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_ENTRIES", defaults.entriesPerFeed),
     contentKbPerEntry: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_CONTENT_KB", defaults.contentKbPerEntry),
-    minWebKitMemoryMb: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_MIN_MB", defaults.minWebKitMemoryMb),
+    minWebKitMemoryMb: readNonNegativeInt("KIJI_E2E_WEBKIT_STRESS_MIN_MB", defaults.minWebKitMemoryMb),
+    maxWebKitMemoryMb: readOptionalPositiveInt("KIJI_E2E_WEBKIT_STRESS_MAX_MB", defaults.maxWebKitMemoryMb),
+    maxNativeMemoryMb: readOptionalPositiveInt("KIJI_E2E_WEBKIT_STRESS_MAX_NATIVE_MB", defaults.maxNativeMemoryMb),
+    verificationMode: readBoolean("KIJI_E2E_WEBKIT_STRESS_VERIFY", defaults.verificationMode),
     targetCycles: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_CYCLES", defaults.targetCycles),
     timeoutMs: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_TIMEOUT_MS", defaults.timeoutMs),
     schedulerIntervalMs: readPositiveInt("KIJI_E2E_WEBKIT_STRESS_INTERVAL_MS", defaults.schedulerIntervalMs),
@@ -312,6 +349,46 @@ async function waitForMemoryPressure({ sampler, profile }) {
   const startedAt = Date.now();
   let plateauStartedAt = null;
   let plateauBaselineMb = 0;
+
+  if (profile.verificationMode) {
+    while (Date.now() - startedAt < profile.pressureWindowMs) {
+      const summary = summarizeSamples(sampler.samples);
+      const latest = sampler.samples.at(-1);
+      const latestWebKitMb = latest?.webKitMemoryMb ?? 0;
+
+      if (profile.maxWebKitMemoryMb && summary.maxWebKitMemoryMb > profile.maxWebKitMemoryMb) {
+        return {
+          reason: "verification-bound-exceeded",
+          durationMs: Date.now() - startedAt,
+          maxWebKitMemoryMb: summary.maxWebKitMemoryMb,
+        };
+      }
+
+      if (latestWebKitMb > plateauBaselineMb + profile.idleDeltaMb) {
+        plateauBaselineMb = latestWebKitMb;
+        plateauStartedAt = Date.now();
+      } else if (plateauStartedAt === null) {
+        plateauBaselineMb = latestWebKitMb;
+        plateauStartedAt = Date.now();
+      } else if (Date.now() - plateauStartedAt >= profile.idlePlateauMs) {
+        return {
+          reason: "idle-plateau",
+          durationMs: Date.now() - startedAt,
+          latestWebKitMemoryMb: latestWebKitMb,
+          maxWebKitMemoryMb: summary.maxWebKitMemoryMb,
+        };
+      }
+
+      await sleep(SAMPLE_INTERVAL_MS);
+    }
+
+    const summary = summarizeSamples(sampler.samples);
+    return {
+      reason: "verification-window-complete",
+      durationMs: Date.now() - startedAt,
+      maxWebKitMemoryMb: summary.maxWebKitMemoryMb,
+    };
+  }
 
   while (Date.now() - startedAt < profile.pressureWindowMs) {
     const summary = summarizeSamples(sampler.samples);
@@ -454,6 +531,14 @@ function readEventPayload(e2eDir, name) {
   } catch {
     return null;
   }
+}
+
+function readOptionalPositiveInt(name, fallback) {
+  const parsed = Number.parseInt(process.env[name] ?? "", 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return fallback ?? null;
 }
 
 function readPositiveInt(name, fallback) {
@@ -716,6 +801,7 @@ async function readProcessTable() {
 
 function summarizeSamples(samples) {
   let maxWebKitMemoryMb = 0;
+  let maxNativeMemoryMb = 0;
   let maxTotalMemoryMb = 0;
   let maxSample = null;
   for (const sample of samples) {
@@ -723,14 +809,135 @@ function summarizeSamples(samples) {
       maxWebKitMemoryMb = sample.webKitMemoryMb;
       maxSample = sample;
     }
+    maxNativeMemoryMb = Math.max(maxNativeMemoryMb, sample.appRssMb ?? 0);
     maxTotalMemoryMb = Math.max(maxTotalMemoryMb, sample.totalMemoryMb ?? 0);
   }
   return {
     maxWebKitMemoryMb: roundOne(maxWebKitMemoryMb),
+    maxNativeMemoryMb: roundOne(maxNativeMemoryMb),
     maxTotalMemoryMb: roundOne(maxTotalMemoryMb),
     webKitPidCount: maxSample?.webKitProcesses?.length ?? 0,
     maxSample,
   };
+}
+
+function assertStressResult({ summary, profile, attributionSummary, artifactsDir }) {
+  if (profile.verificationMode) {
+    if (profile.maxWebKitMemoryMb && summary.maxWebKitMemoryMb > profile.maxWebKitMemoryMb) {
+      throw new Error(
+        `WebKit verification failed: max=${summary.maxWebKitMemoryMb.toFixed(1)}MB limit=${profile.maxWebKitMemoryMb}MB artifacts=${artifactsDir}`,
+      );
+    }
+    if (profile.maxNativeMemoryMb && summary.maxNativeMemoryMb > profile.maxNativeMemoryMb) {
+      throw new Error(
+        `Native verification failed: max=${summary.maxNativeMemoryMb.toFixed(1)}MB limit=${profile.maxNativeMemoryMb}MB artifacts=${artifactsDir}`,
+      );
+    }
+    if ((attributionSummary?.nativeFeedRefreshCount ?? 0) < 1
+      && (attributionSummary?.postImportFeedParseAttributionCount ?? 0) > 0) {
+      throw new Error(
+        `Renderer parse attribution still active after import: postImportFeedParseAttributionCount=${attributionSummary.postImportFeedParseAttributionCount} artifacts=${artifactsDir}`,
+      );
+    }
+    if ((attributionSummary?.nativeFeedRefreshCount ?? 0) < 1
+      && (attributionSummary?.feedParseAttributionCount ?? 0) > 0) {
+      throw new Error(
+        `Native attribution missing and renderer parse attribution present — rebuild KiJi.app with native ingestion enabled artifacts=${artifactsDir}`,
+      );
+    }
+    if ((attributionSummary?.postImportLargeRendererFeedNetworkCount ?? 0) > 0) {
+      throw new Error(
+        `Renderer feed bodies still attributed after import: postImportLargeRendererFeedNetworkCount=${attributionSummary.postImportLargeRendererFeedNetworkCount} artifacts=${artifactsDir}`,
+      );
+    }
+    return;
+  }
+
+  if (summary.maxWebKitMemoryMb < profile.minWebKitMemoryMb) {
+    throw new Error(
+      `WebKit stress did not reach threshold: max=${summary.maxWebKitMemoryMb.toFixed(1)}MB threshold=${profile.minWebKitMemoryMb}MB artifacts=${artifactsDir}`,
+    );
+  }
+}
+
+function summarizeAttributionLogs(logSummary) {
+  const counts = {
+    nativeFeedRefreshCount: 0,
+    feedNetworkResponseCount: 0,
+    largeRendererFeedNetworkCount: 0,
+    postImportLargeRendererFeedNetworkCount: 0,
+    feedParseAttributionCount: 0,
+    postImportFeedParseAttributionCount: 0,
+    readerDomAttributionCount: 0,
+    articleRenderAttributionCount: 0,
+  };
+
+  for (const copiedPath of logSummary.copied ?? []) {
+    const fileName = path.basename(copiedPath);
+    if (!fileName.startsWith("debug-") && !fileName.startsWith("app-")) {
+      continue;
+    }
+
+    let postImportStarted = false;
+    const lines = fs.readFileSync(copiedPath, "utf8").split("\n");
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (
+        line.includes("Boosted feed priorities after import")
+        || line.includes("Native background refresh cycle stats")
+        || line.includes("opml-import-complete")
+      ) {
+        postImportStarted = true;
+      }
+
+      if (!line.includes("[WebKitAttribution]")) {
+        continue;
+      }
+
+      const contextLine = lines[index + 1];
+      if (!contextLine?.startsWith("context=")) {
+        continue;
+      }
+
+      let context;
+      try {
+        context = JSON.parse(contextLine.slice("context=".length));
+      } catch {
+        continue;
+      }
+
+      switch (context.event) {
+        case "native-feed-refresh-attribution":
+          counts.nativeFeedRefreshCount += 1;
+          break;
+        case "feed-network-response":
+          counts.feedNetworkResponseCount += 1;
+          if (context.largePayload === true || (context.responseBytes ?? 0) >= 512 * 1024) {
+            counts.largeRendererFeedNetworkCount += 1;
+            if (postImportStarted) {
+              counts.postImportLargeRendererFeedNetworkCount += 1;
+            }
+          }
+          break;
+        case "feed-parse-attribution":
+          counts.feedParseAttributionCount += 1;
+          if (postImportStarted) {
+            counts.postImportFeedParseAttributionCount += 1;
+          }
+          break;
+        case "reader-dom-attribution":
+          counts.readerDomAttributionCount += 1;
+          break;
+        case "article-render-attribution":
+          counts.articleRenderAttributionCount += 1;
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  return counts;
 }
 
 async function captureHeapSummaryIfNeeded(summary, artifactsDir, profile) {

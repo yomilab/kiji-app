@@ -8,7 +8,7 @@ const WEBKIT_STRESS_TIMEOUT_MS = Number(
 
 describe("WebKit memory stress E2E", () => {
   it(
-    "recreates multi-GB WebContent pressure from large feed refresh cycles",
+    "validates bounded WebKit memory under native feed ingestion",
     async () => {
       const result = await runWebKitMemoryStressE2e();
       assertE2eNotSkipped(result);
@@ -18,20 +18,32 @@ describe("WebKit memory stress E2E", () => {
         return;
       }
 
-      expect(["amplified", "realistic"]).toContain(result.profileName);
+      expect(["amplified", "amplified-repro", "realistic"]).toContain(result.profileName);
       expect(result.profile.name).toBe(result.profileName);
       expect(result.feedCount).toBeGreaterThanOrEqual(result.profile.feedCount);
       expect(result.totalFetchCount).toBeGreaterThan(0);
       expect(result.webKitPidCount).toBeGreaterThan(0);
-      expect(result.maxWebKitMemoryMb).toBeGreaterThanOrEqual(result.profile.minWebKitMemoryMb);
-      expect(result.pressureSummary?.reason).toBe("threshold-reached");
-      expect(result.pressureSummary?.maxWebKitMemoryMb).toBeGreaterThanOrEqual(result.profile.minWebKitMemoryMb);
       expect(result.postImportAtMs).toBeGreaterThan(0);
       expect(result.postImportSummary?.postImportAtMs).toBe(result.postImportAtMs);
       if (result.postImportSummary?.finalPostImportCycle) {
         expect(result.postImportSummary.finalPostImportCycle.at).toBeGreaterThanOrEqual(result.postImportAtMs);
       }
-      expect(result.acceptance?.minWebKitMemoryMb).toBe(result.profile.minWebKitMemoryMb);
+      expect(result.artifactsDir).toBeTruthy();
+
+      if (result.profile.verificationMode) {
+        expect(result.maxWebKitMemoryMb).toBeLessThanOrEqual(result.profile.maxWebKitMemoryMb);
+        if (result.profile.maxNativeMemoryMb) {
+          expect(result.maxNativeMemoryMb).toBeLessThanOrEqual(result.profile.maxNativeMemoryMb);
+        }
+        expect(result.attributionSummary?.postImportLargeRendererFeedNetworkCount ?? 0).toBe(0);
+        expect(result.attributionSummary?.postImportFeedParseAttributionCount ?? 0).toBe(0);
+        expect(result.attributionSummary?.nativeFeedRefreshCount ?? 0).toBeGreaterThan(0);
+        expect(result.pressureSummary?.reason).not.toBe("threshold-reached");
+      } else {
+        expect(result.maxWebKitMemoryMb).toBeGreaterThanOrEqual(result.profile.minWebKitMemoryMb);
+        expect(result.pressureSummary?.reason).toBe("threshold-reached");
+      }
+
       if (result.profileName === "realistic") {
         expect(result.uiSummary?.selectedStation).toBe("E2E WebKit Stress");
         expect(result.uiSummary?.initialArticleCount).toBeGreaterThan(0);
@@ -40,7 +52,6 @@ describe("WebKit memory stress E2E", () => {
         );
         expect(result.uiSummary?.openedArticleTitle).toBeTruthy();
       }
-      expect(result.artifactsDir).toBeTruthy();
     },
     WEBKIT_STRESS_TIMEOUT_MS + 30_000,
   );

@@ -4,6 +4,8 @@ import {
   useFeedNavigation,
   useFeedOverlay,
 } from '@/contexts/FeedContext';
+import { formatFeedRefreshStatus } from '@/components/Sidebar/Sidebar';
+import { feedRefreshActivity } from '@/services/feeds/feedRefreshActivity';
 import {
   type KijiE2eConfig,
   waitForE2eConfig,
@@ -61,7 +63,8 @@ export const useE2eUiProbes = (): void => {
     }
 
     const snapshotKey = `${selectedFeedId ?? ''}:${selectedTag ?? ''}:${navigationNonce}:${articles.length}`;
-    if (articles.length < 1 || listSnapshotRef.current === snapshotKey) {
+    const hasActiveSource = Boolean(selectedFeedId || selectedTag);
+    if ((!hasActiveSource && articles.length < 1) || listSnapshotRef.current === snapshotKey) {
       return;
     }
 
@@ -106,4 +109,28 @@ export const useE2eUiProbes = (): void => {
       activeArticleHash,
     });
   }, [activeArticleHash, articleViewOverlayPhase, e2eConfig]);
+
+  useEffect(() => {
+    if (!e2eConfig) {
+      return;
+    }
+
+    const publishRefreshIndicator = (): void => {
+      const snapshot = feedRefreshActivity.getSnapshot();
+      void writeE2eEvent('refresh-indicator-snapshot', {
+        ...snapshot,
+        indicatorText: snapshot.isBackgroundFeedRefreshing
+          ? formatFeedRefreshStatus(snapshot.displayFeedCount, true)
+          : snapshot.isForegroundFeedRefreshing
+            ? formatFeedRefreshStatus(snapshot.displayFeedCount, false)
+            : null,
+        selectedFeedId,
+        selectedTag,
+        navigationNonce,
+      });
+    };
+
+    publishRefreshIndicator();
+    return feedRefreshActivity.subscribe(publishRefreshIndicator);
+  }, [e2eConfig, navigationNonce, selectedFeedId, selectedTag]);
 };

@@ -405,7 +405,7 @@ async fn fetch_html_safe(url: String, timeout: Option<u64>) -> Result<FetchHtmlS
     })
 }
 
-async fn fetch_with_cache(
+pub async fn fetch_with_cache(
     request: FeedFetchWithCacheRequest,
 ) -> Result<FeedFetchWithCacheResponse, String> {
     validate_http_url(&request.url)?;

@@ -24,6 +24,8 @@ export class FeedRefreshActivity {
 
   private queuedFeedTotal = 0;
 
+  private foregroundReleaseHandles = new Set<(feedId?: string) => void>();
+
   private listeners = new Set<FeedRefreshActivityListener>();
 
   private snapshot: FeedRefreshActivitySnapshot = {
@@ -91,7 +93,7 @@ export class FeedRefreshActivity {
       }
     };
 
-    return (feedId?: string) => {
+    const release = (feedId?: string) => {
       if (feedId) {
         releaseFeed(feedId);
       } else {
@@ -100,10 +102,27 @@ export class FeedRefreshActivity {
             releaseFeed(pendingFeedId);
           }
         }
+        if (scope === 'foreground') {
+          this.foregroundReleaseHandles.delete(release);
+        }
       }
 
       this.publishSnapshot();
     };
+
+    if (scope === 'foreground') {
+      this.foregroundReleaseHandles.add(release);
+    }
+
+    return release;
+  }
+
+  releaseAllForegroundQueued(): void {
+    const handles = Array.from(this.foregroundReleaseHandles);
+    this.foregroundReleaseHandles.clear();
+    for (const release of handles) {
+      release();
+    }
   }
 
   async track<T>(feedId: string, operation: () => Promise<T>): Promise<T> {
@@ -143,16 +162,23 @@ export class FeedRefreshActivity {
   }
 
   private publishSnapshot(): void {
+    const foregroundQueuedFeedCount = this.foregroundQueuedFeedTotal;
+    const backgroundQueuedFeedCount = this.backgroundQueuedFeedTotal;
     const queuedFeedCount = this.queuedFeedTotal;
-    const displayFeedCount = queuedFeedCount > 0 ? queuedFeedCount : this.activeFeeds.size;
-    const isBackgroundFeedRefreshing = this.backgroundQueuedFeedTotal > 0;
-    const isForegroundFeedRefreshing = this.foregroundQueuedFeedTotal > 0
+    const displayFeedCount = foregroundQueuedFeedCount > 0
+      ? foregroundQueuedFeedCount
+      : backgroundQueuedFeedCount > 0
+        ? backgroundQueuedFeedCount
+        : this.activeFeeds.size;
+    const isBackgroundFeedRefreshing = backgroundQueuedFeedCount > 0
+      && foregroundQueuedFeedCount === 0;
+    const isForegroundFeedRefreshing = foregroundQueuedFeedCount > 0
       || (this.activeFeeds.size > 0 && !isBackgroundFeedRefreshing);
     const nextSnapshot: FeedRefreshActivitySnapshot = {
       activeFeedCount: this.activeFeeds.size,
       queuedFeedCount,
-      foregroundQueuedFeedCount: this.foregroundQueuedFeedTotal,
-      backgroundQueuedFeedCount: this.backgroundQueuedFeedTotal,
+      foregroundQueuedFeedCount,
+      backgroundQueuedFeedCount,
       displayFeedCount,
       isAnyFeedRefreshing: displayFeedCount > 0,
       isForegroundFeedRefreshing,

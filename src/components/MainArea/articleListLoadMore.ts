@@ -10,8 +10,26 @@ export const ARTICLE_LIST_SCROLL_LOAD_MIN_DISTANCE_PX = ARTICLE_LIST_ESTIMATED_R
 export const ARTICLE_LIST_SCROLL_LOAD_MAX_DISTANCE_PX = ARTICLE_LIST_ESTIMATED_ROW_HEIGHT * 5;
 /** Prefetch when within this many viewport heights of the loaded bottom. */
 export const ARTICLE_LIST_SCROLL_LOAD_VIEWPORT_FACTOR = 1.5;
+/** Downward scroll faster than ~900px/s counts as fast scroll. */
+export const ARTICLE_LIST_FAST_SCROLL_MIN_VELOCITY_PX_PER_MS = 0.9;
+/** Ignore velocity samples older than this when estimating scroll speed. */
+export const ARTICLE_LIST_FAST_SCROLL_SAMPLE_MAX_AGE_MS = 150;
+/** Extra remaining-row budget while fast-scrolling near the loaded end. */
+export const ARTICLE_LIST_FAST_SCROLL_PREFETCH_ROW_BOOST = 80;
+/** Fast scroll can extend the pixel trigger up to ~12 row heights. */
+export const ARTICLE_LIST_FAST_SCROLL_MAX_DISTANCE_PX = ARTICLE_LIST_ESTIMATED_ROW_HEIGHT * 12;
+export const ARTICLE_LIST_FAST_SCROLL_DISTANCE_BOOST_FACTOR = 2.5;
 
 export type ArticleListLoadMorePriority = 'prefetch' | 'urgent';
+
+export type ArticleListScrollVelocitySample = {
+  scrollTop: number;
+  timestampMs: number;
+};
+
+export type ArticleListLoadMoreTriggerOptions = {
+  scrollVelocityPxPerMs?: number;
+};
 
 /**
  * Distance from the loaded scroll bottom that should start prefetch.
@@ -54,6 +72,73 @@ export const getRemainingLoadedRows = (
   return loadedRowCount - 1 - lastVisibleIndex;
 };
 
+export const measureArticleListScrollVelocity = (
+  previous: ArticleListScrollVelocitySample | null,
+  scrollTop: number,
+  timestampMs: number,
+): { velocityPxPerMs: number; sample: ArticleListScrollVelocitySample } => {
+  const sample: ArticleListScrollVelocitySample = { scrollTop, timestampMs };
+
+  if (!previous) {
+    return { velocityPxPerMs: 0, sample };
+  }
+
+  const deltaMs = timestampMs - previous.timestampMs;
+  if (deltaMs <= 0 || deltaMs > ARTICLE_LIST_FAST_SCROLL_SAMPLE_MAX_AGE_MS) {
+    return { velocityPxPerMs: 0, sample };
+  }
+
+  const deltaTop = scrollTop - previous.scrollTop;
+  if (deltaTop <= 0) {
+    return { velocityPxPerMs: 0, sample };
+  }
+
+  return { velocityPxPerMs: deltaTop / deltaMs, sample };
+};
+
+export const getArticleListFastScrollPrefetchBoost = (
+  velocityPxPerMs: number,
+  prefetchRemainingRows: number,
+  remainingLoadedRows: number,
+): number => {
+  if (velocityPxPerMs < ARTICLE_LIST_FAST_SCROLL_MIN_VELOCITY_PX_PER_MS) {
+    return 0;
+  }
+
+  // Only extend prefetch while the viewport is already approaching the loaded end.
+  if (remainingLoadedRows > prefetchRemainingRows * 2) {
+    return 0;
+  }
+
+  const velocityRatio = Math.min(
+    1,
+    (velocityPxPerMs - ARTICLE_LIST_FAST_SCROLL_MIN_VELOCITY_PX_PER_MS)
+      / ARTICLE_LIST_FAST_SCROLL_MIN_VELOCITY_PX_PER_MS,
+  );
+
+  return Math.round(ARTICLE_LIST_FAST_SCROLL_PREFETCH_ROW_BOOST * velocityRatio);
+};
+
+export const getArticleListScrollLoadDistancePxForVelocity = (
+  viewportHeightPx: number,
+  scrollVelocityPxPerMs: number,
+): number => {
+  const baseDistancePx = getArticleListScrollLoadDistancePx(viewportHeightPx);
+  if (scrollVelocityPxPerMs < ARTICLE_LIST_FAST_SCROLL_MIN_VELOCITY_PX_PER_MS) {
+    return baseDistancePx;
+  }
+
+  const velocityRatio = Math.min(
+    ARTICLE_LIST_FAST_SCROLL_DISTANCE_BOOST_FACTOR - 1,
+    scrollVelocityPxPerMs / ARTICLE_LIST_FAST_SCROLL_MIN_VELOCITY_PX_PER_MS,
+  );
+
+  return Math.min(
+    ARTICLE_LIST_FAST_SCROLL_MAX_DISTANCE_PX,
+    Math.ceil(baseDistancePx * (1 + velocityRatio)),
+  );
+};
+
 export const getArticleListLoadMorePriority = (
   loadedRowCount: number,
   lastVisibleIndex: number,
@@ -68,6 +153,7 @@ export const shouldTriggerArticleListLoadMore = (
   loadedRowCount: number,
   totalRowCount: number,
   lastVisibleIndex: number,
+  options: ArticleListLoadMoreTriggerOptions = {},
 ): boolean => {
   if (loadedRowCount >= totalRowCount) {
     return false;
@@ -76,8 +162,13 @@ export const shouldTriggerArticleListLoadMore = (
   const remainingLoadedRows = getRemainingLoadedRows(loadedRowCount, lastVisibleIndex);
   const prefetchRemainingRows = getArticleListPrefetchRemainingRows(loadedRowCount);
   const criticalRemainingRows = getArticleListCriticalRemainingRows(loadedRowCount);
+  const fastScrollBoost = getArticleListFastScrollPrefetchBoost(
+    options.scrollVelocityPxPerMs ?? 0,
+    prefetchRemainingRows,
+    remainingLoadedRows,
+  );
 
-  return remainingLoadedRows <= prefetchRemainingRows
+  return remainingLoadedRows <= prefetchRemainingRows + fastScrollBoost
     || remainingLoadedRows <= criticalRemainingRows;
 };
 
@@ -89,11 +180,15 @@ export const shouldTriggerArticleListLoadMoreFromScroll = (
   scrollElement: HTMLElement,
   loadedRowCount: number,
   totalRowCount: number,
+  scrollVelocityPxPerMs = 0,
 ): boolean => {
   if (loadedRowCount >= totalRowCount) {
     return false;
   }
 
-  const triggerDistancePx = getArticleListScrollLoadDistancePx(scrollElement.clientHeight);
+  const triggerDistancePx = getArticleListScrollLoadDistancePxForVelocity(
+    scrollElement.clientHeight,
+    scrollVelocityPxPerMs,
+  );
   return getDistanceFromScrollBottom(scrollElement) <= triggerDistancePx;
 };

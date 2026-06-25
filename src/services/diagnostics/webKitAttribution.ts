@@ -128,3 +128,18 @@ export function logArticleRenderAttribution(context: ArticleRenderAttribution): 
     }),
   });
 }
+
+export function logNativeFeedRefreshAttribution(context: {
+  feedId: string;
+  status: string;
+  insertedCount?: number;
+  error?: string;
+  source: 'background' | 'foreground';
+}): void {
+  logger.info('WebKitAttribution', 'Native feed refresh attributed', {
+    event: 'native-feed-refresh-attribution',
+    parserPath: 'native',
+    domParserUsed: false,
+    ...context,
+  });
+}

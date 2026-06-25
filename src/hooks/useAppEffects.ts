@@ -113,7 +113,6 @@ export const useFeedSchedulerLifecycle = (enabled = true): void => {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        feedScheduler.releaseStationSelectionPause('background');
         return;
       }
       void feedScheduler.catchUpAfterResume();

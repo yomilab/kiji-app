@@ -112,8 +112,9 @@ class OpmlWorkflowService {
       sidebarIndicatorService.show(
         sidebarIndicatorOngoing('fetching', { count: importResult.importedFeeds.length }, { subject: 'favicons' }),
       );
-      await this.enqueueFaviconTasks(importResult.importedFeeds);
-      sidebarIndicatorService.clear();
+      void this.enqueueFaviconTasks(importResult.importedFeeds).finally(() => {
+        sidebarIndicatorService.clear();
+      });
     }
 
     return importResult;

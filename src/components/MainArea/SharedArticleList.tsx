@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import { useDependencyEffect } from '@/hooks/useLifecycleEffects';
 import { motion } from 'motion/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useFeedNavigation, useFeedCollection, useFeedOverlay, useFeedUI } from '@/contexts/FeedContext';
@@ -19,13 +20,16 @@ import { useArticleListBackgroundScrollSync } from './hooks/useArticleListBackgr
 import { useArticleListPerformanceMetrics } from './hooks/useArticleListPerformanceMetrics';
 import { InteractionProfiler } from '@/components/common/InteractionProfiler';
 import { FeedLineLoader } from '@/components/common/FeedLineLoader';
-import { ARTICLE_LIST_PREVIEW_SCROLL_IDLE_MS } from './articleListPreviewConstants';
+import { ARTICLE_LIST_PREVIEW_SCROLL_IDLE_MS, ARTICLE_LIST_SOURCE_SWITCH_PREVIEW_DEFER_MS } from './articleListPreviewConstants';
+import { shouldScrollArticleIndexIntoView } from './articleListScrollIntoView';
 import {
   ARTICLE_LIST_BOTTOM_SPACER_HEIGHT,
   ARTICLE_LIST_ESTIMATED_ROW_HEIGHT,
   getArticleListLoadMorePriority,
+  measureArticleListScrollVelocity,
   shouldTriggerArticleListLoadMore,
   shouldTriggerArticleListLoadMoreFromScroll,
+  type ArticleListScrollVelocitySample,
 } from './articleListLoadMore';
 import './ArticleList.css';
 
@@ -72,7 +76,6 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
   const {
     activeArticleHash,
     selectArticle,
-    setActiveArticle,
     articleViewOverlayPhase,
   } = useFeedOverlay();
 
@@ -80,9 +83,12 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
 
   const [hasListScrollOffset, setHasListScrollOffset] = useState(false);
   const [deferPreviewImages, setDeferPreviewImages] = useState(false);
+  const [keyboardFocusHash, setKeyboardFocusHash] = useState<string | null>(null);
   const articleListRef = useRef<HTMLDivElement>(null);
   const articleListItemsRef = useRef<HTMLDivElement>(null);
   const previewImageScrollIdleTimerRef = useRef<number | null>(null);
+  const scrollVelocitySampleRef = useRef<ArticleListScrollVelocitySample | null>(null);
+  const scrollVelocityPxPerMsRef = useRef(0);
   
   const {
     searchQuery,
@@ -152,8 +158,13 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
   const ensureHashInView = useCallback((hash: string) => {
     const index = filteredArticles.findIndex((article) => article.hash === hash);
     if (index === -1) return;
+    if (!shouldScrollArticleIndexIntoView(index, firstVirtualIndex, lastVirtualIndex)) {
+      return;
+    }
     rowVirtualizer.scrollToIndex(index, { align: 'auto' });
-  }, [filteredArticles, rowVirtualizer]);
+  }, [filteredArticles, firstVirtualIndex, lastVirtualIndex, rowVirtualizer]);
+
+  const highlightedArticleHash = keyboardFocusHash ?? activeArticleHash;
   const syncViewportSnapshot = useCallback((isAtTop: boolean, isScrolling = false) => {
     const anchorHash = filteredArticles[firstVirtualIndex]?.hash ?? filteredArticles[0]?.hash ?? null;
 
@@ -194,12 +205,19 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
     applySourceSwitchGrace,
   });
 
-  // Memoized callbacks
-  const handleSelectArticle = useCallback(
+  const handleOpenArticle = useCallback(
     (hash: string) => {
+      setKeyboardFocusHash(null);
       selectArticle(hash);
     },
-    [selectArticle]
+    [selectArticle],
+  );
+
+  const handleSelectArticle = useCallback(
+    (hash: string) => {
+      handleOpenArticle(hash);
+    },
+    [handleOpenArticle],
   );
 
   const formatDateDisplay = useCallback((dateString: string) => {
@@ -223,13 +241,24 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
     }
   }, []);
 
+  useDependencyEffect(() => {
+    setKeyboardFocusHash(null);
+    setDeferPreviewImages(true);
+    const timer = window.setTimeout(() => {
+      setDeferPreviewImages(false);
+    }, ARTICLE_LIST_SOURCE_SWITCH_PREVIEW_DEFER_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [sourceKey]);
+
   useArticleListKeyboardNavigation({
     articleListRef,
     filteredArticles,
-    activeArticleHash,
+    keyboardFocusHash,
     articleViewOverlayPhase,
-    selectArticle,
-    setActiveArticle,
+    selectArticle: handleOpenArticle,
+    setKeyboardFocusHash,
     ensureHashInView,
   });
 
@@ -241,11 +270,12 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
     setHasListScrollOffset,
   });
 
-  const requestLoadMoreArticles = useCallback((lastVisibleIndex: number) => {
+  const requestLoadMoreArticles = useCallback((lastVisibleIndex: number, scrollVelocityPxPerMs = scrollVelocityPxPerMsRef.current) => {
     if (!shouldTriggerArticleListLoadMore(
       filteredArticles.length,
       articlesTotalCount,
       lastVisibleIndex,
+      { scrollVelocityPxPerMs },
     )) {
       return;
     }
@@ -272,6 +302,15 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
   const handleArticleListScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
     const scrollElement = event.currentTarget;
     const { scrollTop } = scrollElement;
+    const { velocityPxPerMs, sample } = measureArticleListScrollVelocity(
+      scrollVelocitySampleRef.current,
+      scrollTop,
+      typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now(),
+    );
+    scrollVelocitySampleRef.current = sample;
+    scrollVelocityPxPerMsRef.current = velocityPxPerMs;
     const isScrolled = scrollTop > 0;
     setHasListScrollOffset((previous) => (previous === isScrolled ? previous : isScrolled));
     setDeferPreviewImages(true);
@@ -286,9 +325,14 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
 
     if (
       !isSearchDebouncePending
-      && shouldTriggerArticleListLoadMoreFromScroll(scrollElement, filteredArticles.length, articlesTotalCount)
+      && shouldTriggerArticleListLoadMoreFromScroll(
+        scrollElement,
+        filteredArticles.length,
+        articlesTotalCount,
+        velocityPxPerMs,
+      )
     ) {
-      requestLoadMoreArticles(lastVirtualIndex);
+      requestLoadMoreArticles(lastVirtualIndex, velocityPxPerMs);
     }
   }, [
     articlesTotalCount,
@@ -333,6 +377,7 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
   const titleSectionClassName = `article-list-title-section ${hasListScrollOffset ? 'article-list-title-section-scrolled' : ''}`;
   const { handleListProfilerRender, handleScrollPerformanceEvent } = useArticleListPerformanceMetrics({
     sourceKey,
+    navigationNonce,
     sourceLabel: selectedFeedTitle,
     variant,
     filteredCount: filteredArticles.length,
@@ -466,7 +511,7 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
                   >
                     <ArticleListItem
                       article={article}
-                      isActive={activeArticleHash === article.hash}
+                      isActive={highlightedArticleHash === article.hash}
                       isNew={newArticleHashes.has(article.hash)}
                       newAnimationOrder={newArticleAnimationOrderMap.get(article.hash) ?? -1}
                       readStateMode={isSavedView ? 'none' : 'normal'}

@@ -1,6 +1,15 @@
 pub mod webview_delivery;
 
+mod native_cycle;
+mod priority;
+mod refresh_policy;
+mod run_plan;
+pub mod types;
+
+use crate::db::DbState;
 use crate::settings::BackgroundUpdateMode;
+use native_cycle::preview_native_refresh_cycle;
+use run_plan::create_scheduler_run_plan_from_request;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc, Mutex,
@@ -8,6 +17,10 @@ use std::sync::{
 use std::time::Duration;
 use tauri::AppHandle;
 use tokio::sync::watch;
+use types::{
+    SchedulerCreateRunPlanRequest, SchedulerNativeCyclePreviewRequest,
+    SchedulerNativeCyclePreviewResponse, SchedulerRunPlan,
+};
 use webview_delivery::{emit_scheduler_event_to_main_webview, TICK_WAKE_SCRIPT};
 
 pub const SCHEDULER_CYCLE_TICK_EVENT: &str = "scheduler:cycle-tick";
@@ -190,6 +203,22 @@ fn interval_ms_for_mode(mode: BackgroundUpdateMode) -> Result<u64, String> {
             return Err("Interval mode required".to_string());
         }
     })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn scheduler_create_run_plan(
+    request: SchedulerCreateRunPlanRequest,
+) -> Result<SchedulerRunPlan, String> {
+    Ok(create_scheduler_run_plan_from_request(request))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn scheduler_preview_native_cycle(
+    app: AppHandle,
+    request: SchedulerNativeCyclePreviewRequest,
+    db: tauri::State<'_, DbState>,
+) -> Result<SchedulerNativeCyclePreviewResponse, String> {
+    preview_native_refresh_cycle(&app, &db, request).await
 }
 
 #[tauri::command]

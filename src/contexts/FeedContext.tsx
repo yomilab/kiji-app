@@ -5,6 +5,7 @@ import { feedsManager } from '@/services/feeds/feedsManager';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { savedArticlesService } from '@/services/saved/savedArticlesService';
 import * as articleStore from '@/stores/articleStore';
+import { mergeUniqueArticlesByHash } from '@/services/articles/mergeUniqueArticlesByHash';
 import * as feedStore from '@/stores/feedStore';
 import type { Article } from '@/types/article';
 import type { ArticleQuery } from '@/types/articleQuery';
@@ -14,17 +15,36 @@ import { getFeedRefreshBlock } from '@/services/feeds/feedRefreshPolicy';
 import type { Feed } from '@/services/feeds/feedsManager';
 import { logger } from '@/services/logger';
 import { debugOnly } from '@/services/system/env';
+import { getE2eConfig, writeE2eEvent } from '@/services/e2e/e2eHarness';
 import { storage } from '@/services/storage/storageFactory';
 import { useDependencyEffect, useMountEffect } from '@/hooks/useLifecycleEffects';
 import type { SmartViewId } from '@/constants';
 import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
+import { isNativeFeedIngestionEnabled } from '@/services/scheduler/nativeSchedulerCycle';
+import { runNativeFeedRefresh } from '@/services/scheduler/nativeFeedRefresh';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 import { feedRefreshCoordinator } from '@/services/feeds/feedRefreshCoordinator';
 import { feedRefreshActivity } from '@/services/feeds/feedRefreshActivity';
 import { interactionPerformance } from '@/services/performance/interactionPerformance';
+import { sidebarSwitchTrace, traceSidebarSwitchAsync } from '@/services/performance/sidebarSwitchTrace';
+import { sourceSelectionBus } from '@/services/feeds/sourceSelectionBus';
+import {
+  cancelSourceSelectionRefreshSchedule,
+  scheduleSourceRefreshAfterPaint,
+} from '@/services/feeds/sourceSelectionPaintGate';
+import {
+  LARGE_STATION_FEED_THRESHOLD,
+  STATION_SWITCH_FOREGROUND_REFRESH_CAP,
+  STATION_SWITCH_SQLITE_RECONCILE_LIMIT,
+  scheduleStationSwitchIdleWork,
+} from '@/services/feeds/stationSwitchLimits';
+import type {
+  FeedSourceRefreshPayload,
+  TagSourceRefreshPayload,
+  SourceRefreshIntent,
+} from '@/services/feeds/sourceSelectionTypes';
 
-const FEED_SWITCH_STORED_ANIMATION_WAIT_MS = 420;
 const SMART_VIEW_ARTICLE_LIMIT = 100;
 const ARTICLE_LIST_LOAD_MORE_LIMIT = 100;
 const SOURCE_ARTICLE_SNAPSHOT_CACHE_MAX_ENTRIES = 8;
@@ -124,6 +144,7 @@ type RefreshFeedFromNetworkOptions = {
   updateCounts?: boolean;
   waitForUiBudget?: () => Promise<void>;
   onFetchSettled?: () => void;
+  skipNativeActivityQueue?: boolean;
 };
 
 type FeedNetworkRefreshResult = {
@@ -342,56 +363,6 @@ const logFeedRefreshSkip = (feed: Pick<Feed, 'id' | 'title'>, refreshBlock: Retu
     waitMs: refreshBlock.waitMs,
     failures: refreshBlock.failureCount,
   });
-};
-
-// Keep infinite-scroll append idempotent: stale/retried page fetches should not
-// duplicate heavy article payloads in memory.
-const mergeUniqueArticlesByHash = (existing: Article[], incoming: Article[]): Article[] => {
-  if (incoming.length === 0) {
-    return existing;
-  }
-
-  const incomingHashes = new Set<string>();
-  const uniqueIncoming: Article[] = [];
-
-  for (const article of incoming) {
-    if (incomingHashes.has(article.hash)) {
-      continue;
-    }
-    incomingHashes.add(article.hash);
-    uniqueIncoming.push(article);
-  }
-
-  if (uniqueIncoming.length === 0) {
-    return existing;
-  }
-
-  let overlapsExisting = false;
-  for (const article of existing) {
-    if (incomingHashes.has(article.hash)) {
-      overlapsExisting = true;
-      break;
-    }
-  }
-
-  if (!overlapsExisting) {
-    return [...existing, ...uniqueIncoming];
-  }
-
-  const seenHashes = new Set(existing.map((article) => article.hash));
-  const dedupedIncoming = uniqueIncoming.filter((article) => {
-    if (seenHashes.has(article.hash)) {
-      return false;
-    }
-    seenHashes.add(article.hash);
-    return true;
-  });
-
-  if (dedupedIncoming.length === 0) {
-    return existing;
-  }
-
-  return [...existing, ...dedupedIncoming];
 };
 
 function collectionReducer(state: CollectionState, action: CollectionAction): CollectionState {
@@ -643,6 +614,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const selectionTokenRef = useRef(0);
   const selectionAbortControllerRef = useRef<AbortController | null>(null);
+  const selectionSchedulerPauseTokenRef = useRef<number | null>(null);
   const lastQueryRef = useRef<ArticleQuery | null>(null);
   const hasAttemptedSidebarRestoreRef = useRef(false);
   const backgroundScrollRequestRevisionRef = useRef(0);
@@ -688,6 +660,62 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (signal?.aborted) return { inserted: 0 };
       await waitForUiBudget();
       if (signal?.aborted) return { inserted: 0 };
+
+      if (isNativeFeedIngestionEnabled()) {
+        let fetchSettled = false;
+        const settleFetch = (): void => {
+          if (fetchSettled) {
+            return;
+          }
+          fetchSettled = true;
+          options?.onFetchSettled?.();
+        };
+
+        try {
+          const nativeResult = await runNativeFeedRefresh({
+            feedIds: [feed.id],
+            forceRefreshFeedIds: new Set([feed.id]),
+            signal,
+            activityKind: 'foreground',
+            skipActivityQueue: options?.skipNativeActivityQueue,
+            onFeedSettled: settleFetch,
+          });
+          settleFetch();
+
+          const feedResult = nativeResult.feedResults.find((result) => result.feedId === feed.id);
+          if (feedResult?.error) {
+            throw new Error(feedResult.error);
+          }
+
+          const inserted = nativeResult.insertedByFeedId.get(feed.id) ?? 0;
+          const updates: Partial<Feed> = {
+            lastFetched: new Date(),
+            lastFailedFetchAt: undefined,
+            consecutiveFailures: 0,
+          };
+
+          if (options?.updateCounts) {
+            const syncedCounts = await articleStore.syncFeedCountsBatch([feed.id]);
+            const counts = syncedCounts[0];
+            if (counts) {
+              updates.unreadCount = counts.unreadCount;
+              updates.articleCount = counts.articleCount;
+              feedLibraryMutationBus.publishFeedsCountsUpdated([{
+                feedId: feed.id,
+                unreadCount: counts.unreadCount,
+                articleCount: counts.articleCount,
+              }]);
+            }
+          }
+
+          await feedsManager.updateFeed(feed.id, updates);
+          return { inserted };
+        } catch (error) {
+          settleFetch();
+          throw error;
+        }
+      }
+
       // Successful UI-triggered refreshes clear any prior failure backoff so the
       // feed immediately returns to the normal freshness/cooldown path.
       const networkResult = await feedRefreshActivity.track(feed.id, () =>
@@ -892,16 +920,49 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     pendingStationRefreshSourceKeyRef.current = null;
   }, []);
 
+  const abortSelectionSwitchPriority = useCallback((token?: number) => {
+    feedRefreshActivity.releaseAllForegroundQueued();
+    if (selectionSchedulerPauseTokenRef.current === null) {
+      return;
+    }
+    if (token !== undefined && selectionSchedulerPauseTokenRef.current !== token) {
+      return;
+    }
+    feedScheduler.releaseStationSelectionPause('selection-changed');
+    selectionSchedulerPauseTokenRef.current = null;
+  }, []);
+
+  const completeSelectionSwitchNetworkPriority = useCallback((token: number) => {
+    if (selectionSchedulerPauseTokenRef.current === token) {
+      feedScheduler.resumeAfterStationSelection();
+      selectionSchedulerPauseTokenRef.current = null;
+    }
+  }, []);
+
+  const beginSelectionSwitchNetworkPriority = useCallback((token: number) => {
+    feedScheduler.pauseForStationSelection();
+    selectionSchedulerPauseTokenRef.current = token;
+  }, []);
+
   const beginSelectionRequest = useCallback((): number => {
+    const previousToken = selectionTokenRef.current;
+    abortSelectionSwitchPriority();
     selectionAbortControllerRef.current?.abort();
     pendingLoadMoreCommitMetricRef.current = null;
     pendingBackgroundRefreshSourceKeyRef.current = null;
     clearStationUiRefreshTimer();
+    cancelSourceSelectionRefreshSchedule();
     const controller = new AbortController();
     selectionAbortControllerRef.current = controller;
     selectionTokenRef.current += 1;
-    return selectionTokenRef.current;
-  }, [clearStationUiRefreshTimer]);
+    if (previousToken > 0) {
+      sidebarSwitchTrace.cancel(previousToken, 'superseded');
+    }
+    const token = selectionTokenRef.current;
+    feedScheduler.acknowledgeSidebarInteraction();
+    beginSelectionSwitchNetworkPriority(token);
+    return token;
+  }, [abortSelectionSwitchPriority, beginSelectionSwitchNetworkPriority, clearStationUiRefreshTimer]);
 
   const clearArticleListScrollIdleState = useCallback(() => {
     if (articleListScrollIdleTimerRef.current !== null) {
@@ -1222,21 +1283,77 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, SCHEDULER_UI_BATCH_DELAY_MS);
   }, [flushStationUiUpdates]);
 
+  const resolveEligibleStationFeedIds = useCallback(async (
+    feedIds: string[],
+    options: RefreshTriggerOptions,
+    token: number,
+  ): Promise<string[]> => {
+    const eligibleFeedIds: string[] = [];
+
+    for (const id of feedIds) {
+      if (!isSelectionActive(token)) {
+        break;
+      }
+
+      const feed = await feedsManager.getFeedById(id);
+      if (!feed) {
+        continue;
+      }
+
+      const refreshBlock = options.forceNetwork
+        ? null
+        : getFeedRefreshBlock(feed, FEED_FETCH_COOLDOWN_MS, {
+            includeBackoff: !options.bypassBackoff,
+          });
+      if (refreshBlock) {
+        logFeedRefreshSkip(feed, refreshBlock);
+        continue;
+      }
+
+      eligibleFeedIds.push(id);
+    }
+
+    return eligibleFeedIds;
+  }, [isSelectionActive]);
+
   const refreshStationFeeds = useCallback(async (
     feedIds: string[],
     options: RefreshTriggerOptions,
     token: number,
     sourceKey: string,
+    intent: SourceRefreshIntent = 'manual',
   ): Promise<number> => {
     if (feedIds.length === 0) {
       return 0;
     }
 
-    const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds(feedIds);
+    const eligibleFeedIds = await traceSidebarSwitchAsync(
+      token,
+      'eligible-feeds-resolved',
+      () => resolveEligibleStationFeedIds(feedIds, options, token),
+      { feedCount: feedIds.length },
+    );
+    if (eligibleFeedIds.length === 0 || !isSelectionActive(token)) {
+      return 0;
+    }
+
+    const foregroundCap = intent === 'switch'
+      ? STATION_SWITCH_FOREGROUND_REFRESH_CAP
+      : eligibleFeedIds.length;
+    const foregroundFeedIds = eligibleFeedIds.slice(0, foregroundCap);
+    const deferredFeedIds = eligibleFeedIds.slice(foregroundCap);
+
+    const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds(foregroundFeedIds, 'foreground');
     const activeSignal = selectionAbortControllerRef.current?.signal;
     const feedsNeedingCountSync = new Set<string>();
     let nextFeedIndex = 0;
     let insertedTotal = 0;
+    sidebarSwitchTrace.mark(token, 'station-network-refresh-started', {
+      eligibleFeedCount: eligibleFeedIds.length,
+      foregroundFeedCount: foregroundFeedIds.length,
+      deferredFeedCount: deferredFeedIds.length,
+    });
+    const stationNetworkRefreshStartedAt = performance.now();
 
     const refreshOneFeed = async (id: string): Promise<number> => {
       let queuedFeedReleased = false;
@@ -1250,22 +1367,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       try {
         const feed = await feedsManager.getFeedById(id);
-        if (!feed) {
-          releaseQueuedStationFeed();
-          return 0;
-        }
-        if (!isSelectionActive(token)) {
-          releaseQueuedStationFeed();
-          return 0;
-        }
-
-        const refreshBlock = options.forceNetwork
-          ? null
-          : getFeedRefreshBlock(feed, FEED_FETCH_COOLDOWN_MS, {
-              includeBackoff: !options.bypassBackoff,
-            });
-        if (refreshBlock) {
-          logFeedRefreshSkip(feed, refreshBlock);
+        if (!feed || !isSelectionActive(token)) {
           releaseQueuedStationFeed();
           return 0;
         }
@@ -1276,6 +1378,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             {
               onFetchSettled: releaseQueuedStationFeed,
               waitForUiBudget: () => waitForStationRefreshUiBudget(activeSignal),
+              skipNativeActivityQueue: true,
             },
             activeSignal,
           );
@@ -1300,20 +1403,75 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     };
 
-    const runWorker = async (): Promise<void> => {
-      while (isSelectionActive(token)) {
-        const feedId = feedIds[nextFeedIndex];
-        nextFeedIndex += 1;
-        if (!feedId) {
-          return;
-        }
-        insertedTotal += await refreshOneFeed(feedId);
-      }
-    };
-
     try {
-      const workerCount = Math.min(STATION_REFRESH_WORKER_COUNT, feedIds.length);
-      await Promise.allSettled(Array.from({ length: workerCount }, () => runWorker()));
+      if (isNativeFeedIngestionEnabled()) {
+        const settledFeedIds = new Set<string>();
+        const settleFeed = (feedId: string): void => {
+          if (settledFeedIds.has(feedId)) {
+            return;
+          }
+          settledFeedIds.add(feedId);
+          releaseQueuedFeed(feedId);
+        };
+
+        try {
+          await waitForStationRefreshUiBudget(activeSignal);
+          const nativeResult = await runNativeFeedRefresh({
+            feedIds: foregroundFeedIds,
+            forceRefreshFeedIds: (options.forceNetwork || options.bypassBackoff)
+              ? new Set(foregroundFeedIds)
+              : undefined,
+            signal: activeSignal,
+            activityKind: 'foreground',
+            skipActivityQueue: true,
+            onFeedSettled: settleFeed,
+          });
+
+          for (const id of foregroundFeedIds) {
+            settleFeed(id);
+          }
+
+          for (const feedResult of nativeResult.feedResults) {
+            if (feedResult.error) {
+              const feed = await feedsManager.getFeedById(feedResult.feedId);
+              if (feed) {
+                await recordFeedRefreshFailure(feed, new Error(feedResult.error));
+              }
+              continue;
+            }
+
+            if ((feedResult.insertedCount ?? 0) > 0) {
+              feedsNeedingCountSync.add(feedResult.feedId);
+              if (isSelectionActive(token)) {
+                scheduleStationUiRefresh(sourceKey);
+              }
+            }
+          }
+
+          insertedTotal = nativeResult.insertedArticles;
+        } catch (error) {
+          for (const id of foregroundFeedIds) {
+            settleFeed(id);
+          }
+          if (!(error instanceof Error && error.name === 'AbortError')) {
+            throw error;
+          }
+        }
+      } else {
+        const runWorker = async (): Promise<void> => {
+          while (isSelectionActive(token)) {
+            const feedId = foregroundFeedIds[nextFeedIndex];
+            nextFeedIndex += 1;
+            if (!feedId) {
+              return;
+            }
+            insertedTotal += await refreshOneFeed(feedId);
+          }
+        };
+
+        const workerCount = Math.min(STATION_REFRESH_WORKER_COUNT, foregroundFeedIds.length);
+        await Promise.allSettled(Array.from({ length: workerCount }, () => runWorker()));
+      }
 
       if (
         feedsNeedingCountSync.size > 0
@@ -1335,11 +1493,24 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return insertedTotal;
     } finally {
       releaseQueuedFeed();
+      if (deferredFeedIds.length > 0 && isSelectionActive(token)) {
+        feedScheduler.boostMany(deferredFeedIds);
+        sidebarSwitchTrace.mark(token, 'station-refresh-deferred', {
+          deferredFeedCount: deferredFeedIds.length,
+        });
+      }
+      sidebarSwitchTrace.markDuration(
+        token,
+        'station-network-refresh',
+        performance.now() - stationNetworkRefreshStartedAt,
+        { insertedTotal, deferredFeedCount: deferredFeedIds.length },
+      );
     }
   }, [
     isSelectionActive,
     recordFeedRefreshFailure,
     refreshFeedFromNetwork,
+    resolveEligibleStationFeedIds,
     scheduleStationUiRefresh,
     waitForStationRefreshUiBudget,
   ]);
@@ -1457,59 +1628,23 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, [collectionState.articles.length]);
 
-  const handleFeedSelection = useCallback(async (
-    feedId: string,
-    shouldReset: boolean,
-    token: number,
-    options: RefreshTriggerOptions = {},
-  ) => {
-    // PERFORMANCE_DEBUG: Track selection-to-render latency
-    const perfMark = `select-feed:${feedId}:${token}`;
-    if (HAS_PERFORMANCE_API) {
-      performance.mark(`${perfMark}:start`);
+  const runFeedNetworkRefreshPhase = useCallback(async (payload: FeedSourceRefreshPayload) => {
+    const { feedId, feedQuery, token, refreshOptions, perfMark, sourceKey } = payload;
+    if (!isSelectionActive(token)) {
+      return;
     }
 
-    if (shouldReset) {
-      collectionDispatch({ type: 'RESET_FOR_SOURCE_SWITCH' });
-      setActiveArticle(null);
-    }
-
-    if (shouldReset && !await yieldToSelectionCoalescing(token)) return;
-
+    let insertedCount = 0;
+    const feedNetworkRefreshStartedAt = performance.now();
     try {
-      const feedQuery = createArticleListQuery({ feedIds: [feedId] });
-      const feedMetaPromise = feedStore.getById(feedId);
-      const storedPromise = shouldReset ? articleStore.query(feedQuery) : null;
-
-      if (shouldReset) {
-        const storedResult = storedPromise ? await storedPromise : null;
-        if (!storedResult) return;
-        const { articles: stored, total } = storedResult;
-        if (!isSelectionActive(token)) return;
-        lastQueryRef.current = feedQuery;
-
-        dispatchArticlesTransitionIfChanged(stored, total);
-        collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
-        interactionPerformance.markTimedInteractionStage('sidebar-switch', `feed:${feedId}`, 'cachedReady', {
-          cachedArticleCount: stored.length,
-          cachedArticleTotal: total,
-        });
-        
-        // PERFORMANCE_DEBUG: Measure time to first paint (cached data)
-        if (HAS_PERFORMANCE_API) {
-          performance.mark(`${perfMark}:cached-ready`);
-          performance.measure(`${perfMark}:to-cached`, `${perfMark}:start`, `${perfMark}:cached-ready`);
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, FEED_SWITCH_STORED_ANIMATION_WAIT_MS));
-        if (!isSelectionActive(token)) return;
+      const feedMeta = await feedStore.getById(feedId);
+      if (!feedMeta || !isSelectionActive(token)) {
+        return;
       }
 
-      const feedMeta = await feedMetaPromise;
-      if (!feedMeta || !isSelectionActive(token)) return;
-
       collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: true } });
-      const refreshBlock = options.forceNetwork
+      sidebarSwitchTrace.mark(token, 'phase-b-started', { kind: 'feed' });
+      const refreshBlock = refreshOptions.forceNetwork
         ? null
         : getFeedRefreshBlock(feedMeta, FEED_FETCH_COOLDOWN_MS, { includeBackoff: true });
       if (refreshBlock) {
@@ -1517,31 +1652,48 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
+      const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds([feedId], 'foreground');
       const activeSignal = selectionAbortControllerRef.current?.signal;
       try {
-        await refreshFeedFromNetwork(feedMeta, { updateCounts: true }, activeSignal);
+        const result = await refreshFeedFromNetwork(
+          feedMeta,
+          {
+            updateCounts: true,
+            skipNativeActivityQueue: true,
+            onFetchSettled: () => releaseQueuedFeed(feedId),
+          },
+          activeSignal,
+        );
+        insertedCount = result.inserted;
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
           return;
         }
         await recordFeedRefreshFailure(feedMeta, error);
         throw error;
+      } finally {
+        releaseQueuedFeed();
       }
-      if (!isSelectionActive(token)) return;
+      if (!isSelectionActive(token)) {
+        return;
+      }
 
       const { articles: fresh, total: freshTotal } = await articleStore.query(feedQuery);
-      if (!isSelectionActive(token)) return;
+      if (!isSelectionActive(token)) {
+        return;
+      }
       dispatchArticlesTransitionIfChanged(fresh, freshTotal);
       interactionPerformance.markTimedInteractionStage('sidebar-switch', `feed:${feedId}`, 'freshReady', {
         freshArticleCount: fresh.length,
         freshArticleTotal: freshTotal,
       });
 
-      // PERFORMANCE_DEBUG: Measure total time to fresh content
-      if (HAS_PERFORMANCE_API) {
+      if (perfMark && HAS_PERFORMANCE_API) {
         performance.mark(`${perfMark}:fresh-ready`);
         performance.measure(`${perfMark}:total-selection`, `${perfMark}:start`, `${perfMark}:fresh-ready`);
       }
+
+      sourceSelectionBus.publishRefreshSettled(token, sourceKey, insertedCount);
 
       void maybeRefreshFavicon(feedId, feedMeta.url, () => {
         notifyFeedLibraryChanged();
@@ -1552,98 +1704,58 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (isSelectionActive(token)) {
         collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: false, isLoadingArticles: false } });
       }
+      completeSelectionSwitchNetworkPriority(token);
+      sidebarSwitchTrace.markDuration(
+        token,
+        'feed-network-refresh',
+        performance.now() - feedNetworkRefreshStartedAt,
+        { insertedCount },
+      );
+      sidebarSwitchTrace.completeNetwork(token, { kind: 'feed', insertedCount });
     }
   }, [
     clearError,
+    completeSelectionSwitchNetworkPriority,
     dispatchArticlesTransitionIfChanged,
     isSelectionActive,
     notifyFeedLibraryChanged,
     recordFeedRefreshFailure,
     refreshFeedFromNetwork,
-    setActiveArticle,
-    startTransition,
-    yieldToSelectionCoalescing,
   ]);
 
-  const handleTagSelection = useCallback(async (
-    tagName: string,
-    shouldReset: boolean,
-    token: number,
-    options: RefreshTriggerOptions = {},
-  ) => {
-    // PERFORMANCE_DEBUG: Track tag selection latency
-    const perfMark = `select-tag:${tagName}:${token}`;
-    if (HAS_PERFORMANCE_API) {
-      performance.mark(`${perfMark}:start`);
+  const runTagNetworkRefreshPhase = useCallback(async (payload: TagSourceRefreshPayload) => {
+    const {
+      tagName,
+      feedIds,
+      tagQuery,
+      token,
+      sourceKey,
+      refreshOptions,
+      shouldReset,
+      perfMark,
+      intent,
+    } = payload;
+    if (!isSelectionActive(token)) {
+      return;
     }
 
-    const sourceKey = `tag:${tagName}`;
-    let restoredSnapshot: SourceArticleListSnapshot | null = null;
-
-    if (shouldReset) {
-      restoredSnapshot = restoreSourceArticleSnapshot(sourceKey);
-      if (!restoredSnapshot) {
-        collectionDispatch({ type: 'RESET_FOR_SOURCE_SWITCH' });
-      }
-      closeActiveArticleForSourceSwitch();
-    }
-
-    if (shouldReset && !await yieldToSelectionCoalescing(token)) return;
-
+    let insertedCount = 0;
     try {
-      feedScheduler.pauseForStationSelection();
-
-      const feedIds = await tagsManager.getFeedsByTag(tagName);
-      if (!isSelectionActive(token)) return;
-      feedScheduler.setActiveStationFocus(sourceKey, feedIds);
-
-      const tagQuery = createFeedIdArticleListQuery(feedIds);
-
-      lastQueryRef.current = tagQuery;
-
-      if (shouldReset) {
-        if (restoredSnapshot) {
-          interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'snapshotReady', {
-            cachedArticleCount: restoredSnapshot.list.length,
-            cachedArticleTotal: restoredSnapshot.total,
-            taggedFeedCount: feedIds.length,
-          });
-        }
-
-        const cachedVisibleCount = restoredSnapshot
-          ? Math.max(restoredSnapshot.list.length, SMART_VIEW_ARTICLE_LIMIT)
-          : SMART_VIEW_ARTICLE_LIMIT;
-        const { articles: stored, total } = await articleStore.query({ ...tagQuery, limit: cachedVisibleCount });
-        if (!isSelectionActive(token)) return;
-
-        dispatchArticlesTransitionIfChanged(stored, total);
-        collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
-        interactionPerformance.markTimedInteractionStage('sidebar-switch', `tag:${tagName}`, 'cachedReady', {
-          cachedArticleCount: stored.length,
-          cachedArticleTotal: total,
-          taggedFeedCount: feedIds.length,
-        });
-
-        // PERFORMANCE_DEBUG: Measure time to first paint (cached tag data)
-        if (HAS_PERFORMANCE_API) {
-          performance.mark(`${perfMark}:cached-ready`);
-          performance.measure(`${perfMark}:to-cached`, `${perfMark}:start`, `${perfMark}:cached-ready`);
-        }
-
-        await yieldToArticleListPrefetchFrame();
-        if (!isSelectionActive(token)) return;
-      }
-
       collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: true } });
-      const insertedCount = await refreshStationFeeds(
+      sidebarSwitchTrace.mark(token, 'phase-b-started', { kind: 'tag' });
+      insertedCount = await refreshStationFeeds(
         feedIds,
-        { ...options, bypassBackoff: shouldReset || options.bypassBackoff },
+        { ...refreshOptions, bypassBackoff: shouldReset || refreshOptions.bypassBackoff },
         token,
         sourceKey,
+        intent,
       );
       feedScheduler.suppressFeedsForNextCycle(feedIds);
 
-      if (!isSelectionActive(token)) return;
+      if (!isSelectionActive(token)) {
+        return;
+      }
+
       const visibleCount = Math.max(currentArticlesRef.current.length, SMART_VIEW_ARTICLE_LIMIT);
       let freshArticleCount = currentArticlesRef.current.length;
       let freshArticleTotal = nonSearchArticlesTotalCountRef.current;
@@ -1654,43 +1766,403 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         pendingBackgroundRefreshSourceKeyRef.current = sourceKey;
       } else {
         const { articles: fresh, total: freshTotal } = await articleStore.query({ ...tagQuery, limit: visibleCount });
-        if (!isSelectionActive(token)) return;
+        if (!isSelectionActive(token)) {
+          return;
+        }
         freshArticleCount = fresh.length;
         freshArticleTotal = freshTotal;
         dispatchArticlesTransitionIfChanged(fresh, freshTotal);
       }
+
       interactionPerformance.markTimedInteractionStage('sidebar-switch', `tag:${tagName}`, 'freshReady', {
         freshArticleCount,
         freshArticleTotal,
         taggedFeedCount: feedIds.length,
       });
 
-      // PERFORMANCE_DEBUG: Measure total time to fresh tag content
-      if (HAS_PERFORMANCE_API) {
+      if (perfMark && HAS_PERFORMANCE_API) {
         performance.mark(`${perfMark}:fresh-ready`);
         performance.measure(`${perfMark}:total-selection`, `${perfMark}:start`, `${perfMark}:fresh-ready`);
       }
 
-      if (!isSelectionActive(token)) return;
+      if (!isSelectionActive(token)) {
+        return;
+      }
 
-      // Schedule favicon backfill only after station feed refreshes and article list are ready.
+      sourceSelectionBus.publishRefreshSettled(token, sourceKey, insertedCount);
       opmlWorkflowService.scheduleMissingFaviconsAfterStationSelection(feedIds);
     } finally {
-      feedScheduler.resumeAfterStationSelection();
-
       if (isSelectionActive(token)) {
         collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: false, isLoadingArticles: false } });
       }
+      completeSelectionSwitchNetworkPriority(token);
+      sidebarSwitchTrace.completeNetwork(token, {
+        kind: 'tag',
+        insertedCount: insertedCount ?? 0,
+      });
     }
   }, [
+    completeSelectionSwitchNetworkPriority,
     dispatchArticlesTransitionIfChanged,
     isArticleViewTransitioning,
     isSelectionActive,
     refreshStationFeeds,
-    restoreSourceArticleSnapshot,
+  ]);
+
+  const requestSwitchNetworkRefresh = useCallback((payload: FeedSourceRefreshPayload | TagSourceRefreshPayload) => {
+    scheduleSourceRefreshAfterPaint(payload, {
+      isSelectionActive,
+      onRefreshRequested: (readyPayload) => {
+        if (readyPayload.kind === 'feed') {
+          void runFeedNetworkRefreshPhase(readyPayload);
+          return;
+        }
+
+        void runTagNetworkRefreshPhase(readyPayload);
+      },
+    });
+  }, [isSelectionActive, runFeedNetworkRefreshPhase, runTagNetworkRefreshPhase]);
+
+  const handleFeedSelection = useCallback(async (
+    feedId: string,
+    shouldReset: boolean,
+    token: number,
+    options: RefreshTriggerOptions = {},
+  ) => {
+    const perfMark = `select-feed:${feedId}:${token}`;
+    const sourceKey = `feed:${feedId}`;
+    const feedQuery = createArticleListQuery({ feedIds: [feedId] });
+
+    if (HAS_PERFORMANCE_API) {
+      performance.mark(`${perfMark}:start`);
+    }
+
+    if (shouldReset) {
+      collectionDispatch({ type: 'RESET_FOR_SOURCE_SWITCH' });
+      setActiveArticle(null);
+      sidebarSwitchTrace.mark(token, 'source-reset');
+    }
+
+    const stillActive = await traceSidebarSwitchAsync(token, 'coalesce-yield', async () => {
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 0);
+      });
+      return isSelectionActive(token);
+    });
+    if (shouldReset && !stillActive) return;
+
+    if (shouldReset) {
+      try {
+        const { articles: stored, total } = await traceSidebarSwitchAsync(
+          token,
+          'sqlite-query',
+          () => articleStore.query(feedQuery),
+          { feedId },
+        );
+        if (!isSelectionActive(token)) {
+          abortSelectionSwitchPriority(token);
+          return;
+        }
+        lastQueryRef.current = feedQuery;
+
+        const dispatchStartedAt = performance.now();
+        dispatchArticlesTransitionIfChanged(stored, total);
+        sidebarSwitchTrace.markDuration(
+          token,
+          'dispatch-articles',
+          performance.now() - dispatchStartedAt,
+          { articleCount: stored.length },
+        );
+        collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+        interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
+          cachedArticleCount: stored.length,
+          cachedArticleTotal: total,
+        });
+
+        if (HAS_PERFORMANCE_API) {
+          performance.mark(`${perfMark}:cached-ready`);
+          performance.measure(`${perfMark}:to-cached`, `${perfMark}:start`, `${perfMark}:cached-ready`);
+        }
+
+        requestSwitchNetworkRefresh({
+          kind: 'feed',
+          token,
+          sourceKey,
+          intent: 'switch',
+          refreshOptions: options,
+          feedId,
+          feedQuery,
+          perfMark,
+        });
+      } catch {
+        clearError();
+        abortSelectionSwitchPriority(token);
+      }
+      return;
+    }
+
+    void runFeedNetworkRefreshPhase({
+      kind: 'feed',
+      token,
+      sourceKey,
+      intent: 'manual',
+      refreshOptions: options,
+      feedId,
+      feedQuery,
+      perfMark,
+    });
+  }, [
+    abortSelectionSwitchPriority,
+    clearError,
+    dispatchArticlesTransitionIfChanged,
+    isSelectionActive,
+    requestSwitchNetworkRefresh,
+    runFeedNetworkRefreshPhase,
+    setActiveArticle,
+  ]);
+
+  const handleTagSelection = useCallback(async (
+    tagName: string,
+    shouldReset: boolean,
+    token: number,
+    options: RefreshTriggerOptions = {},
+  ) => {
+    const perfMark = `select-tag:${tagName}:${token}`;
+    const sourceKey = `tag:${tagName}`;
+    let restoredSnapshot: SourceArticleListSnapshot | null = null;
+
+    if (HAS_PERFORMANCE_API) {
+      performance.mark(`${perfMark}:start`);
+    }
+
+    if (shouldReset) {
+      restoredSnapshot = restoreSourceArticleSnapshot(sourceKey);
+      if (restoredSnapshot) {
+        sidebarSwitchTrace.mark(token, 'snapshot-restored', {
+          cachedArticleCount: restoredSnapshot.list.length,
+          cachedArticleTotal: restoredSnapshot.total,
+        });
+      } else {
+        collectionDispatch({ type: 'RESET_FOR_SOURCE_SWITCH' });
+      }
+      closeActiveArticleForSourceSwitch();
+      sidebarSwitchTrace.mark(token, 'article-close-requested');
+    }
+
+    if (shouldReset) {
+      const stillActive = await traceSidebarSwitchAsync(token, 'coalesce-yield', async () => {
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 0);
+        });
+        return isSelectionActive(token);
+      });
+      if (!stillActive) {
+        return;
+      }
+    }
+
+    try {
+      const feedIds = await traceSidebarSwitchAsync(
+        token,
+        'feed-ids-resolved',
+        () => tagsManager.getFeedsByTag(tagName),
+        { tagName },
+      );
+      if (!isSelectionActive(token)) return;
+      feedScheduler.setActiveStationFocus(sourceKey, feedIds);
+
+      const tagQuery = createFeedIdArticleListQuery(feedIds);
+      lastQueryRef.current = tagQuery;
+
+      if (shouldReset) {
+        const cachedVisibleCount = restoredSnapshot
+          ? Math.min(
+            Math.max(restoredSnapshot.list.length, SMART_VIEW_ARTICLE_LIMIT),
+            STATION_SWITCH_SQLITE_RECONCILE_LIMIT,
+          )
+          : SMART_VIEW_ARTICLE_LIMIT;
+
+        if (restoredSnapshot) {
+          interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'snapshotReady', {
+            cachedArticleCount: restoredSnapshot.list.length,
+            cachedArticleTotal: restoredSnapshot.total,
+            taggedFeedCount: feedIds.length,
+          });
+          interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
+            cachedArticleCount: restoredSnapshot.list.length,
+            cachedArticleTotal: restoredSnapshot.total,
+            taggedFeedCount: feedIds.length,
+            fromSnapshot: true,
+          });
+          sidebarSwitchTrace.mark(token, 'articles-published', {
+            fromSnapshot: true,
+            articleCount: restoredSnapshot.list.length,
+          });
+
+          if (HAS_PERFORMANCE_API) {
+            performance.mark(`${perfMark}:cached-ready`);
+            performance.measure(`${perfMark}:to-cached`, `${perfMark}:start`, `${perfMark}:cached-ready`);
+          }
+
+          requestSwitchNetworkRefresh({
+            kind: 'tag',
+            token,
+            sourceKey,
+            intent: 'switch',
+            refreshOptions: options,
+            tagName,
+            feedIds,
+            tagQuery,
+            shouldReset,
+            perfMark,
+          });
+
+          scheduleStationSwitchIdleWork(() => {
+            void traceSidebarSwitchAsync(token, 'sqlite-reconcile', async () => {
+              const { articles: stored, total } = await articleStore.query({ ...tagQuery, limit: cachedVisibleCount });
+              if (!isSelectionActive(token)) {
+                return;
+              }
+
+              const dispatchStartedAt = performance.now();
+              dispatchArticlesTransitionIfChanged(stored, total);
+              sidebarSwitchTrace.markDuration(
+                token,
+                'dispatch-articles',
+                performance.now() - dispatchStartedAt,
+                { articleCount: stored.length, fromSnapshot: true },
+              );
+            }, { limit: cachedVisibleCount });
+          });
+          return;
+        }
+
+        if (feedIds.length >= LARGE_STATION_FEED_THRESHOLD) {
+          sidebarSwitchTrace.mark(token, 'large-station-fast-path', {
+            taggedFeedCount: feedIds.length,
+          });
+          if (getE2eConfig()) {
+            void writeE2eEvent('large-station-fast-path', {
+              token,
+              tagName,
+              taggedFeedCount: feedIds.length,
+            });
+          }
+          sidebarSwitchTrace.mark(token, 'articles-published', {
+            deferredSqlite: true,
+            articleCount: 0,
+          });
+
+          requestSwitchNetworkRefresh({
+            kind: 'tag',
+            token,
+            sourceKey,
+            intent: 'switch',
+            refreshOptions: options,
+            tagName,
+            feedIds,
+            tagQuery,
+            shouldReset,
+            perfMark,
+          });
+
+          void traceSidebarSwitchAsync(token, 'sqlite-query-deferred', async () => {
+            const queryLimit = Math.min(cachedVisibleCount, STATION_SWITCH_SQLITE_RECONCILE_LIMIT);
+            const { articles: stored, total } = await articleStore.query({ ...tagQuery, limit: queryLimit });
+            if (!isSelectionActive(token)) {
+              return;
+            }
+
+            const dispatchStartedAt = performance.now();
+            dispatchArticlesTransitionIfChanged(stored, total);
+            collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+            sidebarSwitchTrace.markDuration(
+              token,
+              'dispatch-articles',
+              performance.now() - dispatchStartedAt,
+              { articleCount: stored.length, deferred: true },
+            );
+            interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
+              cachedArticleCount: stored.length,
+              cachedArticleTotal: total,
+              taggedFeedCount: feedIds.length,
+              deferredSqlite: true,
+            });
+          }, { limit: cachedVisibleCount, taggedFeedCount: feedIds.length, deferred: true });
+          return;
+        }
+
+        const { articles: stored, total } = await traceSidebarSwitchAsync(
+          token,
+          'sqlite-query',
+          () => articleStore.query({ ...tagQuery, limit: cachedVisibleCount }),
+          { limit: cachedVisibleCount, taggedFeedCount: feedIds.length },
+        );
+        if (!isSelectionActive(token)) {
+          abortSelectionSwitchPriority(token);
+          return;
+        }
+
+        const dispatchStartedAt = performance.now();
+        dispatchArticlesTransitionIfChanged(stored, total);
+        sidebarSwitchTrace.markDuration(
+          token,
+          'dispatch-articles',
+          performance.now() - dispatchStartedAt,
+          { articleCount: stored.length },
+        );
+        collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+        interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
+          cachedArticleCount: stored.length,
+          cachedArticleTotal: total,
+          taggedFeedCount: feedIds.length,
+        });
+
+        if (HAS_PERFORMANCE_API) {
+          performance.mark(`${perfMark}:cached-ready`);
+          performance.measure(`${perfMark}:to-cached`, `${perfMark}:start`, `${perfMark}:cached-ready`);
+        }
+
+        requestSwitchNetworkRefresh({
+          kind: 'tag',
+          token,
+          sourceKey,
+          intent: 'switch',
+          refreshOptions: options,
+          tagName,
+          feedIds,
+          tagQuery,
+          shouldReset,
+          perfMark,
+        });
+        return;
+      }
+
+      void runTagNetworkRefreshPhase({
+        kind: 'tag',
+        token,
+        sourceKey,
+        intent: 'manual',
+        refreshOptions: options,
+        tagName,
+        feedIds,
+        tagQuery,
+        shouldReset,
+        perfMark,
+      });
+    } catch {
+      clearError();
+      abortSelectionSwitchPriority(token);
+    }
+  }, [
+    abortSelectionSwitchPriority,
+    clearError,
     closeActiveArticleForSourceSwitch,
-    startTransition,
-    yieldToSelectionCoalescing,
+    dispatchArticlesTransitionIfChanged,
+    isSelectionActive,
+    requestSwitchNetworkRefresh,
+    restoreSourceArticleSnapshot,
+    runTagNetworkRefreshPhase,
   ]);
 
   const handleSmartViewSelection = useCallback(async (type: SmartViewType, shouldReset: boolean, token: number) => {
@@ -1800,6 +2272,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     const token = beginSelectionRequest();
+    sidebarSwitchTrace.begin(token, `feed:${feedId}`, 'feed', {
+      sourceId: feedId,
+      sourceLabel: title,
+      isSameSource: isSameFeed,
+    });
     void handleFeedSelection(feedId, !isSameFeed, token, options);
   }, [beginSelectionRequest, clearArticleListScrollIdleState, handleFeedSelection]);
 
@@ -1823,6 +2300,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     const token = beginSelectionRequest();
+    sidebarSwitchTrace.begin(token, `tag:${tagName}`, 'tag', {
+      sourceId: tagName,
+      sourceLabel: tagName,
+      isSameSource: isSameTag,
+    });
     void handleTagSelection(tagName, !isSameTag, token, options);
   }, [beginSelectionRequest, clearArticleListScrollIdleState, handleTagSelection]);
 
@@ -1851,6 +2333,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const clearFeedSelection = useCallback(() => {
     feedScheduler.clearActiveStationFocus();
+    abortSelectionSwitchPriority();
     clearArticleListScrollIdleState();
     selectionAbortControllerRef.current?.abort();
     selectionAbortControllerRef.current = null;
@@ -1859,7 +2342,15 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     navigationDispatch({ type: 'CLEAR_SELECTION' });
     collectionDispatch({ type: 'RESET_ARTICLES' });
     collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false, isSavedListLoading: false, isFetchingNew: false } });
-  }, [clearArticleListScrollIdleState]);
+  }, [abortSelectionSwitchPriority, clearArticleListScrollIdleState]);
+
+  useMountEffect(() => {
+    return sourceSelectionBus.subscribe((event) => {
+      if (event.type === 'source-refresh-aborted') {
+        abortSelectionSwitchPriority(event.payload.token);
+      }
+    });
+  });
 
   useMountEffect(() => {
     if (hasAttemptedSidebarRestoreRef.current) return;

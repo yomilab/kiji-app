@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { assertE2eNotSkipped } from "../../scripts/e2e/e2eSupport.mjs";
 import { runNavigationSwitchE2e } from "../../scripts/e2e/navigation-switch.mjs";
+import { runStationSwitchIndicatorE2e } from "../../scripts/e2e/station-switch-indicator.mjs";
+import { runStationSwitchPerformanceE2e } from "../../scripts/e2e/station-switch-performance.mjs";
 import { runArticleDeckE2e } from "../../scripts/e2e/article-deck.mjs";
 import { runReaderModeE2e } from "../../scripts/e2e/reader-mode.mjs";
 import { runOpmlImportE2e } from "../../scripts/e2e/opml-import.mjs";
@@ -22,6 +24,36 @@ describe("User interaction E2E", () => {
     }
     expect(result.alphaArticleCount).toBeGreaterThanOrEqual(1);
     expect(result.betaArticleCount).toBeGreaterThanOrEqual(1);
+  }, E2E_TIMEOUT_MS);
+
+  it("keeps sidebar refresh indicator scoped to the active station", async () => {
+    const result = await runStationSwitchIndicatorE2e();
+    assertE2eNotSkipped(result);
+    if (result.skipped) {
+      expect(result.reason).toBeTruthy();
+      return;
+    }
+    expect(result.betaIndicatorText).toMatch(/1/);
+    expect(result.alphaIndicatorText).toMatch(/1/);
+    expect(result.betaForegroundCount).toBeLessThanOrEqual(1);
+    expect(result.alphaForegroundCount).toBeLessThanOrEqual(1);
+  }, E2E_TIMEOUT_MS);
+
+  it("keeps station switches within interactive performance budgets", async () => {
+    const result = await runStationSwitchPerformanceE2e();
+    assertE2eNotSkipped(result);
+    if (result.skipped) {
+      expect(result.reason).toBeTruthy();
+      return;
+    }
+    expect(result.alphaCold.harnessInteractiveMs).toBeLessThanOrEqual(1_200);
+    expect(result.alphaWarm.harnessInteractiveMs).toBeLessThanOrEqual(1_200);
+    if (
+      typeof result.alphaWarm.traceInteractiveMs === "number"
+      && typeof result.alphaCold.traceInteractiveMs === "number"
+    ) {
+      expect(result.alphaWarm.traceInteractiveMs).toBeLessThanOrEqual(result.alphaCold.traceInteractiveMs);
+    }
   }, E2E_TIMEOUT_MS);
 
   it("opens and closes the article deck", async () => {
@@ -53,6 +85,7 @@ describe("User interaction E2E", () => {
     }
     expect(result.feedCount).toBeGreaterThanOrEqual(2);
     expect(result.stationCount).toBeGreaterThanOrEqual(2);
+    expect(result.articleCount).toBeGreaterThanOrEqual(1);
   }, E2E_TIMEOUT_MS);
 
   it("exports OPML to harness directory", async () => {

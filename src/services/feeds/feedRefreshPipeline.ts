@@ -20,6 +20,7 @@ export interface StoreParsedFeedResult {
   updateFrequencyScore?: number;
 }
 
+/** Renderer parse/store path used when native ingestion is disabled or for add-feed validation. */
 export async function storeParsedFeedContent(
   options: StoreParsedFeedOptions,
 ): Promise<StoreParsedFeedResult> {

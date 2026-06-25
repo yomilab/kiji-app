@@ -14,6 +14,12 @@ import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 import { getE2eConfig } from '@/services/e2e/e2eHarness';
 import { createSchedulerRunPlan } from './schedulerRunPlan';
 import { getSchedulerConcurrency, setSchedulerRuntimeUiState } from './schedulerConcurrency';
+import type { SchedulerCycleScope } from './feedSchedulerServiceTypes';
+import {
+  collectFeedIdsNeedingCountSync,
+  isNativeFeedIngestionEnabled,
+} from './nativeSchedulerCycle';
+import { runNativeFeedRefresh } from './nativeFeedRefresh';
 import type {
   BackgroundUpdateMode,
   FeedPriorityEntry,
@@ -30,6 +36,7 @@ const SCHEDULER_RESUME_WAKE_GLOBAL = '__kijiSchedulerResume';
 const STALE_CYCLE_ABORT_MS = 45 * 60 * 1_000;
 const MAX_DEFERRED_TICKS_BEFORE_FORCE_ABORT = 3;
 const STATION_SELECTION_PAUSE_MAX_MS = 10 * 60 * 1_000;
+const STARTUP_CYCLE_IDLE_FALLBACK_MS = 30_000;
 const BOOST_TTL_MS = 5 * 60_000;
 
 const MODE_INTERVAL_MS: Record<Exclude<BackgroundUpdateMode, 'on-launch' | 'never'>, number> = {
@@ -52,11 +59,6 @@ interface ActiveStationFocus {
   feedIds: Set<string>;
 }
 
-interface SchedulerCycleScope {
-  onlyFeedIds?: ReadonlySet<string>;
-  excludeFeedIds?: ReadonlySet<string>;
-}
-
 class FeedSchedulerService {
   private cycleInProgress = false;
   private pendingCycleTick = false;
@@ -73,12 +75,15 @@ class FeedSchedulerService {
   private stationSelectionPauseTimer: ReturnType<typeof setTimeout> | null = null;
   private activeStationFocus: ActiveStationFocus | null = null;
   private skipOnceFeedIds = new Set<string>();
+  private pendingImportRefreshFeedIds: Set<string> | null = null;
   private consecutiveDeferredTicks = 0;
   private activeCycleId = 0;
   private activeCycleDrain: Promise<void> | null = null;
   private resolveActiveCycleDrain: (() => void) | null = null;
   private systemPowerUnlistenSleep: UnlistenFn | null = null;
   private systemPowerUnlistenResume: UnlistenFn | null = null;
+  private deferStartupCycleUntilInteraction = false;
+  private startupDeferTimer: ReturnType<typeof setTimeout> | null = null;
 
   on(listener: (event: SchedulerEvent) => void): () => void {
     this.listeners.add(listener);
@@ -102,6 +107,7 @@ class FeedSchedulerService {
       }
 
       this.mode = settings.backgroundUpdate ?? 'every-15m';
+      this.deferStartupCycleUntilInteraction = getE2eConfig() === null && !import.meta.env.VITEST;
       await this.ensureNativeTickListener(lifecycleId);
       await this.ensureSystemPowerListener(lifecycleId);
       this.registerNativeWakeHandlers();
@@ -170,7 +176,7 @@ class FeedSchedulerService {
     this.maybeRunDeferredCycle(this.lifecycleId);
   }
 
-  releaseStationSelectionPause(reason: 'background' | 'timeout'): void {
+  releaseStationSelectionPause(reason: 'background' | 'timeout' | 'selection-changed'): void {
     if (this.stationSelectionPauseDepth === 0) {
       return;
     }
@@ -178,6 +184,13 @@ class FeedSchedulerService {
     this.clearStationSelectionPauseTimer();
     this.stationSelectionPauseDepth = 0;
     logger.info('Scheduler', 'Released station-selection scheduler pause', { reason });
+
+    if (reason === 'selection-changed') {
+      if (this.shouldScheduleCatchUpCycle()) {
+        this.pendingCycleTick = true;
+      }
+      return;
+    }
 
     const lifecycleId = this.lifecycleId;
     if (this.pendingCycleTick || this.shouldScheduleCatchUpCycle()) {
@@ -214,6 +227,21 @@ class FeedSchedulerService {
     }
   }
 
+  isStationSelectionPaused(): boolean {
+    return this.isStationSelectionPausedInternal();
+  }
+
+  /** First sidebar interaction lifts startup cycle deferral (cycle still waits for selection pause). */
+  acknowledgeSidebarInteraction(): void {
+    if (!this.deferStartupCycleUntilInteraction) {
+      return;
+    }
+
+    this.deferStartupCycleUntilInteraction = false;
+    this.clearStartupDeferTimer();
+    logger.info('Scheduler', 'Startup background refresh deferral lifted after sidebar interaction');
+  }
+
   async stop(): Promise<void> {
     this.lifecycleId += 1;
     this.unregisterNativeWakeHandlers();
@@ -224,7 +252,10 @@ class FeedSchedulerService {
     this.clearStationSelectionPauseTimer();
     this.activeStationFocus = null;
     this.skipOnceFeedIds.clear();
+    this.pendingImportRefreshFeedIds = null;
     this.consecutiveDeferredTicks = 0;
+    this.deferStartupCycleUntilInteraction = false;
+    this.clearStartupDeferTimer();
     this.invalidateActiveCycle();
     this.finishCycleDrain();
 
@@ -376,8 +407,13 @@ class FeedSchedulerService {
       this.boosts.set(feedId, boostUntil);
     }
 
+    const importScope: SchedulerCycleScope = {
+      onlyFeedIds: new Set(feedIds),
+    };
+
     if (this.cycleInProgress || this.isStationSelectionPaused()) {
       this.pendingCycleTick = true;
+      this.mergePendingImportRefreshFeedIds(feedIds);
       logger.info('Scheduler', this.isStationSelectionPaused()
         ? 'Deferred boosted import refresh during station selection'
         : 'Deferred boosted import refresh until current cycle completes', {
@@ -390,10 +426,55 @@ class FeedSchedulerService {
       feedCount: feedIds.length,
     });
 
-    void this.runScheduledCycle(this.lifecycleId);
+    void this.runScheduledCycle(this.lifecycleId, importScope);
   }
 
-  private isStationSelectionPaused(): boolean {
+  private mergePendingImportRefreshFeedIds(feedIds: Iterable<string>): void {
+    if (!this.pendingImportRefreshFeedIds) {
+      this.pendingImportRefreshFeedIds = new Set(feedIds);
+      return;
+    }
+
+    for (const feedId of feedIds) {
+      this.pendingImportRefreshFeedIds.add(feedId);
+    }
+  }
+
+  private consumePendingImportRefreshScope(): SchedulerCycleScope {
+    if (!this.pendingImportRefreshFeedIds || this.pendingImportRefreshFeedIds.size === 0) {
+      return {};
+    }
+
+    const onlyFeedIds = this.pendingImportRefreshFeedIds;
+    this.pendingImportRefreshFeedIds = null;
+    return { onlyFeedIds };
+  }
+
+  private clearStartupDeferTimer(): void {
+    if (this.startupDeferTimer !== null) {
+      clearTimeout(this.startupDeferTimer);
+      this.startupDeferTimer = null;
+    }
+  }
+
+  private ensureStartupDeferFallbackTimer(lifecycleId: number): void {
+    if (this.startupDeferTimer !== null || !this.deferStartupCycleUntilInteraction) {
+      return;
+    }
+
+    this.startupDeferTimer = setTimeout(() => {
+      this.startupDeferTimer = null;
+      if (!this.isCurrentLifecycle(lifecycleId) || !this.deferStartupCycleUntilInteraction) {
+        return;
+      }
+
+      this.deferStartupCycleUntilInteraction = false;
+      logger.info('Scheduler', 'Startup background refresh deferral expired; scheduling idle catch-up');
+      this.maybeRunDeferredCycle(lifecycleId);
+    }, STARTUP_CYCLE_IDLE_FALLBACK_MS);
+  }
+
+  private isStationSelectionPausedInternal(): boolean {
     return this.stationSelectionPauseDepth > 0;
   }
 
@@ -421,7 +502,7 @@ class FeedSchedulerService {
 
     this.pendingCycleTick = false;
     logger.info('Scheduler', 'Running deferred native scheduler tick', { mode: this.mode });
-    void this.runScheduledCycle(lifecycleId);
+    void this.runScheduledCycle(lifecycleId, this.consumePendingImportRefreshScope());
   }
 
   private getIntervalMs(): number {
@@ -498,6 +579,15 @@ class FeedSchedulerService {
 
   private async handleNativeCycleTick(lifecycleId: number): Promise<void> {
     if (!this.isCurrentLifecycle(lifecycleId)) {
+      return;
+    }
+
+    if (this.deferStartupCycleUntilInteraction) {
+      this.pendingCycleTick = true;
+      this.ensureStartupDeferFallbackTimer(lifecycleId);
+      logger.info('Scheduler', 'Deferred startup background refresh until sidebar interaction', {
+        mode: this.mode,
+      });
       return;
     }
 
@@ -708,6 +798,16 @@ class FeedSchedulerService {
         return;
       }
 
+      if (isNativeFeedIngestionEnabled()) {
+        await this.executeNativeRefreshCycle({
+          lifecycleId,
+          cycleId,
+          scope,
+          signal,
+        });
+        return;
+      }
+
       const totalFeeds = feeds.length;
       const entries: SchedulerFeedEntry[] = feeds.map((feed) => ({
         feedId: feed.id,
@@ -816,6 +916,82 @@ class FeedSchedulerService {
       });
 
       this.maybeRunDeferredCycle(lifecycleId);
+    }
+  }
+
+  private async executeNativeRefreshCycle(input: {
+    lifecycleId: number;
+    cycleId: number;
+    scope: SchedulerCycleScope;
+    signal: AbortSignal;
+  }): Promise<void> {
+    const { lifecycleId, cycleId, scope, signal } = input;
+    const frontloadFeedIds = scope.onlyFeedIds ?? this.activeStationFocus?.feedIds;
+    const skipFeedIdsForThisCycle = this.consumeSkipOnceFeedIds();
+    const now = Date.now();
+    this.pruneExpiredBoosts(now);
+
+    try {
+      if (signal.aborted || !this.isCurrentLifecycle(lifecycleId) || cycleId !== this.activeCycleId) {
+        return;
+      }
+
+      const result = await runNativeFeedRefresh({
+        scope,
+        boosts: this.boosts,
+        frontloadFeedIds,
+        skipFeedIdsForThisCycle,
+        signal,
+        activityKind: 'background',
+        onFeedComplete: (payload) => {
+          if (payload.error) {
+            this.emit({
+              type: 'feed-failed',
+              feedId: payload.feedId,
+              error: payload.error,
+            });
+            return;
+          }
+
+          if ((payload.insertedCount ?? 0) > 0) {
+            this.emit({
+              type: 'feed-updated',
+              feedId: payload.feedId,
+              newArticleCount: payload.insertedCount,
+            });
+          }
+        },
+      });
+
+      if (signal.aborted || !this.isCurrentLifecycle(lifecycleId) || cycleId !== this.activeCycleId) {
+        return;
+      }
+
+      const feedIdsToSync = collectFeedIdsNeedingCountSync(result.feedResults);
+      if (feedIdsToSync.length > 0) {
+        const syncedCounts = await articleStore.syncFeedCountsBatch(feedIdsToSync);
+        if (syncedCounts.length > 0) {
+          feedLibraryMutationBus.publishFeedsCountsUpdated(
+            syncedCounts.map((counts) => ({
+              feedId: counts.feedId,
+              unreadCount: counts.unreadCount,
+              articleCount: counts.articleCount,
+            })),
+          );
+        }
+      }
+
+      logger.info('Scheduler', 'Native background refresh cycle stats', {
+        queuedCount: result.feedResults.length,
+        executedFeedCount: result.feedResults.length,
+        changedFeeds: result.feedResults.filter((feed) => feed.status === 'changed').length,
+        notModifiedFeeds: result.feedResults.filter((feed) => feed.status === 'not-modified').length,
+        failedFeeds: result.feedResults.filter((feed) => feed.status === 'failed').length,
+        insertedArticles: result.insertedArticles,
+        activeStationFeedCount: frontloadFeedIds?.size ?? 0,
+      });
+    } catch (error) {
+      logger.error('Scheduler', 'Native background refresh cycle failed', { error });
     }
   }
 

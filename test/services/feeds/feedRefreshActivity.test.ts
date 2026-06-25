@@ -152,9 +152,9 @@ describe('FeedRefreshActivity', () => {
     expect(activity.getSnapshot()).toMatchObject({
       foregroundQueuedFeedCount: 2,
       backgroundQueuedFeedCount: 1,
-      displayFeedCount: 3,
+      displayFeedCount: 2,
       isForegroundFeedRefreshing: true,
-      isBackgroundFeedRefreshing: true,
+      isBackgroundFeedRefreshing: false,
     });
 
     releaseForeground();
@@ -173,6 +173,61 @@ describe('FeedRefreshActivity', () => {
       displayFeedCount: 0,
       isForegroundFeedRefreshing: false,
       isBackgroundFeedRefreshing: false,
+    });
+  });
+
+  it('releases all foreground queued batches when selection is superseded', () => {
+    const activity = new FeedRefreshActivity();
+
+    activity.beginQueuedFeeds(['feed-a', 'feed-b']);
+    activity.beginQueuedFeeds(['feed-c', 'feed-d', 'feed-e']);
+
+    expect(activity.getSnapshot()).toMatchObject({
+      foregroundQueuedFeedCount: 5,
+      displayFeedCount: 5,
+    });
+
+    activity.releaseAllForegroundQueued();
+
+    expect(activity.getSnapshot()).toMatchObject({
+      foregroundQueuedFeedCount: 0,
+      displayFeedCount: 0,
+      isForegroundFeedRefreshing: false,
+    });
+  });
+
+  it('uses foreground queue size for displayFeedCount when both scopes are active', () => {
+    const activity = new FeedRefreshActivity();
+
+    activity.beginQueuedFeeds(['scheduler-1', 'scheduler-2'], 'background');
+    activity.beginQueuedFeeds(['station-1'], 'foreground');
+
+    expect(activity.getSnapshot()).toMatchObject({
+      queuedFeedCount: 3,
+      foregroundQueuedFeedCount: 1,
+      backgroundQueuedFeedCount: 2,
+      displayFeedCount: 1,
+      isForegroundFeedRefreshing: true,
+      isBackgroundFeedRefreshing: false,
+    });
+  });
+
+  it('suppresses background refresh indicator while foreground station refresh is active', () => {
+    const activity = new FeedRefreshActivity();
+
+    activity.beginQueuedFeeds(['station-1'], 'foreground');
+    activity.beginQueuedFeeds(['scheduler-1'], 'background');
+    expect(activity.getSnapshot()).toMatchObject({
+      backgroundQueuedFeedCount: 1,
+      isForegroundFeedRefreshing: true,
+      isBackgroundFeedRefreshing: false,
+    });
+
+    activity.releaseAllForegroundQueued();
+    expect(activity.getSnapshot()).toMatchObject({
+      backgroundQueuedFeedCount: 1,
+      isForegroundFeedRefreshing: false,
+      isBackgroundFeedRefreshing: true,
     });
   });
 });

@@ -140,35 +140,7 @@ export function materializePreparedListArticles(records: ArticleRecord[]): Artic
   return records.map((record) => recordToArticle(record, { forList: true }));
 }
 
-export function mergeUniqueArticlesByHash(existing: Article[], incoming: Article[]): Article[] {
-  if (incoming.length === 0) {
-    return existing;
-  }
-
-  const incomingHashes = new Set<string>();
-  const uniqueIncoming: Article[] = [];
-
-  for (const article of incoming) {
-    if (incomingHashes.has(article.hash)) {
-      continue;
-    }
-    incomingHashes.add(article.hash);
-    uniqueIncoming.push(article);
-  }
-
-  if (uniqueIncoming.length === 0) {
-    return existing;
-  }
-
-  const existingHashes = new Set(existing.map((article) => article.hash));
-  const hasOverlap = uniqueIncoming.some((article) => existingHashes.has(article.hash));
-  if (!hasOverlap) {
-    return [...existing, ...uniqueIncoming];
-  }
-
-  const dedupedIncoming = uniqueIncoming.filter((article) => !existingHashes.has(article.hash));
-  return dedupedIncoming.length === 0 ? existing : [...existing, ...dedupedIncoming];
-}
+export { mergeUniqueArticlesByHash } from '@/services/articles/mergeUniqueArticlesByHash';
 
 export function snapshotProcessMemory(): ProcessMemorySnapshot {
   const memory = process.memoryUsage();

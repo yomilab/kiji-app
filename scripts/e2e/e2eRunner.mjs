@@ -80,6 +80,30 @@ export async function waitForEvent(e2eDir, name, predicate = () => true, timeout
   throw new Error(`Timed out waiting for e2e event: ${name}`);
 }
 
+export function listSwitchPerfEvents(e2eDir) {
+  const eventsDir = path.join(e2eDir, "events");
+  if (!fs.existsSync(eventsDir)) {
+    return [];
+  }
+
+  return fs.readdirSync(eventsDir)
+    .filter((fileName) => fileName.startsWith("station-switch-perf-") && fileName.endsWith(".json"))
+    .map((fileName) => JSON.parse(fs.readFileSync(path.join(eventsDir, fileName), "utf8")))
+    .sort((left, right) => (getEventAtMs(left) ?? 0) - (getEventAtMs(right) ?? 0));
+}
+
+export async function waitForSwitchPerfEvent(e2eDir, afterAtMs, predicate = () => true, timeoutMs = EVENT_TIMEOUT_MS) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const events = listSwitchPerfEvents(e2eDir).filter((event) => isEventAfter(event, afterAtMs) && predicate(event));
+    if (events.length > 0) {
+      return events[events.length - 1];
+    }
+    await sleep(POLL_INTERVAL_MS);
+  }
+  throw new Error("Timed out waiting for station-switch-perf event");
+}
+
 export function terminateProcess(child) {
   if (child.killed || child.exitCode !== null) {
     return Promise.resolve();

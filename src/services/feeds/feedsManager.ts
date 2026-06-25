@@ -10,6 +10,8 @@ import { tauriClient } from "../../lib/tauriClient";
 import { feedRefreshActivity } from "./feedRefreshActivity";
 import { feedRefreshCoordinator } from "./feedRefreshCoordinator";
 import { feedsFetcher, parseFeed } from "./feedsFetcher";
+import { isNativeFeedIngestionEnabled } from "../scheduler/nativeSchedulerCycle";
+import { runNativeFeedRefresh } from "../scheduler/nativeFeedRefresh";
 import type { Feed } from "./types";
 
 export type { Feed } from "./types";
@@ -101,6 +103,46 @@ class FeedsManager {
   ): Promise<RefreshFeedResult> {
     return feedRefreshCoordinator.run(id, async () => {
       const feed = await this.requireFeed(id);
+
+      if (isNativeFeedIngestionEnabled()) {
+        try {
+          const nativeResult = await runNativeFeedRefresh({
+            feedIds: [id],
+            forceRefreshFeedIds: options.force ? new Set([id]) : undefined,
+            signal: options.signal,
+            activityKind: 'foreground',
+          });
+          const feedResult = nativeResult.feedResults.find((result) => result.feedId === id);
+          if (feedResult?.error) {
+            throw new Error(feedResult.error);
+          }
+
+          const articleCount = await articleStore.getArticleCount(id);
+          const unreadCount = await articleStore.getUnreadCount(id);
+          await feedStore.update(id, {
+            lastFetched: new Date(),
+            lastFailedFetchAt: undefined,
+            consecutiveFailures: 0,
+            articleCount,
+            unreadCount,
+          });
+
+          return {
+            feedId: id,
+            notModified: feedResult?.status === 'not-modified',
+            insertedCount: nativeResult.insertedByFeedId.get(id) ?? 0,
+          };
+        } catch (error) {
+          const aborted = error instanceof Error && error.name === "AbortError";
+          if (!aborted) {
+            await feedStore.update(id, {
+              lastFailedFetchAt: new Date(),
+              consecutiveFailures: (feed.consecutiveFailures ?? 0) + 1,
+            });
+          }
+          throw error;
+        }
+      }
 
       try {
         const networkResult = await feedRefreshActivity.track(id, () =>

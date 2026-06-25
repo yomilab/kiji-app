@@ -4,6 +4,8 @@ import type { Article } from "../types/article";
 import type { ArticleQuery, ArticleQueryResult } from "../types/articleQuery";
 import { prepareArticleForList } from "../services/articles/articleListMemory";
 import { normalizePublishedDate } from "../services/articles/publishedDateNormalizer";
+import { normalizeEnclosures } from "../services/articles/normalizeEnclosures";
+import { normalizeStoredDescription } from "../utils/htmlToPlainText";
 
 type ArticleMetadata = Partial<Pick<
   Article,
@@ -31,7 +33,7 @@ export function recordToArticle(
   const article: Article = {
     hash: record.hash,
     title: record.title,
-    description: record.description,
+    description: normalizeStoredDescription(record.description),
     content: record.content,
     link: record.link ?? undefined,
     author: record.author ?? undefined,
@@ -229,7 +231,15 @@ function buildMetadata(article: Article): ArticleMetadata | null {
 }
 
 function normalizeMetadata(value: unknown): ArticleMetadata {
-  return value && typeof value === "object" ? value as ArticleMetadata : {};
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  const metadata = { ...(value as ArticleMetadata) };
+  if ("enclosures" in metadata) {
+    metadata.enclosures = normalizeEnclosures(metadata.enclosures);
+  }
+  return metadata;
 }
 
 function getMonthsAgoCutoffDate(monthsToKeep: 1 | 3 | 6): Date {

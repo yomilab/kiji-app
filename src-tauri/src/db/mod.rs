@@ -12,14 +12,17 @@ pub use articles::{
     articles_count_unread_by_feed, articles_delete_by_feed, articles_exists, articles_get,
     articles_get_content, articles_insert_batch, articles_query, articles_sync_feed_counts_batch,
     articles_toggle_starred, articles_update_feed_meta, articles_update_last_read_at,
-    articles_update_read, articles_update_saved_state,
+    articles_update_read, articles_update_saved_state, insert_articles_batch,
+    sync_feed_article_counts_batch,
 };
 pub use feeds::{
     feeds_count, feeds_create, feeds_delete, feeds_get, feeds_get_by_url, feeds_list, feeds_update,
     feeds_update_article_count, feeds_update_last_fetched, feeds_update_unread_count,
+    list_feeds, update_feed, FeedUpdate,
 };
-use migrations::{read_current_migration_version, run_migrations};
-pub use models::SavedArticleRecord;
+use migrations::read_current_migration_version;
+pub use migrations::run_migrations;
+pub use models::{ArticleRecord, FeedRecord, SavedArticleRecord};
 use rusqlite::Connection;
 pub use saved::{
     get_saved_article_by_id, get_saved_articles_page, saved_create, saved_delete, saved_get,

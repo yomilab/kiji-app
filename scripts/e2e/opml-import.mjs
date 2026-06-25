@@ -63,11 +63,17 @@ export async function runOpmlImportE2e() {
       "opml-import-complete",
       (event) => (event.payload?.feedCount ?? 0) >= 2,
     );
+    const refreshed = await waitForEvent(
+      e2eDir,
+      "cycle-complete",
+      (event) => (event.payload?.articleCount ?? 0) >= 1,
+    );
 
     return {
       skipped: false,
       feedCount: imported.payload?.feedCount ?? 0,
       stationCount: imported.payload?.stationCount ?? 0,
+      articleCount: refreshed.payload?.articleCount ?? 0,
     };
   } catch (error) {
     throw new Error(formatE2eFailure(error, e2eDir, stderr));

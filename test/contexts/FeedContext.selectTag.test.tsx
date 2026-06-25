@@ -55,6 +55,14 @@ vi.mock('@/services/tags/tagsManager', () => ({
   },
 }));
 
+vi.mock('@/services/scheduler/nativeSchedulerCycle', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/scheduler/nativeSchedulerCycle')>();
+  return {
+    ...actual,
+    isNativeFeedIngestionEnabled: () => false,
+  };
+});
+
 vi.mock('@/services/favicons/faviconRefreshService', () => ({
   maybeRefreshFavicon: vi.fn(),
 }));
@@ -135,6 +143,15 @@ describe('FeedContext selectTag', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     latestContext = null;
+    vi.stubGlobal('requestIdleCallback', (callback: IdleRequestCallback) => {
+      const id = window.setTimeout(() => {
+        callback({
+          didTimeout: false,
+          timeRemaining: () => 50,
+        } as IdleDeadline);
+      }, 0);
+      return id as unknown as number;
+    });
     (feedStore.getCount as vi.Mock).mockResolvedValue(0);
     (feedStore.getById as vi.Mock).mockResolvedValue(null);
     (articleStore.query as vi.Mock).mockResolvedValue({ articles: [], total: 0 });
@@ -154,6 +171,7 @@ describe('FeedContext selectTag', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     act(() => {
       root.unmount();
     });
@@ -583,16 +601,9 @@ describe('FeedContext selectTag', () => {
       consecutiveFailures: 0,
       lastFailedFetchAt: undefined as Date | undefined,
     };
-    const backedOffFeed = {
-      ...failedFeed,
-      consecutiveFailures: 1,
-      lastFailedFetchAt: new Date(),
-    };
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
-    (feedsManager.getFeedById as vi.Mock)
-      .mockResolvedValueOnce(failedFeed)
-      .mockResolvedValueOnce(backedOffFeed);
+    (feedsManager.getFeedById as vi.Mock).mockResolvedValue(failedFeed);
     (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockRejectedValueOnce(new Error('timeout'));
     (articleStore.query as vi.Mock).mockResolvedValue({ articles: [], total: 0 });
 

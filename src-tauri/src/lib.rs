@@ -1,6 +1,7 @@
 mod db;
 mod diagnostics;
 mod e2e;
+mod feeds;
 mod net;
 mod saved;
 mod scheduler;
@@ -38,10 +39,14 @@ use net::{
     feeds_abort_request, feeds_fetch, feeds_fetch_data_url, feeds_fetch_html_safe,
     feeds_fetch_pdf_data_url, feeds_fetch_with_cache,
 };
+use feeds::{feeds_parse_preview, feeds_store_parsed_content};
 use saved::{
     saved_export_preflight, saved_export_start, saved_sync_queue, SavedExportState, SavedSyncState,
 };
-use scheduler::{scheduler_reconfigure, scheduler_start, scheduler_stop, FeedSchedulerState};
+use scheduler::{
+    scheduler_create_run_plan, scheduler_preview_native_cycle, scheduler_reconfigure,
+    scheduler_start, scheduler_stop, FeedSchedulerState,
+};
 use settings::{settings_get, settings_reset, settings_update, SettingsState};
 use     shell::{
     restore_main_window_bounds, shell_article_window_get_data, shell_article_window_open,
@@ -146,6 +151,8 @@ pub fn run() {
             feeds_fetch_html_safe,
             feeds_fetch_pdf_data_url,
             feeds_fetch_with_cache,
+            feeds_parse_preview,
+            feeds_store_parsed_content,
             feeds_get,
             feeds_get_by_url,
             feeds_list,
@@ -176,6 +183,8 @@ pub fn run() {
             saved_query,
             saved_sync_queue,
             scheduler_reconfigure,
+            scheduler_create_run_plan,
+            scheduler_preview_native_cycle,
             scheduler_start,
             scheduler_stop,
             saved_update_highlights,
