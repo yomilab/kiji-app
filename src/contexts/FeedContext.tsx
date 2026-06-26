@@ -32,6 +32,7 @@ import { sourceSelectionBus } from '@/services/feeds/sourceSelectionBus';
 import {
   cancelSourceSelectionRefreshSchedule,
   scheduleSourceRefreshAfterPaint,
+  waitForArticleListPaintGate,
 } from '@/services/feeds/sourceSelectionPaintGate';
 import {
   LARGE_STATION_FEED_THRESHOLD,
@@ -2100,34 +2101,41 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             perfMark,
           });
 
-          void traceSidebarSwitchAsync(token, 'sqlite-query-deferred', async () => {
+          void (async () => {
             const sideWorkGeneration = stationSwitchSideWorkGenerationRef.current;
-            if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
+            const painted = await waitForArticleListPaintGate(isSelectionActive, token);
+            if (!painted || !isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
               return;
             }
 
-            const queryLimit = Math.min(cachedVisibleCount, STATION_SWITCH_SQLITE_RECONCILE_LIMIT);
-            const { articles: stored, total } = await articleStore.query({ ...tagQuery, limit: queryLimit });
-            if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
-              return;
-            }
+            await traceSidebarSwitchAsync(token, 'sqlite-query-deferred', async () => {
+              if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
+                return;
+              }
 
-            const dispatchStartedAt = performance.now();
-            dispatchArticlesTransitionIfChanged(stored, total);
-            collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
-            sidebarSwitchTrace.markDuration(
-              token,
-              'dispatch-articles',
-              performance.now() - dispatchStartedAt,
-              { articleCount: stored.length, deferred: true },
-            );
-            interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
-              cachedArticleCount: stored.length,
-              cachedArticleTotal: total,
-              taggedFeedCount: feedIds.length,
-              deferredSqlite: true,
-            });
-          }, { limit: cachedVisibleCount, taggedFeedCount: feedIds.length, deferred: true });
+              const queryLimit = Math.min(cachedVisibleCount, STATION_SWITCH_SQLITE_RECONCILE_LIMIT);
+              const { articles: stored, total } = await articleStore.query({ ...tagQuery, limit: queryLimit });
+              if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
+                return;
+              }
+
+              const dispatchStartedAt = performance.now();
+              dispatchArticlesTransitionIfChanged(stored, total);
+              collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+              sidebarSwitchTrace.markDuration(
+                token,
+                'dispatch-articles',
+                performance.now() - dispatchStartedAt,
+                { articleCount: stored.length, deferred: true },
+              );
+              interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
+                cachedArticleCount: stored.length,
+                cachedArticleTotal: total,
+                taggedFeedCount: feedIds.length,
+                deferredSqlite: true,
+              });
+            }, { limit: cachedVisibleCount, taggedFeedCount: feedIds.length, deferred: true });
+          })();
           return;
         }
 
