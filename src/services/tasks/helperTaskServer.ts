@@ -109,7 +109,7 @@ export class HelperTaskServer {
     }
 
     runningTask.abortController.abort();
-    await this.backend.cancel(taskId);
+    void this.backend.cancel(taskId);
     return { removed: true };
   }
 
@@ -132,15 +132,13 @@ export class HelperTaskServer {
       this.pendingByPriority[priority] = retained;
     }
 
-    const cancellationPromises: Array<Promise<void>> = [];
     for (const runningTask of this.runningByTaskId.values()) {
       if (runningTask.ownerId !== ownerId) continue;
       runningTask.abortController.abort();
-      cancellationPromises.push(this.backend.cancel(runningTask.taskId));
+      void this.backend.cancel(runningTask.taskId);
       cleared += 1;
     }
 
-    await Promise.allSettled(cancellationPromises);
     return { cleared };
   }
 

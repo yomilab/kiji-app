@@ -151,7 +151,6 @@ class FeedSchedulerService {
         this.invalidateActiveCycle();
         this.clearAbort();
         this.cycleInProgress = false;
-        void this.awaitCycleDrain();
       }
       this.stationSelectionPauseTimer = setTimeout(() => {
         this.releaseStationSelectionPause('timeout');

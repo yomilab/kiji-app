@@ -37,7 +37,6 @@ import {
   LARGE_STATION_FEED_THRESHOLD,
   STATION_SWITCH_FOREGROUND_REFRESH_CAP,
   STATION_SWITCH_SQLITE_RECONCILE_LIMIT,
-  scheduleStationSwitchIdleWork,
 } from '@/services/feeds/stationSwitchLimits';
 import type {
   FeedSourceRefreshPayload,
@@ -659,6 +658,8 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const schedulerUiFlushQueuedRef = useRef(false);
   const stationUiBatchTimerRef = useRef<number | null>(null);
   const pendingStationRefreshSourceKeyRef = useRef<string | null>(null);
+  const stationSwitchSideWorkGenerationRef = useRef(0);
+  const cancelStationSwitchIdleWorkRef = useRef<(() => void) | null>(null);
   const articleViewOverlayPhaseRef = useRef<ArticleViewOverlayPhase>('closed');
   const activeArticleHashRef = useRef<string | null>(null);
   const isFeedProviderMountedRef = useRef(false);
@@ -940,6 +941,16 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     pendingStationRefreshSourceKeyRef.current = null;
   }, []);
 
+  const cancelStationSwitchSideWork = useCallback(() => {
+    stationSwitchSideWorkGenerationRef.current += 1;
+    cancelStationSwitchIdleWorkRef.current?.();
+    cancelStationSwitchIdleWorkRef.current = null;
+  }, []);
+
+  const isStationSwitchSideWorkCurrent = useCallback((token: number, generation: number): boolean => {
+    return isSelectionActive(token) && generation === stationSwitchSideWorkGenerationRef.current;
+  }, [isSelectionActive]);
+
   const abortSelectionSwitchPriority = useCallback((token?: number) => {
     feedRefreshActivity.releaseAllForegroundQueued();
     if (selectionSchedulerPauseTokenRef.current === null) {
@@ -971,6 +982,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     pendingLoadMoreCommitMetricRef.current = null;
     pendingBackgroundRefreshSourceKeyRef.current = null;
     clearStationUiRefreshTimer();
+    cancelStationSwitchSideWork();
     cancelSourceSelectionRefreshSchedule();
     const controller = new AbortController();
     selectionAbortControllerRef.current = controller;
@@ -982,7 +994,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     feedScheduler.acknowledgeSidebarInteraction();
     beginSelectionSwitchNetworkPriority(token);
     return token;
-  }, [abortSelectionSwitchPriority, beginSelectionSwitchNetworkPriority, clearStationUiRefreshTimer]);
+  }, [abortSelectionSwitchPriority, beginSelectionSwitchNetworkPriority, cancelStationSwitchSideWork, clearStationUiRefreshTimer]);
 
   const clearArticleListScrollIdleState = useCallback(() => {
     if (articleListScrollIdleTimerRef.current !== null) {
@@ -1311,7 +1323,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     feedIds: string[],
     options: RefreshTriggerOptions,
     token: number,
+    maxEligible?: number,
   ): Promise<string[]> => {
+    const allFeeds = await feedStore.getAll();
+    const feedById = new Map(allFeeds.map((feed) => [feed.id, feed]));
     const eligibleFeedIds: string[] = [];
 
     for (const id of feedIds) {
@@ -1319,7 +1334,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         break;
       }
 
-      const feed = await feedsManager.getFeedById(id);
+      const feed = feedById.get(id);
       if (!feed) {
         continue;
       }
@@ -1335,6 +1350,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       eligibleFeedIds.push(id);
+      if (maxEligible !== undefined && eligibleFeedIds.length >= maxEligible) {
+        break;
+      }
     }
 
     return eligibleFeedIds;
@@ -1354,18 +1372,25 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const eligibleFeedIds = await traceSidebarSwitchAsync(
       token,
       'eligible-feeds-resolved',
-      () => resolveEligibleStationFeedIds(feedIds, options, token),
-      { feedCount: feedIds.length },
+      () => (intent === 'switch'
+        ? resolveEligibleStationFeedIds(
+          feedIds,
+          options,
+          token,
+          STATION_SWITCH_FOREGROUND_REFRESH_CAP,
+        )
+        : resolveEligibleStationFeedIds(feedIds, options, token)),
+      { feedCount: feedIds.length, intent },
     );
     if (eligibleFeedIds.length === 0 || !isSelectionActive(token)) {
       return 0;
     }
 
-    const foregroundCap = intent === 'switch'
-      ? STATION_SWITCH_FOREGROUND_REFRESH_CAP
-      : eligibleFeedIds.length;
-    const foregroundFeedIds = eligibleFeedIds.slice(0, foregroundCap);
-    const deferredFeedIds = eligibleFeedIds.slice(foregroundCap);
+    const foregroundFeedIds = eligibleFeedIds;
+    const foregroundFeedIdSet = new Set(foregroundFeedIds);
+    const deferredFeedIds = intent === 'switch'
+      ? feedIds.filter((feedId) => !foregroundFeedIdSet.has(feedId))
+      : [];
 
     const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds(foregroundFeedIds, 'foreground');
     const activeSignal = selectionAbortControllerRef.current?.signal;
@@ -2043,24 +2068,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             shouldReset,
             perfMark,
           });
-
-          scheduleStationSwitchIdleWork(() => {
-            void traceSidebarSwitchAsync(token, 'sqlite-reconcile', async () => {
-              const { articles: stored, total } = await articleStore.query({ ...tagQuery, limit: cachedVisibleCount });
-              if (!isSelectionActive(token)) {
-                return;
-              }
-
-              const dispatchStartedAt = performance.now();
-              dispatchArticlesTransitionIfChanged(stored, total);
-              sidebarSwitchTrace.markDuration(
-                token,
-                'dispatch-articles',
-                performance.now() - dispatchStartedAt,
-                { articleCount: stored.length, fromSnapshot: true },
-              );
-            }, { limit: cachedVisibleCount });
-          });
           return;
         }
 
@@ -2094,9 +2101,14 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           });
 
           void traceSidebarSwitchAsync(token, 'sqlite-query-deferred', async () => {
+            const sideWorkGeneration = stationSwitchSideWorkGenerationRef.current;
+            if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
+              return;
+            }
+
             const queryLimit = Math.min(cachedVisibleCount, STATION_SWITCH_SQLITE_RECONCILE_LIMIT);
             const { articles: stored, total } = await articleStore.query({ ...tagQuery, limit: queryLimit });
-            if (!isSelectionActive(token)) {
+            if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
               return;
             }
 
