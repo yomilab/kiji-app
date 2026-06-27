@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import type { Article } from '@/types/article';
 import type { ArticleViewOverlayPhase } from '@/contexts/FeedContext';
 import {
@@ -12,26 +12,60 @@ import {
   keybindingService,
 } from '@/services/shortcuts/shortcutService';
 import { animateElementScrollTop, getScrollableBottom } from '@/utils/fixedTimeScroll';
+import { resolveArticleListFocusHash, resolveArticleListFocusIndex } from '../articleListKeyboardFocus';
 
 interface UseArticleListKeyboardNavigationOptions {
   articleListRef: RefObject<HTMLDivElement>;
   filteredArticles: Article[];
   keyboardFocusHash: string | null;
+  activeArticleHash: string | null;
   articleViewOverlayPhase: ArticleViewOverlayPhase;
   selectArticle: (hash: string) => void;
   setKeyboardFocusHash: (hash: string | null) => void;
-  ensureHashInView: (hash: string) => void;
+  scrollKeyboardFocusIntoView: (hash: string) => void;
 }
 
 export const useArticleListKeyboardNavigation = ({
   articleListRef,
   filteredArticles,
   keyboardFocusHash,
+  activeArticleHash,
   articleViewOverlayPhase,
   selectArticle,
   setKeyboardFocusHash,
-  ensureHashInView,
+  scrollKeyboardFocusIntoView,
 }: UseArticleListKeyboardNavigationOptions) => {
+  const keyboardFocusHashRef = useRef(keyboardFocusHash);
+  keyboardFocusHashRef.current = keyboardFocusHash;
+
+  const activeArticleHashRef = useRef(activeArticleHash);
+  activeArticleHashRef.current = activeArticleHash;
+
+  const filteredArticlesRef = useRef(filteredArticles);
+  filteredArticlesRef.current = filteredArticles;
+
+  const articleViewOverlayPhaseRef = useRef(articleViewOverlayPhase);
+  articleViewOverlayPhaseRef.current = articleViewOverlayPhase;
+
+  const selectArticleRef = useRef(selectArticle);
+  selectArticleRef.current = selectArticle;
+
+  const setKeyboardFocusHashRef = useRef(setKeyboardFocusHash);
+  setKeyboardFocusHashRef.current = setKeyboardFocusHash;
+
+  const scrollKeyboardFocusIntoViewRef = useRef(scrollKeyboardFocusIntoView);
+  scrollKeyboardFocusIntoViewRef.current = scrollKeyboardFocusIntoView;
+
+  const focusIndexRef = useRef(-1);
+
+  useEffect(() => {
+    focusIndexRef.current = resolveArticleListFocusIndex(
+      filteredArticles,
+      keyboardFocusHash,
+      activeArticleHash,
+    );
+  }, [keyboardFocusHash, activeArticleHash, filteredArticles]);
+
   useEffect(() => {
     const KEY_REPEAT_STEP_MS = 85;
     const VIM_SEQUENCE_TIMEOUT_MS = 700;
@@ -40,18 +74,6 @@ export const useArticleListKeyboardNavigation = ({
     let lastStepAt = 0;
     let pendingTopSequenceTimerId: number | null = null;
     let cancelScrollAnimation: (() => void) | null = null;
-    const focusIndexRef = { current: -1 };
-
-    const syncFocusIndexRef = (): void => {
-      if (!keyboardFocusHash) {
-        focusIndexRef.current = -1;
-        return;
-      }
-      const index = filteredArticles.findIndex((article) => article.hash === keyboardFocusHash);
-      focusIndexRef.current = index;
-    };
-
-    syncFocusIndexRef();
 
     const isEditableTarget = (target: EventTarget | null): boolean => {
       if (!(target instanceof HTMLElement)) return false;
@@ -60,10 +82,10 @@ export const useArticleListKeyboardNavigation = ({
       return tagName === 'input' || tagName === 'textarea' || tagName === 'select';
     };
 
-    const isArticleListCovered = (): boolean => articleViewOverlayPhase !== 'closed';
+    const isArticleListCovered = (): boolean => articleViewOverlayPhaseRef.current !== 'closed';
 
     const keepHashInView = (hash: string) => {
-      ensureHashInView(hash);
+      scrollKeyboardFocusIntoViewRef.current(hash);
     };
 
     const clearPendingTopSequence = () => {
@@ -138,19 +160,38 @@ export const useArticleListKeyboardNavigation = ({
       return false;
     };
 
-    const stepActiveArticle = (direction: -1 | 1) => {
-      if (filteredArticles.length === 0) return;
+    const resolveCurrentFocusIndex = (): number => {
+      const resolved = resolveArticleListFocusIndex(
+        filteredArticlesRef.current,
+        keyboardFocusHashRef.current,
+        activeArticleHashRef.current,
+      );
+      if (resolved >= 0) {
+        focusIndexRef.current = resolved;
+      }
+      return resolved;
+    };
 
-      const currentIndex = focusIndexRef.current;
-      const fallbackIndex = direction > 0 ? 0 : filteredArticles.length - 1;
+    const stepActiveArticle = (direction: -1 | 1) => {
+      const articles = filteredArticlesRef.current;
+      if (articles.length === 0) return;
+
+      const currentIndex = focusIndexRef.current >= 0
+        ? focusIndexRef.current
+        : resolveCurrentFocusIndex();
+      const fallbackIndex = direction > 0 ? 0 : articles.length - 1;
       const nextIndex = currentIndex === -1
         ? fallbackIndex
-        : Math.max(0, Math.min(filteredArticles.length - 1, currentIndex + direction));
+        : Math.max(0, Math.min(articles.length - 1, currentIndex + direction));
 
-      const nextArticle = filteredArticles[nextIndex];
+      const nextArticle = articles[nextIndex];
       if (!nextArticle) return;
 
-      if (nextArticle.hash === keyboardFocusHash) {
+      const focusedHash = resolveArticleListFocusHash(
+        keyboardFocusHashRef.current,
+        activeArticleHashRef.current,
+      );
+      if (nextArticle.hash === focusedHash) {
         requestAnimationFrame(() => {
           keepHashInView(nextArticle.hash);
         });
@@ -158,7 +199,8 @@ export const useArticleListKeyboardNavigation = ({
       }
 
       focusIndexRef.current = nextIndex;
-      setKeyboardFocusHash(nextArticle.hash);
+      keyboardFocusHashRef.current = nextArticle.hash;
+      setKeyboardFocusHashRef.current(nextArticle.hash);
       requestAnimationFrame(() => {
         keepHashInView(nextArticle.hash);
       });
@@ -192,24 +234,30 @@ export const useArticleListKeyboardNavigation = ({
       if (handleVimScrollShortcut(e)) return;
 
       if (isOpenArticleShortcut(e)) {
-        const focusedHash = keyboardFocusHash && filteredArticles.some((article) => article.hash === keyboardFocusHash)
-          ? keyboardFocusHash
+        const articles = filteredArticlesRef.current;
+        const focusedHash = resolveArticleListFocusHash(
+          keyboardFocusHashRef.current,
+          activeArticleHashRef.current,
+        );
+        const resolvedFocusHash = focusedHash && articles.some((article) => article.hash === focusedHash)
+          ? focusedHash
           : null;
-        const firstHash = filteredArticles[0]?.hash;
+        const firstHash = articles[0]?.hash;
 
-        if (!focusedHash && firstHash) {
+        if (!resolvedFocusHash && firstHash) {
           e.preventDefault();
           focusIndexRef.current = 0;
-          setKeyboardFocusHash(firstHash);
+          keyboardFocusHashRef.current = firstHash;
+          setKeyboardFocusHashRef.current(firstHash);
           requestAnimationFrame(() => {
             keepHashInView(firstHash);
           });
           return;
         }
 
-        if (focusedHash) {
+        if (resolvedFocusHash) {
           e.preventDefault();
-          selectArticle(focusedHash);
+          selectArticleRef.current(resolvedFocusHash);
         }
         return;
       }
@@ -256,5 +304,5 @@ export const useArticleListKeyboardNavigation = ({
         cancelAnimationFrame(holdRafId);
       }
     };
-  }, [articleListRef, filteredArticles, keyboardFocusHash, articleViewOverlayPhase, selectArticle, setKeyboardFocusHash, ensureHashInView]);
+  }, [articleListRef]);
 };

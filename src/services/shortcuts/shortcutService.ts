@@ -154,6 +154,8 @@ export const SHORTCUT_LABELS = {
   VIM_SCROLL_BOTTOM: 'G',
   VIM_SCROLL_HALF_DOWN: 'Ctrl + D',
   VIM_SCROLL_HALF_UP: 'Ctrl + U',
+  ARTICLE_LIST_STEP_DOWN: 'J / ↓',
+  ARTICLE_LIST_STEP_UP: 'K / ↑',
   RESET_SETTINGS: 'Cmd + Shift + R',
 } as const;
 
@@ -220,11 +222,17 @@ export const isArticleListSearchShortcut = (event: ShortcutKeyboardEvent): boole
 export const isOpenArticleShortcut = (event: ShortcutKeyboardEvent): boolean =>
   isAppShortcutLayerActive() && event.key === 'ArrowRight';
 
-export const isScrollDownShortcut = (event: ShortcutKeyboardEvent): boolean =>
-  isAppShortcutLayerActive() && event.key === 'ArrowDown';
+export const isScrollDownShortcut = (event: ShortcutKeyboardEvent): boolean => {
+  if (!isAppShortcutLayerActive()) return false;
+  if (event.key === 'ArrowDown') return true;
+  return isPlainKeyPress(event) && !event.shiftKey && normalizedKey(event) === 'j';
+};
 
-export const isScrollUpShortcut = (event: ShortcutKeyboardEvent): boolean =>
-  isAppShortcutLayerActive() && event.key === 'ArrowUp';
+export const isScrollUpShortcut = (event: ShortcutKeyboardEvent): boolean => {
+  if (!isAppShortcutLayerActive()) return false;
+  if (event.key === 'ArrowUp') return true;
+  return isPlainKeyPress(event) && !event.shiftKey && normalizedKey(event) === 'k';
+};
 
 export const isVimScrollTopKey = (event: ShortcutKeyboardEvent): boolean =>
   isScrollableShortcutLayerActive() && isPlainKeyPress(event) && !event.shiftKey && normalizedKey(event) === 'g';

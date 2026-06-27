@@ -24,7 +24,7 @@ import { useArticleListScrollOffsetSync } from './hooks/useArticleListScrollOffs
 import { useArticleListBackgroundScrollSync } from './hooks/useArticleListBackgroundScrollSync';
 import { useArticleListPerformanceMetrics } from './hooks/useArticleListPerformanceMetrics';
 import { ARTICLE_LIST_PREVIEW_SCROLL_IDLE_MS, ARTICLE_LIST_SOURCE_SWITCH_PREVIEW_DEFER_MS } from './articleListPreviewConstants';
-import { shouldScrollArticleIndexIntoView } from './articleListScrollIntoView';
+import { shouldScrollArticleIndexIntoView, shouldScrollKeyboardFocusIntoView } from './articleListScrollIntoView';
 import {
   ARTICLE_LIST_BOTTOM_SPACER_HEIGHT,
   ARTICLE_LIST_ESTIMATED_ROW_HEIGHT,
@@ -147,6 +147,31 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
     rowVirtualizer.scrollToIndex(index, { align: 'auto' });
   }, [filteredArticles, firstVirtualIndex, lastVirtualIndex, rowVirtualizer]);
 
+  const scrollKeyboardFocusIntoView = useCallback((hash: string) => {
+    const index = filteredArticles.findIndex((article) => article.hash === hash);
+    if (index === -1) return;
+
+    const listElement = articleListItemsRef.current;
+    if (!listElement) return;
+
+    const virtualRows = virtualItems.map((item) => ({
+      index: item.index,
+      start: item.start,
+      end: item.end,
+    }));
+
+    if (!shouldScrollKeyboardFocusIntoView(
+      index,
+      listElement.scrollTop,
+      listElement.clientHeight,
+      virtualRows,
+    )) {
+      return;
+    }
+
+    rowVirtualizer.scrollToIndex(index, { align: 'auto' });
+  }, [filteredArticles, virtualItems, rowVirtualizer]);
+
   const syncViewportSnapshot = useCallback((isAtTop: boolean, isScrolling = false, scrollTop?: number) => {
     const anchorHash = filteredArticles[firstVirtualIndex]?.hash ?? filteredArticles[0]?.hash ?? null;
     const resolvedScrollTop = scrollTop ?? articleListItemsRef.current?.scrollTop ?? 0;
@@ -203,10 +228,11 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
     articleListRef,
     filteredArticles,
     keyboardFocusHash,
+    activeArticleHash,
     articleViewOverlayPhase,
     selectArticle: handleOpenArticle,
     setKeyboardFocusHash,
-    ensureHashInView,
+    scrollKeyboardFocusIntoView,
   });
 
   useArticleListScrollReset({
