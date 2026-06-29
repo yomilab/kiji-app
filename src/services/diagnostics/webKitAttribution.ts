@@ -143,3 +143,65 @@ export function logNativeFeedRefreshAttribution(context: {
     ...context,
   });
 }
+
+export function logNativeFeedRefreshCycleAttribution(context: {
+  source: 'background' | 'foreground';
+  feedCount: number;
+  changedFeeds: number;
+  notModifiedFeeds: number;
+  failedFeeds: number;
+  insertedArticles: number;
+  perFeedAttributionSuppressed: boolean;
+}): void {
+  logger.info('WebKitAttribution', 'Native feed refresh cycle attributed', {
+    event: 'native-feed-refresh-cycle-attribution',
+    parserPath: 'native',
+    domParserUsed: false,
+    ...context,
+  });
+}
+
+export interface RendererSessionMemoryAttribution {
+  loadedArticleCount: number;
+  articlesTotalCount: number;
+  estimatedSerializedListKb: number;
+  internFeedCount: number;
+  articleViewOpen: boolean;
+  articleListScrollActive: boolean;
+  searchActive: boolean;
+}
+
+export function logRendererSessionMemoryAttribution(
+  context: RendererSessionMemoryAttribution,
+): void {
+  logger.info('WebKitAttribution', 'Renderer session memory attributed', {
+    event: 'renderer-session-memory-attribution',
+    ...context,
+  });
+}
+
+export function logListRefreshAttribution(context: {
+  sourceKey: string;
+  rowCount: number;
+  totalCount: number;
+  newHashCount: number;
+  estimatedSerializedListKb: number;
+  trigger: 'background-refresh' | 'station-refresh' | 'scheduler-flush';
+}): void {
+  logger.info('WebKitAttribution', 'List refresh attributed', {
+    event: 'list-refresh-attribution',
+    ...context,
+  });
+}
+
+export function logArticleOpenAttribution(context: {
+  articleHash: string;
+  feedId: string;
+  mode: 'basic' | 'reader';
+  standalone: boolean;
+}): void {
+  logger.info('WebKitAttribution', 'Article open attributed', {
+    event: 'article-open-attribution',
+    ...context,
+  });
+}

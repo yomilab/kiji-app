@@ -41,6 +41,8 @@
     "test:e2e:feed-delete": "node scripts/e2e/feed-delete.mjs",
     "test:e2e:pdf-article": "node scripts/e2e/pdf-article.mjs",
     "test:e2e:webkit-memory-stress": "KIJI_E2E_WEBKIT_STRESS=1 vitest run --config vitest.e2e.config.ts test/e2e/webkitMemoryStress.e2e.test.ts",
+    "test:e2e:webkit-memory-stress:production": "KIJI_E2E_WEBKIT_STRESS=1 KIJI_E2E_WEBKIT_STRESS_PROFILE=production vitest run --config vitest.e2e.config.ts test/e2e/webkitMemoryStress.e2e.test.ts",
+    "analyze:memory-logs": "node scripts/analyze-memory-logs.mjs --days 3",
     "test:local": "npm run test && npm run test:e2e",
     "verify": "node scripts/verify.mjs",
     "verify:local": "node scripts/verify-local.mjs",

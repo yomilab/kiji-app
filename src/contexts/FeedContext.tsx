@@ -6,6 +6,7 @@ import { tagsManager } from '@/services/tags/tagsManager';
 import { savedArticlesService } from '@/services/saved/savedArticlesService';
 import * as articleStore from '@/stores/articleStore';
 import { mergeUniqueArticlesByHash } from '@/services/articles/mergeUniqueArticlesByHash';
+import { getInternedFeedMetadataCount } from '@/services/articles/articleListMemory';
 import * as feedStore from '@/stores/feedStore';
 import type { Article } from '@/types/article';
 import type { ArticleQuery } from '@/types/articleQuery';
@@ -23,6 +24,11 @@ import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
 import { isNativeFeedIngestionEnabled } from '@/services/scheduler/nativeSchedulerCycle';
 import { runNativeFeedRefresh } from '@/services/scheduler/nativeFeedRefresh';
+import {
+  estimateSerializedArticleListKb,
+  startRendererSessionMemoryDiagnostics,
+} from '@/services/diagnostics/rendererSessionMemoryDiagnostics';
+import { logListRefreshAttribution } from '@/services/diagnostics/webKitAttribution';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 import { feedRefreshCoordinator } from '@/services/feeds/feedRefreshCoordinator';
 import { feedRefreshActivity } from '@/services/feeds/feedRefreshActivity';
@@ -1254,6 +1260,15 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         currentArticlesRef.current = freshArticles;
 
         if (newHashes.length > 0) {
+          logListRefreshAttribution({
+            sourceKey: nextSource.key,
+            rowCount: freshArticles.length,
+            totalCount: total,
+            newHashCount: newHashes.length,
+            estimatedSerializedListKb: estimateSerializedArticleListKb(freshArticles),
+            trigger: 'background-refresh',
+          });
+
           // Keep users anchored after passive inserts: jump to the top only
           // when they are already there, otherwise preserve a nearby row.
           const scrollRequest = articleListAtTopRef.current
@@ -2821,6 +2836,16 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useMountEffect(() => {
     isFeedProviderMountedRef.current = true;
+    const stopMemoryDiagnostics = startRendererSessionMemoryDiagnostics(() => ({
+      loadedArticleCount: currentArticlesRef.current.length,
+      articlesTotalCount: nonSearchArticlesTotalCountRef.current,
+      estimatedSerializedListKb: estimateSerializedArticleListKb(currentArticlesRef.current),
+      internFeedCount: getInternedFeedMetadataCount(),
+      articleViewOpen: articleViewOverlayPhaseRef.current !== 'closed',
+      articleListScrollActive: articleListScrollActiveRef.current,
+      searchActive: articleListSearchActiveRef.current,
+    }));
+
     const unsubscribe = feedScheduler.on((event) => {
       if (event.type === 'cycle-complete') {
         void flushSchedulerUiUpdates(true);
@@ -2838,6 +2863,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
 
     return () => {
+      stopMemoryDiagnostics();
       unsubscribe();
       if (schedulerUiBatchTimerRef.current !== null) {
         window.clearTimeout(schedulerUiBatchTimerRef.current);

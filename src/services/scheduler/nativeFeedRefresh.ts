@@ -1,6 +1,6 @@
 import type { SchedulerNativeCycleFeedResult } from "@/lib/tauriClient/contracts";
 import { tauriClient } from "@/lib/tauriClient";
-import { logNativeFeedRefreshAttribution } from "@/services/diagnostics/webKitAttribution";
+import { logNativeFeedRefreshCycleAttribution } from "@/services/diagnostics/webKitAttribution";
 import { feedRefreshActivity } from "@/services/feeds/feedRefreshActivity";
 import { getSchedulerConcurrency } from "@/services/scheduler/schedulerConcurrency";
 import type { SchedulerCycleScope } from "./feedSchedulerServiceTypes";
@@ -129,18 +129,33 @@ export async function runNativeFeedRefresh(
       throwIfAborted(request.signal);
 
       const insertedByFeedId = new Map<string, number>();
+      let changedFeeds = 0;
+      let notModifiedFeeds = 0;
+      let failedFeeds = 0;
+
       for (const feedResult of result.feedResults) {
-        logNativeFeedRefreshAttribution({
-          feedId: feedResult.feedId,
-          status: feedResult.status,
-          insertedCount: feedResult.insertedCount,
-          error: feedResult.error,
-          source: request.activityKind ?? "foreground",
-        });
+        if (feedResult.status === "changed") {
+          changedFeeds += 1;
+        } else if (feedResult.status === "not-modified") {
+          notModifiedFeeds += 1;
+        } else if (feedResult.status === "failed") {
+          failedFeeds += 1;
+        }
+
         if ((feedResult.insertedCount ?? 0) > 0) {
           insertedByFeedId.set(feedResult.feedId, feedResult.insertedCount ?? 0);
         }
       }
+
+      logNativeFeedRefreshCycleAttribution({
+        source: request.activityKind ?? "foreground",
+        feedCount: result.feedResults.length,
+        changedFeeds,
+        notModifiedFeeds,
+        failedFeeds,
+        insertedArticles: result.insertedArticles,
+        perFeedAttributionSuppressed: true,
+      });
 
       return {
         insertedArticles: result.insertedArticles,

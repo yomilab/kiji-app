@@ -20,6 +20,12 @@ import {
   isNativeFeedIngestionEnabled,
 } from './nativeSchedulerCycle';
 import { runNativeFeedRefresh } from './nativeFeedRefresh';
+import {
+  mergePendingCycleReason,
+  overdueCycleMs,
+  shouldRunDeferredCycleNow,
+  type PendingCycleReason,
+} from './schedulerDeferredCyclePolicy';
 import type {
   BackgroundUpdateMode,
   FeedPriorityEntry,
@@ -62,6 +68,7 @@ interface ActiveStationFocus {
 class FeedSchedulerService {
   private cycleInProgress = false;
   private pendingCycleTick = false;
+  private pendingCycleReason: PendingCycleReason | null = null;
   private abortController: AbortController | null = null;
   private lifecycleId = 0;
   private listeners = new Set<(event: SchedulerEvent) => void>();
@@ -84,6 +91,7 @@ class FeedSchedulerService {
   private systemPowerUnlistenResume: UnlistenFn | null = null;
   private deferStartupCycleUntilInteraction = false;
   private startupDeferTimer: ReturnType<typeof setTimeout> | null = null;
+  private deferredCycleRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   on(listener: (event: SchedulerEvent) => void): () => void {
     this.listeners.add(listener);
@@ -147,7 +155,7 @@ class FeedSchedulerService {
     if (this.stationSelectionPauseDepth === 0) {
       logger.info('Scheduler', 'Pausing background refresh for station selection');
       if (this.cycleInProgress) {
-        this.pendingCycleTick = true;
+        this.markPendingCycleTick('interval-tick');
         this.invalidateActiveCycle();
         this.clearAbort();
         this.cycleInProgress = false;
@@ -186,14 +194,14 @@ class FeedSchedulerService {
 
     if (reason === 'selection-changed') {
       if (this.shouldScheduleCatchUpCycle()) {
-        this.pendingCycleTick = true;
+        this.markPendingCycleTick('catch-up');
       }
       return;
     }
 
     const lifecycleId = this.lifecycleId;
     if (this.pendingCycleTick || this.shouldScheduleCatchUpCycle()) {
-      this.pendingCycleTick = false;
+      this.clearPendingCycleTick();
       void this.runScheduledCycle(lifecycleId);
       return;
     }
@@ -245,8 +253,10 @@ class FeedSchedulerService {
     this.lifecycleId += 1;
     this.unregisterNativeWakeHandlers();
     this.clearAbort();
+    this.clearDeferredCycleRetryTimer();
     this.cycleInProgress = false;
     this.pendingCycleTick = false;
+    this.pendingCycleReason = null;
     this.stationSelectionPauseDepth = 0;
     this.clearStationSelectionPauseTimer();
     this.activeStationFocus = null;
@@ -319,7 +329,7 @@ class FeedSchedulerService {
 
     if (this.isStationSelectionPaused()) {
       if (this.shouldScheduleCatchUpCycle()) {
-        this.pendingCycleTick = true;
+        this.markPendingCycleTick('resume');
       }
       return;
     }
@@ -395,6 +405,44 @@ class FeedSchedulerService {
     }
   }
 
+  private markPendingCycleTick(reason: PendingCycleReason): void {
+    this.pendingCycleTick = true;
+    this.pendingCycleReason = mergePendingCycleReason(this.pendingCycleReason, reason);
+  }
+
+  private clearPendingCycleTick(): void {
+    this.pendingCycleTick = false;
+    this.pendingCycleReason = null;
+  }
+
+  private clearDeferredCycleRetryTimer(): void {
+    if (this.deferredCycleRetryTimer !== null) {
+      clearTimeout(this.deferredCycleRetryTimer);
+      this.deferredCycleRetryTimer = null;
+    }
+  }
+
+  private scheduleDeferredCycleRetry(lifecycleId: number): void {
+    if (this.deferredCycleRetryTimer !== null) {
+      return;
+    }
+
+    const intervalMs = this.getIntervalMs();
+    if (!Number.isFinite(intervalMs)) {
+      return;
+    }
+
+    const remainingMs = Math.max(
+      1_000,
+      intervalMs - overdueCycleMs(this.lastCycleCompletedAt, intervalMs),
+    );
+
+    this.deferredCycleRetryTimer = setTimeout(() => {
+      this.deferredCycleRetryTimer = null;
+      this.maybeRunDeferredCycle(lifecycleId);
+    }, remainingMs);
+  }
+
   boostMany(feedIds: string[]): void {
     if (feedIds.length === 0) {
       return;
@@ -411,7 +459,7 @@ class FeedSchedulerService {
     };
 
     if (this.cycleInProgress || this.isStationSelectionPaused()) {
-      this.pendingCycleTick = true;
+      this.markPendingCycleTick('import-boost');
       this.mergePendingImportRefreshFeedIds(feedIds);
       logger.info('Scheduler', this.isStationSelectionPaused()
         ? 'Deferred boosted import refresh during station selection'
@@ -499,8 +547,26 @@ class FeedSchedulerService {
       return;
     }
 
-    this.pendingCycleTick = false;
-    logger.info('Scheduler', 'Running deferred native scheduler tick', { mode: this.mode });
+    const reason = this.pendingCycleReason ?? 'interval-tick';
+    const intervalMs = this.getIntervalMs();
+    if (!shouldRunDeferredCycleNow({
+      reason,
+      lastCycleCompletedAt: this.lastCycleCompletedAt,
+      intervalMs,
+    })) {
+      logger.info('Scheduler', 'Deferred native scheduler tick coalesced until interval overdue', {
+        mode: this.mode,
+        reason,
+        overdueMs: overdueCycleMs(this.lastCycleCompletedAt, intervalMs),
+        intervalMs,
+      });
+      this.scheduleDeferredCycleRetry(lifecycleId);
+      return;
+    }
+
+    this.clearDeferredCycleRetryTimer();
+    this.clearPendingCycleTick();
+    logger.info('Scheduler', 'Running deferred native scheduler tick', { mode: this.mode, reason });
     void this.runScheduledCycle(lifecycleId, this.consumePendingImportRefreshScope());
   }
 
@@ -582,7 +648,7 @@ class FeedSchedulerService {
     }
 
     if (this.deferStartupCycleUntilInteraction) {
-      this.pendingCycleTick = true;
+      this.markPendingCycleTick('startup-defer');
       this.ensureStartupDeferFallbackTimer(lifecycleId);
       logger.info('Scheduler', 'Deferred startup background refresh until sidebar interaction', {
         mode: this.mode,
@@ -591,7 +657,7 @@ class FeedSchedulerService {
     }
 
     if (this.isStationSelectionPaused()) {
-      this.pendingCycleTick = true;
+      this.markPendingCycleTick('interval-tick');
       logger.info('Scheduler', 'Deferred native scheduler tick during station selection', {
         mode: this.mode,
       });
@@ -602,7 +668,7 @@ class FeedSchedulerService {
       if (this.shouldAbortStaleCycle()) {
         await this.forceAbortActiveCycle('deferred-tick');
       } else {
-        this.pendingCycleTick = true;
+        this.markPendingCycleTick('interval-tick');
         this.consecutiveDeferredTicks += 1;
         logger.info('Scheduler', 'Deferred native scheduler tick until current refresh cycle completes', {
           mode: this.mode,
@@ -638,7 +704,7 @@ class FeedSchedulerService {
     }
 
     if (this.isStationSelectionPaused()) {
-      this.pendingCycleTick = true;
+      this.markPendingCycleTick('interval-tick');
       return;
     }
 
@@ -716,7 +782,7 @@ class FeedSchedulerService {
     this.clearAbort();
     this.cycleInProgress = false;
     this.consecutiveDeferredTicks = 0;
-    this.pendingCycleTick = true;
+    this.markPendingCycleTick('interval-tick');
     await this.awaitCycleDrain();
     return true;
   }
@@ -767,6 +833,8 @@ class FeedSchedulerService {
 
     const cycleId = this.activeCycleId + 1;
     this.activeCycleId = cycleId;
+    this.clearDeferredCycleRetryTimer();
+    this.clearPendingCycleTick();
     this.beginCycleDrain();
     this.cycleInProgress = true;
     this.lastCycleStartedAt = Date.now();
@@ -943,22 +1011,15 @@ class FeedSchedulerService {
         signal,
         activityKind: 'background',
         onFeedComplete: (payload) => {
-          if (payload.error) {
-            this.emit({
-              type: 'feed-failed',
-              feedId: payload.feedId,
-              error: payload.error,
-            });
+          if (!payload.error) {
             return;
           }
 
-          if ((payload.insertedCount ?? 0) > 0) {
-            this.emit({
-              type: 'feed-updated',
-              feedId: payload.feedId,
-              newArticleCount: payload.insertedCount,
-            });
-          }
+          this.emit({
+            type: 'feed-failed',
+            feedId: payload.feedId,
+            error: payload.error,
+          });
         },
       });
 

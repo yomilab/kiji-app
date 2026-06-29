@@ -62,6 +62,7 @@ import { useArticleViewPerformanceMetrics } from './hooks/useArticleViewPerforma
 import {
   estimateUtf8Bytes,
   logArticleRenderAttribution,
+  logArticleOpenAttribution,
 } from '@/services/diagnostics/webKitAttribution';
 import './ArticleView.css';
 
@@ -553,6 +554,12 @@ function useEmbeddedArticlePostOpenSync(params: {
 
     lastProcessedTriggerRef.current = articleOpenTrigger;
     const selectedIsFeedLinked = selectedArticle.isFeedLinked ?? (selectedArticle.feedId !== 'clipboard' && selectedArticle.feedId !== 'saved');
+    logArticleOpenAttribution({
+      articleHash: selectedArticle.hash,
+      feedId: selectedArticle.feedId,
+      mode: 'basic',
+      standalone,
+    });
     void syncSavedState(selectedArticle);
     void configureReaderModeForArticle(selectedArticle, selectedIsFeedLinked);
     void updateLastReadTime(selectedArticle);

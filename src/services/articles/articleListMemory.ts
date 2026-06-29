@@ -167,7 +167,11 @@ export function clearArticleListMemoryCaches(): void {
   internedFeedMetadataById.clear();
 }
 
-/** Test-only helper */
-export function getInternedFeedMetadataCountForTests(): number {
+export function getInternedFeedMetadataCount(): number {
   return internedFeedMetadataById.size;
+}
+
+/** Test-only alias */
+export function getInternedFeedMetadataCountForTests(): number {
+  return getInternedFeedMetadataCount();
 }

@@ -129,6 +129,32 @@ const STRESS_PROFILE_DEFAULTS = {
       purpose: "verify bounded WebKit during visible station/list/article navigation",
     },
   },
+  production: {
+    feedCount: 500,
+    entriesPerFeed: 30,
+    contentKbPerEntry: 16,
+    verificationMode: true,
+    minWebKitMemoryMb: 0,
+    maxWebKitMemoryMb: 2300,
+    maxNativeMemoryMb: 450,
+    targetCycles: 16,
+    timeoutMs: (4 * 60 * 60 * 1000) + (15 * 60 * 1000),
+    schedulerIntervalMs: 15 * 60 * 1000,
+    pressureWindowMs: 4 * 60 * 60 * 1000,
+    idlePlateauMs: 120_000,
+    idleDeltaMb: 64,
+    settleMs: 60_000,
+    captureHeap: true,
+    hideUi: "1",
+    runUiInteractions: false,
+    readerMode: false,
+    minPostImportArticleCount: 1,
+    acceptance: {
+      maxWebKitMemoryMb: 2300,
+      maxNativeMemoryMb: 450,
+      purpose: "production-scale library (~500 feeds, 15m cycles); regression vs Jun 28-29 resource-usage baseline",
+    },
+  },
 };
 const ONE_BY_ONE_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/ax8gL8AAAAASUVORK5CYII=",
@@ -863,6 +889,7 @@ function assertStressResult({ summary, profile, attributionSummary, artifactsDir
 function summarizeAttributionLogs(logSummary) {
   const counts = {
     nativeFeedRefreshCount: 0,
+    nativeFeedRefreshCycleCount: 0,
     feedNetworkResponseCount: 0,
     largeRendererFeedNetworkCount: 0,
     postImportLargeRendererFeedNetworkCount: 0,
@@ -870,6 +897,9 @@ function summarizeAttributionLogs(logSummary) {
     postImportFeedParseAttributionCount: 0,
     readerDomAttributionCount: 0,
     articleRenderAttributionCount: 0,
+    rendererSessionMemoryCount: 0,
+    listRefreshAttributionCount: 0,
+    articleOpenAttributionCount: 0,
   };
 
   for (const copiedPath of logSummary.copied ?? []) {
@@ -910,6 +940,9 @@ function summarizeAttributionLogs(logSummary) {
         case "native-feed-refresh-attribution":
           counts.nativeFeedRefreshCount += 1;
           break;
+        case "native-feed-refresh-cycle-attribution":
+          counts.nativeFeedRefreshCycleCount += 1;
+          break;
         case "feed-network-response":
           counts.feedNetworkResponseCount += 1;
           if (context.largePayload === true || (context.responseBytes ?? 0) >= 512 * 1024) {
@@ -930,6 +963,15 @@ function summarizeAttributionLogs(logSummary) {
           break;
         case "article-render-attribution":
           counts.articleRenderAttributionCount += 1;
+          break;
+        case "renderer-session-memory-attribution":
+          counts.rendererSessionMemoryCount += 1;
+          break;
+        case "list-refresh-attribution":
+          counts.listRefreshAttributionCount += 1;
+          break;
+        case "article-open-attribution":
+          counts.articleOpenAttributionCount += 1;
           break;
         default:
           break;
