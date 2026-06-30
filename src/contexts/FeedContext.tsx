@@ -1409,6 +1409,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       : [];
 
     const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds(foregroundFeedIds, 'foreground');
+    // Record the true switch scope (station feed count, NOT the foreground cap)
+    // so the sidebar shows `Refreshing x/N feeds` against the station total.
+    // Cleared in the `finally` below alongside releaseQueuedFeed / boostMany.
+    feedRefreshActivity.setInteractiveRefreshScope(feedIds.length, foregroundFeedIds.length);
     const activeSignal = selectionAbortControllerRef.current?.signal;
     const feedsNeedingCountSync = new Set<string>();
     let nextFeedIndex = 0;
@@ -1566,6 +1570,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return insertedTotal;
     } finally {
       releaseQueuedFeed();
+      feedRefreshActivity.clearInteractiveRefreshScope();
       if (deferredFeedIds.length > 0 && isSelectionActive(token)) {
         feedScheduler.boostMany(deferredFeedIds);
         sidebarSwitchTrace.mark(token, 'station-refresh-deferred', {

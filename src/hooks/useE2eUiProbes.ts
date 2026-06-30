@@ -120,9 +120,19 @@ export const useE2eUiProbes = (): void => {
       void writeE2eEvent('refresh-indicator-snapshot', {
         ...snapshot,
         indicatorText: snapshot.isBackgroundFeedRefreshing
-          ? formatFeedRefreshStatus(snapshot.displayFeedCount, true)
+          ? formatFeedRefreshStatus({
+              displayFeedCount: snapshot.displayFeedCount,
+              isBackgroundFeedRefreshing: true,
+              interactiveRefreshScopeTotal: snapshot.interactiveRefreshScopeTotal,
+              interactiveRefreshCompleted: snapshot.interactiveRefreshCompleted,
+            })
           : snapshot.isForegroundFeedRefreshing
-            ? formatFeedRefreshStatus(snapshot.displayFeedCount, false)
+            ? formatFeedRefreshStatus({
+                displayFeedCount: snapshot.displayFeedCount,
+                isBackgroundFeedRefreshing: false,
+                interactiveRefreshScopeTotal: snapshot.interactiveRefreshScopeTotal,
+                interactiveRefreshCompleted: snapshot.interactiveRefreshCompleted,
+              })
             : null,
         selectedFeedId,
         selectedTag,

@@ -24,7 +24,10 @@ const ArticleListFavicon = ({
   const showImage = !!localFavicon && isBase64DataUrl(localFavicon) && !errored;
 
   return (
-    <span className="article-list-favicon-container" aria-hidden={!showImage || undefined}>
+    <span
+      className={`article-list-favicon-container${showImage ? '' : ' is-fallback'}`}
+      aria-hidden={!showImage || undefined}
+    >
       {showImage ? (
         <img
           className="article-list-favicon-img"

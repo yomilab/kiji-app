@@ -34,7 +34,28 @@ export interface NativeFeedRefreshResult {
   insertedByFeedId: Map<string, number>;
 }
 
-let nativeRefreshTail: Promise<void> = Promise.resolve();
+// Native refresh lock with activity-kind awareness.
+//
+// A foreground switch/manual refresh must never block on a running background
+// cycle. The Rust `preview_native_refresh_cycle` IPC has no JS-side cancellation
+// channel, so `pauseForStationSelection`'s signal abort cannot stop an in-flight
+// background cycle — it runs to completion (tens of seconds for a full-library
+// catch-up). Serializing the foreground turn behind it (the old global chain)
+// made the article-list spinner stay up for the entire background cycle and
+// deferred the SQLite reconcile, which users perceived as a freeze.
+//
+// Rules:
+//  - foreground turns serialize among themselves (preserves per-feed FIFO for
+//    rapid switch→switch and avoids duplicate foreground fetches);
+//  - background turns serialize among themselves and defer to any running
+//    foreground turn (background is best-effort, never user-blocking);
+//  - a foreground turn does NOT wait for a running background turn. The two may
+//    overlap; the Rust side serializes DB access via `with_connection`, and
+//    per-feed FIFO is handled by `feedRefreshCoordinator`. The only cost is up
+//    to `foregroundScope.size` duplicate fetches for feeds that also appear in
+//    the in-flight background batch — bounded and concurrent.
+let foregroundTail: Promise<void> = Promise.resolve();
+let backgroundTail: Promise<void> = Promise.resolve();
 
 const throwIfAborted = (signal?: AbortSignal): void => {
   if (signal?.aborted) {
@@ -44,14 +65,35 @@ const throwIfAborted = (signal?: AbortSignal): void => {
   }
 };
 
-const withNativeRefreshLock = async <T>(operation: () => Promise<T>): Promise<T> => {
-  const previous = nativeRefreshTail.catch((): void => undefined);
+const withNativeRefreshLock = async <T>(
+  operation: () => Promise<T>,
+  activityKind: "foreground" | "background",
+): Promise<T> => {
+  if (activityKind === "foreground") {
+    const previous = foregroundTail.catch((): void => undefined);
+    let releaseTurn!: () => void;
+    const currentTurn = new Promise<void>((resolve) => {
+      releaseTurn = resolve;
+    });
+    foregroundTail = previous.then(() => currentTurn);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      releaseTurn();
+    }
+  }
+
+  // Background: serialize with other background turns and defer to foreground.
+  const previousForeground = foregroundTail.catch((): void => undefined);
+  const previousBackground = backgroundTail.catch((): void => undefined);
   let releaseTurn!: () => void;
   const currentTurn = new Promise<void>((resolve) => {
     releaseTurn = resolve;
   });
-  nativeRefreshTail = previous.then(() => currentTurn);
-  await previous;
+  backgroundTail = Promise.all([previousForeground, previousBackground])
+    .then(() => currentTurn);
+  await Promise.all([previousForeground, previousBackground]);
   try {
     return await operation();
   } finally {
@@ -75,6 +117,7 @@ export async function runNativeFeedRefresh(
   }
 
   const forceRefreshFeedIds = request.forceRefreshFeedIds;
+  const activityKind = request.activityKind ?? "foreground";
 
   return withNativeRefreshLock(async () => {
     throwIfAborted(request.signal);
@@ -97,7 +140,7 @@ export async function runNativeFeedRefresh(
           }
           queuedRelease.release = feedRefreshActivity.beginQueuedFeeds(
             startedFeedIds,
-            request.activityKind ?? "foreground",
+            activityKind,
           );
         },
       );
@@ -148,7 +191,7 @@ export async function runNativeFeedRefresh(
       }
 
       logNativeFeedRefreshCycleAttribution({
-        source: request.activityKind ?? "foreground",
+        source: activityKind,
         feedCount: result.feedResults.length,
         changedFeeds,
         notModifiedFeeds,
@@ -168,5 +211,5 @@ export async function runNativeFeedRefresh(
       }
       queuedRelease.release?.();
     }
-  });
+  }, activityKind);
 }

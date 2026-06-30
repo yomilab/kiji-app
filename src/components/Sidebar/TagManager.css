@@ -46,6 +46,7 @@
   background-color: var(--theme-hover-overlay-dark);
   color: var(--system-accent-color);
   font-weight: 600;
+  border-radius: 4px;
 }
 
 .tag-item-content {
@@ -149,6 +150,7 @@
 .station-feed-item-selected {
   background-color: var(--theme-hover-overlay-dark);
   color: var(--system-accent-color);
+  border-radius: 4px;
 }
 
 .station-feed-item-content {

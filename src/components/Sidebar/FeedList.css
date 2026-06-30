@@ -51,6 +51,7 @@
 .feed-list-item-selected {
   background-color: var(--theme-hover-overlay-dark);
   color: var(--system-accent-color);
+  border-radius: 4px;
 }
 
 /* Feed Title */

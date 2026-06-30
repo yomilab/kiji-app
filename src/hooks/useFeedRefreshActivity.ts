@@ -10,6 +10,8 @@ const EMPTY_SNAPSHOT: FeedRefreshActivitySnapshot = {
   isAnyFeedRefreshing: false,
   isForegroundFeedRefreshing: false,
   isBackgroundFeedRefreshing: false,
+  interactiveRefreshScopeTotal: 0,
+  interactiveRefreshCompleted: 0,
 };
 
 export const useFeedRefreshActivity = () =>

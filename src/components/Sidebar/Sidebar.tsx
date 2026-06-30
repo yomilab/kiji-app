@@ -19,15 +19,30 @@ import './Sidebar.css';
 const MIN_SIDEBAR_WIDTH = 250;
 const MAX_SIDEBAR_WIDTH = 600;
 
-export const formatFeedRefreshStatus = (
-  displayFeedCount: number,
-  isBackgroundFeedRefreshing: boolean,
-): string => {
-  if (isBackgroundFeedRefreshing) {
+export interface FeedRefreshStatusInput {
+  displayFeedCount: number;
+  isBackgroundFeedRefreshing: boolean;
+  interactiveRefreshScopeTotal: number;
+  interactiveRefreshCompleted: number;
+}
+
+export const formatFeedRefreshStatus = (input: FeedRefreshStatusInput): string => {
+  if (input.isBackgroundFeedRefreshing) {
     return sidebarIndicatorOngoing('syncing', undefined, { subject: 'all' });
   }
 
-  return sidebarIndicatorOngoing('refreshing', { count: Math.max(1, displayFeedCount) });
+  // Interactive switch / manual station refresh with a known scope: show
+  // `Refreshing x/N feeds` against the station feed count (NOT the foreground
+  // cap). Falls back to the capped count only for single-feed refreshes where
+  // no scope was recorded.
+  if (input.interactiveRefreshScopeTotal > 1) {
+    return sidebarIndicatorOngoing('refreshing', {
+      completed: input.interactiveRefreshCompleted,
+      total: input.interactiveRefreshScopeTotal,
+    });
+  }
+
+  return sidebarIndicatorOngoing('refreshing', { count: Math.max(1, input.displayFeedCount) });
 };
 
 export const Sidebar: React.FC = () => {
@@ -47,6 +62,8 @@ export const Sidebar: React.FC = () => {
     displayFeedCount,
     isAnyFeedRefreshing,
     isBackgroundFeedRefreshing,
+    interactiveRefreshScopeTotal,
+    interactiveRefreshCompleted,
   } = useFeedRefreshActivity();
   const sidebarIndicatorText = useUserMessageChannel(SIDEBAR_INDICATOR_CHANNEL);
   const exportProgressText = useUserMessageChannel('export-progress');
@@ -265,7 +282,12 @@ export const Sidebar: React.FC = () => {
     }
 
     if (isAnyFeedRefreshing) {
-      return formatFeedRefreshStatus(displayFeedCount, isBackgroundFeedRefreshing);
+      return formatFeedRefreshStatus({
+        displayFeedCount,
+        isBackgroundFeedRefreshing,
+        interactiveRefreshScopeTotal,
+        interactiveRefreshCompleted,
+      });
     }
 
     // Show "syncing" if currently syncing
@@ -291,6 +313,8 @@ export const Sidebar: React.FC = () => {
     displayFeedCount,
     isBackgroundFeedRefreshing,
     isAnyFeedRefreshing,
+    interactiveRefreshCompleted,
+    interactiveRefreshScopeTotal,
     lastSyncTime,
     selectedSmartView,
     showSyncing,
