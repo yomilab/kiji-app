@@ -83,13 +83,18 @@ pub async fn preview_native_refresh_cycle(
     let mut inserted_articles = 0i64;
 
     if execute && queued_count > 0 {
+        let force_refresh_feed_ids = options.force_refresh_feed_ids.clone();
         for chunk in prioritized.chunks(concurrency) {
             let chunk_futures = chunk.iter().map(|entry| {
                 let feed = feeds_by_id
                     .get(&entry.entry.feed_id)
                     .cloned()
                     .ok_or_else(|| format!("Feed not found: {}", entry.entry.feed_id))?;
-                Ok(refresh_single_feed_native(db, feed))
+                let force_refresh = force_refresh_feed_ids
+                    .as_ref()
+                    .map(|ids| ids.iter().any(|id| id == &feed.id))
+                    .unwrap_or(false);
+                Ok(refresh_single_feed_native(db, feed, force_refresh))
             });
             let chunk_tasks: Result<Vec<_>, String> = chunk_futures.collect();
             let chunk_tasks = chunk_tasks?;
@@ -170,12 +175,18 @@ struct NativeFeedRefreshOutcome {
 async fn refresh_single_feed_native(
     db: &DbState,
     feed: FeedRecord,
+    force_refresh: bool,
 ) -> Result<NativeFeedRefreshOutcome, String> {
+    // A manual/forced refresh must bypass conditional GET so the server returns
+    // 200 with a full body instead of a 304. The 60s cooldown + forceNetwork
+    // bypass in the renderer prevents spamming, so stripping etag/last_modified
+    // here is safe and makes Cmd+R actually re-fetch.
+    let (etag, last_modified) = conditional_headers(&feed, force_refresh);
     let network = match fetch_with_cache(FeedFetchWithCacheRequest {
         url: feed.url.clone(),
         request_id: None,
-        etag: feed.etag.clone(),
-        last_modified: feed.last_modified_header.clone(),
+        etag,
+        last_modified,
         timeout: None,
     })
     .await
@@ -328,9 +339,55 @@ fn current_time_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
+/// Selects conditional GET headers for a native feed fetch. A forced refresh
+/// strips `etag` / `last_modified` so the server returns 200 with a full body
+/// instead of a 304 Not Modified.
+fn conditional_headers(feed: &FeedRecord, force_refresh: bool) -> (Option<String>, Option<String>) {
+    if force_refresh {
+        (None, None)
+    } else {
+        (feed.etag.clone(), feed.last_modified_header.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::FeedRecord;
+
+    fn feed_with_headers(etag: Option<&str>, last_modified: Option<&str>) -> FeedRecord {
+        FeedRecord {
+            id: "feed-1".to_string(),
+            title: "Test".to_string(),
+            url: "https://example.com/feed.xml".to_string(),
+            created_at: "2026-06-30T00:00:00Z".to_string(),
+            description: None,
+            last_fetched: None,
+            last_failed_fetch_at: None,
+            unread_count: 0,
+            article_count: 0,
+            tags: Vec::new(),
+            favicon: None,
+            favicon_has_transparency: None,
+            favicon_dominant_color: None,
+            favicon_bg_light: None,
+            favicon_bg_dark: None,
+            favicon_fetch_failed: false,
+            emoji: None,
+            image: None,
+            categories: Vec::new(),
+            language: None,
+            is_podcast: false,
+            podcast_metadata: None,
+            reader_mode_enabled: false,
+            etag: etag.map(str::to_string),
+            last_modified_header: last_modified.map(str::to_string),
+            sort_order: 0,
+            update_frequency_score: 0.0,
+            consecutive_failures: 0,
+            last_favicon_refresh: None,
+        }
+    }
 
     #[test]
     fn clamps_native_cycle_concurrency_bounds() {
@@ -339,5 +396,32 @@ mod tests {
             99usize.clamp(1, MAX_NATIVE_CYCLE_CONCURRENCY),
             MAX_NATIVE_CYCLE_CONCURRENCY
         );
+    }
+
+    #[test]
+    fn conditional_headers_passthrough_when_not_forced() {
+        let feed = feed_with_headers(Some("\"abc\""), Some("Wed, 30 Jun 2026 02:00:00 GMT"));
+        let (etag, last_modified) = conditional_headers(&feed, false);
+        assert_eq!(etag.as_deref(), Some("\"abc\""));
+        assert_eq!(
+            last_modified.as_deref(),
+            Some("Wed, 30 Jun 2026 02:00:00 GMT")
+        );
+    }
+
+    #[test]
+    fn conditional_headers_stripped_when_forced() {
+        let feed = feed_with_headers(Some("\"abc\""), Some("Wed, 30 Jun 2026 02:00:00 GMT"));
+        let (etag, last_modified) = conditional_headers(&feed, true);
+        assert!(etag.is_none());
+        assert!(last_modified.is_none());
+    }
+
+    #[test]
+    fn conditional_headers_none_when_feed_has_none() {
+        let feed = feed_with_headers(None, None);
+        let (etag, last_modified) = conditional_headers(&feed, false);
+        assert!(etag.is_none());
+        assert!(last_modified.is_none());
     }
 }

@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+// Spinner contract:
+// - The article-list spinner reflects ONLY current-source foreground fetch
+//   activity (`isFetchingNew` from Phase B, or `isLoadingArticles` skeleton for
+//   a large cold open). It does NOT track background scheduler cycles.
+// - Background cycles surface new rows via `applyBackgroundRefreshForSource`
+//   (top insert / preserveScrollTop) without a spinner; the sidebar
+//   "Syncing all" indicator covers background activity.
+// - The 800ms switch grace hides the spinner through the Phase A → Phase B
+//   transition so a stored-list switch doesn't flash a spinner. `isInitialLoading`
+//   (skeleton, zero articles) bypasses grace so a large-cold open shows the
+//   loader immediately.
+// Do not wire background cycle state into `isActive` here — that regresses the
+// split documented in `docs/core/architecture-sidebar-article-list-state.md`.
 const FETCH_INDICATOR_MIN_VISIBLE_MS = 450;
 const FETCH_INDICATOR_HIDE_DEBOUNCE_MS = 140;
 const FETCH_INDICATOR_SWITCH_GRACE_MS = 800;

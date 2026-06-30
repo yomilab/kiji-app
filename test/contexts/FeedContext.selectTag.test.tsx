@@ -7,6 +7,7 @@ import { tagsManager } from '@/services/tags/tagsManager';
 import { convertFeedItemsToArticles } from '@/services/articles/articleConverter';
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { feedsFetcher } from '@/services/feeds/feedsFetcher';
+import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
 import * as articleStore from '@/stores/articleStore';
 import * as feedStore from '@/stores/feedStore';
 import { feedNetworkDataResult } from '../helpers/feedNetworkFetchMock';
@@ -22,6 +23,7 @@ vi.mock('@/stores/articleStore', () => ({
 vi.mock('@/stores/feedStore', () => ({
   getCount: vi.fn(),
   getById: vi.fn(),
+  getAll: vi.fn(),
 }));
 
 vi.mock('@/services/feeds/feedsFetcher', async (importOriginal) => {
@@ -93,6 +95,16 @@ const createArticle = (hash: string, feedId: string): Article => ({
   publishedDate: '2026-02-25T00:00:00.000Z',
 });
 
+const stationFeed = (id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id,
+  url: `https://${id}.example.com`,
+  title: id,
+  lastFetched: new Date(0),
+  consecutiveFailures: 0,
+  lastFailedFetchAt: undefined as Date | undefined,
+  ...overrides,
+});
+
 const createDeferred = <T,>() => {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -134,6 +146,8 @@ describe('FeedContext selectTag', () => {
   let root: Root;
   let container: HTMLDivElement;
   let consoleWarnSpy: vi.SpyInstance;
+  let suppressFeedsForNextCycleSpy: vi.SpyInstance;
+  let boostManySpy: vi.SpyInstance;
 
   const Probe: React.FC = () => {
     latestContext = useFeed();
@@ -154,6 +168,7 @@ describe('FeedContext selectTag', () => {
     });
     (feedStore.getCount as vi.Mock).mockResolvedValue(0);
     (feedStore.getById as vi.Mock).mockResolvedValue(null);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([]);
     (articleStore.query as vi.Mock).mockResolvedValue({ articles: [], total: 0 });
     (articleStore.store as vi.Mock).mockResolvedValue(0);
     (articleStore.getUnreadCount as vi.Mock).mockResolvedValue(0);
@@ -163,6 +178,8 @@ describe('FeedContext selectTag', () => {
     (feedsManager.updateFeed as vi.Mock).mockResolvedValue(undefined);
     (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockResolvedValue(feedNetworkDataResult());
     (convertFeedItemsToArticles as vi.Mock).mockResolvedValue([]);
+    suppressFeedsForNextCycleSpy = vi.spyOn(feedScheduler, 'suppressFeedsForNextCycle').mockImplementation(() => {});
+    boostManySpy = vi.spyOn(feedScheduler, 'boostMany').mockImplementation(() => {});
     consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     container = document.createElement('div');
@@ -172,6 +189,8 @@ describe('FeedContext selectTag', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    suppressFeedsForNextCycleSpy.mockRestore();
+    boostManySpy.mockRestore();
     act(() => {
       root.unmount();
     });
@@ -299,6 +318,7 @@ describe('FeedContext selectTag', () => {
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
     (feedsManager.getFeedById as vi.Mock).mockResolvedValue(feedA);
     (feedStore.getById as vi.Mock).mockResolvedValue(feedA);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed('feed-a')]);
     (articleStore.query as vi.Mock).mockResolvedValue({ articles: [], total: 0 });
     (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(feedNetworkDataResult()), 50)));
 
@@ -353,6 +373,7 @@ describe('FeedContext selectTag', () => {
     };
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a', 'feed-b']);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed('feed-a'), stationFeed('feed-b')]);
     (feedsManager.getFeedById as vi.Mock).mockImplementation((id: string) => {
       if (id === 'feed-a') return Promise.resolve(feedA);
       if (id === 'feed-b') return Promise.resolve(feedB);
@@ -421,6 +442,7 @@ describe('FeedContext selectTag', () => {
     const refreshedArticles = [createArticle('hash-a1', 'feed-a')];
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed('feed-a')]);
     (feedsManager.getFeedById as vi.Mock).mockResolvedValue(feedA);
     (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockReturnValue(fetchADeferred.promise);
     (convertFeedItemsToArticles as vi.Mock).mockResolvedValue(refreshedArticles);
@@ -485,6 +507,7 @@ describe('FeedContext selectTag', () => {
     const fetchesByUrl = new Map(feeds.map((feed) => [feed.url, createDeferred<ReturnType<typeof feedNetworkDataResult>>()]));
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(feedIds);
+    (feedStore.getAll as vi.Mock).mockResolvedValue(feedIds.map((id) => stationFeed(id)));
     (feedsManager.getFeedById as vi.Mock).mockImplementation((id: string) => (
       Promise.resolve(feeds.find((feed) => feed.id === id) ?? null)
     ));
@@ -531,6 +554,7 @@ describe('FeedContext selectTag', () => {
     const secondFetchDeferred = createDeferred<ReturnType<typeof feedNetworkDataResult>>();
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed('feed-a')]);
     (feedsManager.getFeedById as vi.Mock).mockResolvedValue(feedA);
     (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock)
       .mockImplementationOnce((_url: string, options?: { signal?: AbortSignal }) => new Promise<ReturnType<typeof feedNetworkDataResult>>((resolve, reject) => {
@@ -603,6 +627,7 @@ describe('FeedContext selectTag', () => {
     };
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed('feed-a')]);
     (feedsManager.getFeedById as vi.Mock).mockResolvedValue(failedFeed);
     (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockRejectedValueOnce(new Error('timeout'));
     (articleStore.query as vi.Mock).mockResolvedValue({ articles: [], total: 0 });
@@ -654,6 +679,7 @@ describe('FeedContext selectTag', () => {
       }
       return Promise.resolve([]);
     });
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed('feed-a')]);
     (feedsManager.getFeedById as vi.Mock).mockResolvedValue(backedOffFeed);
     (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockResolvedValue(feedNetworkDataResult());
     (convertFeedItemsToArticles as vi.Mock).mockResolvedValue([]);
@@ -697,6 +723,7 @@ describe('FeedContext selectTag', () => {
     };
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed('feed-a')]);
     (feedsManager.getFeedById as vi.Mock).mockResolvedValue(recoveredFeed);
     (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockResolvedValue(feedNetworkDataResult());
     (convertFeedItemsToArticles as vi.Mock).mockResolvedValue([createArticle('hash-a1', 'feed-a')]);
@@ -729,18 +756,32 @@ describe('FeedContext selectTag', () => {
     });
   });
 
-  it('skips the post-refresh station query when no feeds insert articles', async () => {
+  it('reconciles the station list after refresh even when no feeds insert articles', async () => {
     const feedA = { id: 'feed-a', url: 'https://a.example.com', title: 'Feed A', lastFetched: new Date(0) };
     const cachedArticles = [createArticle('hash-a1', 'feed-a')];
+    // A newer article that a background cycle wrote to the DB while the cached
+    // snapshot was stale. The Phase B foreground refresh inserts 0 (feeds
+    // already current), but the list must still pick up this DB row.
+    const freshArticles = [
+      { ...createArticle('hash-a2', 'feed-a'), publishedDate: '2026-02-26T00:00:00.000Z' },
+      cachedArticles[0],
+    ];
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
     (feedsManager.getFeedById as vi.Mock).mockResolvedValue(feedA);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed('feed-a')]);
     (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockResolvedValue(feedNetworkDataResult());
     (convertFeedItemsToArticles as vi.Mock).mockResolvedValue([]);
     (articleStore.store as vi.Mock).mockResolvedValue(0);
-    (articleStore.query as vi.Mock).mockResolvedValue({
-      articles: cachedArticles,
-      total: cachedArticles.length,
+    let queryCallCount = 0;
+    (articleStore.query as vi.Mock).mockImplementation((query: any) => {
+      queryCallCount += 1;
+      // First call: Phase A sqlite (cached snapshot). Subsequent calls: Phase B
+      // reconcile, which must surface the newer DB row.
+      if (queryCallCount === 1) {
+        return Promise.resolve({ articles: cachedArticles, total: cachedArticles.length });
+      }
+      return Promise.resolve({ articles: freshArticles, total: freshArticles.length });
     });
 
     act(() => {
@@ -758,11 +799,14 @@ describe('FeedContext selectTag', () => {
     });
 
     await waitForExpectation(() => {
-      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a1']);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a2', 'hash-a1']);
       expect(latestContext!.isFetchingNew).toBe(false);
     });
 
-    expect(articleStore.query).toHaveBeenCalledTimes(1);
+    // Phase A sqlite publish + Phase B reconcile both ran. The old code skipped
+    // the Phase B reconcile on 0 inserts (query called once); the fix always
+    // reconciles, so query is called more than once and the newer DB row surfaces.
+    expect(articleStore.query.mock.calls.length).toBeGreaterThan(1);
   });
 
   it('requests article close through the shared close lifecycle when switching stations', async () => {
@@ -816,5 +860,72 @@ describe('FeedContext selectTag', () => {
     expect(latestContext!.activeArticleHash).toBeNull();
 
     stationBFeedsDeferred.resolve(['feed-b']);
+  });
+
+  it('scopes suppress to foreground feeds and boosts the deferred remainder', async () => {
+    const feedIds = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8'];
+    const feeds = feedIds.map((id) => ({
+      id,
+      url: `https://${id}.example.com`,
+      title: id,
+      lastFetched: new Date(0),
+    }));
+
+    (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(feedIds);
+    (feedStore.getAll as vi.Mock).mockResolvedValue(feedIds.map((id) => stationFeed(id)));
+    (feedsManager.getFeedById as vi.Mock).mockImplementation((id: string) => (
+      Promise.resolve(feeds.find((feed) => feed.id === id) ?? null)
+    ));
+    (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockResolvedValue(feedNetworkDataResult());
+    (convertFeedItemsToArticles as vi.Mock).mockResolvedValue([]);
+    (articleStore.store as vi.Mock).mockResolvedValue(0);
+    (articleStore.query as vi.Mock).mockResolvedValue({ articles: [], total: 0 });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('Daily');
+    });
+
+    // Wait for Phase B to complete: suppress fires after the foreground refresh
+    // settles. Waiting on isFetchingNew===false alone can resolve in the Phase A
+    // window before Phase B starts.
+    await waitForExpectation(() => {
+      expect(suppressFeedsForNextCycleSpy).toHaveBeenCalled();
+    });
+    await waitForExpectation(() => {
+      expect(latestContext!.isFetchingNew).toBe(false);
+    });
+
+    // Foreground cap is 6 on switch, so suppress must cover only those 6 —
+    // not all 8. The deferred 2 go to boostMany so the background cycle can
+    // surface their new articles instead of being suppressed.
+    expect(suppressFeedsForNextCycleSpy).toHaveBeenCalledTimes(1);
+    const suppressedIds = suppressFeedsForNextCycleSpy.mock.calls[0][0] as string[];
+    expect(boostManySpy).toHaveBeenCalledTimes(1);
+    const boostedIds = boostManySpy.mock.calls[0][0] as string[];
+
+    expect(suppressedIds).toHaveLength(6);
+    expect(boostedIds).toHaveLength(2);
+    const feedIdSet = new Set(feedIds);
+    for (const id of suppressedIds) {
+      expect(feedIdSet.has(id)).toBe(true);
+    }
+    for (const id of boostedIds) {
+      expect(feedIdSet.has(id)).toBe(true);
+    }
+    const suppressedSet = new Set(suppressedIds);
+    for (const id of boostedIds) {
+      expect(suppressedSet.has(id)).toBe(false);
+    }
+    expect([...suppressedIds, ...boostedIds].sort()).toEqual([...feedIds].sort());
   });
 });

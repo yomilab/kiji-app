@@ -1,9 +1,48 @@
 import { memo, useEffect, useRef, useState } from 'react';
+import type { ReactElement } from 'react';
 import { motion } from 'motion/react';
-import { FaviconImage } from '@/components/common/FaviconImage';
+import StarIcon from '@mui/icons-material/Star';
 import type { Article } from '@/types/article';
 import { renderHighlightedTextWithNonAsciiFont } from '@/utils/nonAsciiTypography';
 import { getArticleListRowSignature } from './articleListRowSignature';
+
+const isBase64DataUrl = (str: string): boolean => str.startsWith('data:');
+
+// Article-list favicon rendered inside its own container with a solid,
+// theme-contrasting background (opaque — no transparency-aware alpha).
+// Container is ~2px larger than the leading icon box; border-radius kept.
+const ArticleListFavicon = ({
+  localFavicon,
+  alt = '',
+  itemId,
+}: {
+  localFavicon?: string;
+  alt?: string;
+  itemId?: string;
+}): ReactElement => {
+  const [errored, setErrored] = useState(false);
+  const showImage = !!localFavicon && isBase64DataUrl(localFavicon) && !errored;
+
+  return (
+    <span className="article-list-favicon-container" aria-hidden={!showImage || undefined}>
+      {showImage ? (
+        <img
+          className="article-list-favicon-img"
+          src={localFavicon}
+          alt={alt}
+          onError={() => {
+            console.warn('[ArticleListFavicon] Failed to load favicon for:', itemId);
+            setErrored(true);
+          }}
+        />
+      ) : (
+        <span className="article-list-favicon-fallback">
+          <StarIcon sx={{ fontSize: '0.9rem' }} />
+        </span>
+      )}
+    </span>
+  );
+};
 
 interface ArticleListItemProps {
   article: Article;
@@ -124,9 +163,8 @@ export const ArticleListItem = memo<ArticleListItemProps>(
           <div className="article-list-item-main">
             <div className="article-list-item-text">
               <div className="article-list-item-header">
-                <FaviconImage
+                <ArticleListFavicon
                   localFavicon={article.feedFavicon}
-                  hasTransparency={article.feedFaviconHasTransparency}
                   alt={article.feedTitle || article.title}
                   itemId={article.hash}
                 />

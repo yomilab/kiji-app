@@ -1,6 +1,6 @@
 /* Article List Container */
 .article-list {
-  --article-list-horizontal-padding: 32px;
+  --article-list-horizontal-padding: 36px;
   --article-list-bg: var(--theme-article-bg);
   /* Keep aligned with HEADER_COMPACT_TRANSITION_MS in ArticleList.tsx. */
   --article-list-header-transition-duration: 40ms;
@@ -455,19 +455,49 @@
   font-weight: 600;
 }
 
-.article-list-item-header .favicon-container {
+.article-list-item-header .article-list-favicon-container {
   position: absolute;
-  left: calc(var(--leading-item-icon-size) * -1.2);
-  top: 0;
-  width: var(--leading-item-icon-size);
-  height: var(--leading-item-icon-size);
+  left: calc(var(--leading-item-icon-size) * -1.35);
+  /* Vertically center the chip on the title's first line. top:50% is the
+     header's vertical midpoint (title line-height / 2); translateY(-50%)
+     offsets the chip's own half-height so the chip center matches the
+     title center, compensating for the +2px chip size. */
+  top: 50%;
+  transform: translateY(-50%);
+  width: calc(var(--leading-item-icon-size) + 2px);
+  height: calc(var(--leading-item-icon-size) + 2px);
   border-radius: 3px;
-  border-width: 1px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+  /* Uniform inner padding so every favicon (square, rectangular, or with
+     baked-in transparent margins) gets the same solid-frame treatment.
+     box-sizing: border-box keeps the outer chip at --leading-item-icon-size+2
+     while the image renders inside the padded content box. */
+  padding: 3px;
+  /* Solid, fully-opaque theme-contrasting chip behind the favicon.
+     No alpha / no transparency: a hard solid color that reads as a
+     distinct frame, not a tint. --theme-text-primary is the ink color
+     in each theme, so a strong mix yields a clearly contrasting neutral
+     in both light (darker than article bg) and dark (lighter than bg). */
+  background-color: color-mix(in srgb, var(--theme-text-primary) 45%, var(--theme-article-bg));
+}
+
+.article-list-item-header .article-list-favicon-img {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 
-.article-list-item-header .favicon-icon {
+.article-list-item-header .article-list-favicon-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
   color: var(--theme-text-subdued);
 }
 

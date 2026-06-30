@@ -162,6 +162,14 @@ export class FeedRefreshActivity {
   }
 
   private publishSnapshot(): void {
+    // Station-switch handoff: Phase B calls beginQueuedFeeds(foreground,
+    // 'foreground') so the sidebar shows "Refreshing N feeds" for the capped
+    // foreground set. When Phase B releases those and boostMany starts the
+    // background cycle for deferred feeds, beginQueuedFeeds(deferred,
+    // 'background') flips the sidebar to "Syncing all". The brief gap between
+    // foreground release and background start is a true idle moment (nothing is
+    // fetching) and is intentionally shown as the static fallback rather than
+    // a misleading "Syncing all".
     const foregroundQueuedFeedCount = this.foregroundQueuedFeedTotal;
     const backgroundQueuedFeedCount = this.backgroundQueuedFeedTotal;
     const queuedFeedCount = this.queuedFeedTotal;

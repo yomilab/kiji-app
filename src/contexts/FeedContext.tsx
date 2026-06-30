@@ -1555,6 +1555,14 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       }
 
+      // Only the foreground feeds were actually fetched this turn; suppress just
+      // those so the next background cycle avoids re-fetching them. Suppressing
+      // the deferred feeds too would block the background from surfacing new
+      // articles for feeds the switch path deferred to boostMany.
+      if (foregroundFeedIds.length > 0 && isSelectionActive(token) && !activeSignal?.aborted) {
+        feedScheduler.suppressFeedsForNextCycle(foregroundFeedIds);
+      }
+
       return insertedTotal;
     } finally {
       releaseQueuedFeed();
@@ -1818,7 +1826,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         sourceKey,
         intent,
       );
-      feedScheduler.suppressFeedsForNextCycle(feedIds);
+      // Suppress is scoped to the foreground feeds actually refreshed, inside
+      // refreshStationFeeds, so deferred feeds stay eligible for the next
+      // background cycle to surface new articles.
 
       if (!isSelectionActive(token)) {
         return;
@@ -1827,12 +1837,16 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const visibleCount = Math.max(currentArticlesRef.current.length, SMART_VIEW_ARTICLE_LIMIT);
       let freshArticleCount = currentArticlesRef.current.length;
       let freshArticleTotal = nonSearchArticlesTotalCountRef.current;
-      if (insertedCount === 0) {
-        // Cached content is already current, so avoid a second full DB query and
-        // virtualized list publish on the station-switch path.
-      } else if (isArticleViewTransitioning()) {
+      if (isArticleViewTransitioning()) {
         pendingBackgroundRefreshSourceKeyRef.current = sourceKey;
       } else {
+        // Always reconcile the visible page against SQLite after a station
+        // refresh. Background cycles can insert rows for this station while the
+        // cached snapshot is stale, and a foreground/manual refresh that finds
+        // the feeds already current inserts 0 but the snapshot still needs to
+        // pick up those prior background inserts. dispatchArticlesTransitionIfChanged
+        // skips the publish when the resulting list is equivalent, so the no-op
+        // case stays cheap.
         const { articles: fresh, total: freshTotal } = await articleStore.query({ ...tagQuery, limit: visibleCount });
         if (!isSelectionActive(token)) {
           return;
@@ -1891,6 +1905,57 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, [isSelectionActive, runFeedNetworkRefreshPhase, runTagNetworkRefreshPhase]);
 
+  // Phase A stored-content publish for the inline SQLite path. Shared by
+  // handleFeedSelection and the normal (non-snapshot, non-large-cold) branch of
+  // handleTagSelection. The snapshot path publishes via RESTORE_SOURCE_SNAPSHOT
+  // and the large-cold path schedules sqlite-query-deferred after the paint
+  // gate, so neither uses this helper. Preserves the sqlite-query trace span
+  // (query only) and the separate dispatch-articles duration mark.
+  const publishStoredSqlitePage = useCallback(async (args: {
+    token: number;
+    sourceKey: string;
+    perfMark: string;
+    query: ArticleQuery;
+    limit?: number;
+    traceContext?: Record<string, unknown>;
+    interactionExtra?: Record<string, unknown>;
+  }): Promise<boolean> => {
+    const { token, sourceKey, perfMark, query, limit, traceContext, interactionExtra } = args;
+    const { articles: stored, total } = await traceSidebarSwitchAsync(
+      token,
+      'sqlite-query',
+      () => articleStore.query(limit ? { ...query, limit } : query),
+      traceContext,
+    );
+    if (!isSelectionActive(token)) {
+      abortSelectionSwitchPriority(token);
+      return false;
+    }
+    const dispatchStartedAt = performance.now();
+    dispatchArticlesTransitionIfChanged(stored, total);
+    sidebarSwitchTrace.markDuration(
+      token,
+      'dispatch-articles',
+      performance.now() - dispatchStartedAt,
+      { articleCount: stored.length },
+    );
+    collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+    interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
+      cachedArticleCount: stored.length,
+      cachedArticleTotal: total,
+      ...interactionExtra,
+    });
+    if (HAS_PERFORMANCE_API) {
+      performance.mark(`${perfMark}:cached-ready`);
+      performance.measure(`${perfMark}:to-cached`, `${perfMark}:start`, `${perfMark}:cached-ready`);
+    }
+    return true;
+  }, [
+    abortSelectionSwitchPriority,
+    dispatchArticlesTransitionIfChanged,
+    isSelectionActive,
+  ]);
+
   const handleFeedSelection = useCallback(async (
     feedId: string,
     shouldReset: boolean,
@@ -1921,36 +1986,15 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     if (shouldReset) {
       try {
-        const { articles: stored, total } = await traceSidebarSwitchAsync(
+        const published = await publishStoredSqlitePage({
           token,
-          'sqlite-query',
-          () => articleStore.query(feedQuery),
-          { feedId },
-        );
-        if (!isSelectionActive(token)) {
-          abortSelectionSwitchPriority(token);
-          return;
-        }
-        lastQueryRef.current = feedQuery;
-
-        const dispatchStartedAt = performance.now();
-        dispatchArticlesTransitionIfChanged(stored, total);
-        sidebarSwitchTrace.markDuration(
-          token,
-          'dispatch-articles',
-          performance.now() - dispatchStartedAt,
-          { articleCount: stored.length },
-        );
-        collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
-        interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
-          cachedArticleCount: stored.length,
-          cachedArticleTotal: total,
+          sourceKey,
+          perfMark,
+          query: feedQuery,
+          traceContext: { feedId },
         });
-
-        if (HAS_PERFORMANCE_API) {
-          performance.mark(`${perfMark}:cached-ready`);
-          performance.measure(`${perfMark}:to-cached`, `${perfMark}:start`, `${perfMark}:cached-ready`);
-        }
+        if (!published) return;
+        lastQueryRef.current = feedQuery;
 
         requestSwitchNetworkRefresh({
           kind: 'feed',
@@ -1982,8 +2026,8 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [
     abortSelectionSwitchPriority,
     clearError,
-    dispatchArticlesTransitionIfChanged,
     isSelectionActive,
+    publishStoredSqlitePage,
     requestSwitchNetworkRefresh,
     runFeedNetworkRefreshPhase,
     setActiveArticle,
@@ -2154,36 +2198,16 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return;
         }
 
-        const { articles: stored, total } = await traceSidebarSwitchAsync(
+        const published = await publishStoredSqlitePage({
           token,
-          'sqlite-query',
-          () => articleStore.query({ ...tagQuery, limit: cachedVisibleCount }),
-          { limit: cachedVisibleCount, taggedFeedCount: feedIds.length },
-        );
-        if (!isSelectionActive(token)) {
-          abortSelectionSwitchPriority(token);
-          return;
-        }
-
-        const dispatchStartedAt = performance.now();
-        dispatchArticlesTransitionIfChanged(stored, total);
-        sidebarSwitchTrace.markDuration(
-          token,
-          'dispatch-articles',
-          performance.now() - dispatchStartedAt,
-          { articleCount: stored.length },
-        );
-        collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
-        interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
-          cachedArticleCount: stored.length,
-          cachedArticleTotal: total,
-          taggedFeedCount: feedIds.length,
+          sourceKey,
+          perfMark,
+          query: tagQuery,
+          limit: cachedVisibleCount,
+          traceContext: { limit: cachedVisibleCount, taggedFeedCount: feedIds.length },
+          interactionExtra: { taggedFeedCount: feedIds.length },
         });
-
-        if (HAS_PERFORMANCE_API) {
-          performance.mark(`${perfMark}:cached-ready`);
-          performance.measure(`${perfMark}:to-cached`, `${perfMark}:start`, `${perfMark}:cached-ready`);
-        }
+        if (!published) return;
 
         requestSwitchNetworkRefresh({
           kind: 'tag',
@@ -2222,6 +2246,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     closeActiveArticleForSourceSwitch,
     dispatchArticlesTransitionIfChanged,
     isSelectionActive,
+    publishStoredSqlitePage,
     requestSwitchNetworkRefresh,
     restoreSourceArticleSnapshot,
     runTagNetworkRefreshPhase,
