@@ -40,8 +40,15 @@ export class FeedRefreshActivity {
   // capped count actually fetched this turn. Completed = foregroundTotal - the
   // remaining foreground queue. Both are set once at switch start and cleared
   // once at switch end (one-shot, navigation-class — not per-feed).
+  //
+  // A generation token guards `clearInteractiveRefreshScope` so a stale switch's
+  // `finally` cannot clobber a newer switch's scope (rapid station hopping). The
+  // scope is set atomically inside `beginQueuedFeeds` (via `scopeTotal`) so the
+  // first publish already carries the true scope — no `Refreshing 6 feeds` flash
+  // from a publish where the queue is set but the scope is not.
   private interactiveRefreshScopeTotal = 0;
   private interactiveRefreshForegroundTotal = 0;
+  private interactiveRefreshScopeGeneration = 0;
 
   private listeners = new Set<FeedRefreshActivityListener>();
 
@@ -70,6 +77,7 @@ export class FeedRefreshActivity {
   beginQueuedFeeds(
     feedIds: string[],
     scope: FeedRefreshActivityScope = 'foreground',
+    options?: { scopeTotal?: number },
   ): (feedId?: string) => void {
     const pendingFeedCounts = new Map<string, number>();
 
@@ -83,6 +91,16 @@ export class FeedRefreshActivity {
       } else {
         this.foregroundQueuedFeedTotal += 1;
       }
+    }
+
+    // Atomic scope + queue publish: when a switch records its station scope,
+    // set it BEFORE the single publishSnapshot so the first snapshot already
+    // carries `scopeTotal` and `foregroundTotal`. This avoids a transient
+    // `Refreshing 6 feeds` (scope=0, fg=cap) frame at switch start.
+    if (options?.scopeTotal !== undefined && scope === 'foreground') {
+      this.interactiveRefreshScopeTotal = Math.max(0, Math.floor(options.scopeTotal));
+      this.interactiveRefreshForegroundTotal = feedIds.length;
+      this.interactiveRefreshScopeGeneration += 1;
     }
 
     this.publishSnapshot();
@@ -142,6 +160,16 @@ export class FeedRefreshActivity {
     for (const release of handles) {
       release();
     }
+    // Aborting foreground queue on a new selection must also drop any
+    // interactive switch scope — otherwise a cleared queue with a stale scope
+    // shows a misleading completed count, or a re-queued cap without scope
+    // shows `Refreshing 6 feeds`.
+    if (this.interactiveRefreshScopeTotal !== 0 || this.interactiveRefreshForegroundTotal !== 0) {
+      this.interactiveRefreshScopeTotal = 0;
+      this.interactiveRefreshForegroundTotal = 0;
+      this.interactiveRefreshScopeGeneration += 1;
+      this.publishSnapshot();
+    }
   }
 
   async track<T>(feedId: string, operation: () => Promise<T>): Promise<T> {
@@ -181,18 +209,21 @@ export class FeedRefreshActivity {
   }
 
   /**
-   * Record the true scope of an interactive (switch / manual station) refresh so
-   * the sidebar indicator can show `Refreshing x/N feeds` against the station's
-   * feed count instead of the internal foreground cap. One-shot per refresh:
-   * pair with `clearInteractiveRefreshScope` in the caller's `finally`.
+   * Generation of the currently-active interactive refresh scope. Captured
+   * right after `beginQueuedFeeds(..., { scopeTotal })` and passed to
+   * `clearInteractiveRefreshScope(generation)` so a stale switch's `finally`
+   * cannot clear a newer switch's scope during rapid station hopping.
    */
-  setInteractiveRefreshScope(scopeTotal: number, foregroundTotal: number): void {
-    this.interactiveRefreshScopeTotal = Math.max(0, Math.floor(scopeTotal));
-    this.interactiveRefreshForegroundTotal = Math.max(0, Math.floor(foregroundTotal));
-    this.publishSnapshot();
+  getInteractiveRefreshScopeGeneration(): number {
+    return this.interactiveRefreshScopeGeneration;
   }
 
-  clearInteractiveRefreshScope(): void {
+  clearInteractiveRefreshScope(generation?: number): void {
+    // If a newer scope was set after this caller captured its generation, do
+    // nothing — the newer switch owns the scope now.
+    if (generation !== undefined && generation !== this.interactiveRefreshScopeGeneration) {
+      return;
+    }
     if (this.interactiveRefreshScopeTotal === 0 && this.interactiveRefreshForegroundTotal === 0) {
       return;
     }

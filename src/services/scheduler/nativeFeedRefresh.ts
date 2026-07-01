@@ -118,6 +118,10 @@ export async function runNativeFeedRefresh(
 
   const forceRefreshFeedIds = request.forceRefreshFeedIds;
   const activityKind = request.activityKind ?? "foreground";
+  const scopedFeedIds = scope.onlyFeedIds ?? new Set(request.feedIds ?? []);
+
+  const isScopedFeedEvent = (feedId: string): boolean =>
+    scopedFeedIds.size === 0 || scopedFeedIds.has(feedId);
 
   return withNativeRefreshLock(async () => {
     throwIfAborted(request.signal);
@@ -134,7 +138,7 @@ export async function runNativeFeedRefresh(
           if (request.skipActivityQueue) {
             return;
           }
-          const startedFeedIds = event.payload.feedIds ?? [];
+          const startedFeedIds = (event.payload.feedIds ?? []).filter(isScopedFeedEvent);
           if (startedFeedIds.length === 0) {
             return;
           }
@@ -149,6 +153,9 @@ export async function runNativeFeedRefresh(
       const feedUnlisten = await listen<SchedulerNativeCycleFeedPayload>(
         SCHEDULER_NATIVE_CYCLE_FEED_EVENT,
         (event) => {
+          if (!isScopedFeedEvent(event.payload.feedId)) {
+            return;
+          }
           queuedRelease.release?.(event.payload.feedId);
           request.onFeedSettled?.(event.payload.feedId);
           request.onFeedComplete?.(event.payload);

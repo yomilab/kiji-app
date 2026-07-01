@@ -640,6 +640,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const selectionTokenRef = useRef(0);
   const selectionAbortControllerRef = useRef<AbortController | null>(null);
   const selectionSchedulerPauseTokenRef = useRef<number | null>(null);
+  const interactiveRefreshScopeTokenRef = useRef(0);
   const lastQueryRef = useRef<ArticleQuery | null>(null);
   const hasAttemptedSidebarRestoreRef = useRef(false);
   const backgroundScrollRequestRevisionRef = useRef(0);
@@ -1408,11 +1409,18 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       ? feedIds.filter((feedId) => !foregroundFeedIdSet.has(feedId))
       : [];
 
-    const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds(foregroundFeedIds, 'foreground');
-    // Record the true switch scope (station feed count, NOT the foreground cap)
-    // so the sidebar shows `Refreshing x/N feeds` against the station total.
-    // Cleared in the `finally` below alongside releaseQueuedFeed / boostMany.
-    feedRefreshActivity.setInteractiveRefreshScope(feedIds.length, foregroundFeedIds.length);
+    // Atomic: record the true switch scope (station feed count, NOT the
+    // foreground cap) in the same publish as the foreground queue so the first
+    // snapshot already carries the scope — no transient `Refreshing 6 feeds`
+    // frame. The generation token lets the `finally` clear only this switch's
+    // scope, so a stale switch cannot clobber a newer one during rapid hopping.
+    const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds(
+      foregroundFeedIds,
+      'foreground',
+      { scopeTotal: feedIds.length },
+    );
+    const interactiveRefreshScopeToken = feedRefreshActivity.getInteractiveRefreshScopeGeneration();
+    interactiveRefreshScopeTokenRef.current = interactiveRefreshScopeToken;
     const activeSignal = selectionAbortControllerRef.current?.signal;
     const feedsNeedingCountSync = new Set<string>();
     let nextFeedIndex = 0;
@@ -1570,7 +1578,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return insertedTotal;
     } finally {
       releaseQueuedFeed();
-      feedRefreshActivity.clearInteractiveRefreshScope();
       if (deferredFeedIds.length > 0 && isSelectionActive(token)) {
         feedScheduler.boostMany(deferredFeedIds);
         sidebarSwitchTrace.mark(token, 'station-refresh-deferred', {
@@ -1882,6 +1889,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (isSelectionActive(token)) {
         collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: false, isLoadingArticles: false } });
       }
+      feedRefreshActivity.clearInteractiveRefreshScope(interactiveRefreshScopeTokenRef.current);
       completeSelectionSwitchNetworkPriority(token);
       sidebarSwitchTrace.completeNetwork(token, {
         kind: 'tag',

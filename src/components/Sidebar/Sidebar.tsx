@@ -42,6 +42,13 @@ export const formatFeedRefreshStatus = (input: FeedRefreshStatusInput): string =
     });
   }
 
+  // Multi-feed foreground work without a recorded scope (e.g. scope cleared
+  // early while the capped queue is still active) must never show the internal
+  // cap as `Refreshing 6 feeds`.
+  if (input.displayFeedCount > 1) {
+    return sidebarIndicatorOngoing('refreshing', undefined, { subject: 'feeds' });
+  }
+
   return sidebarIndicatorOngoing('refreshing', { count: Math.max(1, input.displayFeedCount) });
 };
 

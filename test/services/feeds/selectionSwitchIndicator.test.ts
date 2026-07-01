@@ -31,12 +31,15 @@ describe('selection switch indicator', () => {
     const activity = new FeedRefreshActivity();
 
     // A 50-feed station switch: 6 foreground (capped), 44 deferred. The
-    // indicator must report the station total (50), not the cap (6).
+    // indicator must report the station total (50), not the cap (6). The scope
+    // is set atomically with the queue, so the FIRST snapshot already carries
+    // the scope (no transient `Refreshing 6 feeds` frame).
     const release = activity.beginQueuedFeeds(
       ['fg-1', 'fg-2', 'fg-3', 'fg-4', 'fg-5', 'fg-6'],
       'foreground',
+      { scopeTotal: 50 },
     );
-    activity.setInteractiveRefreshScope(50, 6);
+    const scopeToken = activity.getInteractiveRefreshScopeGeneration();
 
     const before = activity.getSnapshot();
     expect(before.interactiveRefreshScopeTotal).toBe(50);
@@ -66,7 +69,74 @@ describe('selection switch indicator', () => {
     ).toMatch(/Refreshing 3\/50 feeds/);
 
     // Switch ends → scope cleared, indicator no longer shows the station total.
-    activity.clearInteractiveRefreshScope();
+    activity.clearInteractiveRefreshScope(scopeToken);
+    expect(activity.getSnapshot().interactiveRefreshScopeTotal).toBe(0);
+  });
+
+  it('never shows the foreground cap when scope is missing but multiple feeds are queued', () => {
+    const activity = new FeedRefreshActivity();
+
+    activity.beginQueuedFeeds(
+      ['fg-1', 'fg-2', 'fg-3', 'fg-4', 'fg-5', 'fg-6'],
+      'foreground',
+    );
+
+    const snapshot = activity.getSnapshot();
+    expect(
+      formatFeedRefreshStatus({
+        displayFeedCount: snapshot.displayFeedCount,
+        isBackgroundFeedRefreshing: snapshot.isBackgroundFeedRefreshing,
+        interactiveRefreshScopeTotal: snapshot.interactiveRefreshScopeTotal,
+        interactiveRefreshCompleted: snapshot.interactiveRefreshCompleted,
+      }),
+    ).toBe('Refreshing feeds');
+  });
+
+  it('releaseAllForegroundQueued clears interactive switch scope', () => {
+    const activity = new FeedRefreshActivity();
+
+    activity.beginQueuedFeeds(
+      ['fg-1', 'fg-2', 'fg-3', 'fg-4', 'fg-5', 'fg-6'],
+      'foreground',
+      { scopeTotal: 50 },
+    );
+    expect(activity.getSnapshot().interactiveRefreshScopeTotal).toBe(50);
+
+    activity.releaseAllForegroundQueued();
+    expect(activity.getSnapshot()).toMatchObject({
+      foregroundQueuedFeedCount: 0,
+      interactiveRefreshScopeTotal: 0,
+      interactiveRefreshCompleted: 0,
+    });
+  });
+
+  it('a stale switch clear does not clobber a newer switch scope (rapid hopping)', () => {
+    const activity = new FeedRefreshActivity();
+
+    // First switch starts (50 feeds).
+    activity.beginQueuedFeeds(
+      ['fg-1', 'fg-2', 'fg-3', 'fg-4', 'fg-5', 'fg-6'],
+      'foreground',
+      { scopeTotal: 50 },
+    );
+    const oldToken = activity.getInteractiveRefreshScopeGeneration();
+
+    // User hops to a 30-feed station before the first switch's finally runs.
+    activity.beginQueuedFeeds(
+      ['fg-1', 'fg-2', 'fg-3', 'fg-4', 'fg-5', 'fg-6'],
+      'foreground',
+      { scopeTotal: 30 },
+    );
+    const newToken = activity.getInteractiveRefreshScopeGeneration();
+    expect(activity.getSnapshot().interactiveRefreshScopeTotal).toBe(30);
+
+    // The stale first switch's finally clears with its old token — must NOT
+    // clobber the newer 30-feed scope.
+    activity.clearInteractiveRefreshScope(oldToken);
+    expect(activity.getSnapshot().interactiveRefreshScopeTotal).toBe(30);
+
+    // The newer switch's clear (correct token) still works.
+    activity.clearInteractiveRefreshScope(newToken);
     expect(activity.getSnapshot().interactiveRefreshScopeTotal).toBe(0);
   });
 
