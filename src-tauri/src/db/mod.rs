@@ -35,7 +35,7 @@ use serde::Serialize;
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 pub use tags::{
     feeds_tags_attach_feed, feeds_tags_delete, feeds_tags_detach_feed, feeds_tags_list,
@@ -56,9 +56,14 @@ pub struct DatabaseStatus {
     foreign_keys_enabled: bool,
 }
 
-pub struct DbState {
+struct DbStateInner {
     path: PathBuf,
     connection: Mutex<Connection>,
+}
+
+#[derive(Clone)]
+pub struct DbState {
+    inner: Arc<DbStateInner>,
 }
 
 impl DbState {
@@ -77,8 +82,10 @@ impl DbState {
         };
 
         Ok(Self {
-            path,
-            connection: Mutex::new(connection),
+            inner: Arc::new(DbStateInner {
+                path,
+                connection: Mutex::new(connection),
+            }),
         })
     }
 
@@ -97,12 +104,13 @@ impl DbState {
 
     fn status(&self) -> Result<DatabaseStatus, String> {
         let connection = self
+            .inner
             .connection
             .lock()
             .map_err(|_| "Failed to lock the database connection.".to_string())?;
 
         Ok(DatabaseStatus {
-            path: self.path.to_string_lossy().to_string(),
+            path: self.inner.path.to_string_lossy().to_string(),
             schema_version: SCHEMA_VERSION,
             current_migration_version: read_current_migration_version(&connection)?,
             journal_mode: read_journal_mode(&connection)?,
@@ -115,6 +123,7 @@ impl DbState {
         action: impl FnOnce(&Connection) -> Result<T, String>,
     ) -> Result<T, String> {
         let connection = self
+            .inner
             .connection
             .lock()
             .map_err(|_| "Failed to lock the database connection.".to_string())?;
@@ -122,7 +131,7 @@ impl DbState {
     }
 
     pub fn database_path(&self) -> PathBuf {
-        self.path.clone()
+        self.inner.path.clone()
     }
 }
 

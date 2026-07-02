@@ -271,11 +271,12 @@ export const TagManager: React.FC = () => {
 
   const handleTagClick = useCallback(async (tagName: string) => {
     try {
-      await selectTag(tagName);
+      const tag = tags.find((entry) => entry.name === tagName);
+      await selectTag(tagName, {}, tag?.feedIds);
     } catch (error) {
       console.error('Error selecting tag:', error);
     }
-  }, [selectTag]);
+  }, [selectTag, tags]);
 
   const handleOpenFeedEditView = useCallback((target: FeedEditTarget) => {
     openFeedEditView(target);

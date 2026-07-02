@@ -11,6 +11,7 @@ import { useFeedNavigation, useFeedUI, useFeedCollection } from '@/contexts/Feed
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { isOpenAddFeedShortcut, keybindingService } from '@/services/shortcuts/shortcutService';
 import { useFeedRefreshActivity } from '@/hooks/useFeedRefreshActivity';
+import { isInteractiveStationRefreshInProgress } from '@/services/feeds/feedRefreshActivity';
 import { useUserMessageChannel } from '@/hooks/useUserMessageChannel';
 import { SIDEBAR_INDICATOR_CHANNEL } from '@/services/ui/sidebarIndicatorService';
 import { sidebarIndicatorOngoing } from '@/services/ui/sidebarIndicatorText';
@@ -27,29 +28,27 @@ export interface FeedRefreshStatusInput {
 }
 
 export const formatFeedRefreshStatus = (input: FeedRefreshStatusInput): string => {
+  // User-visible progress always uses the station scope (x/N). Never format
+  // queue depth (`displayFeedCount`) — it mirrors the internal foreground cap.
+  const stationScopeProgress = input.interactiveRefreshScopeTotal > 1
+    ? {
+        completed: input.interactiveRefreshCompleted,
+        total: input.interactiveRefreshScopeTotal,
+      }
+    : undefined;
+
   if (input.isBackgroundFeedRefreshing) {
+    if (stationScopeProgress) {
+      return sidebarIndicatorOngoing('syncing', stationScopeProgress);
+    }
     return sidebarIndicatorOngoing('syncing', undefined, { subject: 'all' });
   }
 
-  // Interactive switch / manual station refresh with a known scope: show
-  // `Refreshing x/N feeds` against the station feed count (NOT the foreground
-  // cap). Falls back to the capped count only for single-feed refreshes where
-  // no scope was recorded.
-  if (input.interactiveRefreshScopeTotal > 1) {
-    return sidebarIndicatorOngoing('refreshing', {
-      completed: input.interactiveRefreshCompleted,
-      total: input.interactiveRefreshScopeTotal,
-    });
+  if (stationScopeProgress) {
+    return sidebarIndicatorOngoing('refreshing', stationScopeProgress);
   }
 
-  // Multi-feed foreground work without a recorded scope (e.g. scope cleared
-  // early while the capped queue is still active) must never show the internal
-  // cap as `Refreshing 6 feeds`.
-  if (input.displayFeedCount > 1) {
-    return sidebarIndicatorOngoing('refreshing', undefined, { subject: 'feeds' });
-  }
-
-  return sidebarIndicatorOngoing('refreshing', { count: Math.max(1, input.displayFeedCount) });
+  return sidebarIndicatorOngoing('refreshing', undefined, { subject: 'feeds' });
 };
 
 export const Sidebar: React.FC = () => {
@@ -65,13 +64,15 @@ export const Sidebar: React.FC = () => {
   const { articles } = useFeedCollection();
   const { selectedSmartView } = useFeedNavigation();
   const { totalFeeds, feedLibraryVersion } = useFeedUI();
+  const refreshActivity = useFeedRefreshActivity();
   const {
     displayFeedCount,
     isAnyFeedRefreshing,
     isBackgroundFeedRefreshing,
     interactiveRefreshScopeTotal,
     interactiveRefreshCompleted,
-  } = useFeedRefreshActivity();
+  } = refreshActivity;
+  const stationRefreshInProgress = isInteractiveStationRefreshInProgress(refreshActivity);
   const sidebarIndicatorText = useUserMessageChannel(SIDEBAR_INDICATOR_CHANNEL);
   const exportProgressText = useUserMessageChannel('export-progress');
 
@@ -149,7 +150,7 @@ export const Sidebar: React.FC = () => {
     };
 
     loadLastSyncTime();
-  }, [feedLibraryVersion, isAnyFeedRefreshing, totalFeeds]);
+  }, [feedLibraryVersion, totalFeeds]);
 
   // Keyboard shortcut: Cmd+N to open add feed modal
   useEffect(() => {
@@ -288,7 +289,7 @@ export const Sidebar: React.FC = () => {
       return exportProgressText;
     }
 
-    if (isAnyFeedRefreshing) {
+    if (isAnyFeedRefreshing || stationRefreshInProgress) {
       return formatFeedRefreshStatus({
         displayFeedCount,
         isBackgroundFeedRefreshing,
@@ -326,6 +327,7 @@ export const Sidebar: React.FC = () => {
     selectedSmartView,
     showSyncing,
     sidebarIndicatorText,
+    stationRefreshInProgress,
     totalFeeds,
   ]);
 

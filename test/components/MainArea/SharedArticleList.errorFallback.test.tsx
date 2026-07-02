@@ -33,7 +33,6 @@ type MockFeedState = {
   setActiveArticle: vi.Mock;
   isLoadingArticles: boolean;
   isSavedListLoading: boolean;
-  isGlobalLoadingIndicatorActive: boolean;
   articleViewOverlayPhase: 'closed' | 'opening' | 'open' | 'closing';
   newArticleHashes: Set<string>;
   error: string | null;
@@ -72,7 +71,6 @@ let mockFeedState: MockFeedState = {
   setActiveArticle: vi.fn(),
   isLoadingArticles: false,
   isSavedListLoading: false,
-  isGlobalLoadingIndicatorActive: false,
   articleViewOverlayPhase: 'closed',
   newArticleHashes: new Set<string>(),
   error: null as string | null,
@@ -102,8 +100,6 @@ vi.mock('@/contexts/FeedContext', () => ({
     isLoadingMoreArticles: mockFeedState.isLoadingMoreArticles,
     isLoadMoreInFlight: mockFeedState.isLoadMoreInFlight,
     isSavedListLoading: mockFeedState.isSavedListLoading,
-    isFetchingNew: false,
-    isGlobalLoadingIndicatorActive: mockFeedState.isGlobalLoadingIndicatorActive,
   }),
   useFeedCollectionActions: () => ({
     loadMoreArticles: mockFeedState.loadMoreArticles,
@@ -122,7 +118,6 @@ vi.mock('@/contexts/FeedContext', () => ({
     isLoadingMoreArticles: mockFeedState.isLoadingMoreArticles,
     isLoadMoreInFlight: mockFeedState.isLoadMoreInFlight,
     isSavedListLoading: mockFeedState.isSavedListLoading,
-    isGlobalLoadingIndicatorActive: mockFeedState.isGlobalLoadingIndicatorActive,
     loadMoreArticles: mockFeedState.loadMoreArticles,
     updateArticleInList: vi.fn(),
     newArticleHashes: mockFeedState.newArticleHashes,
@@ -140,13 +135,6 @@ vi.mock('@/contexts/FeedContext', () => ({
   useFeedUI: () => ({
     error: mockFeedState.error,
     totalFeeds: mockFeedState.totalFeeds,
-  }),
-}));
-
-vi.mock('@/components/MainArea/hooks/useFetchIndicatorState', () => ({
-  useFetchIndicatorState: () => ({
-    isFetchIndicatorVisible: false,
-    applySourceSwitchGrace: vi.fn(),
   }),
 }));
 

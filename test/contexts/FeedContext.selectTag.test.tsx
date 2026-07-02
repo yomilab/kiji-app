@@ -11,6 +11,8 @@ import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
 import * as articleStore from '@/stores/articleStore';
 import * as feedStore from '@/stores/feedStore';
 import { feedNetworkDataResult } from '../helpers/feedNetworkFetchMock';
+import { clearFeedMetadataCacheForTests } from '@/services/feeds/feedMetadataCache';
+import { clearTagFeedIdsCacheForTests } from '@/services/tags/tagFeedIdsCache';
 
 vi.mock('@/stores/articleStore', () => ({
   query: vi.fn(),
@@ -24,6 +26,10 @@ vi.mock('@/stores/feedStore', () => ({
   getCount: vi.fn(),
   getById: vi.fn(),
   getAll: vi.fn(),
+  tags: {
+    listWithFeedIds: vi.fn().mockResolvedValue([]),
+    listFeedIds: vi.fn().mockResolvedValue([]),
+  },
 }));
 
 vi.mock('@/services/feeds/feedsFetcher', async (importOriginal) => {
@@ -156,6 +162,8 @@ describe('FeedContext selectTag', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearFeedMetadataCacheForTests();
+    clearTagFeedIdsCacheForTests();
     latestContext = null;
     vi.stubGlobal('requestIdleCallback', (callback: IdleRequestCallback) => {
       const id = window.setTimeout(() => {
@@ -339,21 +347,21 @@ describe('FeedContext selectTag', () => {
 
     await waitForExpectation(() => {
       expect(latestContext!.selectedTag).toBe('A');
-      expect(latestContext!.isFetchingNew).toBe(false);
     });
+
+    const fetchCallsAfterFirstSelect = (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mock.calls.length;
 
     // Second click (same tag)
     await act(async () => {
       void latestContext!.selectTag('A');
     });
 
-    // Should see isFetchingNew become true
     await waitForExpectation(() => {
-      expect(latestContext!.isFetchingNew).toBe(true);
+      expect((feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mock.calls.length).toBeGreaterThan(fetchCallsAfterFirstSelect);
     });
 
     await waitForExpectation(() => {
-      expect(latestContext!.isFetchingNew).toBe(false);
+      expect(latestContext!.selectedTag).toBe('A');
     });
   });
 
@@ -419,19 +427,16 @@ describe('FeedContext selectTag', () => {
     await waitForExpectation(() => {
       expect(latestContext!.selectedTag).toBe('A');
       expect(latestContext!.articles).toEqual([]);
-      expect(latestContext!.isFetchingNew).toBe(true);
     });
 
     fetchADeferred.resolve(feedNetworkDataResult());
     await waitForExpectation(() => {
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a1']);
-      expect(latestContext!.isFetchingNew).toBe(true);
     });
 
     fetchBDeferred.resolve(feedNetworkDataResult());
     await waitForExpectation(() => {
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-b1', 'hash-a1']);
-      expect(latestContext!.isFetchingNew).toBe(false);
     });
   });
 
@@ -477,13 +482,11 @@ describe('FeedContext selectTag', () => {
 
     await waitForExpectation(() => {
       expect(latestContext!.selectedTag).toBe('A');
-      expect(latestContext!.isFetchingNew).toBe(true);
     });
 
     fetchADeferred.resolve(feedNetworkDataResult());
     await waitForExpectation(() => {
       expect(articleStore.store).toHaveBeenCalledWith('feed-a', refreshedArticles);
-      expect(latestContext!.isFetchingNew).toBe(false);
     });
     expect(latestContext!.articles).toEqual([]);
 
@@ -544,7 +547,7 @@ describe('FeedContext selectTag', () => {
     }
 
     await waitForExpectation(() => {
-      expect(latestContext!.isFetchingNew).toBe(false);
+      expect(latestContext!.selectedTag).toBe('A');
     });
   });
 
@@ -612,7 +615,7 @@ describe('FeedContext selectTag', () => {
 
     secondFetchDeferred.resolve(feedNetworkDataResult());
     await waitForExpectation(() => {
-      expect(latestContext!.isFetchingNew).toBe(false);
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -800,7 +803,6 @@ describe('FeedContext selectTag', () => {
 
     await waitForExpectation(() => {
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a2', 'hash-a1']);
-      expect(latestContext!.isFetchingNew).toBe(false);
     });
 
     // Phase A sqlite publish + Phase B reconcile both ran. The old code skipped
@@ -819,8 +821,9 @@ describe('FeedContext selectTag', () => {
       return Promise.resolve([]);
     });
     (articleStore.query as vi.Mock).mockImplementation((query: any) => {
+      const tagName = query.tagName;
       const feedIds = query.feedIds || [];
-      if (feedIds.includes('feed-a')) {
+      if (tagName === 'A' || feedIds.includes('feed-a')) {
         return Promise.resolve({ articles: stationAArticles, total: stationAArticles.length });
       }
       return Promise.resolve({ articles: [], total: 0 });
@@ -896,13 +899,9 @@ describe('FeedContext selectTag', () => {
     });
 
     // Wait for Phase B to complete: suppress fires after the foreground refresh
-    // settles. Waiting on isFetchingNew===false alone can resolve in the Phase A
-    // window before Phase B starts.
+    // settles.
     await waitForExpectation(() => {
       expect(suppressFeedsForNextCycleSpy).toHaveBeenCalled();
-    });
-    await waitForExpectation(() => {
-      expect(latestContext!.isFetchingNew).toBe(false);
     });
 
     // Foreground cap is 6 on switch, so suppress must cover only those 6 —

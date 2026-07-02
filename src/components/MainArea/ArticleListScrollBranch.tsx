@@ -43,7 +43,6 @@ export const ArticleListScrollBranch = memo(function ArticleListScrollBranch({
     isLoadingArticles,
     isLoadingMoreArticles,
     isSavedListLoading,
-    isGlobalLoadingIndicatorActive,
   } = useFeedCollectionLoading();
   const {
     loadMoreArticles,
@@ -93,7 +92,6 @@ export const ArticleListScrollBranch = memo(function ArticleListScrollBranch({
       isSearchDebouncePending={isSearchDebouncePending}
       debouncedSearchQuery={debouncedSearchQuery}
       isSavedView={isSavedView}
-      isFetchingNew={isGlobalLoadingIndicatorActive}
       newArticleHashes={newArticleHashes}
       articleListScrollRequest={articleListScrollRequest}
       totalFeeds={totalFeeds}

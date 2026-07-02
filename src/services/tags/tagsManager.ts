@@ -1,10 +1,11 @@
 import type { Tag } from '@/types/tag';
 import * as feedStore from '@/stores/feedStore';
+import { resolveFeedIdsForTag, seedTagFeedIdsCache } from '@/services/tags/tagFeedIdsCache';
 
 class TagsManager {
   async getAllTags(): Promise<Tag[]> {
     const rows = await feedStore.tags.listWithFeedIds();
-    return rows.map((row) => ({
+    const tags = rows.map((row) => ({
       name: row.name,
       feedIds: row.feedIds ?? [],
       color: row.color ?? undefined,
@@ -12,6 +13,8 @@ class TagsManager {
       emoji: row.emoji ?? undefined,
       sortOrder: row.sortOrder,
     }));
+    seedTagFeedIdsCache(tags.map((tag) => [tag.name, tag.feedIds]));
+    return tags;
   }
 
   async saveTag(tag: Tag): Promise<void> {
@@ -63,7 +66,7 @@ class TagsManager {
   }
 
   async getFeedsByTag(tagName: string): Promise<string[]> {
-    return feedStore.tags.listFeedIds({ tagName });
+    return resolveFeedIdsForTag(tagName);
   }
 
   async deleteTag(tagName: string): Promise<void> {

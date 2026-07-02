@@ -2,7 +2,6 @@ import { memo, type RefObject } from 'react';
 import { ArticleListWidgets } from './ArticleListWidgets';
 import { ArticleListSearchInput } from './ArticleListSearchInput';
 import { ArticleListHeaderSkeleton } from './ArticleListSkeleton';
-import { ArticleListFetchIndicator } from './ArticleListFetchIndicator';
 
 export interface ArticleListHeaderSectionProps {
   variant: 'common' | 'saved';
@@ -21,7 +20,6 @@ export interface ArticleListHeaderSectionProps {
 }
 
 export const ArticleListHeaderSection = memo(function ArticleListHeaderSection({
-  variant,
   articleListRef,
   hasListScrollOffset,
   isInitialLoading,
@@ -44,7 +42,6 @@ export const ArticleListHeaderSection = memo(function ArticleListHeaderSection({
         isSavedView={isSavedView}
       />
       <div className="article-list-title-content">
-        <ArticleListFetchIndicator variant={variant} />
         <ArticleListSearchInput
           isOpen={isSearchOpen}
           searchQuery={searchQuery}

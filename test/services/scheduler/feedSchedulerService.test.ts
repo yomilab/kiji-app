@@ -112,6 +112,8 @@ vi.mock("@/services/feeds/feedRefreshActivity", () => ({
   feedRefreshActivity: {
     track: vi.fn((_feedId: string, operation: () => Promise<unknown>) => operation()),
     beginQueuedFeeds: vi.fn(() => vi.fn()),
+    clearInteractiveRefreshDeferredTail: vi.fn(),
+    noteInteractiveRefreshBackgroundBatch: vi.fn(),
   },
 }));
 

@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vite
 import { act, renderHook } from '@testing-library/react';
 import type { RefObject } from 'react';
 import { useTransientNewArticleHashes } from '@/components/MainArea/hooks/useTransientNewArticleHashes';
-import { useSourceSwitchGrace } from '@/components/MainArea/hooks/useSourceSwitchGrace';
 import { useArticleListScrollReset } from '@/components/MainArea/hooks/useArticleListScrollReset';
 import { useArticleListScrollOffsetSync } from '@/components/MainArea/hooks/useArticleListScrollOffsetSync';
 import { useArticleListBackgroundScrollSync } from '@/components/MainArea/hooks/useArticleListBackgroundScrollSync';
@@ -89,35 +88,6 @@ describe('SharedArticleList hooks', () => {
       });
 
       expect(result.current.size).toBe(0);
-    });
-  });
-
-  describe('useSourceSwitchGrace', () => {
-    it('triggers the grace callback once per actual source switch', () => {
-      const applySourceSwitchGrace = vi.fn();
-      const { rerender } = renderHook(
-        ({ sourceKey }) => useSourceSwitchGrace({
-          sourceKey,
-          enabled: true,
-          applySourceSwitchGrace,
-        }),
-        {
-          initialProps: {
-            sourceKey: 'feed:1',
-          },
-        }
-      );
-
-      expect(applySourceSwitchGrace).not.toHaveBeenCalled();
-
-      rerender({ sourceKey: 'feed:1' });
-      expect(applySourceSwitchGrace).not.toHaveBeenCalled();
-
-      rerender({ sourceKey: 'feed:2' });
-      expect(applySourceSwitchGrace).toHaveBeenCalledTimes(1);
-
-      rerender({ sourceKey: 'feed:2' });
-      expect(applySourceSwitchGrace).toHaveBeenCalledTimes(1);
     });
   });
 

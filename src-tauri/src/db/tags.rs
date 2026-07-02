@@ -71,11 +71,16 @@ pub fn feeds_tags_detach_feed(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_tags_list_feed_ids(
+pub async fn feeds_tags_list_feed_ids(
     tag_name: String,
     state: State<'_, DbState>,
 ) -> Result<Vec<String>, String> {
-    state.with_connection(|connection| feed_ids_by_tag(connection, &tag_name))
+    let db = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        db.with_connection(|connection| feed_ids_by_tag(connection, &tag_name))
+    })
+    .await
+    .map_err(|error| format!("Tag feed id query task failed: {error}"))?
 }
 
 #[tauri::command(rename_all = "camelCase")]

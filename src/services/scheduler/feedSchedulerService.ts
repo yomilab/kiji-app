@@ -193,6 +193,8 @@ class FeedSchedulerService {
     logger.info('Scheduler', 'Released station-selection scheduler pause', { reason });
 
     if (reason === 'selection-changed') {
+      this.pendingImportRefreshFeedIds = null;
+      feedRefreshActivity.clearInteractiveRefreshDeferredTail();
       if (this.shouldScheduleCatchUpCycle()) {
         this.markPendingCycleTick('catch-up');
       }
@@ -202,7 +204,7 @@ class FeedSchedulerService {
     const lifecycleId = this.lifecycleId;
     if (this.pendingCycleTick || this.shouldScheduleCatchUpCycle()) {
       this.clearPendingCycleTick();
-      void this.runScheduledCycle(lifecycleId);
+      void this.runScheduledCycle(lifecycleId, this.consumePendingImportRefreshScope());
       return;
     }
 
@@ -969,6 +971,9 @@ class FeedSchedulerService {
           cycleId,
           activeCycleId: this.activeCycleId,
         });
+        if (scope.onlyFeedIds && scope.onlyFeedIds.size > 0 && !this.cycleInProgress) {
+          feedRefreshActivity.clearInteractiveRefreshDeferredTail();
+        }
         return;
       }
 
@@ -981,6 +986,10 @@ class FeedSchedulerService {
         mode: this.mode,
         durationMs,
       });
+
+      if (scope.onlyFeedIds && scope.onlyFeedIds.size > 0) {
+        feedRefreshActivity.clearInteractiveRefreshDeferredTail();
+      }
 
       this.maybeRunDeferredCycle(lifecycleId);
     }

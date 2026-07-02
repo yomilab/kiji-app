@@ -142,6 +142,9 @@ export async function runNativeFeedRefresh(
           if (startedFeedIds.length === 0) {
             return;
           }
+          if (activityKind === 'background') {
+            feedRefreshActivity.noteInteractiveRefreshBackgroundBatch(startedFeedIds.length);
+          }
           queuedRelease.release = feedRefreshActivity.beginQueuedFeeds(
             startedFeedIds,
             activityKind,

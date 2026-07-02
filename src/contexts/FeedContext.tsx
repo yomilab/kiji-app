@@ -8,6 +8,12 @@ import * as articleStore from '@/stores/articleStore';
 import { mergeUniqueArticlesByHash } from '@/services/articles/mergeUniqueArticlesByHash';
 import { getInternedFeedMetadataCount } from '@/services/articles/articleListMemory';
 import * as feedStore from '@/stores/feedStore';
+import { getAllFeedMetadataCached } from '@/services/feeds/feedMetadataCache';
+import {
+  ensureTagFeedIdsCache,
+  getCachedFeedIdsForTag,
+  seedTagFeedIdsCache,
+} from '@/services/tags/tagFeedIdsCache';
 import type { Article } from '@/types/article';
 import type { ArticleQuery } from '@/types/articleQuery';
 import { FEED_FETCH_COOLDOWN_MS } from '@/constants';
@@ -102,10 +108,10 @@ const getArticlePaginationCursor = (article: Article | undefined): ArticleQuery[
   return effectiveDate ? { effectiveDate, hash: article.hash } : undefined;
 };
 
-const createFeedIdArticleListQuery = (feedIds: string[], searchText?: string | null): ArticleQuery => {
+const createTagArticleListQuery = (tagName: string, searchText?: string | null): ArticleQuery => {
   const normalizedSearchText = searchText?.trim();
   return {
-    feedIds,
+    tagName,
     limit: SMART_VIEW_ARTICLE_LIMIT,
     sort: DEFAULT_ARTICLE_LIST_SORT,
     ...(normalizedSearchText ? { searchText: normalizedSearchText } : {}),
@@ -171,7 +177,7 @@ interface NavigationState {
 
 interface NavigationActions {
   selectFeed: (feedId: string, feedUrl: string, feedTitle: string, options?: RefreshTriggerOptions) => Promise<void>;
-  selectTag: (tagName: string, options?: RefreshTriggerOptions) => Promise<void>;
+  selectTag: (tagName: string, options?: RefreshTriggerOptions, feedIdsHint?: string[]) => Promise<void>;
   selectSmartView: (viewType: SmartViewType) => Promise<void>;
   clearFeedSelection: () => void;
   openFeedEditView: (target?: FeedEditTarget) => void;
@@ -186,7 +192,6 @@ interface CollectionState {
   isLoadingMoreArticles: boolean;
   isLoadMoreInFlight: boolean;
   isSavedListLoading: boolean;
-  isFetchingNew: boolean;
   newArticleCount: number;
   newArticleHashes: Set<string>;
   articleListScrollRequest: ArticleListScrollRequest | null;
@@ -203,10 +208,7 @@ export type CollectionLoadingState = Pick<
   | 'isLoadingMoreArticles'
   | 'isLoadMoreInFlight'
   | 'isSavedListLoading'
-  | 'isFetchingNew'
-> & {
-  isGlobalLoadingIndicatorActive: boolean;
-};
+>;
 
 interface ArticleListViewportSnapshot {
   isSearchActive: boolean;
@@ -452,7 +454,6 @@ function collectionReducer(state: CollectionState, action: CollectionAction): Co
         && areArticleListsEquivalent(state.articles, action.payload.list)
         && !state.isLoadingArticles
         && !state.isSavedListLoading
-        && !state.isFetchingNew
         && !state.isLoadingMoreArticles
         && !state.isLoadMoreInFlight
       ) {
@@ -467,7 +468,6 @@ function collectionReducer(state: CollectionState, action: CollectionAction): Co
         articleListScrollRequest: null,
         isLoadingArticles: false,
         isSavedListLoading: false,
-        isFetchingNew: false,
         isLoadingMoreArticles: false,
         isLoadMoreInFlight: false,
       };
@@ -477,7 +477,6 @@ function collectionReducer(state: CollectionState, action: CollectionAction): Co
         && state.articlesTotalCount === 0
         && state.isLoadingArticles
         && !state.isSavedListLoading
-        && !state.isFetchingNew
         && !state.isLoadingMoreArticles
         && !state.isLoadMoreInFlight
       ) {
@@ -492,7 +491,6 @@ function collectionReducer(state: CollectionState, action: CollectionAction): Co
         articleListScrollRequest: null,
         isLoadingArticles: true,
         isSavedListLoading: false,
-        isFetchingNew: false,
         isLoadingMoreArticles: false,
         isLoadMoreInFlight: false,
       };
@@ -618,7 +616,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     isLoadingMoreArticles: false,
     isLoadMoreInFlight: false,
     isSavedListLoading: false,
-    isFetchingNew: false,
     newArticleCount: 0,
     newArticleHashes: new Set<string>(),
     articleListScrollRequest: null,
@@ -638,6 +635,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
 
   const selectionTokenRef = useRef(0);
+  const immediateSwitchPaintTokenRef = useRef(0);
   const selectionAbortControllerRef = useRef<AbortController | null>(null);
   const selectionSchedulerPauseTokenRef = useRef<number | null>(null);
   const interactiveRefreshScopeTokenRef = useRef(0);
@@ -666,6 +664,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const schedulerUiFlushQueuedRef = useRef(false);
   const stationUiBatchTimerRef = useRef<number | null>(null);
   const pendingStationRefreshSourceKeyRef = useRef<string | null>(null);
+  const pendingSwitchVisibleReconcileRef = useRef<{
+    token: number;
+    sourceKey: string;
+    tagQuery: ArticleQuery;
+  } | null>(null);
   const stationSwitchSideWorkGenerationRef = useRef(0);
   const cancelStationSwitchIdleWorkRef = useRef<(() => void) | null>(null);
   const articleViewOverlayPhaseRef = useRef<ArticleViewOverlayPhase>('closed');
@@ -989,6 +992,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     selectionAbortControllerRef.current?.abort();
     pendingLoadMoreCommitMetricRef.current = null;
     pendingBackgroundRefreshSourceKeyRef.current = null;
+    pendingSwitchVisibleReconcileRef.current = null;
     clearStationUiRefreshTimer();
     cancelStationSwitchSideWork();
     cancelSourceSelectionRefreshSchedule();
@@ -1190,6 +1194,58 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       || articleViewOverlayPhaseRef.current === 'closing';
   }, []);
 
+  const reconcileSwitchVisiblePage = useCallback(async (args: {
+    token: number;
+    sourceKey: string;
+    tagQuery: ArticleQuery;
+  }): Promise<void> => {
+    const { token, sourceKey, tagQuery } = args;
+    if (!isSelectionActive(token)) {
+      return;
+    }
+
+    if (
+      articleListScrollActiveRef.current
+      || loadMoreInFlightRef.current
+      || articleListSearchActiveRef.current
+    ) {
+      pendingSwitchVisibleReconcileRef.current = { token, sourceKey, tagQuery };
+      return;
+    }
+
+    pendingSwitchVisibleReconcileRef.current = null;
+
+    const visibleCount = Math.max(currentArticlesRef.current.length, SMART_VIEW_ARTICLE_LIMIT);
+    const { articles: fresh, total: freshTotal } = await articleStore.query({ ...tagQuery, limit: visibleCount });
+    if (!isSelectionActive(token)) {
+      return;
+    }
+
+    dispatchArticlesTransitionIfChanged(fresh, freshTotal);
+  }, [dispatchArticlesTransitionIfChanged, isSelectionActive]);
+
+  const flushPendingSwitchVisibleReconcileIfIdle = useCallback((): void => {
+    const pendingReconcile = pendingSwitchVisibleReconcileRef.current;
+    if (!pendingReconcile) {
+      return;
+    }
+
+    const activeSource = activeSourceRef.current;
+    if (!activeSource || pendingReconcile.sourceKey !== activeSource.key) {
+      return;
+    }
+
+    if (
+      articleListScrollActiveRef.current
+      || loadMoreInFlightRef.current
+      || articleListSearchActiveRef.current
+    ) {
+      return;
+    }
+
+    void reconcileSwitchVisiblePage(pendingReconcile);
+  }, [reconcileSwitchVisiblePage]);
+
   const applyBackgroundRefreshForSource = useCallback(async (source: RefreshSourceDescriptor): Promise<void> => {
     if (source.type === 'smart' && source.viewType === 'saved') {
       return;
@@ -1342,7 +1398,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     token: number,
     maxEligible?: number,
   ): Promise<string[]> => {
-    const allFeeds = await feedStore.getAll();
+    const allFeeds = await getAllFeedMetadataCached();
     const feedById = new Map(allFeeds.map((feed) => [feed.id, feed]));
     const eligibleFeedIds: string[] = [];
 
@@ -1386,6 +1442,34 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return 0;
     }
 
+    // Native station switch: schedule a scoped high-priority background cycle
+    // instead of blocking Phase B on a foreground native await. Keeps scroll
+    // responsive while activeStationFocus front-loads this station's feeds.
+    if (intent === 'switch' && isNativeFeedIngestionEnabled()) {
+      if (!isSelectionActive(token)) {
+        return 0;
+      }
+
+      sidebarSwitchTrace.mark(token, 'station-network-refresh-started', {
+        feedCount: feedIds.length,
+        scheduledBackground: true,
+      });
+      feedRefreshActivity.beginQueuedFeeds([], 'foreground', { scopeTotal: feedIds.length });
+      interactiveRefreshScopeTokenRef.current = feedRefreshActivity.getInteractiveRefreshScopeGeneration();
+      feedRefreshActivity.markInteractiveRefreshDeferredTail(true, feedIds.length);
+      feedScheduler.boostMany(feedIds);
+      sidebarSwitchTrace.mark(token, 'station-refresh-scheduled', {
+        feedCount: feedIds.length,
+      });
+      sidebarSwitchTrace.markDuration(
+        token,
+        'station-network-refresh',
+        0,
+        { insertedTotal: 0, deferredFeedCount: feedIds.length, scheduledBackground: true },
+      );
+      return 0;
+    }
+
     const eligibleFeedIds = await traceSidebarSwitchAsync(
       token,
       'eligible-feeds-resolved',
@@ -1399,15 +1483,29 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         : resolveEligibleStationFeedIds(feedIds, options, token)),
       { feedCount: feedIds.length, intent },
     );
-    if (eligibleFeedIds.length === 0 || !isSelectionActive(token)) {
-      return 0;
-    }
 
     const foregroundFeedIds = eligibleFeedIds;
     const foregroundFeedIdSet = new Set(foregroundFeedIds);
     const deferredFeedIds = intent === 'switch'
       ? feedIds.filter((feedId) => !foregroundFeedIdSet.has(feedId))
       : [];
+
+    if (eligibleFeedIds.length === 0) {
+      if (deferredFeedIds.length > 0 && isSelectionActive(token)) {
+        feedRefreshActivity.beginQueuedFeeds([], 'foreground', { scopeTotal: feedIds.length });
+        interactiveRefreshScopeTokenRef.current = feedRefreshActivity.getInteractiveRefreshScopeGeneration();
+        feedRefreshActivity.markInteractiveRefreshDeferredTail(true, deferredFeedIds.length);
+        feedScheduler.boostMany(deferredFeedIds);
+        sidebarSwitchTrace.mark(token, 'station-refresh-deferred', {
+          deferredFeedCount: deferredFeedIds.length,
+        });
+      }
+      return 0;
+    }
+
+    if (!isSelectionActive(token)) {
+      return 0;
+    }
 
     // Atomic: record the true switch scope (station feed count, NOT the
     // foreground cap) in the same publish as the foreground queue so the first
@@ -1579,6 +1677,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       releaseQueuedFeed();
       if (deferredFeedIds.length > 0 && isSelectionActive(token)) {
+        feedRefreshActivity.markInteractiveRefreshDeferredTail(true, deferredFeedIds.length);
         feedScheduler.boostMany(deferredFeedIds);
         sidebarSwitchTrace.mark(token, 'station-refresh-deferred', {
           deferredFeedCount: deferredFeedIds.length,
@@ -1632,6 +1731,86 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [requestCloseArticle, setActiveArticle]);
 
+  const applyImmediateSelectionSwitchPaint = useCallback((sourceKey: string) => {
+    const restored = restoreSourceArticleSnapshot(sourceKey);
+    if (!restored) {
+      collectionDispatch({ type: 'RESET_FOR_SOURCE_SWITCH' });
+    } else {
+      dispatchArticlesTransitionIfChanged(restored.list, restored.total);
+      collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+    }
+  }, [dispatchArticlesTransitionIfChanged, restoreSourceArticleSnapshot]);
+
+  const scheduleDeferredSwitchSqlitePage = useCallback((args: {
+    token: number;
+    sourceKey: string;
+    query: ArticleQuery;
+    taggedFeedCount: number;
+    limit?: number;
+    interactionExtra?: Record<string, unknown>;
+  }) => {
+    const { token, sourceKey, query, taggedFeedCount, limit, interactionExtra } = args;
+    const sideWorkGeneration = stationSwitchSideWorkGenerationRef.current;
+    void (async () => {
+      const painted = await waitForArticleListPaintGate(isSelectionActive, token);
+      if (!painted || !isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
+        return;
+      }
+
+      await traceSidebarSwitchAsync(
+        token,
+        'sqlite-query-deferred',
+        async () => {
+          if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
+            return;
+          }
+
+          const queryLimit = Math.min(
+            limit ?? SMART_VIEW_ARTICLE_LIMIT,
+            STATION_SWITCH_SQLITE_RECONCILE_LIMIT,
+          );
+          const { articles: stored } = await articleStore.query({
+            ...query,
+            limit: queryLimit,
+            // H12: includeTotal: true runs COUNT(DISTINCT) on large stations and
+            // regresses skeleton-load switch freeze — floor total until reconcile.
+            includeTotal: false,
+          });
+          if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
+            return;
+          }
+
+          // Full page without total: use row count as a floor until reconcile.
+          const resolvedTotal = stored.length < queryLimit
+            ? stored.length
+            : Math.max(stored.length, nonSearchArticlesTotalCountRef.current);
+
+          const dispatchStartedAt = performance.now();
+          dispatchArticlesTransitionIfChanged(stored, resolvedTotal);
+          collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+          sidebarSwitchTrace.markDuration(
+            token,
+            'dispatch-articles',
+            performance.now() - dispatchStartedAt,
+            { articleCount: stored.length, deferred: true },
+          );
+          interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
+            cachedArticleCount: stored.length,
+            cachedArticleTotal: resolvedTotal,
+            taggedFeedCount,
+            deferredSqlite: true,
+            ...interactionExtra,
+          });
+        },
+        { limit: limit ?? SMART_VIEW_ARTICLE_LIMIT, taggedFeedCount, deferred: true },
+      );
+    })();
+  }, [
+    dispatchArticlesTransitionIfChanged,
+    isSelectionActive,
+    isStationSwitchSideWorkCurrent,
+  ]);
+
   const syncArticleListViewport = useCallback((snapshot: ArticleListViewportSnapshot) => {
     const wasSearchActive = articleListSearchActiveRef.current;
 
@@ -1654,15 +1833,18 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         feedScheduler.setRuntimeUiState({ scrollActive: false });
 
         const activeSource = activeSourceRef.current;
-        if (
-          !activeSource
-          || articleListSearchActiveRef.current
-          || pendingBackgroundRefreshSourceKeyRef.current !== activeSource.key
-        ) {
+        if (!activeSource || articleListSearchActiveRef.current) {
           return;
         }
 
-        void applyBackgroundRefreshForSource(activeSource);
+        const pendingReconcile = pendingSwitchVisibleReconcileRef.current;
+        if (pendingReconcile && pendingReconcile.sourceKey === activeSource.key) {
+          void reconcileSwitchVisiblePage(pendingReconcile);
+        }
+
+        if (pendingBackgroundRefreshSourceKeyRef.current === activeSource.key) {
+          void applyBackgroundRefreshForSource(activeSource);
+        }
       }, BACKGROUND_REFRESH_SCROLL_IDLE_DELAY_MS);
     }
 
@@ -1680,7 +1862,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     void applyBackgroundRefreshForSource(activeSource);
-  }, [applyBackgroundRefreshForSource]);
+  }, [applyBackgroundRefreshForSource, reconcileSwitchVisiblePage]);
 
   useDependencyEffect(() => {
     const pending = pendingLoadMoreCommitMetricRef.current;
@@ -1730,7 +1912,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: true } });
       sidebarSwitchTrace.mark(token, 'phase-b-started', { kind: 'feed' });
       const refreshBlock = refreshOptions.forceNetwork
         ? null
@@ -1790,7 +1971,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       clearError();
     } finally {
       if (isSelectionActive(token)) {
-        collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: false, isLoadingArticles: false } });
+        collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
       }
       completeSelectionSwitchNetworkPriority(token);
       sidebarSwitchTrace.markDuration(
@@ -1829,7 +2010,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     let insertedCount = 0;
     try {
-      collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: true } });
       sidebarSwitchTrace.mark(token, 'phase-b-started', { kind: 'tag' });
       insertedCount = await refreshStationFeeds(
         feedIds,
@@ -1846,26 +2026,18 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      const visibleCount = Math.max(currentArticlesRef.current.length, SMART_VIEW_ARTICLE_LIMIT);
       let freshArticleCount = currentArticlesRef.current.length;
       let freshArticleTotal = nonSearchArticlesTotalCountRef.current;
       if (isArticleViewTransitioning()) {
         pendingBackgroundRefreshSourceKeyRef.current = sourceKey;
       } else {
-        // Always reconcile the visible page against SQLite after a station
-        // refresh. Background cycles can insert rows for this station while the
-        // cached snapshot is stale, and a foreground/manual refresh that finds
-        // the feeds already current inserts 0 but the snapshot still needs to
-        // pick up those prior background inserts. dispatchArticlesTransitionIfChanged
-        // skips the publish when the resulting list is equivalent, so the no-op
-        // case stays cheap.
-        const { articles: fresh, total: freshTotal } = await articleStore.query({ ...tagQuery, limit: visibleCount });
-        if (!isSelectionActive(token)) {
-          return;
-        }
-        freshArticleCount = fresh.length;
-        freshArticleTotal = freshTotal;
-        dispatchArticlesTransitionIfChanged(fresh, freshTotal);
+        await reconcileSwitchVisiblePage({
+          token,
+          sourceKey,
+          tagQuery,
+        });
+        freshArticleCount = currentArticlesRef.current.length;
+        freshArticleTotal = nonSearchArticlesTotalCountRef.current;
       }
 
       interactionPerformance.markTimedInteractionStage('sidebar-switch', `tag:${tagName}`, 'freshReady', {
@@ -1887,7 +2059,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       opmlWorkflowService.scheduleMissingFaviconsAfterStationSelection(feedIds);
     } finally {
       if (isSelectionActive(token)) {
-        collectionDispatch({ type: 'SET_LOADING', payload: { isFetchingNew: false, isLoadingArticles: false } });
+        collectionDispatch({
+          type: 'SET_LOADING',
+          payload: { isLoadingArticles: false },
+        });
       }
       feedRefreshActivity.clearInteractiveRefreshScope(interactiveRefreshScopeTokenRef.current);
       completeSelectionSwitchNetworkPriority(token);
@@ -1901,6 +2076,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     dispatchArticlesTransitionIfChanged,
     isArticleViewTransitioning,
     isSelectionActive,
+    reconcileSwitchVisiblePage,
     refreshStationFeeds,
   ]);
 
@@ -1918,57 +2094,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, [isSelectionActive, runFeedNetworkRefreshPhase, runTagNetworkRefreshPhase]);
 
-  // Phase A stored-content publish for the inline SQLite path. Shared by
-  // handleFeedSelection and the normal (non-snapshot, non-large-cold) branch of
-  // handleTagSelection. The snapshot path publishes via RESTORE_SOURCE_SNAPSHOT
-  // and the large-cold path schedules sqlite-query-deferred after the paint
-  // gate, so neither uses this helper. Preserves the sqlite-query trace span
-  // (query only) and the separate dispatch-articles duration mark.
-  const publishStoredSqlitePage = useCallback(async (args: {
-    token: number;
-    sourceKey: string;
-    perfMark: string;
-    query: ArticleQuery;
-    limit?: number;
-    traceContext?: Record<string, unknown>;
-    interactionExtra?: Record<string, unknown>;
-  }): Promise<boolean> => {
-    const { token, sourceKey, perfMark, query, limit, traceContext, interactionExtra } = args;
-    const { articles: stored, total } = await traceSidebarSwitchAsync(
-      token,
-      'sqlite-query',
-      () => articleStore.query(limit ? { ...query, limit } : query),
-      traceContext,
-    );
-    if (!isSelectionActive(token)) {
-      abortSelectionSwitchPriority(token);
-      return false;
-    }
-    const dispatchStartedAt = performance.now();
-    dispatchArticlesTransitionIfChanged(stored, total);
-    sidebarSwitchTrace.markDuration(
-      token,
-      'dispatch-articles',
-      performance.now() - dispatchStartedAt,
-      { articleCount: stored.length },
-    );
-    collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
-    interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
-      cachedArticleCount: stored.length,
-      cachedArticleTotal: total,
-      ...interactionExtra,
-    });
-    if (HAS_PERFORMANCE_API) {
-      performance.mark(`${perfMark}:cached-ready`);
-      performance.measure(`${perfMark}:to-cached`, `${perfMark}:start`, `${perfMark}:cached-ready`);
-    }
-    return true;
-  }, [
-    abortSelectionSwitchPriority,
-    dispatchArticlesTransitionIfChanged,
-    isSelectionActive,
-  ]);
-
   const handleFeedSelection = useCallback(async (
     feedId: string,
     shouldReset: boolean,
@@ -1978,36 +2103,80 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const perfMark = `select-feed:${feedId}:${token}`;
     const sourceKey = `feed:${feedId}`;
     const feedQuery = createArticleListQuery({ feedIds: [feedId] });
+    let restoredSnapshot: SourceArticleListSnapshot | null = null;
 
     if (HAS_PERFORMANCE_API) {
       performance.mark(`${perfMark}:start`);
     }
 
     if (shouldReset) {
-      collectionDispatch({ type: 'RESET_FOR_SOURCE_SWITCH' });
+      const immediatePaintApplied = immediateSwitchPaintTokenRef.current === token;
+      restoredSnapshot = restoreSourceArticleSnapshot(sourceKey);
+      if (restoredSnapshot) {
+        sidebarSwitchTrace.mark(token, 'snapshot-restored', {
+          cachedArticleCount: restoredSnapshot.list.length,
+          cachedArticleTotal: restoredSnapshot.total,
+        });
+      } else if (!immediatePaintApplied) {
+        collectionDispatch({ type: 'RESET_FOR_SOURCE_SWITCH' });
+      }
       setActiveArticle(null);
       sidebarSwitchTrace.mark(token, 'source-reset');
     }
 
-    const stillActive = await traceSidebarSwitchAsync(token, 'coalesce-yield', async () => {
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 0);
+    if (shouldReset && immediateSwitchPaintTokenRef.current !== token) {
+      const stillActive = await traceSidebarSwitchAsync(token, 'coalesce-yield', async () => {
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 0);
+        });
+        return isSelectionActive(token);
       });
-      return isSelectionActive(token);
-    });
-    if (shouldReset && !stillActive) return;
+      if (!stillActive) return;
+    }
 
     if (shouldReset) {
       try {
-        const published = await publishStoredSqlitePage({
-          token,
-          sourceKey,
-          perfMark,
-          query: feedQuery,
-          traceContext: { feedId },
-        });
-        if (!published) return;
         lastQueryRef.current = feedQuery;
+
+        if (restoredSnapshot) {
+          interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'snapshotReady', {
+            cachedArticleCount: restoredSnapshot.list.length,
+            cachedArticleTotal: restoredSnapshot.total,
+            taggedFeedCount: 1,
+          });
+          interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
+            cachedArticleCount: restoredSnapshot.list.length,
+            cachedArticleTotal: restoredSnapshot.total,
+            taggedFeedCount: 1,
+            fromSnapshot: true,
+          });
+          sidebarSwitchTrace.mark(token, 'articles-published', {
+            fromSnapshot: true,
+            articleCount: restoredSnapshot.list.length,
+          });
+
+          if (HAS_PERFORMANCE_API) {
+            performance.mark(`${perfMark}:cached-ready`);
+            performance.measure(`${perfMark}:to-cached`, `${perfMark}:start`, `${perfMark}:cached-ready`);
+          }
+
+          requestSwitchNetworkRefresh({
+            kind: 'feed',
+            token,
+            sourceKey,
+            intent: 'switch',
+            refreshOptions: options,
+            feedId,
+            feedQuery,
+            perfMark,
+          });
+          return;
+        }
+
+        sidebarSwitchTrace.mark(token, 'articles-published', {
+          deferredSqlite: true,
+          articleCount: 0,
+        });
 
         requestSwitchNetworkRefresh({
           kind: 'feed',
@@ -2018,6 +2187,14 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           feedId,
           feedQuery,
           perfMark,
+        });
+
+        scheduleDeferredSwitchSqlitePage({
+          token,
+          sourceKey,
+          query: feedQuery,
+          taggedFeedCount: 1,
+          interactionExtra: { feedId },
         });
       } catch {
         clearError();
@@ -2040,9 +2217,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     abortSelectionSwitchPriority,
     clearError,
     isSelectionActive,
-    publishStoredSqlitePage,
     requestSwitchNetworkRefresh,
+    restoreSourceArticleSnapshot,
     runFeedNetworkRefreshPhase,
+    scheduleDeferredSwitchSqlitePage,
     setActiveArticle,
   ]);
 
@@ -2061,20 +2239,21 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     if (shouldReset) {
+      const immediatePaintApplied = immediateSwitchPaintTokenRef.current === token;
       restoredSnapshot = restoreSourceArticleSnapshot(sourceKey);
       if (restoredSnapshot) {
         sidebarSwitchTrace.mark(token, 'snapshot-restored', {
           cachedArticleCount: restoredSnapshot.list.length,
           cachedArticleTotal: restoredSnapshot.total,
         });
-      } else {
+      } else if (!immediatePaintApplied) {
         collectionDispatch({ type: 'RESET_FOR_SOURCE_SWITCH' });
       }
       closeActiveArticleForSourceSwitch();
       sidebarSwitchTrace.mark(token, 'article-close-requested');
     }
 
-    if (shouldReset) {
+    if (shouldReset && immediateSwitchPaintTokenRef.current !== token) {
       const stillActive = await traceSidebarSwitchAsync(token, 'coalesce-yield', async () => {
         await new Promise<void>((resolve) => {
           window.setTimeout(resolve, 0);
@@ -2087,26 +2266,43 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     try {
-      const feedIds = await traceSidebarSwitchAsync(
-        token,
-        'feed-ids-resolved',
-        () => tagsManager.getFeedsByTag(tagName),
-        { tagName },
-      );
+      const tagQuery = createTagArticleListQuery(tagName);
+      lastQueryRef.current = tagQuery;
+
+      if (shouldReset && !restoredSnapshot) {
+        sidebarSwitchTrace.mark(token, 'cold-station-deferred-sqlite', { tagName });
+        sidebarSwitchTrace.mark(token, 'articles-published', {
+          deferredSqlite: true,
+          articleCount: 0,
+        });
+        scheduleDeferredSwitchSqlitePage({
+          token,
+          sourceKey,
+          query: tagQuery,
+          taggedFeedCount: 0,
+          limit: SMART_VIEW_ARTICLE_LIMIT,
+          interactionExtra: { tagName },
+        });
+      }
+
+      let feedIds = getCachedFeedIdsForTag(tagName);
+      if (feedIds) {
+        sidebarSwitchTrace.mark(token, 'feed-ids-cached', {
+          tagName,
+          feedCount: feedIds.length,
+        });
+      } else {
+        feedIds = await traceSidebarSwitchAsync(
+          token,
+          'feed-ids-resolved',
+          () => tagsManager.getFeedsByTag(tagName),
+          { tagName },
+        );
+      }
       if (!isSelectionActive(token)) return;
       feedScheduler.setActiveStationFocus(sourceKey, feedIds);
 
-      const tagQuery = createFeedIdArticleListQuery(feedIds);
-      lastQueryRef.current = tagQuery;
-
       if (shouldReset) {
-        const cachedVisibleCount = restoredSnapshot
-          ? Math.min(
-            Math.max(restoredSnapshot.list.length, SMART_VIEW_ARTICLE_LIMIT),
-            STATION_SWITCH_SQLITE_RECONCILE_LIMIT,
-          )
-          : SMART_VIEW_ARTICLE_LIMIT;
-
         if (restoredSnapshot) {
           interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'snapshotReady', {
             cachedArticleCount: restoredSnapshot.list.length,
@@ -2155,72 +2351,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               taggedFeedCount: feedIds.length,
             });
           }
-          sidebarSwitchTrace.mark(token, 'articles-published', {
-            deferredSqlite: true,
-            articleCount: 0,
-          });
-
-          requestSwitchNetworkRefresh({
-            kind: 'tag',
-            token,
-            sourceKey,
-            intent: 'switch',
-            refreshOptions: options,
-            tagName,
-            feedIds,
-            tagQuery,
-            shouldReset,
-            perfMark,
-          });
-
-          void (async () => {
-            const sideWorkGeneration = stationSwitchSideWorkGenerationRef.current;
-            const painted = await waitForArticleListPaintGate(isSelectionActive, token);
-            if (!painted || !isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
-              return;
-            }
-
-            await traceSidebarSwitchAsync(token, 'sqlite-query-deferred', async () => {
-              if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
-                return;
-              }
-
-              const queryLimit = Math.min(cachedVisibleCount, STATION_SWITCH_SQLITE_RECONCILE_LIMIT);
-              const { articles: stored, total } = await articleStore.query({ ...tagQuery, limit: queryLimit });
-              if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
-                return;
-              }
-
-              const dispatchStartedAt = performance.now();
-              dispatchArticlesTransitionIfChanged(stored, total);
-              collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
-              sidebarSwitchTrace.markDuration(
-                token,
-                'dispatch-articles',
-                performance.now() - dispatchStartedAt,
-                { articleCount: stored.length, deferred: true },
-              );
-              interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
-                cachedArticleCount: stored.length,
-                cachedArticleTotal: total,
-                taggedFeedCount: feedIds.length,
-                deferredSqlite: true,
-              });
-            }, { limit: cachedVisibleCount, taggedFeedCount: feedIds.length, deferred: true });
-          })();
-          return;
         }
-
-        const published = await publishStoredSqlitePage({
-          token,
-          sourceKey,
-          perfMark,
-          query: tagQuery,
-          limit: cachedVisibleCount,
-          traceContext: { limit: cachedVisibleCount, taggedFeedCount: feedIds.length },
-          interactionExtra: { taggedFeedCount: feedIds.length },
-        });
-        if (!published) return;
 
         requestSwitchNetworkRefresh({
           kind: 'tag',
@@ -2259,10 +2390,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     closeActiveArticleForSourceSwitch,
     dispatchArticlesTransitionIfChanged,
     isSelectionActive,
-    publishStoredSqlitePage,
     requestSwitchNetworkRefresh,
     restoreSourceArticleSnapshot,
     runTagNetworkRefreshPhase,
+    scheduleDeferredSwitchSqlitePage,
   ]);
 
   const handleSmartViewSelection = useCallback(async (type: SmartViewType, shouldReset: boolean, token: number) => {
@@ -2270,7 +2401,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       collectionDispatch({ type: 'RESET_ARTICLES' });
       collectionDispatch({
         type: 'SET_LOADING',
-        payload: { isLoadingArticles: false, isSavedListLoading: false, isFetchingNew: false },
+        payload: { isLoadingArticles: false, isSavedListLoading: false, },
       });
       setActiveArticle(null);
       lastQueryRef.current = null;
@@ -2281,7 +2412,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (type === 'saved') {
       collectionDispatch({
         type: 'SET_LOADING',
-        payload: { isLoadingArticles: false, isSavedListLoading: true, isFetchingNew: false },
+        payload: { isLoadingArticles: false, isSavedListLoading: true, },
       });
 
       try {
@@ -2304,7 +2435,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       } finally {
         if (isSelectionActive(token)) {
-          collectionDispatch({ type: 'SET_LOADING', payload: { isSavedListLoading: false, isFetchingNew: false } });
+          collectionDispatch({ type: 'SET_LOADING', payload: { isSavedListLoading: false, } });
         }
       }
       return;
@@ -2312,7 +2443,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     collectionDispatch({
       type: 'SET_LOADING',
-      payload: { isLoadingArticles: true, isSavedListLoading: false, isFetchingNew: false },
+      payload: { isLoadingArticles: true, isSavedListLoading: false, },
     });
 
     try {
@@ -2334,7 +2465,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (isSelectionActive(token)) {
         collectionDispatch({
           type: 'SET_LOADING',
-          payload: { isLoadingArticles: false, isSavedListLoading: false, isFetchingNew: false },
+          payload: { isLoadingArticles: false, isSavedListLoading: false, },
         });
       }
     }
@@ -2372,15 +2503,26 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     const token = beginSelectionRequest();
+    if (!isSameFeed) {
+      applyImmediateSelectionSwitchPaint(`feed:${feedId}`);
+      immediateSwitchPaintTokenRef.current = token;
+    }
     sidebarSwitchTrace.begin(token, `feed:${feedId}`, 'feed', {
       sourceId: feedId,
       sourceLabel: title,
       isSameSource: isSameFeed,
     });
     void handleFeedSelection(feedId, !isSameFeed, token, options);
-  }, [beginSelectionRequest, clearArticleListScrollIdleState, handleFeedSelection]);
+  }, [applyImmediateSelectionSwitchPaint, beginSelectionRequest, clearArticleListScrollIdleState, handleFeedSelection]);
 
-  const selectTag = useCallback(async (tagName: string, options: RefreshTriggerOptions = {}) => {
+  const selectTag = useCallback(async (
+    tagName: string,
+    options: RefreshTriggerOptions = {},
+    feedIdsHint?: string[],
+  ) => {
+    if (feedIdsHint !== undefined) {
+      seedTagFeedIdsCache([[tagName, feedIdsHint]]);
+    }
     const isSameTag = tagName === prevNavRef.current.tag && tagName !== null;
     if (!isSameTag) {
       feedScheduler.clearActiveStationFocus();
@@ -2400,13 +2542,17 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     const token = beginSelectionRequest();
+    if (!isSameTag) {
+      applyImmediateSelectionSwitchPaint(`tag:${tagName}`);
+      immediateSwitchPaintTokenRef.current = token;
+    }
     sidebarSwitchTrace.begin(token, `tag:${tagName}`, 'tag', {
       sourceId: tagName,
       sourceLabel: tagName,
       isSameSource: isSameTag,
     });
     void handleTagSelection(tagName, !isSameTag, token, options);
-  }, [beginSelectionRequest, clearArticleListScrollIdleState, handleTagSelection]);
+  }, [applyImmediateSelectionSwitchPaint, beginSelectionRequest, clearArticleListScrollIdleState, handleTagSelection]);
 
   const selectSmartView = useCallback(async (viewType: SmartViewType) => {
     feedScheduler.clearActiveStationFocus();
@@ -2441,8 +2587,12 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     selectionTokenRef.current += 1;
     navigationDispatch({ type: 'CLEAR_SELECTION' });
     collectionDispatch({ type: 'RESET_ARTICLES' });
-    collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false, isSavedListLoading: false, isFetchingNew: false } });
+    collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false, isSavedListLoading: false, } });
   }, [abortSelectionSwitchPriority, clearArticleListScrollIdleState]);
+
+  useMountEffect(() => {
+    void ensureTagFeedIdsCache();
+  });
 
   useMountEffect(() => {
     return sourceSelectionBus.subscribe((event) => {
@@ -2502,7 +2652,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     selectionTokenRef.current += 1;
     navigationDispatch({ type: 'OPEN_EDIT_VIEW', payload: target ?? null });
     collectionDispatch({ type: 'RESET_ARTICLES' });
-    collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false, isSavedListLoading: false, isFetchingNew: false } });
+    collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false, isSavedListLoading: false, } });
   }, [clearArticleListScrollIdleState]);
 
   const closeFeedEditView = useCallback(() => {
@@ -2570,7 +2720,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         payload: {
           isLoadingArticles: false,
           isSavedListLoading: false,
-          isFetchingNew: false,
           isLoadingMoreArticles: false,
           isLoadMoreInFlight: false,
         },
@@ -2591,7 +2740,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       payload: {
         isLoadingArticles: false,
         isSavedListLoading: false,
-        isFetchingNew: false,
         isLoadingMoreArticles: false,
         isLoadMoreInFlight: false,
       },
@@ -2755,12 +2903,14 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             : {}),
         },
       });
+      flushPendingSwitchVisibleReconcileIfIdle();
     }
   }, [
     collectionState.articles.length,
     collectionState.articlesTotalCount,
     collectionState.isLoadingMoreArticles,
     createArticleQueryForSource,
+    flushPendingSwitchVisibleReconcileIfIdle,
     queueLoadMoreCommitMetric,
     navigationState.selectedSmartView
   ]);
@@ -2936,10 +3086,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     clearFeedEditTarget,
   }), [navigationState, selectFeed, selectTag, selectSmartView, clearFeedSelection, openFeedEditView, closeFeedEditView, clearFeedEditTarget]);
 
-  const isGlobalLoadingIndicatorActive = collectionState.isFetchingNew
-    || collectionState.isSavedListLoading
-    || (collectionState.isLoadingArticles && navigationState.selectedSmartView !== 'saved');
-
   const collectionArticlesValue = useMemo((): CollectionArticlesState => ({
     articles: collectionState.articles,
     articlesTotalCount: collectionState.articlesTotalCount,
@@ -2959,15 +3105,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     isLoadingMoreArticles: collectionState.isLoadingMoreArticles,
     isLoadMoreInFlight: collectionState.isLoadMoreInFlight,
     isSavedListLoading: collectionState.isSavedListLoading,
-    isFetchingNew: collectionState.isFetchingNew,
-    isGlobalLoadingIndicatorActive,
   }), [
     collectionState.isLoadingArticles,
     collectionState.isLoadingMoreArticles,
     collectionState.isLoadMoreInFlight,
     collectionState.isSavedListLoading,
-    collectionState.isFetchingNew,
-    isGlobalLoadingIndicatorActive,
   ]);
 
   const collectionActionsValue = useMemo((): CollectionActions => ({

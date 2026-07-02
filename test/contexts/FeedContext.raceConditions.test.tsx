@@ -9,6 +9,9 @@ import { feedsFetcher } from '@/services/feeds/feedsFetcher';
 import { savedArticlesService } from '@/services/saved/savedArticlesService';
 import * as articleStore from '@/stores/articleStore';
 import * as feedStore from '@/stores/feedStore';
+import { convertFeedItemsToArticles } from '@/services/articles/articleConverter';
+import { clearTagFeedIdsCacheForTests } from '@/services/tags/tagFeedIdsCache';
+import { clearFeedMetadataCacheForTests } from '@/services/feeds/feedMetadataCache';
 import { feedNetworkDataResult } from '../helpers/feedNetworkFetchMock';
 
 vi.mock('@/stores/articleStore', () => ({
@@ -22,6 +25,11 @@ vi.mock('@/stores/articleStore', () => ({
 vi.mock('@/stores/feedStore', () => ({
   getCount: vi.fn(),
   getById: vi.fn(),
+  getAll: vi.fn(),
+  tags: {
+    listWithFeedIds: vi.fn().mockResolvedValue([]),
+    listFeedIds: vi.fn().mockResolvedValue([]),
+  },
 }));
 
 vi.mock('@/services/feeds/feedsFetcher', async (importOriginal) => {
@@ -49,6 +57,18 @@ vi.mock('@/services/tags/tagsManager', () => ({
   tagsManager: {
     getFeedsByTag: vi.fn(),
   },
+}));
+
+vi.mock('@/services/scheduler/nativeSchedulerCycle', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/scheduler/nativeSchedulerCycle')>();
+  return {
+    ...actual,
+    isNativeFeedIngestionEnabled: () => false,
+  };
+});
+
+vi.mock('@/services/articles/articleConverter', () => ({
+  convertFeedItemsToArticles: vi.fn(),
 }));
 
 vi.mock('@/services/saved/savedArticlesService', () => ({
@@ -82,6 +102,16 @@ const createArticle = (hash: string, feedId: string): Article => ({
   saved: false,
   feedTitle: `Feed ${feedId}`,
   publishedDate: '2026-02-25T00:00:00.000Z',
+});
+
+const stationFeed = (id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id,
+  url: `https://${id}.example.com`,
+  title: id,
+  lastFetched: new Date(0),
+  consecutiveFailures: 0,
+  lastFailedFetchAt: undefined as Date | undefined,
+  ...overrides,
 });
 
 const createDeferred = <T,>() => {
@@ -147,9 +177,23 @@ describe('FeedContext Cross-Type Race Conditions', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearTagFeedIdsCacheForTests();
+    clearFeedMetadataCacheForTests();
     latestContext = null;
+    vi.stubGlobal('requestIdleCallback', (callback: IdleRequestCallback) => {
+      const id = window.setTimeout(() => {
+        callback({
+          didTimeout: false,
+          timeRemaining: () => 50,
+        } as IdleDeadline);
+      }, 0);
+      return id as unknown as number;
+    });
     (feedStore.getCount as vi.Mock).mockReset().mockResolvedValue(0);
     (feedStore.getById as vi.Mock).mockReset().mockResolvedValue(null);
+    (feedStore.getAll as vi.Mock).mockReset().mockResolvedValue([]);
+    (feedStore.tags.listWithFeedIds as vi.Mock).mockReset().mockResolvedValue([]);
+    (feedStore.tags.listFeedIds as vi.Mock).mockReset().mockResolvedValue([]);
     (articleStore.query as vi.Mock).mockReset().mockResolvedValue({ articles: [], total: 0 });
     (articleStore.store as vi.Mock).mockReset().mockResolvedValue(0);
     (articleStore.getUnreadCount as vi.Mock).mockReset().mockResolvedValue(0);
@@ -160,6 +204,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     (feedsManager.getFeedByUrl as vi.Mock).mockReset().mockResolvedValue(null);
     (feedsManager.updateFeed as vi.Mock).mockReset().mockResolvedValue(undefined);
     (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockReset().mockResolvedValue(feedNetworkDataResult());
+    (convertFeedItemsToArticles as vi.Mock).mockReset().mockResolvedValue([]);
     (savedArticlesService.querySavedViewArticles as vi.Mock).mockReset().mockResolvedValue({ articles: [], total: 0 });
     (savedArticlesService.enrichSavedViewArticlesMeta as vi.Mock).mockReset().mockImplementation((articles: Article[]) => Promise.resolve(articles));
     (tagsManager.getFeedsByTag as vi.Mock).mockReset().mockResolvedValue([]);
@@ -170,6 +215,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     act(() => {
       root.unmount();
     });
@@ -298,6 +344,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     const firstFetchDeferred = createDeferred<ReturnType<typeof feedNetworkDataResult>>();
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a', 'feed-b']);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed('feed-a'), stationFeed('feed-b')]);
     (feedsManager.getFeedById as vi.Mock).mockImplementation((id: string) => Promise.resolve({
       id,
       url: `https://${id}.example.com/rss.xml`,
@@ -359,6 +406,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     let fetchCallCount = 0;
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(feedIds);
+    (feedStore.getAll as vi.Mock).mockResolvedValue(feedIds.map((id) => stationFeed(id)));
     (feedsManager.getFeedById as vi.Mock).mockImplementation((id: string) => Promise.resolve({
       id,
       url: `https://${id}.example.com/rss.xml`,
@@ -387,8 +435,16 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     });
 
     await waitForExpectation(() => {
-      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(4);
+      expect(latestContext!.selectedTag).toBe('Station');
     });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+
+    await waitForExpectation(() => {
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(4);
+    }, 3000);
 
     await act(async () => {
       fetchDeferreds[0].resolve(feedNetworkDataResult());
@@ -427,14 +483,14 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       return Promise.resolve([]);
     });
     (articleStore.query as vi.Mock).mockImplementation((query: MockArticleQuery) => {
-      if (query.feedIds?.includes('feed-tech')) {
+      if (query.feedIds?.includes('feed-tech') || query.tagName === 'Tech') {
         techQueryCount += 1;
         if (techQueryCount <= 2) {
           return Promise.resolve({ articles: techArticles, total: 200 });
         }
         return techReloadDeferred.promise;
       }
-      if (query.feedIds?.includes('feed-dev')) {
+      if (query.feedIds?.includes('feed-dev') || query.tagName === 'Dev') {
         return Promise.resolve({ articles: devArticles, total: 1 });
       }
       return Promise.resolve({ articles: [], total: 0 });
@@ -489,6 +545,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     const fetchDeferred = createDeferred<ReturnType<typeof feedNetworkDataResult>>();
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed('feed-a')]);
     (feedsManager.getFeedById as vi.Mock).mockResolvedValue({
       id: 'feed-a',
       url: 'https://feed-a.example.com/rss.xml',
@@ -829,7 +886,6 @@ describe('FeedContext Cross-Type Race Conditions', () => {
 
     await waitForExpectation(() => {
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-1', 'hash-2']);
-      expect(latestContext!.isGlobalLoadingIndicatorActive).toBe(false);
     });
 
     await act(async () => {
@@ -842,7 +898,6 @@ describe('FeedContext Cross-Type Race Conditions', () => {
 
     expect(latestContext!.isLoadingArticles).toBe(false);
     expect(latestContext!.isSavedListLoading).toBe(false);
-    expect(latestContext!.isGlobalLoadingIndicatorActive).toBe(false);
     expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-1', 'hash-2']);
 
     searchDeferred.resolve({
@@ -852,7 +907,6 @@ describe('FeedContext Cross-Type Race Conditions', () => {
 
     await waitForExpectation(() => {
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['needle-1']);
-      expect(latestContext!.isGlobalLoadingIndicatorActive).toBe(false);
     });
   });
 
@@ -959,7 +1013,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     });
 
     await waitForExpectation(() => {
-      expect(latestContext!.isFetchingNew).toBe(true);
+      expect(latestContext!.selectedFeedId).toBe('feed-a');
     });
 
     await act(async () => {
@@ -969,10 +1023,8 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     await waitForExpectation(() => {
       expect(latestContext!.selectedSmartView).toBe('all');
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-all']);
-      expect(latestContext!.isFetchingNew).toBe(false);
       expect(latestContext!.isLoadingArticles).toBe(false);
       expect(latestContext!.isSavedListLoading).toBe(false);
-      expect(latestContext!.isGlobalLoadingIndicatorActive).toBe(false);
     });
   });
 
@@ -1011,7 +1063,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     });
 
     await waitForExpectation(() => {
-      expect(latestContext!.isFetchingNew).toBe(true);
+      expect(latestContext!.selectedFeedId).toBe('feed-a');
     });
 
     await act(async () => {
@@ -1021,10 +1073,8 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     await waitForExpectation(() => {
       expect(latestContext!.selectedSmartView).toBe('saved');
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-saved']);
-      expect(latestContext!.isFetchingNew).toBe(false);
       expect(latestContext!.isLoadingArticles).toBe(false);
       expect(latestContext!.isSavedListLoading).toBe(false);
-      expect(latestContext!.isGlobalLoadingIndicatorActive).toBe(false);
     });
   });
 
@@ -1069,7 +1119,6 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       expect(latestContext!.selectedSmartView).toBe('all');
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-all']);
       expect(latestContext!.isLoadingArticles).toBe(false);
-      expect(latestContext!.isFetchingNew).toBe(false);
     });
 
     stationFeedsDeferred.resolve(['feed-a']);
@@ -1118,7 +1167,6 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     await waitForExpectation(() => {
       expect(latestContext!.selectedTag).toBe('A');
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-station']);
-      expect(latestContext!.isFetchingNew).toBe(true);
     });
 
     await act(async () => {
@@ -1128,10 +1176,8 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     await waitForExpectation(() => {
       expect(latestContext!.selectedSmartView).toBe('all');
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-all']);
-      expect(latestContext!.isFetchingNew).toBe(false);
       expect(latestContext!.isLoadingArticles).toBe(false);
       expect(latestContext!.isSavedListLoading).toBe(false);
-      expect(latestContext!.isGlobalLoadingIndicatorActive).toBe(false);
     });
   });
 });

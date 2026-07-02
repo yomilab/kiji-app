@@ -49,6 +49,11 @@ export class FeedRefreshActivity {
   private interactiveRefreshScopeTotal = 0;
   private interactiveRefreshForegroundTotal = 0;
   private interactiveRefreshScopeGeneration = 0;
+  /** Feeds settled during the current interactive scope — incremented per release. */
+  private interactiveRefreshSettledCount = 0;
+  /** When true, defer `clearInteractiveRefreshScope` until the station deferred tail finishes. */
+  private interactiveRefreshDeferredTailActive = false;
+  private interactiveRefreshBackgroundTotal = 0;
 
   private listeners = new Set<FeedRefreshActivityListener>();
 
@@ -100,6 +105,7 @@ export class FeedRefreshActivity {
     if (options?.scopeTotal !== undefined && scope === 'foreground') {
       this.interactiveRefreshScopeTotal = Math.max(0, Math.floor(options.scopeTotal));
       this.interactiveRefreshForegroundTotal = feedIds.length;
+      this.interactiveRefreshSettledCount = 0;
       this.interactiveRefreshScopeGeneration += 1;
     }
 
@@ -127,6 +133,12 @@ export class FeedRefreshActivity {
         this.backgroundQueuedFeedTotal = Math.max(0, this.backgroundQueuedFeedTotal - 1);
       } else {
         this.foregroundQueuedFeedTotal = Math.max(0, this.foregroundQueuedFeedTotal - 1);
+      }
+      if (this.interactiveRefreshScopeTotal > 0) {
+        this.interactiveRefreshSettledCount = Math.min(
+          this.interactiveRefreshScopeTotal,
+          this.interactiveRefreshSettledCount + 1,
+        );
       }
     };
 
@@ -167,9 +179,56 @@ export class FeedRefreshActivity {
     if (this.interactiveRefreshScopeTotal !== 0 || this.interactiveRefreshForegroundTotal !== 0) {
       this.interactiveRefreshScopeTotal = 0;
       this.interactiveRefreshForegroundTotal = 0;
+      this.interactiveRefreshSettledCount = 0;
+      this.interactiveRefreshDeferredTailActive = false;
+      this.interactiveRefreshBackgroundTotal = 0;
       this.interactiveRefreshScopeGeneration += 1;
       this.publishSnapshot();
     }
+  }
+
+  /**
+   * Native background START may queue fewer deferred feeds than the station
+   * deferred count (backoff/suppression). Records the actual batch size for
+   * internal diagnostics only — the user-visible scope total stays the full
+   * station feed count set at switch start.
+   */
+  noteInteractiveRefreshBackgroundBatch(queuedCount: number): void {
+    if (!this.interactiveRefreshDeferredTailActive || queuedCount <= 0) {
+      return;
+    }
+    const batchTotal = Math.max(0, Math.floor(queuedCount));
+    if (this.interactiveRefreshBackgroundTotal === batchTotal) {
+      return;
+    }
+    this.interactiveRefreshBackgroundTotal = batchTotal;
+    this.publishSnapshot();
+  }
+
+  /** Station switch deferred tail (`boostMany`) is in flight — keep scope for indicator. */
+  markInteractiveRefreshDeferredTail(active: boolean, backgroundTotal = 0): void {
+    const nextBackgroundTotal = active ? Math.max(0, Math.floor(backgroundTotal)) : 0;
+    if (
+      this.interactiveRefreshDeferredTailActive === active
+      && this.interactiveRefreshBackgroundTotal === nextBackgroundTotal
+    ) {
+      return;
+    }
+    this.interactiveRefreshDeferredTailActive = active;
+    this.interactiveRefreshBackgroundTotal = nextBackgroundTotal;
+    this.publishSnapshot();
+  }
+
+  clearInteractiveRefreshDeferredTail(): void {
+    if (!this.interactiveRefreshDeferredTailActive && this.interactiveRefreshBackgroundTotal === 0) {
+      return;
+    }
+    this.interactiveRefreshDeferredTailActive = false;
+    this.interactiveRefreshBackgroundTotal = 0;
+    this.interactiveRefreshScopeTotal = 0;
+    this.interactiveRefreshForegroundTotal = 0;
+    this.interactiveRefreshSettledCount = 0;
+    this.publishSnapshot();
   }
 
   async track<T>(feedId: string, operation: () => Promise<T>): Promise<T> {
@@ -224,11 +283,15 @@ export class FeedRefreshActivity {
     if (generation !== undefined && generation !== this.interactiveRefreshScopeGeneration) {
       return;
     }
+    if (this.interactiveRefreshDeferredTailActive) {
+      return;
+    }
     if (this.interactiveRefreshScopeTotal === 0 && this.interactiveRefreshForegroundTotal === 0) {
       return;
     }
     this.interactiveRefreshScopeTotal = 0;
     this.interactiveRefreshForegroundTotal = 0;
+    this.interactiveRefreshSettledCount = 0;
     this.publishSnapshot();
   }
 
@@ -254,14 +317,9 @@ export class FeedRefreshActivity {
       && foregroundQueuedFeedCount === 0;
     const isForegroundFeedRefreshing = foregroundQueuedFeedCount > 0
       || (this.activeFeeds.size > 0 && !isBackgroundFeedRefreshing);
-    // Completed foreground feeds in the current interactive refresh. Clamped to
-    // [0, scopeTotal]; only meaningful while a scope is set.
     const interactiveRefreshScopeTotal = this.interactiveRefreshScopeTotal;
     const interactiveRefreshCompleted = interactiveRefreshScopeTotal > 0
-      ? Math.min(
-          interactiveRefreshScopeTotal,
-          Math.max(0, this.interactiveRefreshForegroundTotal - foregroundQueuedFeedCount),
-        )
+      ? Math.min(interactiveRefreshScopeTotal, this.interactiveRefreshSettledCount)
       : 0;
     const nextSnapshot: FeedRefreshActivitySnapshot = {
       activeFeedCount: this.activeFeeds.size,
@@ -269,6 +327,8 @@ export class FeedRefreshActivity {
       foregroundQueuedFeedCount,
       backgroundQueuedFeedCount,
       displayFeedCount,
+      // H13: scope-only station switch must NOT flip this — use
+      // isInteractiveStationRefreshInProgress for sidebar x/N chrome.
       isAnyFeedRefreshing: displayFeedCount > 0,
       isForegroundFeedRefreshing,
       isBackgroundFeedRefreshing,
@@ -297,3 +357,11 @@ export class FeedRefreshActivity {
 }
 
 export const feedRefreshActivity = new FeedRefreshActivity();
+
+/** Station switch scope is active (sidebar x/N text) even before queue depth > 0. */
+export function isInteractiveStationRefreshInProgress(
+  snapshot: Pick<FeedRefreshActivitySnapshot, 'interactiveRefreshScopeTotal' | 'interactiveRefreshCompleted'>,
+): boolean {
+  return snapshot.interactiveRefreshScopeTotal > 0
+    && snapshot.interactiveRefreshCompleted < snapshot.interactiveRefreshScopeTotal;
+}

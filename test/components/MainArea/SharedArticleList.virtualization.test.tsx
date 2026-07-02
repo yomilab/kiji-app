@@ -54,8 +54,6 @@ vi.mock('@/contexts/FeedContext', () => {
       isLoadingMoreArticles: false,
       isLoadMoreInFlight: false,
       isSavedListLoading: false,
-      isFetchingNew: false,
-      isGlobalLoadingIndicatorActive: false,
     }),
     useFeedCollectionActions: (): unknown => ({
       loadMoreArticles: mockLoadMoreArticles,
@@ -74,7 +72,6 @@ vi.mock('@/contexts/FeedContext', () => {
       isLoadingMoreArticles: false,
       isLoadMoreInFlight: false,
       isSavedListLoading: false,
-      isGlobalLoadingIndicatorActive: false,
       loadMoreArticles: mockLoadMoreArticles,
       updateArticleInList: mockUpdateArticleInList,
       searchCurrentSource: mockSearchCurrentSource,
@@ -95,13 +92,6 @@ vi.mock('@/contexts/FeedContext', () => {
     }),
   };
 });
-
-vi.mock('@/components/MainArea/hooks/useFetchIndicatorState', () => ({
-  useFetchIndicatorState: () => ({
-    isFetchIndicatorVisible: false,
-    applySourceSwitchGrace: vi.fn(),
-  }),
-}));
 
 vi.mock('@/components/MainArea/hooks/useArticleListKeyboardNavigation', () => ({
   useArticleListKeyboardNavigation: vi.fn(),

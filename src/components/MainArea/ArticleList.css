@@ -137,35 +137,6 @@
   pointer-events: none;
 }
 
-.article-list-fixed-loader-shell {
-  position: absolute;
-  top: -6px;
-  left: 50%;
-  z-index: 14;
-  pointer-events: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.article-list-fixed-loader {
-  /* Keep the floating header loader readable when title text passes behind it. */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  min-height: 28px;
-  padding: 4px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--theme-border) 82%, transparent);
-  background-color: color-mix(in srgb, var(--theme-article-bg) 78%, var(--theme-text-primary) 22%);
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--theme-shadow) 50%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  pointer-events: none;
-  transform: translateX(-50%);
-}
-
 /* Title content wrapper - centered with max-width */
 .article-list-title-content {
   max-width: var(--max-article-width);

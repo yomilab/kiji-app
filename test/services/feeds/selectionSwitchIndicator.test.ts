@@ -3,20 +3,14 @@ import { FeedRefreshActivity } from '@/services/feeds/feedRefreshActivity';
 import { formatFeedRefreshStatus } from '@/components/Sidebar/Sidebar';
 
 describe('selection switch indicator', () => {
-  it('shows foreground feed count only when station refresh is active alongside background sync', () => {
+  it('never shows queue depth when scope is missing (avoids exposing foreground cap)', () => {
     const activity = new FeedRefreshActivity();
 
     activity.beginQueuedFeeds(['bg-1', 'bg-2', 'bg-3'], 'background');
     activity.beginQueuedFeeds(['fg-1'], 'foreground');
 
-    expect(activity.getSnapshot()).toMatchObject({
-      foregroundQueuedFeedCount: 1,
-      backgroundQueuedFeedCount: 3,
-      displayFeedCount: 1,
-      isForegroundFeedRefreshing: true,
-      isBackgroundFeedRefreshing: false,
-    });
     const snapshot = activity.getSnapshot();
+    expect(snapshot.displayFeedCount).toBe(1);
     expect(
       formatFeedRefreshStatus({
         displayFeedCount: snapshot.displayFeedCount,
@@ -24,7 +18,7 @@ describe('selection switch indicator', () => {
         interactiveRefreshScopeTotal: snapshot.interactiveRefreshScopeTotal,
         interactiveRefreshCompleted: snapshot.interactiveRefreshCompleted,
       }),
-    ).toMatch(/1/);
+    ).toBe('Refreshing feeds');
   });
 
   it('shows `Refreshing x/N feeds` against the station scope, not the foreground cap', () => {
@@ -71,6 +65,86 @@ describe('selection switch indicator', () => {
     // Switch ends → scope cleared, indicator no longer shows the station total.
     activity.clearInteractiveRefreshScope(scopeToken);
     expect(activity.getSnapshot().interactiveRefreshScopeTotal).toBe(0);
+  });
+
+  it('keeps station scope through deferred background tail for syncing indicator', () => {
+    const activity = new FeedRefreshActivity();
+
+    const releaseForeground = activity.beginQueuedFeeds(
+      ['fg-1', 'fg-2', 'fg-3', 'fg-4', 'fg-5', 'fg-6'],
+      'foreground',
+      { scopeTotal: 50 },
+    );
+    const scopeToken = activity.getInteractiveRefreshScopeGeneration();
+
+    releaseForeground();
+    activity.markInteractiveRefreshDeferredTail(true, 44);
+    activity.noteInteractiveRefreshBackgroundBatch(20);
+    const releaseBackground = activity.beginQueuedFeeds(
+      Array.from({ length: 20 }, (_, index) => `bg-${index + 1}`),
+      'background',
+    );
+
+    const mid = activity.getSnapshot();
+    expect(mid.interactiveRefreshScopeTotal).toBe(50);
+    expect(mid.interactiveRefreshCompleted).toBe(6);
+    expect(
+      formatFeedRefreshStatus({
+        displayFeedCount: mid.displayFeedCount,
+        isBackgroundFeedRefreshing: mid.isBackgroundFeedRefreshing,
+        interactiveRefreshScopeTotal: mid.interactiveRefreshScopeTotal,
+        interactiveRefreshCompleted: mid.interactiveRefreshCompleted,
+      }),
+    ).toMatch(/Syncing 6\/50 feeds/);
+
+    releaseBackground('bg-1');
+    releaseBackground('bg-2');
+    releaseBackground('bg-3');
+    expect(activity.getSnapshot().interactiveRefreshCompleted).toBe(9);
+
+    activity.clearInteractiveRefreshScope(scopeToken);
+    expect(activity.getSnapshot().interactiveRefreshScopeTotal).toBe(50);
+
+    activity.clearInteractiveRefreshDeferredTail();
+    expect(activity.getSnapshot().interactiveRefreshScopeTotal).toBe(0);
+  });
+
+  it('does not jump completed count when background batch is smaller than deferred tail', () => {
+    const activity = new FeedRefreshActivity();
+
+    const releaseForeground = activity.beginQueuedFeeds(
+      ['fg-1', 'fg-2'],
+      'foreground',
+      { scopeTotal: 50 },
+    );
+    releaseForeground();
+    expect(activity.getSnapshot().interactiveRefreshCompleted).toBe(2);
+    expect(activity.getSnapshot().interactiveRefreshScopeTotal).toBe(50);
+
+    activity.markInteractiveRefreshDeferredTail(true, 44);
+    activity.noteInteractiveRefreshBackgroundBatch(20);
+    expect(activity.getSnapshot().interactiveRefreshCompleted).toBe(2);
+    expect(activity.getSnapshot().interactiveRefreshScopeTotal).toBe(50);
+
+    activity.beginQueuedFeeds(
+      Array.from({ length: 20 }, (_, index) => `bg-${index + 1}`),
+      'background',
+    );
+    expect(activity.getSnapshot().interactiveRefreshCompleted).toBe(2);
+    expect(activity.getSnapshot().interactiveRefreshScopeTotal).toBe(50);
+  });
+
+  it('never formats a bare queue-depth count for the foreground cap', () => {
+    for (const displayFeedCount of [1, 2, 3, 4, 5, 6]) {
+      expect(
+        formatFeedRefreshStatus({
+          displayFeedCount,
+          isBackgroundFeedRefreshing: false,
+          interactiveRefreshScopeTotal: 0,
+          interactiveRefreshCompleted: 0,
+        }),
+      ).toBe('Refreshing feeds');
+    }
   });
 
   it('never shows the foreground cap when scope is missing but multiple feeds are queued', () => {

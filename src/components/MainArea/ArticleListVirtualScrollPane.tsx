@@ -58,7 +58,6 @@ export interface ArticleListVirtualScrollPaneProps {
   isSearchDebouncePending: boolean;
   debouncedSearchQuery: string;
   isSavedView: boolean;
-  isFetchingNew: boolean;
   newArticleHashes: Set<string>;
   articleListScrollRequest: ArticleListScrollRequest | null;
   totalFeeds: number;
@@ -89,7 +88,6 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   isSearchDebouncePending,
   debouncedSearchQuery,
   isSavedView,
-  isFetchingNew,
   newArticleHashes,
   articleListScrollRequest,
   totalFeeds,
@@ -352,7 +350,6 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
     visibleRowCount: virtualItems.length,
     totalVirtualSizePx: rowVirtualizer.getTotalSize(),
     isSearchActive,
-    isFetchingNew,
     isLoadingMoreArticles,
     articleListItemsRef,
   });

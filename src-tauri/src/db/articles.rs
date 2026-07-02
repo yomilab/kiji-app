@@ -51,11 +51,16 @@ pub struct ArticleFeedMetaUpdate {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_query(
+pub async fn articles_query(
     request: ArticleQueryRequest,
     state: State<'_, DbState>,
 ) -> Result<ArticleQueryResponse, String> {
-    state.with_connection(|connection| query_articles(connection, request))
+    let db = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        db.with_connection(|connection| query_articles(connection, request))
+    })
+    .await
+    .map_err(|error| format!("Article query task failed: {error}"))?
 }
 
 #[tauri::command(rename_all = "camelCase")]

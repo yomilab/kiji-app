@@ -18,7 +18,6 @@ interface UseArticleListPerformanceMetricsParams {
   visibleRowCount: number;
   totalVirtualSizePx: number;
   isSearchActive: boolean;
-  isFetchingNew: boolean;
   isLoadingMoreArticles: boolean;
   articleListItemsRef: RefObject<HTMLDivElement | null>;
 }
@@ -37,7 +36,6 @@ interface ActiveScrollSession {
   longTaskCount: number;
   maxLongTaskMs: number;
   pendingPreviewImagesMax: number;
-  sawFetchingNew: boolean;
   sawLoadingMoreArticles: boolean;
   rafId: number | null;
   idleTimerId: number | null;
@@ -75,7 +73,6 @@ export const useArticleListPerformanceMetrics = ({
   visibleRowCount,
   totalVirtualSizePx,
   isSearchActive,
-  isFetchingNew,
   isLoadingMoreArticles,
   articleListItemsRef,
 }: UseArticleListPerformanceMetricsParams): {
@@ -102,7 +99,6 @@ export const useArticleListPerformanceMetrics = ({
       visibleRowCount,
       totalVirtualSizePx: roundPerformanceValue(totalVirtualSizePx),
       isSearchActive,
-      isFetchingNew,
       isLoadingMoreArticles,
       scrollTop: roundPerformanceValue(scrollElement?.scrollTop ?? 0),
       scrollHeight: roundPerformanceValue(scrollElement?.scrollHeight ?? 0),
@@ -113,7 +109,6 @@ export const useArticleListPerformanceMetrics = ({
   }, [
     articleListItemsRef,
     filteredCount,
-    isFetchingNew,
     isLoadingMoreArticles,
     isSearchActive,
     sourceKey,
@@ -147,7 +142,6 @@ export const useArticleListPerformanceMetrics = ({
     const summaryContext = {
       ...getListSnapshot(),
       pendingPreviewImagesMax: session.pendingPreviewImagesMax,
-      fetchingDuringScroll: session.sawFetchingNew,
       paginationDuringScroll: session.sawLoadingMoreArticles,
     };
 
@@ -288,7 +282,6 @@ export const useArticleListPerformanceMetrics = ({
         longTaskCount: 0,
         maxLongTaskMs: 0,
         pendingPreviewImagesMax: scrollSnapshot.pendingPreviewImages,
-        sawFetchingNew: scrollSnapshot.isFetchingNew,
         sawLoadingMoreArticles: scrollSnapshot.isLoadingMoreArticles,
         rafId: null,
         idleTimerId: null,
@@ -304,7 +297,6 @@ export const useArticleListPerformanceMetrics = ({
     session.totalScrollDistancePx += Math.abs(scrollTop - session.lastScrollTop);
     session.lastScrollTop = scrollTop;
     session.pendingPreviewImagesMax = Math.max(session.pendingPreviewImagesMax, scrollSnapshot.pendingPreviewImages);
-    session.sawFetchingNew = session.sawFetchingNew || scrollSnapshot.isFetchingNew;
     session.sawLoadingMoreArticles = session.sawLoadingMoreArticles || scrollSnapshot.isLoadingMoreArticles;
 
     if (session.idleTimerId !== null) {
