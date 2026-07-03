@@ -456,6 +456,7 @@ body.feed-edit-col-resizing {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
+  border-radius: 0;
 }
 
 .feed-edit-favicon-placeholder {
