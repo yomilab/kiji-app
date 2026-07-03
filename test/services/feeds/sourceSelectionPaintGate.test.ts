@@ -3,11 +3,13 @@ import { sourceSelectionBus } from '@/services/feeds/sourceSelectionBus';
 import type { FeedSourceRefreshPayload } from '@/services/feeds/sourceSelectionTypes';
 import {
   SOURCE_SELECTION_MIN_REFRESH_DELAY_MS,
+  SOURCE_SELECTION_PAINT_GATE_MAX_WAIT_MS,
   SOURCE_SELECTION_PAINT_GATE_TIMEOUT_MS,
   SOURCE_SELECTION_REFRESH_DEBOUNCE_MS,
   advanceSourceSelectionRefreshSchedule,
   cancelSourceSelectionRefreshSchedule,
   scheduleSourceRefreshAfterPaint,
+  waitForArticleListPaintGate,
 } from '@/services/feeds/sourceSelectionPaintGate';
 
 const createFeedPayload = (token: number): FeedSourceRefreshPayload => ({
@@ -106,5 +108,26 @@ describe('sourceSelectionPaintGate', () => {
       SOURCE_SELECTION_PAINT_GATE_TIMEOUT_MS + SOURCE_SELECTION_REFRESH_DEBOUNCE_MS,
     );
     expect(SOURCE_SELECTION_MIN_REFRESH_DELAY_MS).toBeLessThan(200);
+  });
+
+  it('aborts paint gate wait when cancelled during rapid station hops', async () => {
+    let cancelled = false;
+    const painted = waitForArticleListPaintGate(() => true, 1, {
+      isCancelled: () => cancelled,
+    });
+
+    cancelled = true;
+    await vi.runAllTimersAsync();
+
+    await expect(painted).resolves.toBe(false);
+  });
+
+  it('does not wait longer than the paint gate wall-clock budget when rAF stalls', async () => {
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+
+    const painted = waitForArticleListPaintGate(() => true, 1);
+    await vi.advanceTimersByTimeAsync(SOURCE_SELECTION_PAINT_GATE_MAX_WAIT_MS + 50);
+
+    await expect(painted).resolves.toBe(true);
   });
 });

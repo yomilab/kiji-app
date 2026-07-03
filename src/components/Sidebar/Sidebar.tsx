@@ -39,12 +39,18 @@ export const formatFeedRefreshStatus = (input: FeedRefreshStatusInput): string =
 
   if (input.isBackgroundFeedRefreshing) {
     if (stationScopeProgress) {
+      if (stationScopeProgress.completed === 0) {
+        return sidebarIndicatorOngoing('syncing', undefined, { subject: 'feeds' });
+      }
       return sidebarIndicatorOngoing('syncing', stationScopeProgress);
     }
     return sidebarIndicatorOngoing('syncing', undefined, { subject: 'all' });
   }
 
   if (stationScopeProgress) {
+    if (stationScopeProgress.completed === 0) {
+      return sidebarIndicatorOngoing('syncing', undefined, { subject: 'feeds' });
+    }
     return sidebarIndicatorOngoing('refreshing', stationScopeProgress);
   }
 

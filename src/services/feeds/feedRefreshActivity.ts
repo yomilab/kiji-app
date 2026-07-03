@@ -51,6 +51,8 @@ export class FeedRefreshActivity {
   private interactiveRefreshScopeGeneration = 0;
   /** Feeds settled during the current interactive scope — incremented per release. */
   private interactiveRefreshSettledCount = 0;
+  /** Dedupes per-feed settlement within the current interactive scope generation. */
+  private interactiveRefreshSettledFeedIds = new Set<string>();
   /** When true, defer `clearInteractiveRefreshScope` until the station deferred tail finishes. */
   private interactiveRefreshDeferredTailActive = false;
   private interactiveRefreshBackgroundTotal = 0;
@@ -105,7 +107,7 @@ export class FeedRefreshActivity {
     if (options?.scopeTotal !== undefined && scope === 'foreground') {
       this.interactiveRefreshScopeTotal = Math.max(0, Math.floor(options.scopeTotal));
       this.interactiveRefreshForegroundTotal = feedIds.length;
-      this.interactiveRefreshSettledCount = 0;
+      this.resetInteractiveRefreshSettled();
       this.interactiveRefreshScopeGeneration += 1;
     }
 
@@ -134,12 +136,7 @@ export class FeedRefreshActivity {
       } else {
         this.foregroundQueuedFeedTotal = Math.max(0, this.foregroundQueuedFeedTotal - 1);
       }
-      if (this.interactiveRefreshScopeTotal > 0) {
-        this.interactiveRefreshSettledCount = Math.min(
-          this.interactiveRefreshScopeTotal,
-          this.interactiveRefreshSettledCount + 1,
-        );
-      }
+      this.recordInteractiveRefreshFeedSettled(feedId);
     };
 
     const release = (feedId?: string) => {
@@ -179,12 +176,42 @@ export class FeedRefreshActivity {
     if (this.interactiveRefreshScopeTotal !== 0 || this.interactiveRefreshForegroundTotal !== 0) {
       this.interactiveRefreshScopeTotal = 0;
       this.interactiveRefreshForegroundTotal = 0;
-      this.interactiveRefreshSettledCount = 0;
+      this.resetInteractiveRefreshSettled();
       this.interactiveRefreshDeferredTailActive = false;
       this.interactiveRefreshBackgroundTotal = 0;
       this.interactiveRefreshScopeGeneration += 1;
       this.publishSnapshot();
     }
+  }
+
+  isInteractiveRefreshDeferredTailActive(): boolean {
+    return this.interactiveRefreshDeferredTailActive;
+  }
+
+  /**
+   * Idempotent per-feed settlement for station switch scope progress. Safe to
+   * call from native FEED listeners and from post-cycle reconciliation when
+   * previewNativeCycle blocked event delivery until IPC returned.
+   */
+  recordInteractiveRefreshFeedSettled(feedId: string): void {
+    if (!feedId || this.interactiveRefreshScopeTotal <= 0) {
+      return;
+    }
+    if (this.interactiveRefreshSettledFeedIds.has(feedId)) {
+      return;
+    }
+    if (this.interactiveRefreshSettledCount >= this.interactiveRefreshScopeTotal) {
+      return;
+    }
+
+    this.interactiveRefreshSettledFeedIds.add(feedId);
+    this.interactiveRefreshSettledCount += 1;
+    this.publishSnapshot();
+  }
+
+  private resetInteractiveRefreshSettled(): void {
+    this.interactiveRefreshSettledCount = 0;
+    this.interactiveRefreshSettledFeedIds.clear();
   }
 
   /**
@@ -227,7 +254,7 @@ export class FeedRefreshActivity {
     this.interactiveRefreshBackgroundTotal = 0;
     this.interactiveRefreshScopeTotal = 0;
     this.interactiveRefreshForegroundTotal = 0;
-    this.interactiveRefreshSettledCount = 0;
+    this.resetInteractiveRefreshSettled();
     this.publishSnapshot();
   }
 
@@ -291,7 +318,7 @@ export class FeedRefreshActivity {
     }
     this.interactiveRefreshScopeTotal = 0;
     this.interactiveRefreshForegroundTotal = 0;
-    this.interactiveRefreshSettledCount = 0;
+    this.resetInteractiveRefreshSettled();
     this.publishSnapshot();
   }
 

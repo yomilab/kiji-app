@@ -4,11 +4,17 @@ import { sidebarSwitchTrace } from '@/services/performance/sidebarSwitchTrace';
 
 /** Short settle window after the first paint frames before scheduling refresh. */
 export const SOURCE_SELECTION_PAINT_GATE_TIMEOUT_MS = 48;
+/** Wall-clock cap so a frozen rAF queue cannot block cold-switch SQLite for minutes. */
+export const SOURCE_SELECTION_PAINT_GATE_MAX_WAIT_MS = 500;
 /** Collapse rapid station/feed hops into one refresh for the last source. */
 export const SOURCE_SELECTION_REFRESH_DEBOUNCE_MS = 64;
 export const SOURCE_SELECTION_MIN_REFRESH_DELAY_MS = (
   SOURCE_SELECTION_PAINT_GATE_TIMEOUT_MS + SOURCE_SELECTION_REFRESH_DEBOUNCE_MS
 );
+
+export interface ArticleListPaintGateOptions {
+  isCancelled?: () => boolean;
+}
 
 let paintGateRafId: number | null = null;
 let refreshDebounceTimerId: number | null = null;
@@ -31,25 +37,67 @@ const waitForNextAnimationFrame = (): Promise<void> => (
   })
 );
 
+const shouldAbortPaintGate = (
+  isSelectionActive: (token: number) => boolean,
+  token: number,
+  options?: ArticleListPaintGateOptions,
+): boolean => (
+  options?.isCancelled?.() === true || !isSelectionActive(token)
+);
+
+const waitPaintGateBudget = (ms: number): Promise<void> => (
+  new Promise((resolve) => {
+    if (ms <= 0) {
+      resolve();
+      return;
+    }
+    window.setTimeout(resolve, ms);
+  })
+);
+
 export const waitForArticleListPaintGate = async (
   isSelectionActive: (token: number) => boolean,
   token: number,
+  options?: ArticleListPaintGateOptions,
 ): Promise<boolean> => {
-  await waitForNextAnimationFrame();
-  if (!isSelectionActive(token)) {
+  const deadline = performance.now() + SOURCE_SELECTION_PAINT_GATE_MAX_WAIT_MS;
+  const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+
+  if (!hidden) {
+    for (let frame = 0; frame < 2; frame += 1) {
+      if (shouldAbortPaintGate(isSelectionActive, token, options)) {
+        return false;
+      }
+
+      const remainingMs = deadline - performance.now();
+      if (remainingMs <= 0) {
+        break;
+      }
+
+      await Promise.race([
+        waitForNextAnimationFrame(),
+        waitPaintGateBudget(remainingMs),
+      ]);
+
+      if (shouldAbortPaintGate(isSelectionActive, token, options)) {
+        return false;
+      }
+    }
+  }
+
+  if (shouldAbortPaintGate(isSelectionActive, token, options)) {
     return false;
   }
 
-  await waitForNextAnimationFrame();
-  if (!isSelectionActive(token)) {
-    return false;
+  const settleMs = Math.min(
+    SOURCE_SELECTION_PAINT_GATE_TIMEOUT_MS,
+    Math.max(0, deadline - performance.now()),
+  );
+  if (settleMs > 0) {
+    await waitPaintGateBudget(settleMs);
   }
 
-  await new Promise<void>((resolve) => {
-    window.setTimeout(resolve, SOURCE_SELECTION_PAINT_GATE_TIMEOUT_MS);
-  });
-
-  return isSelectionActive(token);
+  return !shouldAbortPaintGate(isSelectionActive, token, options);
 };
 
 export const scheduleSourceRefreshAfterPaint = (

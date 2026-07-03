@@ -45,7 +45,7 @@ describe('selection switch indicator', () => {
         interactiveRefreshScopeTotal: before.interactiveRefreshScopeTotal,
         interactiveRefreshCompleted: before.interactiveRefreshCompleted,
       }),
-    ).toMatch(/Refreshing 0\/50 feeds/);
+    ).toBe('Syncing feeds');
 
     // Settle 3 of 6 foreground feeds → completed counts up, scope stays 50.
     release('fg-1');
@@ -233,5 +233,51 @@ describe('selection switch indicator', () => {
     expect(activity.getSnapshot().displayFeedCount).toBe(1);
     release();
     expect(activity.getSnapshot().displayFeedCount).toBe(0);
+  });
+
+  it('native switch with empty queue shows Syncing feeds until first settlement', () => {
+    const activity = new FeedRefreshActivity();
+
+    activity.beginQueuedFeeds([], 'foreground', { scopeTotal: 59 });
+    activity.markInteractiveRefreshDeferredTail(true, 59);
+
+    const before = activity.getSnapshot();
+    expect(before.interactiveRefreshScopeTotal).toBe(59);
+    expect(before.interactiveRefreshCompleted).toBe(0);
+    expect(before.displayFeedCount).toBe(0);
+    expect(
+      formatFeedRefreshStatus({
+        displayFeedCount: before.displayFeedCount,
+        isBackgroundFeedRefreshing: before.isBackgroundFeedRefreshing,
+        interactiveRefreshScopeTotal: before.interactiveRefreshScopeTotal,
+        interactiveRefreshCompleted: before.interactiveRefreshCompleted,
+      }),
+    ).toBe('Syncing feeds');
+
+    activity.recordInteractiveRefreshFeedSettled('feed-1');
+    activity.recordInteractiveRefreshFeedSettled('feed-2');
+    activity.recordInteractiveRefreshFeedSettled('feed-1');
+
+    const mid = activity.getSnapshot();
+    expect(mid.interactiveRefreshCompleted).toBe(2);
+    expect(
+      formatFeedRefreshStatus({
+        displayFeedCount: mid.displayFeedCount,
+        isBackgroundFeedRefreshing: mid.isBackgroundFeedRefreshing,
+        interactiveRefreshScopeTotal: mid.interactiveRefreshScopeTotal,
+        interactiveRefreshCompleted: mid.interactiveRefreshCompleted,
+      }),
+    ).toBe('Refreshing 2/59 feeds');
+  });
+
+  it('recordInteractiveRefreshFeedSettled is idempotent per feed within a scope', () => {
+    const activity = new FeedRefreshActivity();
+
+    activity.beginQueuedFeeds(['fg-1'], 'foreground', { scopeTotal: 3 });
+    activity.recordInteractiveRefreshFeedSettled('feed-a');
+    activity.recordInteractiveRefreshFeedSettled('feed-a');
+    activity.recordInteractiveRefreshFeedSettled('feed-b');
+
+    expect(activity.getSnapshot().interactiveRefreshCompleted).toBe(2);
   });
 });

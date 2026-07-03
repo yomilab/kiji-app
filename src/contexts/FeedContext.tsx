@@ -65,6 +65,8 @@ const STATION_REFRESH_WORKER_COUNT = 4;
 const STATION_REFRESH_UI_BUDGET_POLL_MS = 50;
 const SCHEDULER_UI_BATCH_DELAY_MS = 250;
 const BACKGROUND_REFRESH_SCROLL_IDLE_DELAY_MS = 450;
+/** After rapid station hops, retry cold-switch SQLite if skeleton is still up. */
+const DEFERRED_SWITCH_SQLITE_RECOVERY_DELAY_MS = 250;
 const DEFAULT_ARTICLE_LIST_SORT: NonNullable<ArticleQuery['sort']> = { field: 'publishedDate', order: 'desc' };
 const LAST_SIDEBAR_SELECTION_KEY = 'last-sidebar-selection';
 const HAS_PERFORMANCE_API = typeof performance !== 'undefined' && typeof performance.mark === 'function';
@@ -671,6 +673,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   } | null>(null);
   const stationSwitchSideWorkGenerationRef = useRef(0);
   const cancelStationSwitchIdleWorkRef = useRef<(() => void) | null>(null);
+  const deferredSwitchRecoveryTimerRef = useRef<number | null>(null);
   const articleViewOverlayPhaseRef = useRef<ArticleViewOverlayPhase>('closed');
   const activeArticleHashRef = useRef<string | null>(null);
   const isFeedProviderMountedRef = useRef(false);
@@ -994,6 +997,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     pendingBackgroundRefreshSourceKeyRef.current = null;
     pendingSwitchVisibleReconcileRef.current = null;
     clearStationUiRefreshTimer();
+    if (deferredSwitchRecoveryTimerRef.current !== null) {
+      window.clearTimeout(deferredSwitchRecoveryTimerRef.current);
+      deferredSwitchRecoveryTimerRef.current = null;
+    }
     cancelStationSwitchSideWork();
     cancelSourceSelectionRefreshSchedule();
     const controller = new AbortController();
@@ -1741,6 +1748,128 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [dispatchArticlesTransitionIfChanged, restoreSourceArticleSnapshot]);
 
+  const commitDeferredSwitchSqlitePage = useCallback(async (args: {
+    token: number;
+    sourceKey: string;
+    query: ArticleQuery;
+    taggedFeedCount: number;
+    limit?: number;
+    interactionExtra?: Record<string, unknown>;
+    sideWorkGeneration: number;
+  }): Promise<boolean> => {
+    const {
+      token,
+      sourceKey,
+      query,
+      taggedFeedCount,
+      limit,
+      interactionExtra,
+      sideWorkGeneration,
+    } = args;
+
+    return await traceSidebarSwitchAsync(
+      token,
+      'sqlite-query-deferred',
+      async () => {
+        if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
+          return false;
+        }
+
+        const queryLimit = Math.min(
+          limit ?? SMART_VIEW_ARTICLE_LIMIT,
+          STATION_SWITCH_SQLITE_RECONCILE_LIMIT,
+        );
+        const { articles: stored } = await articleStore.query({
+          ...query,
+          limit: queryLimit,
+          // H12: includeTotal: true runs COUNT(DISTINCT) on large stations and
+          // regresses skeleton-load switch freeze — floor total until reconcile.
+          includeTotal: false,
+        });
+        if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
+          return false;
+        }
+
+        // Full page without total: use row count as a floor until reconcile.
+        const resolvedTotal = stored.length < queryLimit
+          ? stored.length
+          : Math.max(stored.length, nonSearchArticlesTotalCountRef.current);
+
+        const dispatchStartedAt = performance.now();
+        dispatchArticlesTransitionIfChanged(stored, resolvedTotal);
+        collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+        sidebarSwitchTrace.markDuration(
+          token,
+          'dispatch-articles',
+          performance.now() - dispatchStartedAt,
+          { articleCount: stored.length, deferred: true },
+        );
+        interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
+          cachedArticleCount: stored.length,
+          cachedArticleTotal: resolvedTotal,
+          taggedFeedCount,
+          deferredSqlite: true,
+          ...interactionExtra,
+        });
+        return true;
+      },
+      { limit: limit ?? SMART_VIEW_ARTICLE_LIMIT, taggedFeedCount, deferred: true },
+    );
+  }, [
+    dispatchArticlesTransitionIfChanged,
+    isStationSwitchSideWorkCurrent,
+  ]);
+
+  const scheduleDeferredSwitchSqliteRecovery = useCallback((args: {
+    token: number;
+    sourceKey: string;
+    query: ArticleQuery;
+    taggedFeedCount: number;
+    limit?: number;
+    interactionExtra?: Record<string, unknown>;
+    sideWorkGeneration: number;
+  }) => {
+    if (deferredSwitchRecoveryTimerRef.current !== null) {
+      window.clearTimeout(deferredSwitchRecoveryTimerRef.current);
+    }
+
+    deferredSwitchRecoveryTimerRef.current = window.setTimeout(() => {
+      deferredSwitchRecoveryTimerRef.current = null;
+      void (async () => {
+        const {
+          token,
+          sourceKey,
+          sideWorkGeneration,
+        } = args;
+
+        if (!isSelectionActive(token) || !isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
+          return;
+        }
+
+        if (currentArticlesRef.current.length > 0) {
+          collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+          return;
+        }
+
+        try {
+          const dispatched = await commitDeferredSwitchSqlitePage(args);
+          if (
+            !dispatched
+            && isSelectionActive(token)
+            && isStationSwitchSideWorkCurrent(token, sideWorkGeneration)
+          ) {
+            collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+          }
+        } catch (error) {
+          logger.warn('FeedContext', 'Deferred switch SQLite recovery failed', { error, sourceKey, token });
+          if (isSelectionActive(token) && isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
+            collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+          }
+        }
+      })();
+    }, DEFERRED_SWITCH_SQLITE_RECOVERY_DELAY_MS);
+  }, [commitDeferredSwitchSqlitePage, isSelectionActive, isStationSwitchSideWorkCurrent]);
+
   const scheduleDeferredSwitchSqlitePage = useCallback((args: {
     token: number;
     sourceKey: string;
@@ -1749,66 +1878,49 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     limit?: number;
     interactionExtra?: Record<string, unknown>;
   }) => {
-    const { token, sourceKey, query, taggedFeedCount, limit, interactionExtra } = args;
+    const { token, sourceKey } = args;
     const sideWorkGeneration = stationSwitchSideWorkGenerationRef.current;
+    let paintGateCancelled = false;
+    const cancelPaintGateWait = (): void => {
+      paintGateCancelled = true;
+    };
+    cancelStationSwitchIdleWorkRef.current = cancelPaintGateWait;
+
     void (async () => {
-      const painted = await waitForArticleListPaintGate(isSelectionActive, token);
-      if (!painted || !isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
-        return;
+      let dispatched = false;
+      const sideWorkArgs = { ...args, sideWorkGeneration };
+
+      try {
+        const painted = await waitForArticleListPaintGate(isSelectionActive, token, {
+          isCancelled: () => paintGateCancelled,
+        });
+        if (!painted || !isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
+          return;
+        }
+
+        dispatched = await commitDeferredSwitchSqlitePage(sideWorkArgs);
+      } catch (error) {
+        logger.warn('FeedContext', 'Deferred switch SQLite page failed', { error, sourceKey, token });
+      } finally {
+        if (cancelStationSwitchIdleWorkRef.current === cancelPaintGateWait) {
+          cancelStationSwitchIdleWorkRef.current = null;
+        }
+
+        if (
+          !dispatched
+          && isSelectionActive(token)
+          && isStationSwitchSideWorkCurrent(token, sideWorkGeneration)
+          && currentArticlesRef.current.length === 0
+        ) {
+          scheduleDeferredSwitchSqliteRecovery(sideWorkArgs);
+        }
       }
-
-      await traceSidebarSwitchAsync(
-        token,
-        'sqlite-query-deferred',
-        async () => {
-          if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
-            return;
-          }
-
-          const queryLimit = Math.min(
-            limit ?? SMART_VIEW_ARTICLE_LIMIT,
-            STATION_SWITCH_SQLITE_RECONCILE_LIMIT,
-          );
-          const { articles: stored } = await articleStore.query({
-            ...query,
-            limit: queryLimit,
-            // H12: includeTotal: true runs COUNT(DISTINCT) on large stations and
-            // regresses skeleton-load switch freeze — floor total until reconcile.
-            includeTotal: false,
-          });
-          if (!isStationSwitchSideWorkCurrent(token, sideWorkGeneration)) {
-            return;
-          }
-
-          // Full page without total: use row count as a floor until reconcile.
-          const resolvedTotal = stored.length < queryLimit
-            ? stored.length
-            : Math.max(stored.length, nonSearchArticlesTotalCountRef.current);
-
-          const dispatchStartedAt = performance.now();
-          dispatchArticlesTransitionIfChanged(stored, resolvedTotal);
-          collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
-          sidebarSwitchTrace.markDuration(
-            token,
-            'dispatch-articles',
-            performance.now() - dispatchStartedAt,
-            { articleCount: stored.length, deferred: true },
-          );
-          interactionPerformance.markTimedInteractionStage('sidebar-switch', sourceKey, 'cachedReady', {
-            cachedArticleCount: stored.length,
-            cachedArticleTotal: resolvedTotal,
-            taggedFeedCount,
-            deferredSqlite: true,
-            ...interactionExtra,
-          });
-        },
-        { limit: limit ?? SMART_VIEW_ARTICLE_LIMIT, taggedFeedCount, deferred: true },
-      );
     })();
   }, [
-    dispatchArticlesTransitionIfChanged,
+    commitDeferredSwitchSqlitePage,
     isSelectionActive,
     isStationSwitchSideWorkCurrent,
+    scheduleDeferredSwitchSqliteRecovery,
   ]);
 
   const syncArticleListViewport = useCallback((snapshot: ArticleListViewportSnapshot) => {
@@ -3064,6 +3176,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (stationUiBatchTimerRef.current !== null) {
         window.clearTimeout(stationUiBatchTimerRef.current);
         stationUiBatchTimerRef.current = null;
+      }
+      if (deferredSwitchRecoveryTimerRef.current !== null) {
+        window.clearTimeout(deferredSwitchRecoveryTimerRef.current);
+        deferredSwitchRecoveryTimerRef.current = null;
       }
       pendingSchedulerFeedUpdatesRef.current.clear();
       pendingBackgroundRefreshSourceKeyRef.current = null;

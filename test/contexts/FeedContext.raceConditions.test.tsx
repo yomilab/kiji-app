@@ -1180,4 +1180,88 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       expect(latestContext!.isSavedListLoading).toBe(false);
     });
   });
+
+  it('clears skeleton after rapid cold station hops settle on the final station', async () => {
+    const stationArticles: Record<string, Article[]> = {
+      A: [createArticle('hash-a', 'feed-a')],
+      B: [createArticle('hash-b', 'feed-b')],
+      C: [createArticle('hash-c', 'feed-c')],
+    };
+
+    (tagsManager.getFeedsByTag as Mock).mockImplementation((tagName: string) => (
+      Promise.resolve([`feed-${tagName.toLowerCase()}`])
+    ));
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      const tagName = query.tagName;
+      if (tagName && stationArticles[tagName]) {
+        const articles = stationArticles[tagName];
+        return Promise.resolve({ articles, total: articles.length });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+      void latestContext!.selectTag('B');
+      await latestContext!.selectTag('C');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('C');
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-c']);
+    });
+  });
+
+  it('recovers skeleton when the first deferred SQLite attempt fails during rapid hops', async () => {
+    let coldQueryAttempts = 0;
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A') {
+        coldQueryAttempts += 1;
+        if (coldQueryAttempts === 1) {
+          return Promise.reject(new Error('sqlite busy'));
+        }
+        return Promise.resolve({
+          articles: [createArticle('hash-a', 'feed-a')],
+          total: 1,
+        });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+      void latestContext!.selectTag('B');
+      await latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a']);
+      expect(coldQueryAttempts).toBeGreaterThanOrEqual(2);
+    }, 3000);
+  });
 });

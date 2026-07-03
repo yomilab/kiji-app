@@ -159,6 +159,7 @@ export async function runNativeFeedRefresh(
           if (!isScopedFeedEvent(event.payload.feedId)) {
             return;
           }
+          feedRefreshActivity.recordInteractiveRefreshFeedSettled(event.payload.feedId);
           queuedRelease.release?.(event.payload.feedId);
           request.onFeedSettled?.(event.payload.feedId);
           request.onFeedComplete?.(event.payload);
@@ -180,6 +181,12 @@ export async function runNativeFeedRefresh(
       );
 
       throwIfAborted(request.signal);
+
+      if (feedRefreshActivity.getSnapshot().interactiveRefreshScopeTotal > 0) {
+        for (const feedResult of result.feedResults) {
+          feedRefreshActivity.recordInteractiveRefreshFeedSettled(feedResult.feedId);
+        }
+      }
 
       const insertedByFeedId = new Map<string, number>();
       let changedFeeds = 0;

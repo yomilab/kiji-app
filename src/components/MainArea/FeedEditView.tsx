@@ -71,6 +71,12 @@ type FeedSortField = 'title' | 'status' | 'articleCount' | 'station' | 'subscrib
 type FeedDeleteState = { id: string; title: string };
 type StationDeleteState = { name: string };
 type DragGroup = 'library' | 'station';
+type FeedEditRowFocusGroup = DragGroup | 'feed';
+
+interface FeedEditFocusedRow {
+  group: FeedEditRowFocusGroup;
+  id: string;
+}
 
 interface FeedSortConfig {
   field: FeedSortField;
@@ -167,6 +173,20 @@ const areStringArraysEqual = (left: string[], right: string[]): boolean => (
   left.length === right.length && left.every((value, index) => value === right[index])
 );
 
+const feedEditTargetToFocusedRow = (target: FeedEditTarget): FeedEditFocusedRow => {
+  if (target.kind === 'feed') {
+    return { group: 'feed', id: target.id };
+  }
+  if (target.kind === 'station') {
+    return { group: 'station', id: target.id };
+  }
+  return { group: 'library', id: target.id };
+};
+
+const isFeedEditFloatingOverlayTarget = (target: Element): boolean => (
+  !!target.closest('.dropdown-menu, .emoji-submenu, .modal')
+);
+
 const isEditableKeyboardTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
@@ -192,6 +212,7 @@ const buildNextStationName = (stations: Tag[]): string => {
 interface FeedEditFeedRowProps {
   feed: Feed;
   stationNames: string[];
+  isRowFocused: boolean;
   isSearchMatch: boolean;
   isCurrentSearchMatch: boolean;
   titleEditState: FeedTitleEditState | null;
@@ -220,6 +241,7 @@ interface FeedEditFeedRowProps {
 interface FeedEditStationRowProps {
   station: Tag;
   feedCount: number;
+  isRowFocused: boolean;
   attachRowRef: (stationName: string, node: HTMLTableRowElement | null) => void;
   stationNameEditState: StationNameEditState | null;
   onRowDragStart: (group: DragGroup, id: string, event: React.DragEvent<HTMLSpanElement>) => void;
@@ -236,6 +258,7 @@ interface FeedEditStationRowProps {
 
 interface FeedEditLibraryRowProps {
   item: LibraryItemRow;
+  isRowFocused: boolean;
   attachRowRef: (itemId: string, node: HTMLTableRowElement | null) => void;
   onRowDragStart: (group: DragGroup, id: string, event: React.DragEvent<HTMLSpanElement>) => void;
   onRowDragEnd: () => void;
@@ -509,6 +532,7 @@ const FeedEditTableViewport: React.FC<FeedEditTableViewportProps> = ({
 const FeedEditFeedRow = React.memo<FeedEditFeedRowProps>(({
   feed,
   stationNames,
+  isRowFocused,
   isSearchMatch,
   isCurrentSearchMatch,
   titleEditState,
@@ -534,9 +558,12 @@ const FeedEditFeedRow = React.memo<FeedEditFeedRowProps>(({
       attachRowRef(feed.id, node);
     }}
     className={[
+      isRowFocused ? 'is-row-focused' : '',
       isSearchMatch ? 'is-search-match' : '',
       isCurrentSearchMatch ? 'is-search-current-match' : '',
     ].filter(Boolean).join(' ')}
+    data-feed-edit-group="feed"
+    data-feed-edit-row-id={feed.id}
   >
     <td>
       <button
@@ -549,7 +576,7 @@ const FeedEditFeedRow = React.memo<FeedEditFeedRowProps>(({
         {feed.emoji || '—'}
       </button>
     </td>
-    <td>
+    <td className="feed-edit-favicon-col">
       <div className="feed-edit-favicon-cell">
         {feed.favicon?.startsWith('data:') ? (
           <FaviconImage
@@ -674,6 +701,7 @@ const FeedEditFeedRow = React.memo<FeedEditFeedRowProps>(({
 const FeedEditStationRow = React.memo<FeedEditStationRowProps>(({
   station,
   feedCount,
+  isRowFocused,
   attachRowRef,
   stationNameEditState,
   onRowDragStart,
@@ -691,6 +719,9 @@ const FeedEditStationRow = React.memo<FeedEditStationRowProps>(({
     ref={(node) => {
       attachRowRef(station.name, node);
     }}
+    className={isRowFocused ? 'is-row-focused' : undefined}
+    data-feed-edit-group="station"
+    data-feed-edit-row-id={station.name}
     onDragOver={(event) => onRowDragOver('station', station.name, event)}
     onDrop={(event) => { void onRowDrop('station', station.name, event); }}
   >
@@ -754,6 +785,7 @@ const FeedEditStationRow = React.memo<FeedEditStationRowProps>(({
 
 const FeedEditLibraryRow = React.memo<FeedEditLibraryRowProps>(({
   item,
+  isRowFocused,
   attachRowRef,
   onRowDragStart,
   onRowDragEnd,
@@ -765,6 +797,9 @@ const FeedEditLibraryRow = React.memo<FeedEditLibraryRowProps>(({
     ref={(node) => {
       attachRowRef(item.id, node);
     }}
+    className={isRowFocused ? 'is-row-focused' : undefined}
+    data-feed-edit-group="library"
+    data-feed-edit-row-id={item.id}
     onDragOver={(event) => onRowDragOver('library', item.id, event)}
     onDrop={(event) => { void onRowDrop('library', item.id, event); }}
   >
@@ -856,6 +891,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   const [stationToDelete, setStationToDelete] = useState<StationDeleteState | null>(null);
   const [opmlActionMessage, setOpmlActionMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [focusedRow, setFocusedRow] = useState<FeedEditFocusedRow | null>(null);
   const resizeStateRef = useRef<FeedColumnResizeState | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
@@ -869,6 +905,31 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   const libraryItemsRef = useLatestRef(libraryItems);
   const dragStateRef = useRef<DragState | null>(null);
   const stationNameCommitKeyRef = useRef<string | null>(null);
+
+  const isRowFocused = useCallback((group: FeedEditRowFocusGroup, id: string) => (
+    focusedRow?.group === group && focusedRow.id === id
+  ), [focusedRow]);
+
+  const handleFeedEditPointerDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const row = target.closest('.feed-edit-group-table tbody tr');
+    if (row instanceof HTMLTableRowElement && !isFeedEditFloatingOverlayTarget(target)) {
+      const group = row.dataset.feedEditGroup as FeedEditRowFocusGroup | undefined;
+      const rowId = row.dataset.feedEditRowId;
+      if (group && rowId) {
+        setFocusedRow({ group, id: rowId });
+      }
+      return;
+    }
+
+    if (isFeedEditFloatingOverlayTarget(target)) return;
+
+    if (target.closest('.feed-edit-view')) {
+      setFocusedRow(null);
+    }
+  }, []);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -1719,6 +1780,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     const targetScrollTop = getCenteredScrollTop(scrollContainer, targetRow);
     const cancelScroll = animateScrollTop(scrollContainer, targetScrollTop, () => {
       flashFeedEditRow(targetRow);
+      setFocusedRow(feedEditTargetToFocusedRow(feedEditTarget));
       clearFeedEditTarget();
     });
 
@@ -2334,7 +2396,10 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   );
 
   return (
-    <div className="article-list feed-edit-view">
+    <div
+      className="article-list feed-edit-view"
+      onMouseDown={handleFeedEditPointerDown}
+    >
       <FeedEditWidgets
         onToggleSearch={handleToggleSearch}
         isSearchOpen={isSearchOpen}
@@ -2375,6 +2440,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
                     <FeedEditLibraryRow
                       key={item.id}
                       item={item}
+                      isRowFocused={isRowFocused('library', item.id)}
                       attachRowRef={attachLibraryRowRef}
                       onRowDragStart={handleDragStart}
                       onRowDragEnd={handleDragEnd}
@@ -2447,6 +2513,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
                       key={station.name}
                       station={station}
                       feedCount={feedCount}
+                      isRowFocused={isRowFocused('station', station.name)}
                       attachRowRef={attachStationRowRef}
                       stationNameEditState={stationNameEditState?.stationName === station.name ? stationNameEditState : null}
                       onRowDragStart={handleDragStart}
@@ -2541,6 +2608,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
                       key={feed.id}
                       feed={feed}
                       stationNames={stationNames}
+                      isRowFocused={isRowFocused('feed', feed.id)}
                       isSearchMatch={matchedFeedIdSet.has(feed.id)}
                       isCurrentSearchMatch={firstMatchedFeedId === feed.id}
                       titleEditState={titleEditState?.feedId === feed.id ? titleEditState : null}
