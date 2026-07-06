@@ -41,54 +41,68 @@ pub struct FeedUpdate {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_list(state: State<'_, DbState>) -> Result<Vec<FeedRecord>, String> {
-    state.with_connection(|connection| list_feeds(connection))
+pub async fn feeds_list(state: State<'_, DbState>) -> Result<Vec<FeedRecord>, String> {
+    let db = state.inner().clone();
+    db.read(|connection| list_feeds(connection)).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_get(id: String, state: State<'_, DbState>) -> Result<Option<FeedRecord>, String> {
-    state.with_connection(|connection| get_feed(connection, &id))
+pub async fn feeds_get(
+    id: String,
+    state: State<'_, DbState>,
+) -> Result<Option<FeedRecord>, String> {
+    let db = state.inner().clone();
+    db.read(move |connection| get_feed(connection, &id)).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_get_by_url(
+pub async fn feeds_get_by_url(
     url: String,
     state: State<'_, DbState>,
 ) -> Result<Option<FeedRecord>, String> {
-    state.with_connection(|connection| get_feed_by_url(connection, &url))
+    let db = state.inner().clone();
+    db.read(move |connection| get_feed_by_url(connection, &url))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_create(feed: FeedRecord, state: State<'_, DbState>) -> Result<(), String> {
-    state.with_connection(|connection| insert_feed(connection, &feed))
+pub async fn feeds_create(feed: FeedRecord, state: State<'_, DbState>) -> Result<(), String> {
+    let db = state.inner().clone();
+    db.write(move |connection| insert_feed(connection, &feed))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_update(
+pub async fn feeds_update(
     id: String,
     updates: FeedUpdate,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| update_feed(connection, &id, updates))
+    let db = state.inner().clone();
+    db.write(move |connection| update_feed(connection, &id, updates))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_delete(id: String, state: State<'_, DbState>) -> Result<bool, String> {
-    state.with_connection(|connection| {
+pub async fn feeds_delete(id: String, state: State<'_, DbState>) -> Result<bool, String> {
+    let db = state.inner().clone();
+    db.write(move |connection| {
         connection
             .execute("DELETE FROM feeds WHERE id = ?1", params![id])
             .map(|changes| changes > 0)
             .map_err(|error| format!("Failed to delete feed: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_update_unread_count(
+pub async fn feeds_update_unread_count(
     id: String,
     count: i64,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| {
+    let db = state.inner().clone();
+    db.write(move |connection| {
         connection
             .execute(
                 "UPDATE feeds SET unread_count = ?1 WHERE id = ?2",
@@ -97,15 +111,17 @@ pub fn feeds_update_unread_count(
             .map(|_| ())
             .map_err(|error| format!("Failed to update feed unread count: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_update_article_count(
+pub async fn feeds_update_article_count(
     id: String,
     count: i64,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| {
+    let db = state.inner().clone();
+    db.write(move |connection| {
         connection
             .execute(
                 "UPDATE feeds SET article_count = ?1 WHERE id = ?2",
@@ -114,15 +130,17 @@ pub fn feeds_update_article_count(
             .map(|_| ())
             .map_err(|error| format!("Failed to update feed article count: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_update_last_fetched(
+pub async fn feeds_update_last_fetched(
     id: String,
     last_fetched: String,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| {
+    let db = state.inner().clone();
+    db.write(move |connection| {
         connection
             .execute(
                 "UPDATE feeds SET last_fetched = ?1 WHERE id = ?2",
@@ -131,15 +149,18 @@ pub fn feeds_update_last_fetched(
             .map(|_| ())
             .map_err(|error| format!("Failed to update feed fetch timestamp: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_count(state: State<'_, DbState>) -> Result<i64, String> {
-    state.with_connection(|connection| {
+pub async fn feeds_count(state: State<'_, DbState>) -> Result<i64, String> {
+    let db = state.inner().clone();
+    db.read(|connection| {
         connection
             .query_row("SELECT COUNT(*) FROM feeds", [], |row| row.get::<_, i64>(0))
             .map_err(|error| format!("Failed to count feeds: {error}"))
     })
+    .await
 }
 
 pub fn list_feeds(connection: &Connection) -> Result<Vec<FeedRecord>, String> {

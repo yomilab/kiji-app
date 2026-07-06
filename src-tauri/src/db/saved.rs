@@ -24,24 +24,32 @@ pub struct SavedArticleQueryResponse {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn saved_query(
+pub async fn saved_query(
     request: SavedArticleQueryRequest,
     state: State<'_, DbState>,
 ) -> Result<SavedArticleQueryResponse, String> {
-    state.with_connection(|connection| query_saved_articles(connection, request))
+    let db = state.inner().clone();
+    db.read(move |connection| query_saved_articles(connection, request))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn saved_create(article: SavedArticleRecord, state: State<'_, DbState>) -> Result<(), String> {
-    state.with_connection(|connection| insert_saved_article(connection, &article))
+pub async fn saved_create(
+    article: SavedArticleRecord,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    db.write(move |connection| insert_saved_article(connection, &article))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn saved_insert_batch(
+pub async fn saved_insert_batch(
     articles: Vec<SavedArticleRecord>,
     state: State<'_, DbState>,
 ) -> Result<i64, String> {
-    state.with_connection(|connection| {
+    let db = state.inner().clone();
+    db.write(move |connection| {
         let mut inserted = 0;
         for article in &articles {
             insert_saved_article(connection, article)?;
@@ -49,50 +57,64 @@ pub fn saved_insert_batch(
         }
         Ok(inserted)
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn saved_delete(id: String, state: State<'_, DbState>) -> Result<(), String> {
-    state.with_connection(|connection| {
+pub async fn saved_delete(id: String, state: State<'_, DbState>) -> Result<(), String> {
+    let db = state.inner().clone();
+    db.write(move |connection| {
         connection
             .execute("DELETE FROM saved_articles WHERE id = ?1", params![id])
             .map(|_| ())
             .map_err(|error| format!("Failed to delete saved article: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn saved_get(
+pub async fn saved_get(
     id: String,
     state: State<'_, DbState>,
 ) -> Result<Option<SavedArticleRecord>, String> {
-    state.with_connection(|connection| get_saved_article_by_id(connection, &id))
+    let db = state.inner().clone();
+    db.read(move |connection| get_saved_article_by_id(connection, &id))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn saved_get_by_article_hash(
+pub async fn saved_get_by_article_hash(
     article_hash: String,
     state: State<'_, DbState>,
 ) -> Result<Option<SavedArticleRecord>, String> {
-    state.with_connection(|connection| get_saved_article_by_hash(connection, &article_hash))
+    let db = state.inner().clone();
+    db.read(move |connection| get_saved_article_by_hash(connection, &article_hash))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn saved_get_by_link(
+pub async fn saved_get_by_link(
     link: String,
     state: State<'_, DbState>,
 ) -> Result<Option<SavedArticleRecord>, String> {
-    state.with_connection(|connection| get_saved_article_by_link(connection, &link))
+    let db = state.inner().clone();
+    db.read(move |connection| get_saved_article_by_link(connection, &link))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn saved_list_all(state: State<'_, DbState>) -> Result<Vec<SavedArticleRecord>, String> {
-    state.with_connection(|connection| list_saved_articles(connection))
+pub async fn saved_list_all(state: State<'_, DbState>) -> Result<Vec<SavedArticleRecord>, String> {
+    let db = state.inner().clone();
+    db.read(|connection| list_saved_articles(connection)).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn saved_get_content(id: String, state: State<'_, DbState>) -> Result<Option<String>, String> {
-    state.with_connection(|connection| {
+pub async fn saved_get_content(
+    id: String,
+    state: State<'_, DbState>,
+) -> Result<Option<String>, String> {
+    let db = state.inner().clone();
+    db.read(move |connection| {
         connection
             .query_row(
                 "SELECT content FROM saved_articles WHERE id = ?1",
@@ -102,15 +124,17 @@ pub fn saved_get_content(id: String, state: State<'_, DbState>) -> Result<Option
             .optional()
             .map_err(|error| format!("Failed to read saved article content: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn saved_update_highlights(
+pub async fn saved_update_highlights(
     id: String,
     highlights: Vec<serde_json::Value>,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| {
+    let db = state.inner().clone();
+    db.write(move |connection| {
         let highlights_json = to_json_string(&highlights)?;
         connection
             .execute(
@@ -120,15 +144,17 @@ pub fn saved_update_highlights(
             .map(|_| ())
             .map_err(|error| format!("Failed to update saved article highlights: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn saved_update_notes(
+pub async fn saved_update_notes(
     id: String,
     notes: String,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| {
+    let db = state.inner().clone();
+    db.write(move |connection| {
         connection
             .execute(
                 "UPDATE saved_articles SET notes = ?1 WHERE id = ?2",
@@ -137,15 +163,17 @@ pub fn saved_update_notes(
             .map(|_| ())
             .map_err(|error| format!("Failed to update saved article notes: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn saved_update_last_read_at(
+pub async fn saved_update_last_read_at(
     id: String,
     last_read_at: String,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| {
+    let db = state.inner().clone();
+    db.write(move |connection| {
         connection
             .execute(
                 "UPDATE saved_articles SET last_read_at = ?1 WHERE id = ?2",
@@ -154,6 +182,7 @@ pub fn saved_update_last_read_at(
             .map(|_| ())
             .map_err(|error| format!("Failed to update saved article last-read timestamp: {error}"))
     })
+    .await
 }
 
 pub fn query_saved_articles(

@@ -33,18 +33,20 @@ pub async fn preview_native_refresh_cycle(
         .unwrap_or(DEFAULT_NATIVE_CYCLE_CONCURRENCY)
         .clamp(1, MAX_NATIVE_CYCLE_CONCURRENCY);
 
-    let (entries, feeds_by_id) = db.with_connection(|connection| {
-        let feeds = list_feeds(connection)?;
-        let feeds_by_id = feeds
-            .iter()
-            .map(|feed| (feed.id.clone(), feed.clone()))
-            .collect::<HashMap<_, _>>();
-        let entries = feeds
-            .iter()
-            .map(scheduler_feed_entry_from_record)
-            .collect::<Vec<_>>();
-        Ok((entries, feeds_by_id))
-    })?;
+    let (entries, feeds_by_id) = db
+        .read(|connection| {
+            let feeds = list_feeds(connection)?;
+            let feeds_by_id = feeds
+                .iter()
+                .map(|feed| (feed.id.clone(), feed.clone()))
+                .collect::<HashMap<_, _>>();
+            let entries = feeds
+                .iter()
+                .map(scheduler_feed_entry_from_record)
+                .collect::<Vec<_>>();
+            Ok((entries, feeds_by_id))
+        })
+        .await?;
 
     let plan = create_scheduler_run_plan(
         &entries,
@@ -193,23 +195,16 @@ async fn refresh_single_feed_native(
     {
         Ok(response) => response,
         Err(error) => {
-            record_feed_failure(db, &feed, &error)?;
+            record_feed_failure(db, &feed, &error).await?;
             return Err(error);
         }
     };
 
     if network.not_modified || network.data.is_none() {
-        db.with_connection(|connection| {
-            update_feed(
-                connection,
-                &feed.id,
-                success_feed_update(
-                    network.etag.clone(),
-                    network.last_modified.clone(),
-                    None,
-                ),
-            )
-        })?;
+        let feed_id = feed.id.clone();
+        let update = success_feed_update(network.etag.clone(), network.last_modified.clone(), None);
+        db.write(move |connection| update_feed(connection, &feed_id, update))
+            .await?;
 
         return Ok(NativeFeedRefreshOutcome {
             status: "not-modified".to_string(),
@@ -221,29 +216,30 @@ async fn refresh_single_feed_native(
         .data
         .ok_or_else(|| "Feed fetch returned empty body.".to_string())?;
 
-    let stored = match db.with_connection(|connection| {
-        store_parsed_feed_content(
-            connection,
-            StoreParsedFeedRequest {
-                feed_id: feed.id.clone(),
-                feed_url: feed.url.clone(),
-                raw_text,
-                feed_title: Some(feed.title.clone()),
-                feed_favicon: feed.favicon.clone(),
-                feed_favicon_has_transparency: feed.favicon_has_transparency,
-                feed_favicon_bg_light: feed.favicon_bg_light.clone(),
-                feed_favicon_bg_dark: feed.favicon_bg_dark.clone(),
-                feed_image: feed.image.clone(),
-                etag: network.etag.clone(),
-                last_modified: network.last_modified.clone(),
-                last_fetched: Some(current_time_rfc3339()),
-                previous_update_frequency_score: Some(feed.update_frequency_score),
-            },
-        )
-    }) {
+    // One short write transaction per feed keeps the writer available between
+    // feeds, so UI writes never wait for the whole cycle.
+    let store_request = StoreParsedFeedRequest {
+        feed_id: feed.id.clone(),
+        feed_url: feed.url.clone(),
+        raw_text,
+        feed_title: Some(feed.title.clone()),
+        feed_favicon: feed.favicon.clone(),
+        feed_favicon_has_transparency: feed.favicon_has_transparency,
+        feed_favicon_bg_light: feed.favicon_bg_light.clone(),
+        feed_favicon_bg_dark: feed.favicon_bg_dark.clone(),
+        feed_image: feed.image.clone(),
+        etag: network.etag.clone(),
+        last_modified: network.last_modified.clone(),
+        last_fetched: Some(current_time_rfc3339()),
+        previous_update_frequency_score: Some(feed.update_frequency_score),
+    };
+    let stored = match db
+        .write(move |connection| store_parsed_feed_content(connection, store_request))
+        .await
+    {
         Ok(response) => response,
         Err(error) => {
-            record_feed_failure(db, &feed, &error)?;
+            record_feed_failure(db, &feed, &error).await?;
             return Err(error);
         }
     };
@@ -254,14 +250,16 @@ async fn refresh_single_feed_native(
     })
 }
 
-fn record_feed_failure(db: &DbState, feed: &FeedRecord, error: &str) -> Result<(), String> {
+async fn record_feed_failure(db: &DbState, feed: &FeedRecord, error: &str) -> Result<(), String> {
     let _ = error;
-    db.with_connection(|connection| {
+    let feed_id = feed.id.clone();
+    let consecutive_failures = feed.consecutive_failures;
+    db.write(move |connection| {
         update_feed(
             connection,
-            &feed.id,
+            &feed_id,
             FeedUpdate {
-                consecutive_failures: Some(feed.consecutive_failures + 1),
+                consecutive_failures: Some(consecutive_failures + 1),
                 last_failed_fetch_at: Some(Some(current_time_rfc3339())),
                 title: None,
                 url: None,
@@ -292,6 +290,7 @@ fn record_feed_failure(db: &DbState, feed: &FeedRecord, error: &str) -> Result<(
             },
         )
     })
+    .await
 }
 
 fn success_feed_update(

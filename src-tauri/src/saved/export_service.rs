@@ -100,11 +100,13 @@ impl SavedExportState {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn saved_export_preflight(
+pub async fn saved_export_preflight(
     output_path: String,
     db_state: State<'_, DbState>,
 ) -> Result<SavedArticlesExportPreflight, String> {
-    db_state.with_connection(|connection| build_preflight(connection, &output_path))
+    let db = db_state.inner().clone();
+    db.read(move |connection| build_preflight(connection, &output_path))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]

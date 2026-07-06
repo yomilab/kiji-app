@@ -1264,4 +1264,108 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       expect(coldQueryAttempts).toBeGreaterThanOrEqual(2);
     }, 3000);
   });
+
+  it('shows skeleton on a cold smart view switch and clears it once the query lands', async () => {
+    const unreadDeferred = createDeferred<{ articles: Article[], total: number }>();
+
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.filter?.read === false) {
+        return unreadDeferred.promise;
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectSmartView('unread');
+    });
+
+    // Immediate paint: cold smart view resets to skeleton without waiting on
+    // the store query.
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedSmartView).toBe('unread');
+      expect(latestContext!.isLoadingArticles).toBe(true);
+      expect(latestContext!.articles).toEqual([]);
+    });
+
+    unreadDeferred.resolve({ articles: [createArticle('hash-unread', 'feed-a')], total: 1 });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-unread']);
+    });
+  });
+
+  it('restores a cached smart view snapshot while its fresh query is still pending', async () => {
+    const unreadArticles = [createArticle('hash-unread', 'feed-a')];
+    let unreadQueryCount = 0;
+    const secondUnreadDeferred = createDeferred<{ articles: Article[], total: number }>();
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-b']);
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.filter?.read === false) {
+        unreadQueryCount += 1;
+        if (unreadQueryCount === 1) {
+          return Promise.resolve({ articles: unreadArticles, total: 1 });
+        }
+        return secondUnreadDeferred.promise;
+      }
+      if (query.tagName === 'B') {
+        return Promise.resolve({ articles: [createArticle('hash-b', 'feed-b')], total: 1 });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    // Warm the smart view snapshot, hop away, then come back while the fresh
+    // unread query hangs.
+    await act(async () => {
+      await latestContext!.selectSmartView('unread');
+    });
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-unread']);
+    });
+
+    await act(async () => {
+      await latestContext!.selectTag('B');
+    });
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('B');
+    });
+
+    await act(async () => {
+      void latestContext!.selectSmartView('unread');
+    });
+
+    // Snapshot restore paints the cached rows immediately with no skeleton.
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedSmartView).toBe('unread');
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-unread']);
+    });
+
+    secondUnreadDeferred.resolve({ articles: unreadArticles, total: 1 });
+    await waitForExpectation(() => {
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-unread']);
+    });
+  });
 });

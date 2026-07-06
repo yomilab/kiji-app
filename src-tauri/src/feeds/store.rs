@@ -156,11 +156,13 @@ fn parse_timestamp(value: &str) -> Option<chrono::DateTime<Utc>> {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_store_parsed_content(
+pub async fn feeds_store_parsed_content(
     request: StoreParsedFeedRequest,
     state: State<'_, DbState>,
 ) -> Result<StoreParsedFeedResponse, String> {
-    state.with_connection(|connection| store_parsed_feed_content(connection, request))
+    let db = state.inner().clone();
+    db.write(move |connection| store_parsed_feed_content(connection, request))
+        .await
 }
 
 #[cfg(test)]

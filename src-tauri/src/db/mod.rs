@@ -1,9 +1,9 @@
 mod articles;
-mod feeds;
+pub(crate) mod feeds;
 mod migrations;
 mod models;
 mod saved;
-mod schema;
+pub(crate) mod schema;
 mod search;
 mod tags;
 
@@ -35,7 +35,10 @@ use serde::Serialize;
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
 };
 pub use tags::{
     feeds_tags_attach_feed, feeds_tags_delete, feeds_tags_detach_feed, feeds_tags_list,
@@ -56,9 +59,17 @@ pub struct DatabaseStatus {
     foreign_keys_enabled: bool,
 }
 
+/// Number of read-only pooled connections. WAL mode lets these run
+/// concurrently with the single writer, so article-list queries never queue
+/// behind a feed-refresh store cycle.
+const READER_POOL_SIZE: usize = 3;
+const BUSY_TIMEOUT_MS: u64 = 5_000;
+
 struct DbStateInner {
     path: PathBuf,
-    connection: Mutex<Connection>,
+    writer: Mutex<Connection>,
+    readers: Vec<Mutex<Connection>>,
+    next_reader: AtomicUsize,
 }
 
 #[derive(Clone)]
@@ -71,7 +82,7 @@ impl DbState {
         let path = resolve_database_path(app)?;
         remove_orphaned_wal_sidecars(&path)?;
 
-        let connection = match open_and_initialize(&path) {
+        let writer = match open_and_initialize(&path) {
             Ok(connection) => connection,
             Err(first_error) => {
                 remove_wal_sidecars(&path)?;
@@ -81,16 +92,24 @@ impl DbState {
             }
         };
 
+        // Readers open after the writer so the schema and WAL sidecars exist.
+        let mut readers = Vec::with_capacity(READER_POOL_SIZE);
+        for _ in 0..READER_POOL_SIZE {
+            readers.push(Mutex::new(open_reader_connection(&path)?));
+        }
+
         Ok(Self {
             inner: Arc::new(DbStateInner {
                 path,
-                connection: Mutex::new(connection),
+                writer: Mutex::new(writer),
+                readers,
+                next_reader: AtomicUsize::new(0),
             }),
         })
     }
 
     pub fn checkpoint_wal(&self) -> Result<(), String> {
-        self.with_connection(|connection| {
+        self.with_writer(|connection| {
             connection
                 .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
                     let _busy: i64 = row.get(0)?;
@@ -103,31 +122,68 @@ impl DbState {
     }
 
     fn status(&self) -> Result<DatabaseStatus, String> {
-        let connection = self
-            .inner
-            .connection
-            .lock()
-            .map_err(|_| "Failed to lock the database connection.".to_string())?;
-
-        Ok(DatabaseStatus {
-            path: self.inner.path.to_string_lossy().to_string(),
-            schema_version: SCHEMA_VERSION,
-            current_migration_version: read_current_migration_version(&connection)?,
-            journal_mode: read_journal_mode(&connection)?,
-            foreign_keys_enabled: read_foreign_keys_enabled(&connection)?,
+        self.with_reader(|connection| {
+            Ok(DatabaseStatus {
+                path: self.inner.path.to_string_lossy().to_string(),
+                schema_version: SCHEMA_VERSION,
+                current_migration_version: read_current_migration_version(connection)?,
+                journal_mode: read_journal_mode(connection)?,
+                foreign_keys_enabled: read_foreign_keys_enabled(connection)?,
+            })
         })
     }
 
-    pub(crate) fn with_connection<T>(
+    /// Runs a read-only statement on a pooled reader connection. Never blocks
+    /// behind the writer; call from `spawn_blocking` (or use [`DbState::read`]).
+    pub(crate) fn with_reader<T>(
+        &self,
+        action: impl FnOnce(&Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let index = self.inner.next_reader.fetch_add(1, Ordering::Relaxed) % self.inner.readers.len();
+        let connection = self.inner.readers[index]
+            .lock()
+            .map_err(|_| "Failed to lock a database reader connection.".to_string())?;
+        action(&connection)
+    }
+
+    /// Runs a mutating statement on the single writer connection. Writes
+    /// serialize here (SQLite is single-writer); keep transactions short.
+    pub(crate) fn with_writer<T>(
         &self,
         action: impl FnOnce(&Connection) -> Result<T, String>,
     ) -> Result<T, String> {
         let connection = self
             .inner
-            .connection
+            .writer
             .lock()
-            .map_err(|_| "Failed to lock the database connection.".to_string())?;
+            .map_err(|_| "Failed to lock the database writer connection.".to_string())?;
         action(&connection)
+    }
+
+    /// Async read helper: pooled reader on the blocking thread pool, keeping
+    /// SQLite work off the Tauri event loop.
+    pub async fn read<T, F>(&self, action: F) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Connection) -> Result<T, String> + Send + 'static,
+    {
+        let db = self.clone();
+        tauri::async_runtime::spawn_blocking(move || db.with_reader(action))
+            .await
+            .map_err(|error| format!("Database read task failed: {error}"))?
+    }
+
+    /// Async write helper: single writer on the blocking thread pool, keeping
+    /// SQLite work off the Tauri event loop.
+    pub async fn write<T, F>(&self, action: F) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Connection) -> Result<T, String> + Send + 'static,
+    {
+        let db = self.clone();
+        tauri::async_runtime::spawn_blocking(move || db.with_writer(action))
+            .await
+            .map_err(|error| format!("Database write task failed: {error}"))?
     }
 
     pub fn database_path(&self) -> PathBuf {
@@ -136,8 +192,11 @@ impl DbState {
 }
 
 #[tauri::command]
-pub fn db_get_status(state: State<'_, DbState>) -> Result<DatabaseStatus, String> {
-    state.status()
+pub async fn db_get_status(state: State<'_, DbState>) -> Result<DatabaseStatus, String> {
+    let db = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || db.status())
+        .await
+        .map_err(|error| format!("Database status task failed: {error}"))?
 }
 
 fn resolve_database_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -224,7 +283,20 @@ fn open_connection(path: &Path) -> Result<Connection, String> {
     connection
         .pragma_update(None, "foreign_keys", "ON")
         .map_err(|error| format!("Failed to enable foreign keys: {error}"))?;
+    connection
+        .busy_timeout(std::time::Duration::from_millis(BUSY_TIMEOUT_MS))
+        .map_err(|error| format!("Failed to set database busy timeout: {error}"))?;
 
+    Ok(connection)
+}
+
+/// Read-only pooled connection. `query_only` guards against accidental writes
+/// outside the designated writer.
+fn open_reader_connection(path: &Path) -> Result<Connection, String> {
+    let connection = open_connection(path)?;
+    connection
+        .pragma_update(None, "query_only", "ON")
+        .map_err(|error| format!("Failed to set reader connection query-only mode: {error}"))?;
     Ok(connection)
 }
 

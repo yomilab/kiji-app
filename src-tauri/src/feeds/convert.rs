@@ -115,7 +115,9 @@ fn process_article_content(item: &NativeFeedItem, feed_url: &str) -> ProcessedAr
 
     if !item.title.trim().is_empty() {
         let summary_text = to_display_text(item.summary.as_deref().unwrap_or(""));
-        let description_source = if summary_text.chars().count() >= 90 {
+        // Prefer the summary when it is substantial or when the item carries
+        // no content at all (some feeds only populate <description>).
+        let description_source = if summary_text.chars().count() >= 90 || item.content.trim().is_empty() {
             item.summary.as_deref().unwrap_or(&item.content)
         } else {
             &item.content

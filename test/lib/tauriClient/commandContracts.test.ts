@@ -176,7 +176,7 @@ describe("tauri command catalog", () => {
 
     expect(contracts).toMatch(/interface SavedArticleCreateRequest[\s\S]*article:\s*SavedArticleRecord/);
     expect(savedClient).toContain('"saved_create"');
-    expect(rustSaved).toMatch(/pub fn saved_create\(article: SavedArticleRecord/);
+    expect(rustSaved).toMatch(/pub async fn saved_create\(\s*article: SavedArticleRecord/);
   });
 
   it("keeps DB command arguments camelCase-compatible with TypeScript clients", () => {

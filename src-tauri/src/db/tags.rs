@@ -15,59 +15,76 @@ pub struct TagUpdate {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_tags_list(state: State<'_, DbState>) -> Result<Vec<TagRecord>, String> {
-    state.with_connection(|connection| list_tags(connection))
+pub async fn feeds_tags_list(state: State<'_, DbState>) -> Result<Vec<TagRecord>, String> {
+    let db = state.inner().clone();
+    db.read(|connection| list_tags(connection)).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_tags_list_with_feed_ids(state: State<'_, DbState>) -> Result<Vec<TagRecord>, String> {
-    state.with_connection(|connection| list_tags_with_feed_ids(connection))
+pub async fn feeds_tags_list_with_feed_ids(
+    state: State<'_, DbState>,
+) -> Result<Vec<TagRecord>, String> {
+    let db = state.inner().clone();
+    db.read(|connection| list_tags_with_feed_ids(connection))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_tags_upsert(tag: TagRecord, state: State<'_, DbState>) -> Result<(), String> {
-    state.with_connection(|connection| upsert_tag(connection, &tag))
+pub async fn feeds_tags_upsert(tag: TagRecord, state: State<'_, DbState>) -> Result<(), String> {
+    let db = state.inner().clone();
+    db.write(move |connection| upsert_tag(connection, &tag))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_tags_update(
+pub async fn feeds_tags_update(
     name: String,
     updates: TagUpdate,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| update_tag(connection, &name, updates))
+    let db = state.inner().clone();
+    db.write(move |connection| update_tag(connection, &name, updates))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_tags_rename(
+pub async fn feeds_tags_rename(
     current_name: String,
     next_name: String,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| rename_tag(connection, &current_name, &next_name))
+    let db = state.inner().clone();
+    db.write(move |connection| rename_tag(connection, &current_name, &next_name))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_tags_delete(name: String, state: State<'_, DbState>) -> Result<(), String> {
-    state.with_connection(|connection| delete_tag(connection, &name))
+pub async fn feeds_tags_delete(name: String, state: State<'_, DbState>) -> Result<(), String> {
+    let db = state.inner().clone();
+    db.write(move |connection| delete_tag(connection, &name))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_tags_attach_feed(
+pub async fn feeds_tags_attach_feed(
     feed_id: String,
     tag_name: String,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| attach_feed(connection, &feed_id, &tag_name))
+    let db = state.inner().clone();
+    db.write(move |connection| attach_feed(connection, &feed_id, &tag_name))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_tags_detach_feed(
+pub async fn feeds_tags_detach_feed(
     feed_id: String,
     tag_name: String,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| detach_feed(connection, &feed_id, &tag_name))
+    let db = state.inner().clone();
+    db.write(move |connection| detach_feed(connection, &feed_id, &tag_name))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -76,19 +93,18 @@ pub async fn feeds_tags_list_feed_ids(
     state: State<'_, DbState>,
 ) -> Result<Vec<String>, String> {
     let db = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        db.with_connection(|connection| feed_ids_by_tag(connection, &tag_name))
-    })
-    .await
-    .map_err(|error| format!("Tag feed id query task failed: {error}"))?
+    db.read(move |connection| feed_ids_by_tag(connection, &tag_name))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn feeds_tags_list_by_feed(
+pub async fn feeds_tags_list_by_feed(
     feed_id: String,
     state: State<'_, DbState>,
 ) -> Result<Vec<String>, String> {
-    state.with_connection(|connection| tags_by_feed(connection, &feed_id))
+    let db = state.inner().clone();
+    db.read(move |connection| tags_by_feed(connection, &feed_id))
+        .await
 }
 
 pub fn list_tags(connection: &Connection) -> Result<Vec<TagRecord>, String> {
