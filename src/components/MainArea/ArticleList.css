@@ -1,6 +1,18 @@
 /* Article List Container */
 .article-list {
   --article-list-horizontal-padding: 36px;
+  --article-list-favicon-chip-size: calc(var(--leading-item-icon-size) + 2px);
+  /* Former absolute hang: chip sat at -(leading * 1.35) from the title start. */
+  --article-list-favicon-hang: calc(var(--leading-item-icon-size) * 1.35);
+  /* Symmetric inset so an in-flow favicon keeps the same outer edge as before. */
+  --article-list-content-padding-x: calc(
+    var(--article-list-horizontal-padding) - var(--article-list-favicon-hang)
+  );
+  --article-list-favicon-title-gap: calc(
+    var(--article-list-horizontal-padding)
+    - var(--article-list-content-padding-x)
+    - var(--article-list-favicon-chip-size)
+  );
   --article-list-bg: var(--theme-article-bg);
   /* Keep aligned with HEADER_COMPACT_TRANSITION_MS in ArticleList.tsx. */
   --article-list-header-transition-duration: 40ms;
@@ -225,13 +237,14 @@
   max-width: var(--max-article-width);
   width: 100%;
   margin: 0 auto;
-  padding: 10px var(--article-list-horizontal-padding);
+  padding: 10px var(--article-list-content-padding-x);
   position: relative;
   display: flex;
   flex-direction: column;
   border-radius: 6px;
   transition:
     background-color 0.2s,
+    border-radius 0.2s,
     transform 0.15s cubic-bezier(0.2, 0, 0, 1);
 }
 
@@ -357,6 +370,18 @@
   flex-shrink: 0;
 }
 
+.skeleton-favicon {
+  width: var(--article-list-favicon-chip-size);
+  height: var(--article-list-favicon-chip-size);
+  flex: 0 0 var(--article-list-favicon-chip-size);
+  border-radius: 3px;
+}
+
+.skeleton-description,
+.skeleton-description-short {
+  margin-left: calc(var(--article-list-favicon-chip-size) + var(--article-list-favicon-title-gap));
+}
+
 .skeleton-header-title {
   width: 140px;
   height: 18px;
@@ -370,6 +395,7 @@
 /* Active state: article is highlighted (last clicked) */
 .article-list-item.is-active .article-list-item-content {
   background-color: var(--theme-hover-overlay);
+  border-radius: 4px;
 }
 
 /* Use system accent tint only when runtime reports it is available. */
@@ -397,6 +423,7 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 2px;
+  margin-left: var(--article-list-favicon-hang);
   gap: 8px;
 }
 
@@ -420,56 +447,41 @@
 
 /* Article Item Header */
 .article-list-item-header {
-  position: relative;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--article-list-favicon-title-gap);
   margin-bottom: 2px;
   font-weight: 600;
+  min-width: 0;
 }
 
-.article-list-item-header .article-list-favicon-container {
-  position: absolute;
-  left: calc(var(--leading-item-icon-size) * -1.35);
-  /* Vertically center the chip on the title's first line. top:50% is the
-     header's vertical midpoint (title line-height / 2); translateY(-50%)
-     offsets the chip's own half-height so the chip center matches the
-     title center, compensating for the +2px chip size. */
-  top: 50%;
-  transform: translateY(-50%);
-  width: calc(var(--leading-item-icon-size) + 2px);
-  height: calc(var(--leading-item-icon-size) + 2px);
+.article-list-favicon-container {
+  width: var(--article-list-favicon-chip-size);
+  height: var(--article-list-favicon-chip-size);
   border-radius: 3px;
-  flex-shrink: 0;
+  flex: 0 0 var(--article-list-favicon-chip-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   box-sizing: border-box;
-  /* Uniform inner padding so every favicon (square, rectangular, or with
-     baked-in transparent margins) gets the same solid-frame treatment.
-     box-sizing: border-box keeps the outer chip at --leading-item-icon-size+2
-     while the image renders inside the padded content box. */
   padding: 3px;
-  /* Solid, fully-opaque theme-contrasting chip behind the favicon.
-     No alpha / no transparency: a hard solid color that reads as a
-     distinct frame, not a tint. --theme-text-primary is the ink color
-     in each theme, so a strong mix yields a clearly contrasting neutral
-     in both light (darker than article bg) and dark (lighter than bg). */
   background-color: color-mix(in srgb, var(--theme-text-primary) 45%, var(--theme-article-bg));
 }
 
 /* No background for the default fallback (star icon) — only real favicons
    get the solid contrasting chip. */
-.article-list-item-header .article-list-favicon-container.is-fallback {
+.article-list-favicon-container.is-fallback {
   background-color: transparent;
 }
 
-.article-list-item-header .article-list-favicon-img {
+.article-list-favicon-img {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 
-.article-list-item-header .article-list-favicon-fallback {
+.article-list-favicon-fallback {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -481,6 +493,8 @@
 /* Article Title */
 .article-list-item-title {
   margin: 0;
+  flex: 1;
+  min-width: 0;
   font-size: 15px;
   font-weight: 600;
   color: var(--theme-primary-color);
@@ -505,6 +519,7 @@
   font-weight: 500;
   color: var(--theme-text-subdued);
   line-height: 1.4;
+  margin-left: calc(var(--article-list-favicon-chip-size) + var(--article-list-favicon-title-gap));
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;

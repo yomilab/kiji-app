@@ -36,6 +36,7 @@ export const ArticleListSkeleton: React.FC<ArticleListSkeletonProps> = ({ classN
         <div className="article-list-item-main">
           <div className="article-list-item-text">
             <div className="article-list-item-header">
+              <div className="skeleton-placeholder skeleton-favicon" aria-hidden="true" />
               <div className="skeleton-placeholder skeleton-title" />
             </div>
             <div className="skeleton-placeholder skeleton-description" />

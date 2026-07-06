@@ -8,9 +8,7 @@ import { getArticleListRowSignature } from './articleListRowSignature';
 
 const isBase64DataUrl = (str: string): boolean => str.startsWith('data:');
 
-// Article-list favicon rendered inside its own container with a solid,
-// theme-contrasting background (opaque — no transparency-aware alpha).
-// Container is ~2px larger than the leading icon box; border-radius kept.
+// Article-list favicon chip is an in-flow leading column on the title row.
 const ArticleListFavicon = ({
   localFavicon,
   alt = '',
