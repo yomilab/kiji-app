@@ -19,6 +19,10 @@ vi.mock('@/stores/articleStore', () => ({
 vi.mock('@/stores/feedStore', () => ({
   getCount: vi.fn(),
   getById: vi.fn(),
+  getAll: vi.fn().mockResolvedValue([]),
+  tags: {
+    listWithFeedIds: vi.fn().mockResolvedValue([]),
+  },
 }));
 
 vi.mock('@/services/feeds/feedsFetcher', async (importOriginal) => {
@@ -62,7 +66,12 @@ vi.mock('@/services/logger', () => ({
   },
 }));
 
-type TestSchedulerEvent = { type: string; feedId?: string; newArticleCount?: number };
+type TestSchedulerEvent = {
+  type: string;
+  feedId?: string;
+  newArticleCount?: number;
+  updates?: ReadonlyArray<{ feedId: string; newArticleCount: number }>;
+};
 
 const schedulerHarness = vi.hoisted(() => {
   let listener: ((event: TestSchedulerEvent) => void) | null = null;
@@ -78,10 +87,13 @@ const schedulerHarness = vi.hoisted(() => {
       }),
       pauseForStationSelection: vi.fn(),
       resumeAfterStationSelection: vi.fn(),
+      releaseStationSelectionPause: vi.fn(),
+      acknowledgeSidebarInteraction: vi.fn(),
       setActiveStationFocus: vi.fn(),
       clearActiveStationFocus: vi.fn(),
       suppressFeedsForNextCycle: vi.fn(),
       setRuntimeUiState: vi.fn(),
+      boostMany: vi.fn(),
     },
     __emitSchedulerEvent: (event: TestSchedulerEvent) => {
       listener?.(event);
@@ -242,6 +254,82 @@ describe('FeedContext scheduler refresh', () => {
       expect(Array.from(latestContext!.newArticleHashes)).toEqual(['hash-a2']);
       expect(latestContext!.articleListScrollRequest?.mode).toBe('top');
     });
+  });
+
+  it('refreshes the active feed from a native feeds-batch-updated event at cycle end', async () => {
+    const initialArticles = [createArticle('hash-a1', 'feed-1')];
+    const refreshedArticles = [createArticle('hash-a2', 'feed-1'), ...initialArticles];
+
+    (articleStore.query as vi.Mock)
+      .mockResolvedValueOnce({ articles: initialArticles, total: initialArticles.length })
+      .mockResolvedValueOnce({ articles: refreshedArticles, total: refreshedArticles.length });
+
+    await renderProvider();
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+    await act(async () => {
+      await latestContext!.selectFeed('feed-1', 'https://feed-1.example.com/rss.xml', 'Feed 1');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a1']);
+    });
+
+    // Native cycles report all inserts as one batch followed by cycle-complete
+    // (no per-feed feed-updated events).
+    await act(async () => {
+      __emitSchedulerEvent({
+        type: 'feeds-batch-updated',
+        updates: [
+          { feedId: 'feed-1', newArticleCount: 1 },
+          { feedId: 'feed-2', newArticleCount: 3 },
+        ],
+      });
+      __emitSchedulerEvent({ type: 'cycle-complete' });
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a2', 'hash-a1']);
+      expect(Array.from(latestContext!.newArticleHashes)).toEqual(['hash-a2']);
+    });
+  });
+
+  it('ignores a feeds-batch-updated event that does not touch the active source', async () => {
+    const stationArticles = [createArticle('hash-a1', 'feed-1')];
+
+    (tagsManager.getFeedsByTag as vi.Mock).mockImplementation((tagName: string) => {
+      if (tagName === 'Station') {
+        return Promise.resolve(['feed-1']);
+      }
+      return Promise.resolve([]);
+    });
+    (articleStore.query as vi.Mock).mockResolvedValue({ articles: stationArticles, total: stationArticles.length });
+
+    await renderProvider();
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+    await act(async () => {
+      await latestContext!.selectTag('Station');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a1']);
+    });
+
+    await act(async () => {
+      __emitSchedulerEvent({
+        type: 'feeds-batch-updated',
+        updates: [{ feedId: 'feed-2', newArticleCount: 5 }],
+      });
+      __emitSchedulerEvent({ type: 'cycle-complete' });
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a1']);
+    expect(articleStore.query).toHaveBeenCalledTimes(1);
   });
 
   it('ignores scheduler updates for feeds outside the active station', async () => {

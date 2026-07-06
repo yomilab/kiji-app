@@ -3152,6 +3152,19 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
+      // Native cycles report all inserts in one batch at cycle end; the
+      // cycle-complete flush right after consumes these pending updates and
+      // re-queries the visible list when the active source is affected.
+      if (event.type === 'feeds-batch-updated') {
+        const pendingUpdates = pendingSchedulerFeedUpdatesRef.current;
+        for (const update of event.updates) {
+          const previousNewArticleCount = pendingUpdates.get(update.feedId) ?? 0;
+          pendingUpdates.set(update.feedId, Math.max(previousNewArticleCount, update.newArticleCount));
+        }
+        scheduleSchedulerUiFlush();
+        return;
+      }
+
       if (event.type !== 'feed-updated' || !event.feedId) {
         return;
       }

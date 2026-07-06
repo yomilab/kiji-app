@@ -14,6 +14,8 @@ vi.mock("@/lib/tauriClient", () => ({
 vi.mock("@/services/feeds/feedRefreshActivity", () => ({
   feedRefreshActivity: {
     beginQueuedFeeds,
+    recordInteractiveRefreshFeedSettled: vi.fn(),
+    getSnapshot: vi.fn(() => ({ interactiveRefreshScopeTotal: 0 })),
   },
 }));
 

@@ -41,6 +41,12 @@ const SCHEDULER_SLEEP_WAKE_GLOBAL = '__kijiSchedulerSleep';
 const SCHEDULER_RESUME_WAKE_GLOBAL = '__kijiSchedulerResume';
 const STALE_CYCLE_ABORT_MS = 45 * 60 * 1_000;
 const MAX_DEFERRED_TICKS_BEFORE_FORCE_ABORT = 3;
+// Renderer-side sleep detection: JS timers freeze during system sleep, and the
+// native sleep/resume events are not always delivered. A coarse heartbeat
+// whose wall-clock delta far exceeds its interval means the machine slept —
+// run the same catch-up path as a native resume event.
+const SLEEP_GAP_HEARTBEAT_MS = 30_000;
+const SLEEP_GAP_DETECT_MS = 120_000;
 const STATION_SELECTION_PAUSE_MAX_MS = 10 * 60 * 1_000;
 const STARTUP_CYCLE_IDLE_FALLBACK_MS = 30_000;
 const BOOST_TTL_MS = 5 * 60_000;
@@ -92,6 +98,8 @@ class FeedSchedulerService {
   private deferStartupCycleUntilInteraction = false;
   private startupDeferTimer: ReturnType<typeof setTimeout> | null = null;
   private deferredCycleRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private sleepGapHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private lastSleepGapHeartbeatAt = 0;
 
   on(listener: (event: SchedulerEvent) => void): () => void {
     this.listeners.add(listener);
@@ -116,6 +124,11 @@ class FeedSchedulerService {
 
       this.mode = settings.backgroundUpdate ?? 'every-15m';
       this.deferStartupCycleUntilInteraction = getE2eConfig() === null && !import.meta.env.VITEST;
+      if (this.mode === 'never' || this.mode === 'on-launch') {
+        this.clearSleepGapHeartbeat();
+      } else {
+        this.ensureSleepGapHeartbeat();
+      }
       await this.ensureNativeTickListener(lifecycleId);
       await this.ensureSystemPowerListener(lifecycleId);
       this.registerNativeWakeHandlers();
@@ -256,6 +269,7 @@ class FeedSchedulerService {
     this.unregisterNativeWakeHandlers();
     this.clearAbort();
     this.clearDeferredCycleRetryTimer();
+    this.clearSleepGapHeartbeat();
     this.cycleInProgress = false;
     this.pendingCycleTick = false;
     this.pendingCycleReason = null;
@@ -399,6 +413,43 @@ class FeedSchedulerService {
     });
   }
 
+  /**
+   * Detects system sleep via wall-clock jumps between heartbeats. Timers
+   * freeze during sleep, so a beat whose delta far exceeds the interval means
+   * the machine slept; native sleep/resume events are not reliably delivered
+   * (observed in production logs), so this is the fallback trigger for the
+   * resume catch-up path. Single interval per scheduler session; cleared on
+   * `stop()`.
+   */
+  private ensureSleepGapHeartbeat(): void {
+    if (this.sleepGapHeartbeatTimer !== null) {
+      return;
+    }
+
+    this.lastSleepGapHeartbeatAt = Date.now();
+    this.sleepGapHeartbeatTimer = setInterval(() => {
+      const now = Date.now();
+      const gapMs = now - this.lastSleepGapHeartbeatAt;
+      this.lastSleepGapHeartbeatAt = now;
+      if (gapMs < SLEEP_GAP_DETECT_MS) {
+        return;
+      }
+
+      logger.warn('Scheduler', 'Detected system sleep gap via wall-clock jump', {
+        gapMs,
+        mode: this.mode,
+      });
+      void this.catchUpAfterResume();
+    }, SLEEP_GAP_HEARTBEAT_MS);
+  }
+
+  private clearSleepGapHeartbeat(): void {
+    if (this.sleepGapHeartbeatTimer !== null) {
+      clearInterval(this.sleepGapHeartbeatTimer);
+      this.sleepGapHeartbeatTimer = null;
+    }
+  }
+
   private pruneExpiredBoosts(now = Date.now()): void {
     for (const [feedId, boostUntil] of this.boosts) {
       if (boostUntil <= now) {
@@ -463,6 +514,30 @@ class FeedSchedulerService {
     if (this.cycleInProgress || this.isStationSelectionPaused()) {
       this.markPendingCycleTick('import-boost');
       this.mergePendingImportRefreshFeedIds(feedIds);
+
+      // A cycle that spans a system sleep can stall for hours; a boost is a
+      // user-intent signal (station switch, import), so preempt the stale
+      // cycle instead of deferring the refresh behind it. Fire-and-forget —
+      // boostMany stays synchronous on the selection click path.
+      if (!this.isStationSelectionPaused() && this.shouldAbortStaleCycle()) {
+        const lifecycleId = this.lifecycleId;
+        logger.warn('Scheduler', 'Preempting stale refresh cycle for boosted feeds', {
+          feedCount: feedIds.length,
+        });
+        void this.forceAbortActiveCycle('boost-preempt').then(() => {
+          if (
+            !this.isCurrentLifecycle(lifecycleId)
+            || this.cycleInProgress
+            || this.isStationSelectionPaused()
+          ) {
+            return;
+          }
+          this.clearPendingCycleTick();
+          void this.runScheduledCycle(lifecycleId, this.consumePendingImportRefreshScope());
+        });
+        return;
+      }
+
       logger.info('Scheduler', this.isStationSelectionPaused()
         ? 'Deferred boosted import refresh during station selection'
         : 'Deferred boosted import refresh until current cycle completes', {
@@ -1048,6 +1123,20 @@ class FeedSchedulerService {
             })),
           );
         }
+      }
+
+      // Native cycles bypass the per-feed `feed-updated` emit in the legacy
+      // path; without this batch event the article list is never re-queried
+      // after a background cycle inserts articles (list stays stale until the
+      // next cold switch).
+      if (result.insertedByFeedId.size > 0) {
+        this.emit({
+          type: 'feeds-batch-updated',
+          updates: Array.from(result.insertedByFeedId, ([feedId, newArticleCount]) => ({
+            feedId,
+            newArticleCount,
+          })),
+        });
       }
 
       logger.info('Scheduler', 'Native background refresh cycle stats', {

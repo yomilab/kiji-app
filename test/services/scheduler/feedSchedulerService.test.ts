@@ -114,6 +114,8 @@ vi.mock("@/services/feeds/feedRefreshActivity", () => ({
     beginQueuedFeeds: vi.fn(() => vi.fn()),
     clearInteractiveRefreshDeferredTail: vi.fn(),
     noteInteractiveRefreshBackgroundBatch: vi.fn(),
+    recordInteractiveRefreshFeedSettled: vi.fn(),
+    getSnapshot: vi.fn(() => ({ interactiveRefreshScopeTotal: 0 })),
   },
 }));
 
@@ -538,6 +540,41 @@ describe("feedSchedulerService", () => {
     });
   });
 
+  it("detects a system sleep gap via wall-clock heartbeat and aborts the stalled cycle", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    try {
+      fetchFeedNetworkWithCache.mockImplementation((_url: string, options?: { signal?: AbortSignal }) => new Promise((resolve, reject) => {
+        const onAbort = (): void => {
+          reject(new DOMException("Aborted", "AbortError"));
+        };
+        options?.signal?.addEventListener("abort", onAbort, { once: true });
+        void resolve;
+      }));
+
+      await feedScheduler.start();
+      const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
+
+      void tickHandler?.();
+      await vi.waitFor(() => {
+        expect(fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
+      });
+      expect(getAll).toHaveBeenCalledTimes(1);
+
+      // Simulate system sleep: wall clock jumps 40 minutes while timers were
+      // frozen, then the next heartbeat fires and sees the gap.
+      vi.setSystemTime(Date.now() + 40 * 60_000);
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      // Heartbeat → catch-up path → stale cycle aborted → catch-up cycle runs.
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(2);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("runs station-first catch-up after resume when a station is active", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
 
@@ -801,6 +838,110 @@ describe("feedSchedulerService", () => {
           execute: true,
           options: expect.objectContaining({
             onlyFeedIds: ["feed-1", "feed-2"],
+          }),
+        }),
+      );
+    });
+
+    it("emits feeds-batch-updated with per-feed insert counts after a native cycle", async () => {
+      const events: Array<{ type: string; updates?: ReadonlyArray<{ feedId: string; newArticleCount: number }> }> = [];
+      const unsubscribe = feedScheduler.on((event) => {
+        events.push(event as (typeof events)[number]);
+      });
+
+      try {
+        await feedScheduler.start();
+        getSchedulerEventHandler("scheduler:cycle-tick")?.();
+
+        await vi.waitFor(() => {
+          expect(events.some((event) => event.type === "cycle-complete")).toBe(true);
+        });
+
+        const batchEvent = events.find((event) => event.type === "feeds-batch-updated");
+        expect(batchEvent?.updates).toEqual([{ feedId: "feed-1", newArticleCount: 2 }]);
+
+        const batchIndex = events.findIndex((event) => event.type === "feeds-batch-updated");
+        const completeIndex = events.findIndex((event) => event.type === "cycle-complete");
+        expect(batchIndex).toBeGreaterThanOrEqual(0);
+        expect(batchIndex).toBeLessThan(completeIndex);
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it("does not emit feeds-batch-updated when the native cycle inserts nothing", async () => {
+      previewNativeCycle.mockResolvedValue({
+        plan: { prioritized: [], skippedBackoffCount: 0, skippedSuppressedCount: 0 },
+        queuedCount: 1,
+        executedFeedCount: 1,
+        changedFeeds: 0,
+        notModifiedFeeds: 1,
+        failedFeeds: 0,
+        insertedArticles: 0,
+        feedResults: [{ feedId: "feed-1", status: "not-modified", insertedCount: 0 }],
+      });
+
+      const events: Array<{ type: string }> = [];
+      const unsubscribe = feedScheduler.on((event) => {
+        events.push(event);
+      });
+
+      try {
+        await feedScheduler.start();
+        getSchedulerEventHandler("scheduler:cycle-tick")?.();
+
+        await vi.waitFor(() => {
+          expect(events.some((event) => event.type === "cycle-complete")).toBe(true);
+        });
+
+        expect(events.some((event) => event.type === "feeds-batch-updated")).toBe(false);
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it("preempts a stale native cycle when boostMany arrives (deferred-tick threshold)", async () => {
+      let resolveCycle!: () => void;
+      previewNativeCycle.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveCycle = () => {
+          resolve({
+            plan: { prioritized: [], skippedBackoffCount: 0, skippedSuppressedCount: 0 },
+            queuedCount: 0,
+            executedFeedCount: 0,
+            changedFeeds: 0,
+            notModifiedFeeds: 0,
+            failedFeeds: 0,
+            insertedArticles: 0,
+            feedResults: [],
+          });
+        };
+      }));
+
+      await feedScheduler.start();
+      const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
+      tickHandler?.();
+      await vi.waitFor(() => {
+        expect(previewNativeCycle).toHaveBeenCalledTimes(1);
+      });
+
+      // Three deferred ticks mark the cycle stale (MAX_DEFERRED_TICKS_BEFORE_FORCE_ABORT).
+      await tickHandler?.();
+      await tickHandler?.();
+      await tickHandler?.();
+      expect(previewNativeCycle).toHaveBeenCalledTimes(1);
+
+      // A boost against the stale cycle preempts it instead of deferring.
+      feedScheduler.boostMany(["feed-2"]);
+      resolveCycle();
+
+      await vi.waitFor(() => {
+        expect(previewNativeCycle).toHaveBeenCalledTimes(2);
+      });
+      expect(previewNativeCycle).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          execute: true,
+          options: expect.objectContaining({
+            onlyFeedIds: ["feed-2"],
           }),
         }),
       );
