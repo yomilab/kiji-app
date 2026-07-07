@@ -21,35 +21,6 @@ KiJi helps you follow feeds, save articles, sync saved reading to a local Markdo
 - **🏷️ Stations and smart views.** Group feeds into stations; browse All, Unread, and Saved from the sidebar.
 - **🖥️ Native desktop shell.** Built with Tauri 2 — frameless window, macOS vibrancy, and platform-native packaging for macOS, Windows, and Linux.
 
-## 🚀 Quick start
-
-You'll need **[Node.js](https://nodejs.org) 20+**, **[Rust](https://rustup.rs) stable**, and platform build deps for [Tauri 2](https://v2.tauri.app/start/prerequisites/).
-
-### Clone and run in dev
-
-```bash
-git clone https://github.com/yomilab/kiji-app.git
-cd kiji-app
-npm ci
-npm run dev:tauri
-```
-
-### Build a release bundle
-
-```bash
-npm run build
-```
-
-Release artifacts are produced by CI on pushes to `dev` — see [`.github/workflows/build-desktop.yml`](./.github/workflows/build-desktop.yml).
-
-### Verify
-
-```bash
-npm run verify          # type-check, frontend tests, Rust tests, smoke
-npm run test:ci         # frontend unit tests (CI retry policy)
-npm run test:rust       # Rust crate tests
-```
-
 ## 🛡️ Privacy
 
 KiJi is **local-first by design.**
