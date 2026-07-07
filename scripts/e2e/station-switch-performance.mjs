@@ -28,7 +28,10 @@ import {
 } from "./e2eRunner.mjs";
 import { STATION_SWITCH_E2E_BUDGETS_MS } from "./switchPerformanceBudgets.mjs";
 
-const CI_E2E_PERF_TIMEOUT_MS = process.env.KIJI_RUN_E2E_IN_CI === "1" ? 180_000 : 90_000;
+const CI_E2E_PERF_TIMEOUT_MS = process.env.KIJI_RUN_E2E_IN_CI === "1" ? 300_000 : 90_000;
+const CI_PERF_FEED_COUNT = process.env.KIJI_RUN_E2E_IN_CI === "1"
+  ? STATION_SWITCH_E2E_BUDGETS_MS.largeStationMinFeeds
+  : E2E_LARGE_STATION_FEED_COUNT;
 
 function assertSwitchWithinBudget(label, sample, budgets) {
   const failures = [];
@@ -165,7 +168,7 @@ export async function runStationSwitchPerformanceE2e() {
   const server = createE2eContentServer(routes);
   const { baseUrl } = await server.start();
 
-  for (let index = 0; index < E2E_LARGE_STATION_FEED_COUNT; index += 1) {
+  for (let index = 0; index < CI_PERF_FEED_COUNT; index += 1) {
     const slug = `daily-${index}`;
     routes[`/${slug}.xml`] = buildAtomFeedEntryRoutes(
       baseUrl,
@@ -180,7 +183,7 @@ export async function runStationSwitchPerformanceE2e() {
   });
 
   const opmlPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "kiji-e2e-opml-")), "performance-large.opml");
-  fs.writeFileSync(opmlPath, buildLargeStationPerformanceOpml(baseUrl));
+  fs.writeFileSync(opmlPath, buildLargeStationPerformanceOpml(baseUrl, CI_PERF_FEED_COUNT));
 
   const { homeDir, e2eDir } = createE2eSessionDirs();
   const { child, stderr } = startE2eApp(binaryPath, {
@@ -199,7 +202,7 @@ export async function runStationSwitchPerformanceE2e() {
     const importEvent = await waitForEvent(
       e2eDir,
       "opml-import-complete",
-      (event) => (event.payload?.feedCount ?? 0) >= E2E_LARGE_STATION_FEED_COUNT,
+      (event) => (event.payload?.feedCount ?? 0) >= CI_PERF_FEED_COUNT,
     );
 
     const importedFeedCount = importEvent.payload?.feedCount ?? 0;

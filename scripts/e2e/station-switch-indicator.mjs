@@ -28,6 +28,8 @@ import {
 
 const CI_E2E_EVENT_TIMEOUT_MS = process.env.KIJI_RUN_E2E_IN_CI === "1" ? 180_000 : 90_000;
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 function matchesRefreshIndicator(event, stationName) {
   return event.payload?.selectedTag === stationName;
 }
