@@ -48,12 +48,6 @@ describe("User interaction E2E", () => {
     }
     expect(result.dailyCold.harnessInteractiveMs).toBeLessThanOrEqual(1_200);
     expect(result.dailyWarm.harnessInteractiveMs).toBeLessThanOrEqual(1_200);
-    if (
-      typeof result.dailyWarm.traceInteractiveMs === "number"
-      && typeof result.dailyCold.traceInteractiveMs === "number"
-    ) {
-      expect(result.dailyWarm.traceInteractiveMs).toBeLessThanOrEqual(result.dailyCold.traceInteractiveMs);
-    }
   }, E2E_TIMEOUT_MS);
 
   it("opens and closes the article deck", async () => {

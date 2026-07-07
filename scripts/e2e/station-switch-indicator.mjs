@@ -23,6 +23,7 @@ import {
   startE2eApp,
   stopE2eApp,
   waitForEvent,
+  waitForPostImportEvent,
 } from "./e2eRunner.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -117,15 +118,17 @@ export async function runStationSwitchIndicatorE2e() {
     );
 
     writeE2eCommand(e2eDir, "select-station", { stationName: E2E_STATION_BETA });
+    const betaSwitchAtMs = Date.now();
     await waitForEvent(
       e2eDir,
       "navigation-changed",
       (event) => event.payload?.selectedTag === E2E_STATION_BETA,
     );
 
-    const betaIndicator = await waitForEvent(
+    const betaIndicator = await waitForPostImportEvent(
       e2eDir,
       "refresh-indicator-snapshot",
+      betaSwitchAtMs,
       (event) => event.payload?.selectedTag === E2E_STATION_BETA
         && typeof event.payload?.indicatorText === "string"
         && event.payload.indicatorText.includes("1"),
@@ -135,15 +138,17 @@ export async function runStationSwitchIndicatorE2e() {
     await sleep(250);
 
     writeE2eCommand(e2eDir, "select-station", { stationName: E2E_STATION_ALPHA });
+    const alphaSwitchAtMs = Date.now();
     await waitForEvent(
       e2eDir,
       "navigation-changed",
       (event) => event.payload?.selectedTag === E2E_STATION_ALPHA,
     );
 
-    const alphaIndicator = await waitForEvent(
+    const alphaIndicator = await waitForPostImportEvent(
       e2eDir,
       "refresh-indicator-snapshot",
+      alphaSwitchAtMs,
       (event) => event.payload?.selectedTag === E2E_STATION_ALPHA
         && typeof event.payload?.indicatorText === "string"
         && event.payload.indicatorText.includes("1")

@@ -19,18 +19,49 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function terminateProcess(child) {
-  if (child.killed || child.exitCode !== null) {
-    return Promise.resolve();
-  }
-
+function getCrossArchSkipReason(binaryPath) {
+  const platformId = process.env.KIJI_PLATFORM_ID ?? "";
   if (process.platform === "win32") {
-    child.kill("SIGTERM");
-  } else {
-    child.kill("SIGTERM");
+    if (platformId.includes("aarch64") && process.arch !== "arm64") {
+      return `Windows aarch64 launch smoke requires an ARM64 runner (host is ${process.arch})`;
+    }
+    if (platformId.includes("x86_64") && process.arch === "arm64") {
+      return `Windows x86_64 launch smoke requires an x64 runner (host is ${process.arch})`;
+    }
   }
 
-  return new Promise((resolve) => {
+  if (process.platform === "linux" && platformId.includes("aarch64") && process.arch !== "arm64") {
+    return `Linux aarch64 launch smoke requires an ARM64 runner (host is ${process.arch})`;
+  }
+
+  if (binaryPath.includes("aarch64") && process.arch === "x64") {
+    return `Cannot execute aarch64 binary on ${process.arch} host`;
+  }
+
+  return null;
+}
+
+async function terminateProcess(child) {
+  if (child.killed || child.exitCode !== null) {
+    return;
+  }
+
+  if (process.platform === "win32" && child.pid) {
+    await new Promise((resolve) => {
+      const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        stdio: "ignore",
+      });
+      killer.on("exit", () => resolve());
+      killer.on("error", () => {
+        child.kill("SIGKILL");
+        resolve();
+      });
+    });
+    return;
+  }
+
+  child.kill("SIGTERM");
+  await new Promise((resolve) => {
     const timer = setTimeout(() => {
       if (child.exitCode === null && !child.killed) {
         child.kill("SIGKILL");
@@ -45,10 +76,24 @@ function terminateProcess(child) {
   });
 }
 
-function isolatedHomeDir() {
-  if (process.platform === "win32") {
-    return fs.mkdtempSync(path.join(os.tmpdir(), "kiji-smoke-home-"));
+async function removeHomeDir(homeDir) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      fs.rmSync(homeDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+      return;
+    } catch (error) {
+      if (attempt === 5) {
+        console.warn(
+          `[smoke-launch] Failed to remove ${homeDir}: ${error instanceof Error ? error.message : error}`,
+        );
+        return;
+      }
+      await sleep(500);
+    }
   }
+}
+
+function isolatedHomeDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "kiji-smoke-home-"));
 }
 
@@ -86,13 +131,28 @@ export async function runLaunchSmoke() {
     };
   }
 
+  const crossArchSkip = getCrossArchSkipReason(binaryPath);
+  if (crossArchSkip) {
+    return { skipped: true, reason: crossArchSkip };
+  }
+
   const homeDir = isolatedHomeDir();
   let stderr = "";
-  const child = spawn(binaryPath, [], {
-    env: launchEnv(homeDir),
-    stdio: ["ignore", "ignore", "pipe"],
-    detached: process.platform !== "win32",
-  });
+  let child;
+  try {
+    child = spawn(binaryPath, [], {
+      env: launchEnv(homeDir),
+      stdio: ["ignore", "ignore", "pipe"],
+      detached: false,
+    });
+  } catch (error) {
+    await removeHomeDir(homeDir);
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("UNKNOWN") || message.includes("ENOEXEC")) {
+      return { skipped: true, reason: `Cannot launch binary on this host: ${message}` };
+    }
+    throw error;
+  }
 
   child.stderr?.on("data", (chunk) => {
     stderr += chunk.toString();
@@ -103,6 +163,12 @@ export async function runLaunchSmoke() {
   child.on("exit", (code) => {
     exitedEarly = true;
     exitCode = code;
+  });
+
+  child.on("error", (error) => {
+    exitedEarly = true;
+    exitCode = error.code ?? null;
+    stderr += `\n${error.message}`;
   });
 
   try {
@@ -137,8 +203,10 @@ export async function runLaunchSmoke() {
       platform: process.platform,
     };
   } finally {
-    await terminateProcess(child);
-    fs.rmSync(homeDir, { recursive: true, force: true });
+    if (child) {
+      await terminateProcess(child);
+    }
+    await removeHomeDir(homeDir);
   }
 }
 
