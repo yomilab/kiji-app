@@ -29,6 +29,8 @@ import {
 import { STATION_SWITCH_E2E_BUDGETS_MS } from "./switchPerformanceBudgets.mjs";
 
 const CI_E2E_PERF_TIMEOUT_MS = process.env.KIJI_RUN_E2E_IN_CI === "1" ? 180_000 : 90_000;
+
+function assertSwitchWithinBudget(label, sample, budgets) {
   const failures = [];
 
   if (sample.harnessInteractiveMs > budgets.harnessInteractive) {
