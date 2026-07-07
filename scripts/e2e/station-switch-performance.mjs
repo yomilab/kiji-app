@@ -124,8 +124,18 @@ async function measureStationSwitch(e2eDir, stationName, options = {}) {
   const perfEvent = await waitForSwitchPerfEvent(
     e2eDir,
     startedAt - 50,
-    (event) => event.payload?.sourceKey === `tag:${stationName}`
-      && event.payload?.phase === "interactive",
+    (event) => {
+      const payload = event.payload ?? {};
+      if (payload.sourceKey !== `tag:${stationName}`) {
+        return false;
+      }
+      // Interactive and network phases share one event file per switch token;
+      // Phase B can overwrite the file before the harness polls interactive.
+      if (payload.phase === "interactive") {
+        return true;
+      }
+      return payload.phase === "network" && typeof payload.interactiveDurationMs === "number";
+    },
     CI_E2E_PERF_TIMEOUT_MS,
   );
 
