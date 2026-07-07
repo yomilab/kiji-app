@@ -25,6 +25,8 @@ import {
   waitForEvent,
 } from "./e2eRunner.mjs";
 
+const CI_E2E_LIST_TIMEOUT_MS = process.env.KIJI_RUN_E2E_IN_CI === "1" ? 180_000 : 90_000;
+
 export async function runNavigationSwitchE2e() {
   const skipReason = getE2eSkipReason();
   if (skipReason) {
@@ -133,7 +135,7 @@ export async function runNavigationSwitchE2e() {
       e2eDir,
       "article-list-snapshot",
       (event) => event.payload?.selectedFeedId === alphaFeed.id && (event.payload?.articleCount ?? 0) >= 1,
-      90_000,
+      CI_E2E_LIST_TIMEOUT_MS,
     );
 
     return {

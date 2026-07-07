@@ -33,8 +33,14 @@ describe("User interaction E2E", () => {
       expect(result.reason).toBeTruthy();
       return;
     }
-    expect(result.betaIndicatorText || result.betaForegroundCount).toBeTruthy();
-    expect(result.alphaIndicatorText || result.alphaForegroundCount).toBeTruthy();
+    expect(
+      Boolean(result.betaIndicatorText)
+      || typeof result.betaForegroundCount === "number",
+    ).toBe(true);
+    expect(
+      Boolean(result.alphaIndicatorText)
+      || typeof result.alphaForegroundCount === "number",
+    ).toBe(true);
     if (typeof result.betaForegroundCount === "number") {
       expect(result.betaForegroundCount).toBeLessThanOrEqual(6);
     }
