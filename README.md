@@ -14,9 +14,13 @@ KiJi helps you follow feeds, save articles, sync saved reading to a local Markdo
 
 ## Preview
 
-| Article list | Reader mode |
-| --- | --- |
-| ![KiJi article list with stations sidebar](screenshots/preview-article-list.png) | ![KiJi reader mode](screenshots/preview-reader-mode.png) |
+### Article list
+
+![KiJi article list with stations sidebar](screenshots/preview-article-list.png)
+
+### Reader mode
+
+![KiJi reader mode](screenshots/preview-reader-mode.png)
 
 ## ✨ Features
 
