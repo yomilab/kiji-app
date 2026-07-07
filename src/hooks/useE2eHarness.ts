@@ -154,7 +154,6 @@ export const useE2eHarness = (): void => {
       await new Promise<void>((resolve) => {
         window.setTimeout(resolve, 5_000);
       });
-      await feedScheduler.kickE2eHarnessScheduler();
       void feedScheduler.catchUpAfterResume();
       await emitSchedulerReadyIfNeeded('bootstrap-poll');
     })();

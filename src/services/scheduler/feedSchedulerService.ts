@@ -11,7 +11,7 @@ import { settingsManager } from '@/services/settings';
 import { createTaskPool } from '@/services/tasks/taskPool';
 import { logger } from '@/services/logger';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
-import { getE2eConfig, resolveE2eConfig } from '@/services/e2e/e2eHarness';
+import { getE2eConfig } from '@/services/e2e/e2eHarness';
 import { createSchedulerRunPlan } from './schedulerRunPlan';
 import { getSchedulerConcurrency, setSchedulerRuntimeUiState } from './schedulerConcurrency';
 import type { SchedulerCycleScope } from './feedSchedulerServiceTypes';
@@ -123,8 +123,7 @@ class FeedSchedulerService {
       }
 
       this.mode = settings.backgroundUpdate ?? 'every-15m';
-      const e2eConfig = await resolveE2eConfig();
-      this.deferStartupCycleUntilInteraction = e2eConfig === null && !import.meta.env.VITEST;
+      this.deferStartupCycleUntilInteraction = getE2eConfig() === null && !import.meta.env.VITEST;
       if (this.mode === 'never' || this.mode === 'on-launch') {
         this.clearSleepGapHeartbeat();
       } else {
@@ -263,31 +262,6 @@ class FeedSchedulerService {
     this.deferStartupCycleUntilInteraction = false;
     this.clearStartupDeferTimer();
     logger.info('Scheduler', 'Startup background refresh deferral lifted after sidebar interaction');
-  }
-
-  /** E2E harness: lift startup deferral and run a catch-up cycle after bootstrap selection. */
-  async kickE2eHarnessScheduler(): Promise<void> {
-    const e2eConfig = getE2eConfig() ?? await resolveE2eConfig();
-    if (!e2eConfig) {
-      return;
-    }
-
-    this.deferStartupCycleUntilInteraction = false;
-    this.clearStartupDeferTimer();
-    this.markPendingCycleTick('catch-up');
-
-    const lifecycleId = this.lifecycleId;
-    await this.ensureNativeDriverRunning(lifecycleId);
-    if (!this.isCurrentLifecycle(lifecycleId)) {
-      return;
-    }
-
-    if (this.isStationSelectionPaused()) {
-      this.markPendingCycleTick('catch-up');
-      return;
-    }
-
-    await this.catchUpAfterResume();
   }
 
   async stop(): Promise<void> {

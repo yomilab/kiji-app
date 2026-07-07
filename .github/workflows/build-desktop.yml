@@ -269,6 +269,7 @@ jobs:
           CI: true
           KIJI_RUN_E2E_IN_CI: "1"
           KIJI_E2E_REQUIRED: "1"
+          KIJI_E2E_HIDE_UI: "0"
         run: npm run test:e2e
 
   build-debug-linux:

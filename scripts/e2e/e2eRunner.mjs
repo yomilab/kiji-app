@@ -142,7 +142,7 @@ export function startE2eApp(binaryPath, { homeDir, e2eDir, feedUrl, extraEnv = {
       KIJI_E2E_FEED_URL: feedUrl ?? "",
       KIJI_E2E_FEED_ID: E2E_FEED_ID,
       KIJI_E2E_SCHEDULER_INTERVAL_MS: E2E_SCHEDULER_INTERVAL_MS,
-      KIJI_E2E_HIDE_UI: process.env.KIJI_E2E_HIDE_UI ?? "1",
+      KIJI_E2E_HIDE_UI: process.env.KIJI_E2E_HIDE_UI ?? "0",
       ...extraEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
