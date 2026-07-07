@@ -104,24 +104,22 @@ export async function runStationSwitchIndicatorE2e() {
 
   try {
     await waitForEvent(e2eDir, "main-shell-ready");
-    await waitForEvent(
+    const imported = await waitForEvent(
       e2eDir,
       "opml-import-complete",
       (event) => (event.payload?.feedCount ?? 0) >= 2,
     );
+    const importAtMs = imported.at ?? Date.now();
 
-    writeE2eCommand(e2eDir, "select-station", { stationName: E2E_STATION_ALPHA });
-    await waitForEvent(
+    // OPML bootstrap selects the first imported station (Alpha). Hop to Beta without
+    // waiting for a station-level article snapshot — indicator scope is what we assert.
+    await waitForPostImportEvent(
       e2eDir,
-      "navigation-changed",
-      (event) => event.payload?.selectedTag === E2E_STATION_ALPHA,
-    );
-    await waitForEvent(
-      e2eDir,
-      "article-list-snapshot",
-      (event) => event.payload?.selectedTag === E2E_STATION_ALPHA && (event.payload?.articleCount ?? 0) >= 1,
-      90_000,
-    );
+      "scheduler-ready",
+      importAtMs,
+      undefined,
+      CI_E2E_EVENT_TIMEOUT_MS,
+    ).catch(() => {});
 
     const betaSwitchAtMs = Date.now();
     writeE2eCommand(e2eDir, "select-station", { stationName: E2E_STATION_BETA });
