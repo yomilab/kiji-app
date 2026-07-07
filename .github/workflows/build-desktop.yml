@@ -15,6 +15,7 @@ on:
   push:
     branches:
       - dev
+      - main
 
 concurrency:
   group: tauri-desktop-${{ github.ref }}-${{ github.event.inputs.profile || 'release' }}
@@ -127,7 +128,7 @@ jobs:
             platform_id: linux-aarch64
             rust_target: aarch64-unknown-linux-gnu
             profile: release
-            bundle_args: "--bundles deb,rpm"
+            bundle_args: ""
             launch_binary: src-tauri/target/aarch64-unknown-linux-gnu/release/kiji-app
             launch_use_xvfb: "true"
 

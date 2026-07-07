@@ -99,6 +99,10 @@ function zipMacApp(appPath, zipPath) {
   return zipPath;
 }
 
+function artifactName(platform, extension) {
+  return `${productName}-${version}-${platform}${extension}`;
+}
+
 function collectArtifacts({ profile, platform, target, outDir }) {
   const bundleDir = bundleRoot(profile, target);
   const outputDir =
@@ -118,14 +122,14 @@ function collectArtifacts({ profile, platform, target, outDir }) {
     );
     if (dmgPath) {
       artifacts.push(
-        copyFile(dmgPath, path.join(outputDir, `${productName}-${platform}.dmg`)),
+        copyFile(dmgPath, path.join(outputDir, artifactName(platform, ".dmg"))),
       );
     }
 
     artifacts.push(
       zipMacApp(
         appPath,
-        path.join(outputDir, `${productName}-${platform}.app.zip`),
+        path.join(outputDir, artifactName(platform, ".app.zip")),
       ),
     );
     return { bundleDir, outputDir, artifacts };
@@ -137,7 +141,7 @@ function collectArtifacts({ profile, platform, target, outDir }) {
     );
     if (msiPath) {
       artifacts.push(
-        copyFile(msiPath, path.join(outputDir, `${productName}-${platform}.msi`)),
+        copyFile(msiPath, path.join(outputDir, artifactName(platform, ".msi"))),
       );
     }
 
@@ -148,7 +152,7 @@ function collectArtifacts({ profile, platform, target, outDir }) {
       artifacts.push(
         copyFile(
           nsisPath,
-          path.join(outputDir, `${productName}-${platform}-setup.exe`),
+          path.join(outputDir, artifactName(platform, "-setup.exe")),
         ),
       );
     }
@@ -166,7 +170,7 @@ function collectArtifacts({ profile, platform, target, outDir }) {
     );
     if (debPath) {
       artifacts.push(
-        copyFile(debPath, path.join(outputDir, `${productName}-${platform}.deb`)),
+        copyFile(debPath, path.join(outputDir, artifactName(platform, ".deb"))),
       );
     }
 
@@ -175,7 +179,7 @@ function collectArtifacts({ profile, platform, target, outDir }) {
     );
     if (rpmPath) {
       artifacts.push(
-        copyFile(rpmPath, path.join(outputDir, `${productName}-${platform}.rpm`)),
+        copyFile(rpmPath, path.join(outputDir, artifactName(platform, ".rpm"))),
       );
     }
 
@@ -186,7 +190,7 @@ function collectArtifacts({ profile, platform, target, outDir }) {
       artifacts.push(
         copyFile(
           appImagePath,
-          path.join(outputDir, `${productName}-${platform}.AppImage`),
+          path.join(outputDir, artifactName(platform, ".AppImage")),
         ),
       );
     }
