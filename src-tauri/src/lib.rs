@@ -88,6 +88,7 @@ pub fn run() {
             ApplicationMenu::install(&app.handle()).map_err(std::io::Error::other)?;
             ImageContextMenuState::install(&app.handle()).map_err(std::io::Error::other)?;
             let bounds_save_guard = Arc::new(AtomicBool::new(false));
+            e2e::prepare_e2e_ui_before_window_restore(&app.handle());
             restore_main_window_bounds(
                 &app.handle(),
                 Arc::clone(&settings_state),

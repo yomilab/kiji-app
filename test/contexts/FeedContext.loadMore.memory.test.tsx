@@ -10,6 +10,9 @@ import {
   clearArticleListMemoryCaches,
   getInternedFeedMetadataCountForTests,
 } from '@/services/articles/articleListMemory';
+import { clearTagFeedIdsCacheForTests } from '@/services/tags/tagFeedIdsCache';
+import { clearFeedMetadataCacheForTests } from '@/services/feeds/feedMetadataCache';
+import { feedsFetcher } from '@/services/feeds/feedsFetcher';
 import {
   TECH_STATION_SCENARIO,
   buildRealisticArticleRecordPage,
@@ -21,6 +24,11 @@ import {
   measureLoadMemoryAsync,
   snapshotProcessMemory,
 } from '../helpers/articleListMemoryHarness';
+
+const feedStoreTagsMock = vi.hoisted(() => ({
+  listWithFeedIds: vi.fn().mockResolvedValue([]),
+  listFeedIds: vi.fn().mockResolvedValue([]),
+}));
 
 vi.mock('@/stores/articleStore', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/stores/articleStore')>();
@@ -38,6 +46,8 @@ vi.mock('@/stores/articleStore', async (importOriginal) => {
 vi.mock('@/stores/feedStore', () => ({
   getCount: vi.fn(),
   getById: vi.fn(),
+  getAll: vi.fn(),
+  tags: feedStoreTagsMock,
 }));
 
 vi.mock('@/services/feeds/feedsFetcher', async (importOriginal) => {
@@ -67,6 +77,14 @@ vi.mock('@/services/tags/tagsManager', () => ({
     getFeedsByTag: vi.fn(),
   },
 }));
+
+vi.mock('@/services/scheduler/nativeSchedulerCycle', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/scheduler/nativeSchedulerCycle')>();
+  return {
+    ...actual,
+    isNativeFeedIngestionEnabled: () => false,
+  };
+});
 
 vi.mock('@/services/logger', () => ({
   logger: {
@@ -163,16 +181,35 @@ describe('FeedContext load-more memory scenarios', () => {
 
   beforeEach(() => {
     clearArticleListMemoryCaches();
+    clearTagFeedIdsCacheForTests();
+    clearFeedMetadataCacheForTests();
     preparedArticles = null;
     latestContext = null;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
 
+    const techFeedIds = Array.from({ length: TECH_STATION_SCENARIO.feedCount }, (_, index) => `feed-${index}`);
+    const techFeeds = techFeedIds.map((id) => ({
+      id,
+      title: id,
+      url: `https://${id}.example.com/rss.xml`,
+      tags: ['Tech'],
+      sortOrder: 0,
+      consecutiveFailures: 0,
+      lastFetched: null,
+    }));
+
     vi.mocked(feedStore.getCount).mockResolvedValue(TECH_STATION_SCENARIO.feedCount);
-    vi.mocked(tagsManager.getFeedsByTag).mockResolvedValue(
-      Array.from({ length: TECH_STATION_SCENARIO.feedCount }, (_, index) => `feed-${index}`),
-    );
+    vi.mocked(feedStore.getAll).mockResolvedValue(techFeeds);
+    feedStoreTagsMock.listWithFeedIds.mockResolvedValue([{ name: 'Tech', feedIds: techFeedIds }]);
+    feedStoreTagsMock.listFeedIds.mockResolvedValue(techFeedIds);
+    vi.mocked(tagsManager.getFeedsByTag).mockResolvedValue(techFeedIds);
+    vi.mocked(feedsFetcher.fetchFeedNetworkWithCache).mockResolvedValue({
+      notModified: true,
+      etag: 'etag-1',
+      lastModified: 'date-1',
+    });
     vi.mocked(articleStore.query as Mock).mockImplementation((query: MockArticleQuery) =>
       Promise.resolve(paginateArticles(query)),
     );
@@ -204,6 +241,7 @@ describe('FeedContext load-more memory scenarios', () => {
 
       await waitForExpectation(() => {
         expect(latestContext!.articles.length).toBe(PAGE_SIZE);
+        expect(latestContext!.articlesTotalCount).toBe(TARGET_LOADED_COUNT);
       });
 
       for (let page = 1; page * PAGE_SIZE < TARGET_LOADED_COUNT; page += 1) {
@@ -254,6 +292,7 @@ describe('FeedContext load-more memory scenarios', () => {
 
     await waitForExpectation(() => {
       expect(latestContext!.articles.length).toBe(PAGE_SIZE);
+      expect(latestContext!.articlesTotalCount).toBe(TARGET_LOADED_COUNT);
     });
 
     await act(async () => {

@@ -39,6 +39,16 @@ pub struct E2eCommandPayload {
     pub payload: serde_json::Value,
 }
 
+pub fn prepare_e2e_ui_before_window_restore(app: &AppHandle) {
+    if !e2e_hide_ui_enabled() {
+        return;
+    }
+
+    if let Some(main_window) = app.get_webview_window(MAIN_WEBVIEW_LABEL) {
+        hide_main_window_for_e2e(&main_window);
+    }
+}
+
 pub fn start_e2e_harness(app: &AppHandle) {
     let Some(e2e_dir) = std::env::var_os("KIJI_E2E_DIR").map(PathBuf::from) else {
         return;

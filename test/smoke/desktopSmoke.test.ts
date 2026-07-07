@@ -14,6 +14,10 @@ import {
 } from "../parity/parityFixtures";
 import { describeRustIntegration } from "../helpers/rustIntegrationTest";
 
+vi.mock("@/services/scheduler/nativeSchedulerCycle", () => ({
+  isNativeFeedIngestionEnabled: () => false,
+}));
+
 const manifestPath = path.join(process.cwd(), "src-tauri/Cargo.toml");
 const describeWithFixtures = parityFixturesAreAvailable() ? describe : describe.skip;
 

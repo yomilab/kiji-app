@@ -140,7 +140,9 @@ export function materializePreparedListArticles(records: ArticleRecord[]): Artic
   return records.map((record) => recordToArticle(record, { forList: true }));
 }
 
-export { mergeUniqueArticlesByHash } from '@/services/articles/mergeUniqueArticlesByHash';
+import { mergeUniqueArticlesByHash } from '@/services/articles/mergeUniqueArticlesByHash';
+
+export { mergeUniqueArticlesByHash };
 
 export function snapshotProcessMemory(): ProcessMemorySnapshot {
   const memory = process.memoryUsage();

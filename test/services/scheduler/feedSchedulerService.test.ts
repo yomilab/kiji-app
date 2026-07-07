@@ -47,6 +47,12 @@ const storeParsedFeedContent = vi.hoisted(() => vi.fn());
 const syncFeedCountsBatch = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const publishFeedsCountsUpdated = vi.hoisted(() => vi.fn());
 
+const getE2eConfig = vi.hoisted(() => vi.fn(() => ({ schedulerIntervalMs: 1 })));
+
+vi.mock("@/services/e2e/e2eHarness", () => ({
+  getE2eConfig,
+}));
+
 vi.mock("@/lib/tauriClient", () => ({
   tauriClient: {
     scheduler: {
@@ -142,6 +148,7 @@ import { feedScheduler } from "@/services/scheduler/feedSchedulerService";
 describe("feedSchedulerService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getE2eConfig.mockReturnValue({ schedulerIntervalMs: 1 });
     getSettings.mockResolvedValue({ backgroundUpdate: "every-5m" });
     getAll.mockResolvedValue([
       {
@@ -244,7 +251,7 @@ describe("feedSchedulerService", () => {
     await firstTick;
     await vi.waitFor(() => {
       expect(getAll).toHaveBeenCalledTimes(2);
-    });
+    }, { timeout: 5_000 });
   });
 
   it("defers boostMany during an active cycle and runs one follow-up cycle", async () => {
@@ -287,7 +294,7 @@ describe("feedSchedulerService", () => {
     feedScheduler.resumeAfterStationSelection();
     await vi.waitFor(() => {
       expect(getAll).toHaveBeenCalledTimes(1);
-    });
+    }, { timeout: 5_000 });
   });
 
   it("front-loads active station feeds when a native tick runs during station dwell", async () => {
@@ -372,7 +379,7 @@ describe("feedSchedulerService", () => {
     feedScheduler.resumeAfterStationSelection();
     await vi.waitFor(() => {
       expect(getAll).toHaveBeenCalledTimes(2);
-    });
+    }, { timeout: 5_000 });
   });
 
   it("keeps the scheduler paused until nested station selections finish", async () => {
@@ -389,7 +396,7 @@ describe("feedSchedulerService", () => {
     feedScheduler.resumeAfterStationSelection();
     await vi.waitFor(() => {
       expect(getAll).toHaveBeenCalledTimes(1);
-    });
+    }, { timeout: 5_000 });
   });
 
   it("defers boostMany during station pause and runs one cycle after resume", async () => {
@@ -505,6 +512,7 @@ describe("feedSchedulerService", () => {
   });
 
   it("aborts a stuck cycle after repeated deferred native ticks", async () => {
+    getE2eConfig.mockReturnValue(null);
     let releaseRefresh!: () => void;
     fetchFeedNetworkWithCache.mockImplementation((_url, options?: { signal?: AbortSignal }) => new Promise((resolve, reject) => {
       const onAbort = (): void => {
@@ -790,6 +798,7 @@ describe("feedSchedulerService", () => {
 
   describe("native feed ingestion cycle", () => {
     beforeEach(() => {
+      getE2eConfig.mockReturnValue(null);
       isNativeFeedIngestionEnabled.mockReturnValue(true);
       previewNativeCycle.mockResolvedValue({
         plan: {

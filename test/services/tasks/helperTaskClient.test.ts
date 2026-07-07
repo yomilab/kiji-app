@@ -27,6 +27,9 @@ describe('helperTaskClient', () => {
         title: 'Example Feed',
         url: 'https://example.com/feed.xml',
         station: 'Daily',
+        emoji: undefined,
+        stationEmoji: undefined,
+        rootOutlineIndex: 0,
       },
     ]);
   });

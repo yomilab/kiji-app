@@ -10,6 +10,14 @@ import { convertFeedItemsToArticles } from '@/services/articles/articleConverter
 import * as articleStore from '@/stores/articleStore';
 import * as feedStore from '@/stores/feedStore';
 
+import { clearTagFeedIdsCacheForTests } from '@/services/tags/tagFeedIdsCache';
+import { clearFeedMetadataCacheForTests } from '@/services/feeds/feedMetadataCache';
+
+const feedStoreTagsMock = vi.hoisted(() => ({
+  listWithFeedIds: vi.fn().mockResolvedValue([]),
+  listFeedIds: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('@/stores/articleStore', () => ({
   query: vi.fn(),
   store: vi.fn(),
@@ -21,6 +29,8 @@ vi.mock('@/stores/articleStore', () => ({
 vi.mock('@/stores/feedStore', () => ({
   getCount: vi.fn(),
   getById: vi.fn(),
+  getAll: vi.fn(),
+  tags: feedStoreTagsMock,
 }));
 
 vi.mock('@/services/feeds/feedsFetcher', async (importOriginal) => {
@@ -54,6 +64,14 @@ vi.mock('@/services/tags/tagsManager', () => ({
     getFeedsByTag: vi.fn(),
   },
 }));
+
+vi.mock('@/services/scheduler/nativeSchedulerCycle', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/scheduler/nativeSchedulerCycle')>();
+  return {
+    ...actual,
+    isNativeFeedIngestionEnabled: () => false,
+  };
+});
 
 vi.mock('@/services/favicons/faviconRefreshService', () => ({
   maybeRefreshFavicon: vi.fn(),
@@ -115,10 +133,25 @@ describe('FeedContext restore selection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    clearTagFeedIdsCacheForTests();
+    clearFeedMetadataCacheForTests();
     latestContext = null;
     localStorage.clear();
 
+    const stationFeed = {
+      id: 'feed-a',
+      title: 'Feed A',
+      url: 'https://feed-a.example.com/rss.xml',
+      tags: ['Station'],
+      sortOrder: 0,
+      consecutiveFailures: 0,
+      lastFetched: null,
+    };
+
     (feedStore.getCount as vi.Mock).mockResolvedValue(0);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed]);
+    feedStoreTagsMock.listWithFeedIds.mockResolvedValue([{ name: 'Station', feedIds: ['feed-a'] }]);
+    feedStoreTagsMock.listFeedIds.mockResolvedValue(['feed-a']);
     (articleStore.query as vi.Mock).mockResolvedValue({
       articles: [{
         hash: 'hash-a1',

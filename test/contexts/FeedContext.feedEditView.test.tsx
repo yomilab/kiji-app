@@ -6,8 +6,17 @@ import * as feedStore from '@/stores/feedStore';
 import * as articleStore from '@/stores/articleStore';
 import { feedsFetcher } from '@/services/feeds/feedsFetcher';
 
+const feedStoreTagsMock = vi.hoisted(() => ({
+  listWithFeedIds: vi.fn().mockResolvedValue([]),
+  listFeedIds: vi.fn().mockResolvedValue([]),
+}));
+
 // Mock dependencies
-vi.mock('@/stores/feedStore');
+vi.mock('@/stores/feedStore', () => ({
+  getCount: vi.fn(),
+  getById: vi.fn(),
+  tags: feedStoreTagsMock,
+}));
 vi.mock('@/stores/articleStore');
 vi.mock('@/services/feeds/feedsFetcher');
 vi.mock('@/services/logger');
