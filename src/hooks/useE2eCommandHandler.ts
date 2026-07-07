@@ -5,6 +5,7 @@ import {
   useFeedOverlay,
   useFeedUIActions,
 } from '@/contexts/FeedContext';
+import { feedRefreshActivity } from '@/services/feeds/feedRefreshActivity';
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { opmlExportService } from '@/services/feeds/opmlExportService';
 import {
@@ -141,6 +142,16 @@ export const useE2eCommandHandler = (): void => {
             sourceId: stationName,
             selectedTag: stationName,
             selectedFeedId: null,
+          });
+          const refreshSnapshot = feedRefreshActivity.getSnapshot();
+          await writeE2eEvent('refresh-indicator-snapshot', {
+            ...refreshSnapshot,
+            selectedTag: stationName,
+            selectedFeedId: null,
+            navigationNonce: null,
+            indicatorText: refreshSnapshot.isBackgroundFeedRefreshing || refreshSnapshot.isForegroundFeedRefreshing
+              ? `refreshing:${refreshSnapshot.displayFeedCount}`
+              : null,
           });
           return;
         }

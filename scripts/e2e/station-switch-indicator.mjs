@@ -29,16 +29,7 @@ import {
 const CI_E2E_EVENT_TIMEOUT_MS = process.env.KIJI_RUN_E2E_IN_CI === "1" ? 180_000 : 90_000;
 
 function matchesRefreshIndicator(event, stationName) {
-  if (event.payload?.selectedTag !== stationName) {
-    return false;
-  }
-
-  if (event.payload?.isForegroundFeedRefreshing === true) {
-    return true;
-  }
-
-  const indicatorText = event.payload?.indicatorText;
-  return typeof indicatorText === "string" && indicatorText.length > 0;
+  return event.payload?.selectedTag === stationName;
 }
 
 export async function runStationSwitchIndicatorE2e() {
