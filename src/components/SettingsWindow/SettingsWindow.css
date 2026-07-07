@@ -1,23 +1,18 @@
 /* Settings Window Container */
 .settings-window {
-  --settings-sidebar-bg: #3f3f42;
   --settings-main-bg: #1f1f20;
   --settings-card-bg: #2a2a2c;
   --settings-control-bg: #303033;
   --settings-card-border: rgba(255, 255, 255, 0.08);
   --settings-text-primary: #f1f1f3;
   --settings-text-secondary: #a6a6ab;
-  --settings-nav-text: var(--theme-primary-color);
-  --settings-nav-hover: var(--theme-hover-overlay-dark);
-  --settings-nav-active-bg: var(--theme-hover-overlay-dark);
-  --settings-nav-active-text: var(--system-accent-color);
   --settings-switch-off: #3b3b3d;
   --settings-switch-on: #63c23f;
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background-color: var(--settings-main-bg);
+  background-color: transparent;
   overflow: hidden;
   z-index: 1;
   position: relative;
@@ -47,17 +42,23 @@ body {
   flex: 1;
   height: 100%;
   overflow: hidden;
-  background-color: var(--settings-main-bg);
+  background-color: transparent;
 }
 
-/* Settings Sidebar */
+/* Settings Sidebar — match main app sidebar chrome and nav item treatment */
 .settings-sidebar {
   position: relative;
   flex: 0 0 240px;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-  background-color: var(--settings-sidebar-bg);
+  --settings-nav-item-min-height: 34px;
+  --settings-nav-item-padding-y: 6px;
+  border-right: 1px solid var(--theme-border-color, var(--theme-border));
+  background-color: var(--theme-sidebar-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   overflow: hidden;
   padding: 58px 0 20px;
+  font-family: var(--font-family-ui);
+  user-select: none;
 }
 
 .settings-sidebar-top-chrome {
@@ -70,7 +71,6 @@ body {
   cursor: default;
 }
 
-/* Keep the left nav inset-driven so each item has the same outer gap on both sides. */
 .settings-nav {
   position: relative;
   z-index: 3;
@@ -79,7 +79,7 @@ body {
   gap: 0;
   width: 100%;
   box-sizing: border-box;
-  padding: 8px 12px 0;
+  padding: 0 12px;
 }
 
 .settings-nav-item {
@@ -87,54 +87,56 @@ body {
   align-items: center;
   justify-content: flex-start;
   width: 100%;
-  min-height: var(--sidebar-item-min-height);
+  min-height: var(--settings-nav-item-min-height);
   box-sizing: border-box;
   gap: 8px;
-  padding: var(--sidebar-item-padding-y) var(--sidebar-item-padding-x);
+  padding: var(--settings-nav-item-padding-y) var(--sidebar-item-padding-x);
   background: transparent;
   border: none;
   cursor: pointer;
-  color: var(--settings-nav-text);
-  font-size: 13px;
+  color: var(--theme-primary-color);
+  font-size: 14px;
   font-weight: 600;
   font-family: var(--font-family-ui);
   letter-spacing: -0.01em;
   text-align: left;
-  transition: background-color 0.2s, color 0.2s, transform 0.12s ease;
+  transition: background-color 0.2s, color 0.2s;
   border-radius: 6px;
 }
 
-.settings-nav-item:hover {
-  background-color: var(--settings-nav-hover);
-}
-
-.settings-nav-item:active {
-  transform: translateY(1px);
+.settings-nav-item:hover:not(.is-active) {
+  background-color: var(--theme-hover-overlay);
 }
 
 .settings-nav-item.is-active {
-  background-color: var(--settings-nav-active-bg);
-  color: var(--settings-nav-active-text);
+  background-color: var(--theme-hover-overlay-dark);
+  color: var(--system-accent-color);
+  border-radius: 4px;
 }
 
 .settings-nav-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  font-size: 19px;
+  width: var(--leading-item-icon-size);
+  height: var(--leading-item-icon-size);
+  font-size: var(--leading-item-icon-size);
   flex-shrink: 0;
   color: currentColor;
 }
 
 .settings-nav-icon .MuiSvgIcon-root {
   color: inherit;
+  font-size: inherit;
 }
 
 .settings-nav-label {
   flex: 1;
+  display: flex;
+  align-items: center;
+  min-height: calc(var(--settings-nav-item-min-height) - (2 * var(--settings-nav-item-padding-y)));
   line-height: 1.2;
+  letter-spacing: -0.01em;
 }
 
 /* Settings Main Content Area */
@@ -210,8 +212,9 @@ body {
   font-weight: 700;
   margin: 0 0 22px 0;
   color: var(--settings-text-primary);
-  letter-spacing: -0.01em;
+  letter-spacing: 0.05em;
   text-align: center;
+  text-transform: uppercase;
 }
 
 .settings-placeholder {
@@ -245,8 +248,6 @@ body {
   color: var(--settings-text-secondary);
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .shortcut-description {
@@ -284,8 +285,6 @@ body {
   color: var(--settings-text-secondary);
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .settings-group-body {
@@ -326,8 +325,6 @@ body {
   color: var(--settings-text-secondary);
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .settings-item-description {
@@ -714,8 +711,6 @@ body {
   color: var(--settings-text-secondary);
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .settings-reading-slider-value {

@@ -14,6 +14,7 @@ on:
           - both
   push:
     branches:
+      - dev
       - main
 
 concurrency:
@@ -65,7 +66,12 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Run frontend tests
+        env:
+          KIJI_SKIP_E2E: "1"
         run: npm run test:ci
+
+      - name: Run parity tests
+        run: npm run test:parity
 
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
@@ -88,26 +94,43 @@ jobs:
             rust_target: aarch64-apple-darwin
             profile: release
             bundle_args: ""
+            launch_binary: src-tauri/target/aarch64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app
+            launch_use_xvfb: "false"
           - os: macos-14
             platform_id: macos-x86_64
             rust_target: x86_64-apple-darwin
             profile: release
             bundle_args: ""
+            launch_binary: src-tauri/target/x86_64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app
+            launch_use_xvfb: "false"
           - os: windows-latest
             platform_id: windows-x86_64
             rust_target: x86_64-pc-windows-msvc
             profile: release
             bundle_args: ""
+            launch_binary: src-tauri/target/x86_64-pc-windows-msvc/release/kiji-app.exe
+            launch_use_xvfb: "false"
           - os: windows-latest
             platform_id: windows-aarch64
             rust_target: aarch64-pc-windows-msvc
             profile: release
             bundle_args: ""
+            launch_binary: src-tauri/target/aarch64-pc-windows-msvc/release/kiji-app.exe
+            launch_use_xvfb: "false"
           - os: ubuntu-24.04
             platform_id: linux-x86_64
             rust_target: x86_64-unknown-linux-gnu
             profile: release
             bundle_args: ""
+            launch_binary: src-tauri/target/x86_64-unknown-linux-gnu/release/kiji-app
+            launch_use_xvfb: "true"
+          - os: ubuntu-24.04-arm
+            platform_id: linux-aarch64
+            rust_target: aarch64-unknown-linux-gnu
+            profile: release
+            bundle_args: ""
+            launch_binary: src-tauri/target/aarch64-unknown-linux-gnu/release/kiji-app
+            launch_use_xvfb: "true"
 
     steps:
       - uses: actions/checkout@v5
@@ -128,14 +151,15 @@ jobs:
           workspaces: ./src-tauri -> target
 
       - name: Install Linux build dependencies
-        if: matrix.platform_id == 'linux-x86_64'
+        if: startsWith(matrix.platform_id, 'linux-')
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            xvfb
 
       - name: Log toolchain versions
         shell: bash
@@ -181,10 +205,19 @@ jobs:
           grep -q "Sealed Resources" /tmp/codesign-info.txt
 
       - name: Desktop launch smoke
-        if: matrix.platform_id == 'macos-aarch64' && matrix.profile == 'release'
+        if: matrix.profile == 'release'
+        shell: bash
         env:
-          KIJI_APP_BINARY: src-tauri/target/aarch64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app
-        run: npm run test:smoke:launch
+          KIJI_APP_BINARY: ${{ matrix.launch_binary }}
+          KIJI_PLATFORM_ID: ${{ matrix.platform_id }}
+          KIJI_RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.launch_use_xvfb }}" == "true" ]]; then
+            xvfb-run -a npm run test:smoke:launch
+          else
+            npm run test:smoke:launch
+          fi
 
       - name: Collect bundle artifacts
         shell: bash
@@ -201,58 +234,44 @@ jobs:
           path: src-tauri/target/${{ matrix.rust_target }}/${{ matrix.profile }}/bundle/artifacts/${{ matrix.platform_id }}/${{ matrix.profile }}/*
           if-no-files-found: error
 
-  build-linux-aarch64:
-    name: Build release (linux-aarch64)
+  e2e-macos:
+    name: E2E macOS (debug)
     needs: verify
-    if: github.event_name == 'push' || github.event.inputs.profile != 'debug'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    runs-on: macos-14
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
 
-      - name: Build Linux ARM64 bundles (native ARM emulation)
-        uses: pguyot/arm-runner-action@v2.6.5
+      - uses: actions/setup-node@v5
         with:
-          base_image: https://dietpi.com/downloads/images/DietPi_RPi5-ARMv8-Bookworm.img.xz
-          cpu: cortex-a72
-          bind_mount_repository: true
-          image_additional_mb: 10240
-          optimize_image: no
-          commands: |
-            export HOME=/root
-            export CI=true
-            export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-            apt-get update -y --allow-releaseinfo-change
-            apt-get install -y --no-install-recommends \
-              curl \
-              libwebkit2gtk-4.1-dev \
-              build-essential \
-              libssl-dev \
-              libgtk-3-dev \
-              libayatana-appindicator3-dev \
-              librsvg2-dev \
-              patchelf \
-              libfuse2 \
-              file
-            curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-            apt-get install -y nodejs
-            curl https://sh.rustup.rs -sSf | sh -s -- -y
-            . "$HOME/.cargo/env"
-            npm ci
-            npx tauri build
+          node-version: 24
+          cache: npm
 
-      - name: Collect bundle artifacts
-        run: |
-          node scripts/collect-bundle-artifacts.mjs \
-            --profile release \
-            --platform linux-aarch64
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Upload desktop artifacts
-        uses: actions/upload-artifact@v6
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
         with:
-          name: kiji-linux-aarch64-release
-          path: src-tauri/target/release/bundle/artifacts/linux-aarch64/release/*
-          if-no-files-found: error
+          workspaces: ./src-tauri -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build debug bundle for E2E
+        env:
+          CI: true
+          VITE_KIJI_E2E: "1"
+          VITE_KIJI_E2E_SCHEDULER_INTERVAL_MS: "500"
+        run: npm run build:debug
+
+      - name: Run macOS real-app E2E
+        env:
+          CI: true
+          KIJI_RUN_E2E_IN_CI: "1"
+          KIJI_E2E_REQUIRED: "1"
+          KIJI_E2E_HIDE_UI: "0"
+        run: npm run test:e2e
 
   build-debug-linux:
     name: Build debug (linux-x86_64)

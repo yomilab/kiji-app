@@ -2,7 +2,10 @@ import { tauriClient } from "../lib/tauriClient";
 import type { ArticleRecord } from "../lib/tauriClient/contracts";
 import type { Article } from "../types/article";
 import type { ArticleQuery, ArticleQueryResult } from "../types/articleQuery";
+import { prepareArticleForList } from "../services/articles/articleListMemory";
 import { normalizePublishedDate } from "../services/articles/publishedDateNormalizer";
+import { normalizeEnclosures } from "../services/articles/normalizeEnclosures";
+import { normalizeStoredDescription } from "../utils/htmlToPlainText";
 
 type ArticleMetadata = Partial<Pick<
   Article,
@@ -22,12 +25,15 @@ type ArticleMetadata = Partial<Pick<
   | "isFeedLinked"
 >>;
 
-export function recordToArticle(record: ArticleRecord, options: { now?: Date } = {}): Article {
+export function recordToArticle(
+  record: ArticleRecord,
+  options: { now?: Date; forList?: boolean } = {},
+): Article {
   const metadata = normalizeMetadata(record.metadata);
-  return {
+  const article: Article = {
     hash: record.hash,
     title: record.title,
-    description: record.description,
+    description: normalizeStoredDescription(record.description),
     content: record.content,
     link: record.link ?? undefined,
     author: record.author ?? undefined,
@@ -48,6 +54,8 @@ export function recordToArticle(record: ArticleRecord, options: { now?: Date } =
     lastReadAt: record.lastReadAt ?? undefined,
     ...metadata,
   };
+
+  return options.forList ? prepareArticleForList(article) : article;
 }
 
 export function articleToRecord(article: Article): ArticleRecord {
@@ -96,7 +104,7 @@ export async function query(q: ArticleQuery): Promise<ArticleQueryResult> {
   });
 
   return {
-    articles: result.articles.map((record) => recordToArticle(record, { now })),
+    articles: result.articles.map((record) => recordToArticle(record, { now, forList: true })),
     total: result.total,
   };
 }
@@ -168,6 +176,17 @@ export async function getArticleCount(feedId: string): Promise<number> {
   return tauriClient.articles.countByFeed({ feedId });
 }
 
+export async function syncFeedCountsBatch(feedIds: string[]): Promise<Array<{
+  feedId: string;
+  unreadCount: number;
+  articleCount: number;
+}>> {
+  if (feedIds.length === 0) {
+    return [];
+  }
+  return tauriClient.articles.syncFeedCountsBatch({ feedIds });
+}
+
 export async function updateFeedMeta(
   feedId: string,
   meta: {
@@ -212,7 +231,15 @@ function buildMetadata(article: Article): ArticleMetadata | null {
 }
 
 function normalizeMetadata(value: unknown): ArticleMetadata {
-  return value && typeof value === "object" ? value as ArticleMetadata : {};
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  const metadata = { ...(value as ArticleMetadata) };
+  if ("enclosures" in metadata) {
+    metadata.enclosures = normalizeEnclosures(metadata.enclosures);
+  }
+  return metadata;
 }
 
 function getMonthsAgoCutoffDate(monthsToKeep: 1 | 3 | 6): Date {

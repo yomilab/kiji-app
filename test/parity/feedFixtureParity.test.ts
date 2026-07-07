@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { parseFeed } from "@/services/feeds/feedsFetcher";
 import { parseOpmlEntries } from "@/services/feeds/opmlImportService";
-import { electronFixturesAreAvailable, readElectronFixture } from "./electronFixtures";
+import { parityFixturesAreAvailable, readParityFixture } from "./parityFixtures";
 
-const describeWithFixtures = electronFixturesAreAvailable() ? describe : describe.skip;
+const describeWithFixtures = parityFixturesAreAvailable() ? describe : describe.skip;
 
-describeWithFixtures("Electron feed fixture parity", () => {
+describeWithFixtures("Feed fixture parity", () => {
   it("parses simon.xml Atom summary/content", () => {
-    const simonXml = readElectronFixture("simon.xml");
+    const simonXml = readParityFixture("simon.xml");
     const items = parseFeed(simonXml, "https://simonwillison.net/atom/everything/");
 
     expect(items.length).toBeGreaterThan(0);
@@ -17,7 +17,7 @@ describeWithFixtures("Electron feed fixture parity", () => {
   });
 
   it("keeps image enclosure metadata from feedwithimage.xml", () => {
-    const feedXml = readElectronFixture("feedwithimage.xml");
+    const feedXml = readParityFixture("feedwithimage.xml");
     const items = parseFeed(feedXml, "https://toyokeizai.net/list/feed/rss");
     const imageUrl =
       "https://tk.ismcdn.jp/mwimgs/4/0/1200w/img_404b091d5672eb558b1d82a7c2617876779430.jpg?nextgen=false";
@@ -37,7 +37,7 @@ describeWithFixtures("Electron feed fixture parity", () => {
   });
 
   it("parses caminodetexas.xml RSS entries with stable links and titles", () => {
-    const feedXml = readElectronFixture("caminodetexas.xml");
+    const feedXml = readParityFixture("caminodetexas.xml");
     const items = parseFeed(feedXml, "https://caminodetexas.substack.com/feed");
 
     expect(items.length).toBeGreaterThan(0);
@@ -47,7 +47,7 @@ describeWithFixtures("Electron feed fixture parity", () => {
   });
 
   it("parses Feeds.opml and keeps parent group as station", () => {
-    const opmlText = readElectronFixture("Feeds.opml");
+    const opmlText = readParityFixture("Feeds.opml");
     const entries = parseOpmlEntries(opmlText);
 
     expect(entries.length).toBeGreaterThan(0);
@@ -62,13 +62,13 @@ describeWithFixtures("Electron feed fixture parity", () => {
   });
 });
 
-describe("Electron fixture availability", () => {
-  it("documents when sibling Electron fixtures are missing", () => {
-    if (electronFixturesAreAvailable()) {
-      expect(electronFixturesAreAvailable()).toBe(true);
+describe("Parity fixture availability", () => {
+  it("documents when bundled parity fixtures are missing", () => {
+    if (parityFixturesAreAvailable()) {
+      expect(parityFixturesAreAvailable()).toBe(true);
       return;
     }
 
-    expect(electronFixturesAreAvailable()).toBe(false);
+    expect(parityFixturesAreAvailable()).toBe(false);
   });
 });

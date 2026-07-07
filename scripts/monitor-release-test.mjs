@@ -5,7 +5,7 @@
  * Usage:
  *   node scripts/monitor-release-test.mjs
  *   node scripts/monitor-release-test.mjs --max-attempts 10 --profile release
- *   GITHUB_TOKEN=... node scripts/monitor-release-test.mjs --ref main
+ *   GITHUB_TOKEN=... node scripts/monitor-release-test.mjs --ref dev
  *
  * Auth (first match wins):
  *   - GITHUB_TOKEN / GH_TOKEN env var
@@ -19,7 +19,7 @@ import process from "node:process";
 const DEFAULTS = {
   repo: "yomilab/kiji-app",
   workflowFile: "build-desktop.yml",
-  ref: "main",
+  ref: "dev",
   profile: "release",
   maxAttempts: 10,
   pollSeconds: 60,
@@ -147,6 +147,13 @@ async function dispatchWorkflow({ repo, ref, profile, token }) {
 }
 
 function triggerPush(ref) {
+  const pull = spawnSync("git", ["pull", "--rebase", "origin", ref], {
+    stdio: "inherit",
+  });
+  if (pull.status !== 0) {
+    throw new Error(`Failed to sync local branch with origin/${ref} before retry push`);
+  }
+
   const message = `chore(ci): trigger release test on ${ref}`;
   const commit = spawnSync("git", ["commit", "--allow-empty", "-m", message], {
     stdio: "inherit",

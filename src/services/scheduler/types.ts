@@ -22,11 +22,16 @@ export interface FeedPriorityEntry extends SchedulerFeedEntry {
   score: number;
 }
 
-export type SchedulerEventType = 'cycle-start' | 'cycle-complete' | 'feed-updated' | 'feed-failed';
+export type SchedulerEventType =
+  | 'cycle-start'
+  | 'cycle-complete'
+  | 'feed-updated'
+  | 'feeds-batch-updated'
+  | 'feed-failed';
 
-export interface SchedulerEvent {
-  type: SchedulerEventType;
-  feedId?: string;
-  newArticleCount?: number;
-  error?: string;
-}
+export type SchedulerEvent =
+  | { type: 'cycle-start' }
+  | { type: 'cycle-complete' }
+  | { type: 'feed-updated'; feedId: string; newArticleCount?: number }
+  | { type: 'feeds-batch-updated'; updates: ReadonlyArray<{ feedId: string; newArticleCount: number }> }
+  | { type: 'feed-failed'; feedId: string; error?: string };

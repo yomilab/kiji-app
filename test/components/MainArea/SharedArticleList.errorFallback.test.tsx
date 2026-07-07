@@ -33,13 +33,13 @@ type MockFeedState = {
   setActiveArticle: vi.Mock;
   isLoadingArticles: boolean;
   isSavedListLoading: boolean;
-  isGlobalLoadingIndicatorActive: boolean;
   articleViewOverlayPhase: 'closed' | 'opening' | 'open' | 'closing';
   newArticleHashes: Set<string>;
   error: string | null;
   totalFeeds: number;
   loadMoreArticles: vi.Mock;
   isLoadingMoreArticles: boolean;
+  isLoadMoreInFlight: boolean;
 };
 
 const makeArticle = (index: number): MockArticle => ({
@@ -71,13 +71,13 @@ let mockFeedState: MockFeedState = {
   setActiveArticle: vi.fn(),
   isLoadingArticles: false,
   isSavedListLoading: false,
-  isGlobalLoadingIndicatorActive: false,
   articleViewOverlayPhase: 'closed',
   newArticleHashes: new Set<string>(),
   error: null as string | null,
   totalFeeds: 1,
   loadMoreArticles: vi.fn(),
   isLoadingMoreArticles: false,
+  isLoadMoreInFlight: false,
 };
 
 vi.mock('@/contexts/FeedContext', () => ({
@@ -86,6 +86,29 @@ vi.mock('@/contexts/FeedContext', () => ({
     selectedFeedId: mockFeedState.selectedFeedId,
     selectedTag: mockFeedState.selectedTag,
     selectedSmartView: mockFeedState.selectedSmartView,
+    navigationNonce: 0,
+  }),
+  useFeedCollectionArticles: () => ({
+    articles: mockFeedState.articles,
+    articlesTotalCount: mockFeedState.articlesTotalCount,
+    newArticleCount: 0,
+    newArticleHashes: mockFeedState.newArticleHashes,
+    articleListScrollRequest: null,
+  }),
+  useFeedCollectionLoading: () => ({
+    isLoadingArticles: mockFeedState.isLoadingArticles,
+    isLoadingMoreArticles: mockFeedState.isLoadingMoreArticles,
+    isLoadMoreInFlight: mockFeedState.isLoadMoreInFlight,
+    isSavedListLoading: mockFeedState.isSavedListLoading,
+  }),
+  useFeedCollectionActions: () => ({
+    loadMoreArticles: mockFeedState.loadMoreArticles,
+    updateArticleInList: vi.fn(),
+    searchCurrentSource: vi.fn(),
+    clearArticleListSearch: vi.fn(),
+    syncArticleListViewport: vi.fn(),
+    refreshFeed: vi.fn(),
+    reloadCurrentSourceFromStore: vi.fn(),
   }),
   useFeedCollection: (): unknown => ({
     articles: mockFeedState.articles,
@@ -93,8 +116,8 @@ vi.mock('@/contexts/FeedContext', () => ({
     savedArticles: mockFeedState.savedArticles,
     isLoadingArticles: mockFeedState.isLoadingArticles,
     isLoadingMoreArticles: mockFeedState.isLoadingMoreArticles,
+    isLoadMoreInFlight: mockFeedState.isLoadMoreInFlight,
     isSavedListLoading: mockFeedState.isSavedListLoading,
-    isGlobalLoadingIndicatorActive: mockFeedState.isGlobalLoadingIndicatorActive,
     loadMoreArticles: mockFeedState.loadMoreArticles,
     updateArticleInList: vi.fn(),
     newArticleHashes: mockFeedState.newArticleHashes,
@@ -112,13 +135,6 @@ vi.mock('@/contexts/FeedContext', () => ({
   useFeedUI: () => ({
     error: mockFeedState.error,
     totalFeeds: mockFeedState.totalFeeds,
-  }),
-}));
-
-vi.mock('@/components/MainArea/hooks/useFetchIndicatorState', () => ({
-  useFetchIndicatorState: () => ({
-    isFetchIndicatorVisible: false,
-    applySourceSwitchGrace: vi.fn(),
   }),
 }));
 

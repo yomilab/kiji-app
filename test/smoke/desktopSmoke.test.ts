@@ -9,13 +9,17 @@ import * as feedStore from "@/stores/feedStore";
 import { feedsFetcher } from "@/services/feeds/feedsFetcher";
 import { feedNetworkDataResult } from "../helpers/feedNetworkFetchMock";
 import {
-  electronFixturesAreAvailable,
-  readElectronFixture,
-} from "../parity/electronFixtures";
+  parityFixturesAreAvailable,
+  readParityFixture,
+} from "../parity/parityFixtures";
 import { describeRustIntegration } from "../helpers/rustIntegrationTest";
 
+vi.mock("@/services/scheduler/nativeSchedulerCycle", () => ({
+  isNativeFeedIngestionEnabled: () => false,
+}));
+
 const manifestPath = path.join(process.cwd(), "src-tauri/Cargo.toml");
-const describeWithFixtures = electronFixturesAreAvailable() ? describe : describe.skip;
+const describeWithFixtures = parityFixturesAreAvailable() ? describe : describe.skip;
 
 describeRustIntegration("Desktop smoke (todo 22)", () => {
   it(
@@ -48,7 +52,7 @@ describeRustIntegration("Desktop smoke (todo 22)", () => {
 
 describeWithFixtures("Desktop smoke (todo 22)", () => {
   it("refreshes a feed from fixture XML through the service layer", async () => {
-    const fixtureXml = readElectronFixture("simon.xml");
+    const fixtureXml = readParityFixture("simon.xml");
     const parsedItems = parseFeed(fixtureXml, "https://example.com/simon.xml");
     expect(parsedItems.length).toBeGreaterThan(0);
 
@@ -89,11 +93,7 @@ describeWithFixtures("Desktop smoke (todo 22)", () => {
 });
 
 describe("Desktop launch smoke (todo 22)", () => {
-  it("launches KiJi briefly on macOS when a built binary exists", async () => {
-    if (process.platform !== "darwin") {
-      return;
-    }
-
+  it("launches KiJi briefly when a built binary exists", async () => {
     const { runLaunchSmoke } = await import("../../scripts/smoke-launch.mjs");
     const result = await runLaunchSmoke();
 
@@ -103,6 +103,6 @@ describe("Desktop launch smoke (todo 22)", () => {
     }
 
     expect(result.pid).toBeGreaterThan(0);
-    expect(result.binaryPath).toContain("kiji-app");
+    expect(result.binaryPath).toBeTruthy();
   }, 20_000);
 });

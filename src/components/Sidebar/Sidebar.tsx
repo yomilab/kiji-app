@@ -11,6 +11,7 @@ import { useFeedNavigation, useFeedUI, useFeedCollection } from '@/contexts/Feed
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { isOpenAddFeedShortcut, keybindingService } from '@/services/shortcuts/shortcutService';
 import { useFeedRefreshActivity } from '@/hooks/useFeedRefreshActivity';
+import { isInteractiveStationRefreshInProgress } from '@/services/feeds/feedRefreshActivity';
 import { useUserMessageChannel } from '@/hooks/useUserMessageChannel';
 import { SIDEBAR_INDICATOR_CHANNEL } from '@/services/ui/sidebarIndicatorService';
 import { sidebarIndicatorOngoing } from '@/services/ui/sidebarIndicatorText';
@@ -19,15 +20,41 @@ import './Sidebar.css';
 const MIN_SIDEBAR_WIDTH = 250;
 const MAX_SIDEBAR_WIDTH = 600;
 
-export const formatFeedRefreshStatus = (
-  displayFeedCount: number,
-  isBackgroundFeedRefreshing: boolean,
-): string => {
-  if (isBackgroundFeedRefreshing) {
+export interface FeedRefreshStatusInput {
+  displayFeedCount: number;
+  isBackgroundFeedRefreshing: boolean;
+  interactiveRefreshScopeTotal: number;
+  interactiveRefreshCompleted: number;
+}
+
+export const formatFeedRefreshStatus = (input: FeedRefreshStatusInput): string => {
+  // User-visible progress always uses the station scope (x/N). Never format
+  // queue depth (`displayFeedCount`) — it mirrors the internal foreground cap.
+  const stationScopeProgress = input.interactiveRefreshScopeTotal > 1
+    ? {
+        completed: input.interactiveRefreshCompleted,
+        total: input.interactiveRefreshScopeTotal,
+      }
+    : undefined;
+
+  if (input.isBackgroundFeedRefreshing) {
+    if (stationScopeProgress) {
+      if (stationScopeProgress.completed === 0) {
+        return sidebarIndicatorOngoing('syncing', undefined, { subject: 'feeds' });
+      }
+      return sidebarIndicatorOngoing('syncing', stationScopeProgress);
+    }
     return sidebarIndicatorOngoing('syncing', undefined, { subject: 'all' });
   }
 
-  return sidebarIndicatorOngoing('refreshing', { count: Math.max(1, displayFeedCount) });
+  if (stationScopeProgress) {
+    if (stationScopeProgress.completed === 0) {
+      return sidebarIndicatorOngoing('syncing', undefined, { subject: 'feeds' });
+    }
+    return sidebarIndicatorOngoing('refreshing', stationScopeProgress);
+  }
+
+  return sidebarIndicatorOngoing('refreshing', undefined, { subject: 'feeds' });
 };
 
 export const Sidebar: React.FC = () => {
@@ -43,11 +70,15 @@ export const Sidebar: React.FC = () => {
   const { articles } = useFeedCollection();
   const { selectedSmartView } = useFeedNavigation();
   const { totalFeeds, feedLibraryVersion } = useFeedUI();
+  const refreshActivity = useFeedRefreshActivity();
   const {
     displayFeedCount,
     isAnyFeedRefreshing,
     isBackgroundFeedRefreshing,
-  } = useFeedRefreshActivity();
+    interactiveRefreshScopeTotal,
+    interactiveRefreshCompleted,
+  } = refreshActivity;
+  const stationRefreshInProgress = isInteractiveStationRefreshInProgress(refreshActivity);
   const sidebarIndicatorText = useUserMessageChannel(SIDEBAR_INDICATOR_CHANNEL);
   const exportProgressText = useUserMessageChannel('export-progress');
 
@@ -125,7 +156,7 @@ export const Sidebar: React.FC = () => {
     };
 
     loadLastSyncTime();
-  }, [feedLibraryVersion, isAnyFeedRefreshing, totalFeeds]);
+  }, [feedLibraryVersion, totalFeeds]);
 
   // Keyboard shortcut: Cmd+N to open add feed modal
   useEffect(() => {
@@ -142,11 +173,11 @@ export const Sidebar: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!window.electronAPI?.onAppMenuCommand) {
+    if (!window.kijiAPI?.onAppMenuCommand) {
       return;
     }
 
-    return window.electronAPI.onAppMenuCommand((command) => {
+    return window.kijiAPI.onAppMenuCommand((command) => {
       if (command.type === 'openAddSubscription') {
         setShowAddModal(true);
       }
@@ -264,8 +295,13 @@ export const Sidebar: React.FC = () => {
       return exportProgressText;
     }
 
-    if (isAnyFeedRefreshing) {
-      return formatFeedRefreshStatus(displayFeedCount, isBackgroundFeedRefreshing);
+    if (isAnyFeedRefreshing || stationRefreshInProgress) {
+      return formatFeedRefreshStatus({
+        displayFeedCount,
+        isBackgroundFeedRefreshing,
+        interactiveRefreshScopeTotal,
+        interactiveRefreshCompleted,
+      });
     }
 
     // Show "syncing" if currently syncing
@@ -291,10 +327,13 @@ export const Sidebar: React.FC = () => {
     displayFeedCount,
     isBackgroundFeedRefreshing,
     isAnyFeedRefreshing,
+    interactiveRefreshCompleted,
+    interactiveRefreshScopeTotal,
     lastSyncTime,
     selectedSmartView,
     showSyncing,
     sidebarIndicatorText,
+    stationRefreshInProgress,
     totalFeeds,
   ]);
 

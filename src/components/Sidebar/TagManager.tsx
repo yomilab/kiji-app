@@ -1,14 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import UnfoldMoreOutlined from '@mui/icons-material/UnfoldMoreOutlined';
 import UnfoldLessOutlined from '@mui/icons-material/UnfoldLessOutlined';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { feedsManager, type Feed } from '@/services/feeds/feedsManager';
+import { seedArticleFeedMetadataFromFeed } from '@/services/articles/articleListMemory';
 import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import {
   useFeedDeletedMutation,
   useFeedPatchedMutation,
+  useFeedsCountsUpdatedMutation,
   useStationDeletedMutation,
   useStationPatchedMutation,
   useStationsHydratedMutation,
@@ -18,6 +20,10 @@ import { useFeedFaviconRefreshed, useFeedNavigation, type FeedEditTarget } from 
 import { ButtonStack, type ButtonConfig } from '@/components/common/ButtonStack';
 import { FaviconImage } from '@/components/common/FaviconImage';
 import type { Tag } from '@/types/tag';
+import {
+  applyStationLibraryPatchToExpandedStations,
+  applyStationLibraryPatchToTags,
+} from '@/services/ui/applyStationLibraryPatch';
 import './TagManager.css';
 
 interface StationFeedItemProps {
@@ -179,34 +185,62 @@ const StationListItem = React.memo<StationListItemProps>(({
   );
 });
 
+const TAG_MANAGER_FEED_CACHE_MAX_ENTRIES = 200;
+
+const rememberFeedInCache = (prev: Map<string, Feed>, feed: Feed): Map<string, Feed> => {
+  const next = new Map(prev);
+  next.delete(feed.id);
+  next.set(feed.id, feed);
+  seedArticleFeedMetadataFromFeed(feed);
+
+  while (next.size > TAG_MANAGER_FEED_CACHE_MAX_ENTRIES) {
+    const oldestKey = next.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    next.delete(oldestKey);
+  }
+
+  return next;
+};
+
 export const TagManager: React.FC = () => {
   const [tags, setTags] = useState<Tag[]>([]);
   const [expandedStations, setExpandedStations] = useState<Set<string>>(new Set());
   const [feedCache, setFeedCache] = useState<Map<string, Feed>>(new Map());
+  const feedCacheRef = useRef(feedCache);
   const { selectedTag, selectTag, selectedFeedId, selectFeed, openFeedEditView, clearFeedSelection } = useFeedNavigation();
   const feedFaviconRefreshed = useFeedFaviconRefreshed();
   const patchedFeed = useFeedPatchedMutation();
+  const feedsCountsUpdated = useFeedsCountsUpdatedMutation();
   const deletedFeed = useFeedDeletedMutation();
   const patchedStation = useStationPatchedMutation();
   const deletedStation = useStationDeletedMutation();
   const hydratedStations = useStationsHydratedMutation();
   const stationsReordered = useStationsReorderedMutation();
 
+  useEffect(() => {
+    feedCacheRef.current = feedCache;
+  }, [feedCache]);
+
   const ensureFeedsCached = useCallback(async (feedIds: string[]) => {
-    const missing = feedIds.filter(id => !feedCache.has(id));
+    const missing = feedIds.filter(id => !feedCacheRef.current.has(id));
     if (missing.length > 0) {
       const fetched = await Promise.all(missing.map(id => feedsManager.getFeedById(id)));
-      setFeedCache(prev => {
-        const next = new Map(prev);
+      setFeedCache((prev) => {
+        let next = prev;
         for (const feed of fetched) {
-          if (feed) next.set(feed.id, feed);
+          if (feed) {
+            next = rememberFeedInCache(next, feed);
+          }
         }
+        feedCacheRef.current = next;
         return next;
       });
     }
 
     opmlWorkflowService.scheduleMissingFaviconsAfterStationSelection(feedIds);
-  }, [feedCache]);
+  }, []);
 
   const toggleStation = useCallback((tagName: string) => {
     setExpandedStations(prev => {
@@ -237,11 +271,12 @@ export const TagManager: React.FC = () => {
 
   const handleTagClick = useCallback(async (tagName: string) => {
     try {
-      await selectTag(tagName);
+      const tag = tags.find((entry) => entry.name === tagName);
+      await selectTag(tagName, {}, tag?.feedIds);
     } catch (error) {
       console.error('Error selecting tag:', error);
     }
-  }, [selectTag]);
+  }, [selectTag, tags]);
 
   const handleOpenFeedEditView = useCallback((target: FeedEditTarget) => {
     openFeedEditView(target);
@@ -259,9 +294,7 @@ export const TagManager: React.FC = () => {
       if (!updated) return;
       setFeedCache((prev) => {
         if (!prev.has(feedId)) return prev;
-        const next = new Map(prev);
-        next.set(feedId, updated);
-        return next;
+        return rememberFeedInCache(prev, updated);
       });
     });
   }, [feedFaviconRefreshed]);
@@ -274,14 +307,33 @@ export const TagManager: React.FC = () => {
         return prev;
       }
 
-      const next = new Map(prev);
-      next.set(patchedFeed.feedId, {
+      return rememberFeedInCache(prev, {
         ...current,
         ...patchedFeed.changes,
       });
-      return next;
     });
   }, [patchedFeed]);
+
+  useEffect(() => {
+    if (!feedsCountsUpdated) return;
+    setFeedCache((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const feedCounts of feedsCountsUpdated.feeds) {
+        const current = next.get(feedCounts.id);
+        if (!current) {
+          continue;
+        }
+        changed = true;
+        next.set(feedCounts.id, {
+          ...current,
+          unreadCount: feedCounts.unreadCount,
+          articleCount: feedCounts.articleCount,
+        });
+      }
+      return changed ? next : prev;
+    });
+  }, [feedsCountsUpdated]);
 
   useEffect(() => {
     if (!deletedFeed) return;
@@ -311,55 +363,19 @@ export const TagManager: React.FC = () => {
   useEffect(() => {
     if (!patchedStation) return;
 
-    setTags((prev) => {
-      let hasPatchedStation = false;
-      const nextTags = prev.map((tag) => {
-        if (tag.name !== patchedStation.previousName) {
-          return tag;
-        }
+    setTags((prev) => applyStationLibraryPatchToTags(prev, patchedStation));
 
-        hasPatchedStation = true;
-        return {
-          ...tag,
-          ...patchedStation.station,
-        };
-      });
-
-      if (hasPatchedStation) {
-        return nextTags;
-      }
-
-      return [...prev, {
-        ...patchedStation.station,
-        color: undefined,
-      }].sort((left, right) => {
-        const sortOrderDiff = (left.sortOrder ?? Number.MAX_SAFE_INTEGER) - (right.sortOrder ?? Number.MAX_SAFE_INTEGER);
-        if (sortOrderDiff !== 0) {
-          return sortOrderDiff;
-        }
-
-        return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
-      });
-    });
-
+    let shouldRefreshExpandedFeeds = false;
     setExpandedStations((prev) => {
-      if (
-        patchedStation.previousName === patchedStation.station.name
-        || !prev.has(patchedStation.previousName)
-      ) {
-        return prev;
-      }
-
-      const next = new Set(prev);
-      next.delete(patchedStation.previousName);
-      next.add(patchedStation.station.name);
-      return next;
+      const expandedPatch = applyStationLibraryPatchToExpandedStations(prev, patchedStation);
+      shouldRefreshExpandedFeeds = expandedPatch.shouldRefreshExpandedFeeds;
+      return expandedPatch.expandedStations;
     });
 
-    if (expandedStations.has(patchedStation.station.name)) {
+    if (shouldRefreshExpandedFeeds) {
       void ensureFeedsCached(patchedStation.station.feedIds);
     }
-  }, [ensureFeedsCached, expandedStations, patchedStation]);
+  }, [ensureFeedsCached, patchedStation]);
 
   useEffect(() => {
     if (!deletedStation) return;
@@ -377,7 +393,7 @@ export const TagManager: React.FC = () => {
       next.delete(deletedStation.stationName);
       return next;
     });
-  }, [clearFeedSelection, deletedStation, selectedTag]);
+  }, [clearFeedSelection, deletedStation]);
 
   useEffect(() => {
     if (!hydratedStations) return;

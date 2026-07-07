@@ -25,6 +25,16 @@ fn handle_navigation<R: Runtime>(webview: &Webview<R>, url: &Url) -> bool {
         return true;
     }
 
+    if is_youtube_embed_url(url) {
+        write_guard_log(
+            webview.app_handle(),
+            &format!("WindowGuard:{}", webview.label()),
+            "youtube-embed-allowed",
+            Some(&url.to_string()),
+        );
+        return true;
+    }
+
     let app = webview.app_handle();
     let scope = format!("WindowGuard:{}", webview.label());
     let url_string = url.to_string();
@@ -71,6 +81,32 @@ fn is_internal_app_url(url: &Url) -> bool {
     }
 
     false
+}
+
+fn is_youtube_embed_url(url: &Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+
+    let host = host.to_lowercase();
+    let is_youtube_host = matches!(
+        host.as_str(),
+        "www.youtube.com"
+            | "youtube.com"
+            | "www.youtube-nocookie.com"
+            | "youtube-nocookie.com"
+            | "m.youtube.com"
+    );
+
+    if !is_youtube_host {
+        return false;
+    }
+
+    url.path()
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .next()
+        == Some("embed")
 }
 
 fn write_guard_log<R: Runtime>(app: &AppHandle<R>, scope: &str, message: &str, data: Option<&str>) {
@@ -129,9 +165,33 @@ mod tests {
     }
 
     #[test]
+    fn internal_url_policy_allows_inline_embed_shell_in_dev() {
+        assert!(is_internal_app_url(
+            &Url::parse("http://localhost:1420/youtube-embed.html?v=abc123").unwrap()
+        ));
+    }
+
+    #[test]
     fn internal_url_policy_blocks_external_http() {
         assert!(!is_internal_app_url(
             &Url::parse("https://example.com/article").unwrap()
+        ));
+    }
+
+    #[test]
+    fn youtube_embed_urls_are_allowed_without_external_open() {
+        assert!(is_youtube_embed_url(
+            &Url::parse("https://www.youtube-nocookie.com/embed/_6wmFnY9NZ4?autoplay=1").unwrap()
+        ));
+        assert!(is_youtube_embed_url(
+            &Url::parse("https://www.youtube.com/embed/_6wmFnY9NZ4?enablejsapi=1").unwrap()
+        ));
+    }
+
+    #[test]
+    fn youtube_watch_urls_remain_external() {
+        assert!(!is_youtube_embed_url(
+            &Url::parse("https://www.youtube.com/watch?v=_6wmFnY9NZ4").unwrap()
         ));
     }
 }

@@ -15,7 +15,7 @@ import { savedArticlesSyncBridge } from "./services/saved/sync/savedArticlesSync
 import { initializeAppSettings } from "./services/settings/nativeSettingsSync";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { installElectronApiCompat } from "./services/tauri/electronApiCompat";
+import { installKijiDesktopApi } from "./services/tauri/kijiDesktopApi";
 import { createDeferredUnsubscribe } from "./services/tauri/tauriEventSubscription";
 import { installInteractionFreezeWatchdog } from "./services/performance/interactionFreezeWatchdog";
 import type { Article } from "./types/article";
@@ -85,7 +85,7 @@ function ArticleWindowBranch() {
 
     const loadArticlePayload = () => {
       setErrorMessage(null);
-      void window.electronAPI?.getArticleWindowData()
+      void window.kijiAPI?.getArticleWindowData()
         .then((payload) => {
           if (mounted) {
             setArticle(payload);
@@ -172,8 +172,23 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
 
 async function bootstrapRenderer(): Promise<void> {
   const windowType = getRendererWindowType();
-  installElectronApiCompat();
+  installKijiDesktopApi();
   logger.info("Renderer", "Renderer bootstrap starting", { windowType });
+
+  try {
+    const e2eConfig = await invoke<{
+      dir: string;
+      feedUrl: string;
+      feedId: string;
+      schedulerIntervalMs: number;
+    } | null>("e2e_get_config");
+    if (e2eConfig) {
+      (globalThis as Record<string, unknown>).__KIJI_E2E__ = e2eConfig;
+      logger.info("Renderer", "E2E harness config loaded", { feedId: e2eConfig.feedId });
+    }
+  } catch {
+    // Harness inactive outside e2e runs.
+  }
 
   try {
     await initializeAppSettings();

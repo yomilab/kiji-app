@@ -9,6 +9,7 @@ const EXPECTED_FEED_FAILURE_CODES = new Set([
   "FEED_NETWORK_TIMEOUT",
   "FEED_NETWORK_CONNECT",
   "FEED_REQUEST_CANCELLED",
+  "FEED_BODY_TOO_LARGE",
 ]);
 
 const EXPECTED_FEED_HTTP_STATUSES = new Set([403, 404, 410]);
@@ -33,6 +34,7 @@ export function isExpectedFeedCommandFailure(command: string, error: unknown): b
     command !== "feeds_fetch"
     && command !== "feeds_fetch_with_cache"
     && command !== "feeds_fetch_data_url"
+    && command !== "feeds_fetch_pdf_data_url"
   ) {
     return false;
   }

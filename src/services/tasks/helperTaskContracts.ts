@@ -21,10 +21,16 @@ export interface ParsedOpmlEntry {
   url: string;
   title?: string;
   station?: string;
+  emoji?: string;
+  stationEmoji?: string;
+  rootOutlineIndex?: number;
 }
 
 export interface OpmlParseTaskPayload {
   opmlText: string;
+  defaultStationName?: string;
+  fileName?: string;
+  url?: string;
 }
 
 export interface OpmlParseTaskResult {

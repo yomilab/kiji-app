@@ -6,8 +6,17 @@ import * as feedStore from '@/stores/feedStore';
 import * as articleStore from '@/stores/articleStore';
 import { feedsFetcher } from '@/services/feeds/feedsFetcher';
 
+const feedStoreTagsMock = vi.hoisted(() => ({
+  listWithFeedIds: vi.fn().mockResolvedValue([]),
+  listFeedIds: vi.fn().mockResolvedValue([]),
+}));
+
 // Mock dependencies
-vi.mock('@/stores/feedStore');
+vi.mock('@/stores/feedStore', () => ({
+  getCount: vi.fn(),
+  getById: vi.fn(),
+  tags: feedStoreTagsMock,
+}));
 vi.mock('@/stores/articleStore');
 vi.mock('@/services/feeds/feedsFetcher');
 vi.mock('@/services/logger');
@@ -53,6 +62,7 @@ describe('FeedContext FeedEditView transition', () => {
     (feedStore.getCount as vi.Mock).mockResolvedValue(1);
     (feedStore.getById as vi.Mock).mockResolvedValue({ id: 'feed-a', url: 'url-a', title: 'Title A' });
     (articleStore.query as vi.Mock).mockResolvedValue({ articles: [{ hash: '1', title: 'Art 1' }], total: 1 });
+    (articleStore.syncFeedCountsBatch as vi.Mock).mockResolvedValue([]);
     (feedsFetcher.fetchFeed as vi.Mock).mockResolvedValue({ items: [] });
   });
 

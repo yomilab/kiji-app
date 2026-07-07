@@ -1,7 +1,9 @@
 import type { Article } from "../../types/article";
 import type { Feed } from "../feeds/types";
 import type { FeedItem } from "../feeds/feedsFetcher";
+import { htmlToPlainText } from "../../utils/htmlToPlainText";
 import { articleHasher } from "./articleHasher";
+import { normalizeEnclosures } from "./normalizeEnclosures";
 import { normalizePublishedDate } from "./publishedDateNormalizer";
 
 export interface ConvertOptions {
@@ -27,6 +29,7 @@ export async function convertFeedItemsToArticles(
       const hash = await articleHasher.generateHash(item);
       const publishedDate =
         normalizePublishedDate(item.publishedDate, { now }) ??
+        normalizePublishedDate(item.updatedDate, { now }) ??
         new Date(fallbackBaseTime - index).toISOString();
       const processed = processArticleContent(item, feedUrl);
 
@@ -56,7 +59,7 @@ export async function convertFeedItemsToArticles(
         previewImage: item.previewImage,
         thumbnail: item.thumbnail,
         images: item.images,
-        enclosures: item.enclosures,
+        enclosures: normalizeEnclosures(item.enclosures),
         categories: item.categories,
         authors: item.authors,
         duration: item.duration,
@@ -95,16 +98,7 @@ function processArticleContent(item: FeedItem, feedUrl?: string): {
 }
 
 function toDisplayText(raw: string): string {
-  if (!raw) {
-    return "";
-  }
-
-  try {
-    const doc = new DOMParser().parseFromString(raw, "text/html");
-    return (doc.body.textContent ?? "").replace(/\s+/g, " ").trim();
-  } catch {
-    return raw.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-  }
+  return htmlToPlainText(raw);
 }
 
 function generateDescription(content: string): string {

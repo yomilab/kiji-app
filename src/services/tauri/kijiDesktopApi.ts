@@ -24,7 +24,7 @@ import type {
 import { articleToRecord, recordToArticle } from '@/stores/articleStore';
 import { extractArticleContentFromHtml } from '@/services/articles/articleExtractionService';
 import { isContentParser } from '@/services/settings/types';
-import type { ElectronAPI } from '@/types/electron';
+import type { KijiDesktopAPI } from '@/types/kijiDesktopApi';
 import type { AppMenuCommand } from '@/types/appMenu';
 import { trafficLightVisibilityBus } from '@/services/ui/trafficLightVisibilityBus';
 
@@ -33,8 +33,8 @@ function fileNameFromPath(path: string): string | undefined {
   return parts.length > 0 ? parts[parts.length - 1] : undefined;
 }
 
-function installElectronApiCompat(): void {
-  if (window.electronAPI) {
+function installKijiDesktopApi(): void {
+  if (window.kijiAPI) {
     return;
   }
 
@@ -56,7 +56,7 @@ function installElectronApiCompat(): void {
     helperTaskListenerInstalled = true;
   };
 
-  const api: ElectronAPI = {
+  const api: KijiDesktopAPI = {
     async fetchFeed(url, options) {
       return tauriClient.feeds.fetch({ url, requestId: options?.requestId });
     },
@@ -349,7 +349,7 @@ function installElectronApiCompat(): void {
     },
   };
 
-  window.electronAPI = api;
+  window.kijiAPI = api;
 }
 
-export { installElectronApiCompat };
+export { installKijiDesktopApi };

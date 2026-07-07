@@ -19,6 +19,7 @@
         "height": 600,
         "minWidth": 600,
         "minHeight": 400,
+        "backgroundThrottling": "disabled",
         "decorations": false,
         "transparent": true,
         "dragDropEnabled": false,
@@ -40,7 +41,7 @@
         "transparent": true,
         "dragDropEnabled": false,
         "windowEffects": {
-          "effects": ["underWindowBackground"],
+          "effects": ["sidebar"],
           "state": "active",
           "radius": 14
         }

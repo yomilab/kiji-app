@@ -51,6 +51,7 @@
 .feed-list-item-selected {
   background-color: var(--theme-hover-overlay-dark);
   color: var(--system-accent-color);
+  border-radius: 4px;
 }
 
 /* Feed Title */
@@ -59,7 +60,7 @@
   display: flex;
   align-items: center;
   min-height: calc(var(--sidebar-item-min-height) - (2 * var(--sidebar-item-padding-y)));
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 1.2;
   color: currentColor;

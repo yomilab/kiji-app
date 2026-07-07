@@ -24,8 +24,8 @@ export const BottomWidget: React.FC = () => {
   } as const;
 
   const handleSettings = () => {
-    if (window.electronAPI) {
-      window.electronAPI.openSettings();
+    if (window.kijiAPI) {
+      window.kijiAPI.openSettings();
     }
   };
 

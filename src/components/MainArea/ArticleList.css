@@ -1,6 +1,18 @@
 /* Article List Container */
 .article-list {
-  --article-list-horizontal-padding: 32px;
+  --article-list-horizontal-padding: 36px;
+  --article-list-favicon-chip-size: calc(var(--leading-item-icon-size) + 2px);
+  /* Former absolute hang: chip sat at -(leading * 1.35) from the title start. */
+  --article-list-favicon-hang: calc(var(--leading-item-icon-size) * 1.35);
+  /* Symmetric inset so an in-flow favicon keeps the same outer edge as before. */
+  --article-list-content-padding-x: calc(
+    var(--article-list-horizontal-padding) - var(--article-list-favicon-hang)
+  );
+  --article-list-favicon-title-gap: calc(
+    var(--article-list-horizontal-padding)
+    - var(--article-list-content-padding-x)
+    - var(--article-list-favicon-chip-size)
+  );
   --article-list-bg: var(--theme-article-bg);
   /* Keep aligned with HEADER_COMPACT_TRANSITION_MS in ArticleList.tsx. */
   --article-list-header-transition-duration: 40ms;
@@ -93,6 +105,14 @@
   pointer-events: none;
 }
 
+.article-list-load-more-tail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+}
+
 /* Article List Title Section */
 .article-list-title-section {
   padding: 32px 0 10px 0;
@@ -127,35 +147,6 @@
   border-bottom: 1px solid var(--theme-border);
   border-bottom-width: 0.5px;
   pointer-events: none;
-}
-
-.article-list-fixed-loader-shell {
-  position: absolute;
-  top: -6px;
-  left: 50%;
-  z-index: 14;
-  pointer-events: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.article-list-fixed-loader {
-  /* Keep the floating header loader readable when title text passes behind it. */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  min-height: 28px;
-  padding: 4px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--theme-border) 82%, transparent);
-  background-color: color-mix(in srgb, var(--theme-article-bg) 78%, var(--theme-text-primary) 22%);
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--theme-shadow) 50%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  pointer-events: none;
-  transform: translateX(-50%);
 }
 
 /* Title content wrapper - centered with max-width */
@@ -246,13 +237,14 @@
   max-width: var(--max-article-width);
   width: 100%;
   margin: 0 auto;
-  padding: 10px var(--article-list-horizontal-padding);
+  padding: 10px var(--article-list-content-padding-x);
   position: relative;
   display: flex;
   flex-direction: column;
   border-radius: 6px;
   transition:
     background-color 0.2s,
+    border-radius 0.2s,
     transform 0.15s cubic-bezier(0.2, 0, 0, 1);
 }
 
@@ -265,6 +257,33 @@
 }
 
 /* Skeleton Screens */
+.article-list-items {
+  --article-list-skeleton-bg: color-mix(in srgb, var(--theme-text-secondary) 16%, transparent);
+  --article-list-skeleton-shimmer-mid: rgba(255, 255, 255, 0.35);
+}
+
+[data-theme="dark"] .article-list-items {
+  --article-list-skeleton-bg: rgba(255, 255, 255, 0.12);
+  --article-list-skeleton-shimmer-mid: rgba(255, 255, 255, 0.34);
+}
+
+.article-list-items .skeleton-placeholder,
+.article-list-header-skeleton .skeleton-placeholder {
+  background: var(--article-list-skeleton-bg);
+  opacity: 1;
+}
+
+.article-list-items .skeleton-placeholder::after,
+.article-list-header-skeleton .skeleton-placeholder::after {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    color-mix(in srgb, var(--article-list-skeleton-shimmer-mid) 45%, transparent) 42%,
+    var(--article-list-skeleton-shimmer-mid) 58%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+
 .skeleton-placeholder {
   background: var(--theme-hover-overlay);
   border-radius: 4px;
@@ -313,7 +332,7 @@
 }
 
 .skeleton-date {
-  width: 80px;
+  width: 52px;
   height: 10px;
 }
 
@@ -351,6 +370,18 @@
   flex-shrink: 0;
 }
 
+.skeleton-favicon {
+  width: var(--article-list-favicon-chip-size);
+  height: var(--article-list-favicon-chip-size);
+  flex: 0 0 var(--article-list-favicon-chip-size);
+  border-radius: 3px;
+}
+
+.skeleton-description,
+.skeleton-description-short {
+  margin-left: calc(var(--article-list-favicon-chip-size) + var(--article-list-favicon-title-gap));
+}
+
 .skeleton-header-title {
   width: 140px;
   height: 18px;
@@ -364,6 +395,7 @@
 /* Active state: article is highlighted (last clicked) */
 .article-list-item.is-active .article-list-item-content {
   background-color: var(--theme-hover-overlay);
+  border-radius: 4px;
 }
 
 /* Use system accent tint only when runtime reports it is available. */
@@ -391,6 +423,7 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 2px;
+  margin-left: var(--article-list-favicon-hang);
   gap: 8px;
 }
 
@@ -414,31 +447,54 @@
 
 /* Article Item Header */
 .article-list-item-header {
-  position: relative;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--article-list-favicon-title-gap);
   margin-bottom: 2px;
   font-weight: 600;
+  min-width: 0;
 }
 
-.article-list-item-header .favicon-container {
-  position: absolute;
-  left: calc(var(--leading-item-icon-size) * -1.2);
-  top: 0;
-  width: var(--leading-item-icon-size);
-  height: var(--leading-item-icon-size);
+.article-list-favicon-container {
+  width: var(--article-list-favicon-chip-size);
+  height: var(--article-list-favicon-chip-size);
   border-radius: 3px;
-  border-width: 1px;
-  flex-shrink: 0;
+  flex: 0 0 var(--article-list-favicon-chip-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 3px;
+  background-color: color-mix(in srgb, var(--theme-text-primary) 45%, var(--theme-article-bg));
+}
+
+/* No background for the default fallback (star icon) — only real favicons
+   get the solid contrasting chip. */
+.article-list-favicon-container.is-fallback {
+  background-color: transparent;
+}
+
+.article-list-favicon-img {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 
-.article-list-item-header .favicon-icon {
+.article-list-favicon-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
   color: var(--theme-text-subdued);
 }
 
 /* Article Title */
 .article-list-item-title {
   margin: 0;
+  flex: 1;
+  min-width: 0;
   font-size: 15px;
   font-weight: 600;
   color: var(--theme-primary-color);
@@ -463,6 +519,7 @@
   font-weight: 500;
   color: var(--theme-text-subdued);
   line-height: 1.4;
+  margin-left: calc(var(--article-list-favicon-chip-size) + var(--article-list-favicon-title-gap));
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -499,11 +556,17 @@
   height: 60px;
   flex-shrink: 0;
   border-radius: 5px;
-  background-color: color-mix(in srgb, var(--theme-text-primary) 12%, transparent);
+  background-color: color-mix(in srgb, var(--theme-text-primary) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-border, var(--theme-text-primary)) 50%, transparent);
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+.article-list-item-preview-image.is-placeholder {
+  background-color: color-mix(in srgb, var(--theme-text-primary) 12%, transparent);
 }
 
 .article-list-item-preview-image-content {
@@ -513,6 +576,13 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  border-radius: 5px;
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+}
+
+.article-list-item-preview-image.is-loaded .article-list-item-preview-image-content {
+  opacity: 1;
 }
 
 /* Article Meta (author + date) */

@@ -182,7 +182,7 @@ class SettingsManager {
   }
 
   /**
-   * Load native + renderer stores and migrate any legacy Electron blob.
+   * Load native + renderer stores and migrate any legacy settings blob.
    */
   async initialize(): Promise<UserSettings> {
     await this.migrateLegacySettingsIfNeeded();

@@ -12,6 +12,7 @@ import { feedsManager, type Feed } from '@/services/feeds/feedsManager';
 import {
   formatOpmlImportSummary,
   importOpmlTextIntoLibrary,
+  navigateAfterOpmlImport,
   openOpmlFileForImport,
 } from '@/services/feeds/opmlUiWorkflow';
 import { articlesManager } from '@/services/articles/articlesManager';
@@ -36,6 +37,7 @@ import { NotificationToast } from '@/components/common/NotificationToast';
 import { Modal } from '@/components/common/Modal';
 import type { Tag } from '@/types/tag';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
+import { appToastService } from '@/services/ui/appToastService';
 import { useResizeObserverEffect } from '@/hooks/useLifecycleEffects';
 import { isValidUrl } from '@/utils/urlValidator';
 import { FeedEditWidgets } from './FeedEditWidgets';
@@ -69,6 +71,12 @@ type FeedSortField = 'title' | 'status' | 'articleCount' | 'station' | 'subscrib
 type FeedDeleteState = { id: string; title: string };
 type StationDeleteState = { name: string };
 type DragGroup = 'library' | 'station';
+type FeedEditRowFocusGroup = DragGroup | 'feed';
+
+interface FeedEditFocusedRow {
+  group: FeedEditRowFocusGroup;
+  id: string;
+}
 
 interface FeedSortConfig {
   field: FeedSortField;
@@ -151,8 +159,8 @@ const STATION_TABLE_COLUMN_WIDTHS = {
 } as const;
 
 const FEED_EDIT_ACTION_COLUMN_WIDTH = 64;
-const FEED_EDIT_JUMP_SCROLL_DURATION_MS = 520;
-const FEED_EDIT_JUMP_FLASH_DURATION_MS = 900;
+const FEED_EDIT_JUMP_SCROLL_DURATION_MS = 280;
+const FEED_EDIT_JUMP_FLASH_DURATION_MS = 480;
 
 const orderStationNames = (stationNames: string[], orderedStations: Tag[]): string[] => {
   const selectedNames = new Set(stationNames);
@@ -163,6 +171,20 @@ const orderStationNames = (stationNames: string[], orderedStations: Tag[]): stri
 
 const areStringArraysEqual = (left: string[], right: string[]): boolean => (
   left.length === right.length && left.every((value, index) => value === right[index])
+);
+
+const feedEditTargetToFocusedRow = (target: FeedEditTarget): FeedEditFocusedRow => {
+  if (target.kind === 'feed') {
+    return { group: 'feed', id: target.id };
+  }
+  if (target.kind === 'station') {
+    return { group: 'station', id: target.id };
+  }
+  return { group: 'library', id: target.id };
+};
+
+const isFeedEditFloatingOverlayTarget = (target: Element): boolean => (
+  !!target.closest('.dropdown-menu, .emoji-submenu, .modal')
 );
 
 const isEditableKeyboardTarget = (target: EventTarget | null): boolean => {
@@ -190,6 +212,7 @@ const buildNextStationName = (stations: Tag[]): string => {
 interface FeedEditFeedRowProps {
   feed: Feed;
   stationNames: string[];
+  isRowFocused: boolean;
   isSearchMatch: boolean;
   isCurrentSearchMatch: boolean;
   titleEditState: FeedTitleEditState | null;
@@ -218,6 +241,7 @@ interface FeedEditFeedRowProps {
 interface FeedEditStationRowProps {
   station: Tag;
   feedCount: number;
+  isRowFocused: boolean;
   attachRowRef: (stationName: string, node: HTMLTableRowElement | null) => void;
   stationNameEditState: StationNameEditState | null;
   onRowDragStart: (group: DragGroup, id: string, event: React.DragEvent<HTMLSpanElement>) => void;
@@ -234,6 +258,7 @@ interface FeedEditStationRowProps {
 
 interface FeedEditLibraryRowProps {
   item: LibraryItemRow;
+  isRowFocused: boolean;
   attachRowRef: (itemId: string, node: HTMLTableRowElement | null) => void;
   onRowDragStart: (group: DragGroup, id: string, event: React.DragEvent<HTMLSpanElement>) => void;
   onRowDragEnd: () => void;
@@ -375,16 +400,6 @@ const getCenteredScrollTop = (
   return Math.min(Math.max(0, nextScrollTop), maxScrollTop);
 };
 
-const isRowVisibleWithinContainer = (
-  container: HTMLElement,
-  row: HTMLTableRowElement,
-): boolean => {
-  const containerRect = container.getBoundingClientRect();
-  const rowRect = row.getBoundingClientRect();
-
-  return rowRect.top >= containerRect.top && rowRect.bottom <= containerRect.bottom;
-};
-
 const animateScrollTop = (
   container: HTMLElement,
   targetScrollTop: number,
@@ -425,15 +440,10 @@ const animateScrollTop = (
 };
 
 const flashFeedEditRow = (row: HTMLTableRowElement): void => {
-  row.animate(
-    [
-      { boxShadow: 'inset 0 0 0 0 rgba(64, 140, 255, 0)' },
-      { boxShadow: 'inset 0 0 0 999px rgba(64, 140, 255, 0.32)', offset: 0.3 },
-      { boxShadow: 'inset 0 0 0 999px rgba(64, 140, 255, 0.16)', offset: 0.55 },
-      { boxShadow: 'inset 0 0 0 999px rgba(64, 140, 255, 0)', offset: 1 },
-    ],
-    { duration: FEED_EDIT_JUMP_FLASH_DURATION_MS, easing: 'ease-out' }
-  );
+  row.classList.add('is-jump-target');
+  window.setTimeout(() => {
+    row.classList.remove('is-jump-target');
+  }, FEED_EDIT_JUMP_FLASH_DURATION_MS);
 };
 
 const FeedEditTableViewport: React.FC<FeedEditTableViewportProps> = ({
@@ -522,6 +532,7 @@ const FeedEditTableViewport: React.FC<FeedEditTableViewportProps> = ({
 const FeedEditFeedRow = React.memo<FeedEditFeedRowProps>(({
   feed,
   stationNames,
+  isRowFocused,
   isSearchMatch,
   isCurrentSearchMatch,
   titleEditState,
@@ -547,9 +558,12 @@ const FeedEditFeedRow = React.memo<FeedEditFeedRowProps>(({
       attachRowRef(feed.id, node);
     }}
     className={[
+      isRowFocused ? 'is-row-focused' : '',
       isSearchMatch ? 'is-search-match' : '',
       isCurrentSearchMatch ? 'is-search-current-match' : '',
     ].filter(Boolean).join(' ')}
+    data-feed-edit-group="feed"
+    data-feed-edit-row-id={feed.id}
   >
     <td>
       <button
@@ -562,7 +576,7 @@ const FeedEditFeedRow = React.memo<FeedEditFeedRowProps>(({
         {feed.emoji || '—'}
       </button>
     </td>
-    <td>
+    <td className="feed-edit-favicon-col">
       <div className="feed-edit-favicon-cell">
         {feed.favicon?.startsWith('data:') ? (
           <FaviconImage
@@ -687,6 +701,7 @@ const FeedEditFeedRow = React.memo<FeedEditFeedRowProps>(({
 const FeedEditStationRow = React.memo<FeedEditStationRowProps>(({
   station,
   feedCount,
+  isRowFocused,
   attachRowRef,
   stationNameEditState,
   onRowDragStart,
@@ -704,6 +719,9 @@ const FeedEditStationRow = React.memo<FeedEditStationRowProps>(({
     ref={(node) => {
       attachRowRef(station.name, node);
     }}
+    className={isRowFocused ? 'is-row-focused' : undefined}
+    data-feed-edit-group="station"
+    data-feed-edit-row-id={station.name}
     onDragOver={(event) => onRowDragOver('station', station.name, event)}
     onDrop={(event) => { void onRowDrop('station', station.name, event); }}
   >
@@ -767,6 +785,7 @@ const FeedEditStationRow = React.memo<FeedEditStationRowProps>(({
 
 const FeedEditLibraryRow = React.memo<FeedEditLibraryRowProps>(({
   item,
+  isRowFocused,
   attachRowRef,
   onRowDragStart,
   onRowDragEnd,
@@ -778,6 +797,9 @@ const FeedEditLibraryRow = React.memo<FeedEditLibraryRowProps>(({
     ref={(node) => {
       attachRowRef(item.id, node);
     }}
+    className={isRowFocused ? 'is-row-focused' : undefined}
+    data-feed-edit-group="library"
+    data-feed-edit-row-id={item.id}
     onDragOver={(event) => onRowDragOver('library', item.id, event)}
     onDrop={(event) => { void onRowDrop('library', item.id, event); }}
   >
@@ -832,6 +854,8 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     clearFeedSelection,
     feedEditTarget,
     clearFeedEditTarget,
+    selectFeed,
+    selectTag,
   } = useFeedNavigation();
 
   const { refreshTotalFeeds, notifyFeedLibraryChanged } = useFeedUIActions();
@@ -867,6 +891,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   const [stationToDelete, setStationToDelete] = useState<StationDeleteState | null>(null);
   const [opmlActionMessage, setOpmlActionMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [focusedRow, setFocusedRow] = useState<FeedEditFocusedRow | null>(null);
   const resizeStateRef = useRef<FeedColumnResizeState | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
@@ -875,10 +900,36 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   const stationMenuRef = useRef<HTMLDivElement | null>(null);
   const opmlActionToastTimerRef = useRef<number | null>(null);
   const stationsRef = useLatestRef(stations);
+  const feedsRef = useLatestRef(feeds);
   const feedToStationsMapRef = useLatestRef(feedToStationsMap);
   const libraryItemsRef = useLatestRef(libraryItems);
   const dragStateRef = useRef<DragState | null>(null);
   const stationNameCommitKeyRef = useRef<string | null>(null);
+
+  const isRowFocused = useCallback((group: FeedEditRowFocusGroup, id: string) => (
+    focusedRow?.group === group && focusedRow.id === id
+  ), [focusedRow]);
+
+  const handleFeedEditPointerDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const row = target.closest('.feed-edit-group-table tbody tr');
+    if (row instanceof HTMLTableRowElement && !isFeedEditFloatingOverlayTarget(target)) {
+      const group = row.dataset.feedEditGroup as FeedEditRowFocusGroup | undefined;
+      const rowId = row.dataset.feedEditRowId;
+      if (group && rowId) {
+        setFocusedRow({ group, id: rowId });
+      }
+      return;
+    }
+
+    if (isFeedEditFloatingOverlayTarget(target)) return;
+
+    if (target.closest('.feed-edit-view')) {
+      setFocusedRow(null);
+    }
+  }, []);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -1126,7 +1177,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     try {
       const updatedFeed = await feedsManager.updateFeed(feedId, { emoji });
       if (!updatedFeed) {
-        setError('Failed to update feed icon.');
+        appToastService.show('Failed to update feed icon.');
         return;
       }
 
@@ -1140,7 +1191,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       feedLibraryMutationBus.publishFeedPatched(feedId, { emoji: updatedFeed.emoji });
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to update feed icon.';
-      setError(message);
+      appToastService.show(message);
     }
   }, []);
 
@@ -1148,7 +1199,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     try {
       const updatedStation = await tagsManager.updateTag(stationName, { emoji });
       if (!updatedStation) {
-        setError('Failed to update station emoji.');
+        appToastService.show('Failed to update station emoji.');
         return;
       }
 
@@ -1168,7 +1219,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       });
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to update station emoji.';
-      setError(message);
+      appToastService.show(message);
     }
   }, []);
 
@@ -1286,7 +1337,6 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       sortOrder: nextSortOrder,
     };
 
-    setError(null);
     try {
       await tagsManager.saveTag(nextStation);
       setStations((current) => [...current, nextStation]);
@@ -1299,7 +1349,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       });
     } catch (createError) {
       const message = createError instanceof Error ? createError.message : 'Failed to add station.';
-      setError(message);
+      appToastService.show(message);
     }
   }, [stationsRef]);
 
@@ -1326,7 +1376,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     try {
       const updatedFeed = await feedsManager.updateFeed(state.feedId, { title: nextTitle });
       if (!updatedFeed) {
-        setError('Failed to update feed title.');
+        appToastService.show('Failed to update feed title.');
         return;
       }
 
@@ -1340,7 +1390,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       feedLibraryMutationBus.publishFeedPatched(state.feedId, { title: updatedFeed.title });
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to update feed title.';
-      setError(message);
+      appToastService.show(message);
     }
   }, []);
 
@@ -1352,20 +1402,20 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     if (!nextUrl || nextUrl === state.originalUrl) return;
 
     if (!isValidUrl(nextUrl)) {
-      setError('Please enter a valid URL (http:// or https://).');
+      appToastService.show('Please enter a valid URL (http:// or https://).');
       return;
     }
 
     try {
       const existingFeed = await feedsManager.getFeedByUrl(nextUrl);
       if (existingFeed && existingFeed.id !== state.feedId) {
-        setError('This feed URL already exists in your library.');
+        appToastService.show('This feed URL already exists in your library.');
         return;
       }
 
       const updatedFeed = await feedsManager.updateFeed(state.feedId, { url: nextUrl });
       if (!updatedFeed) {
-        setError('Failed to update feed URL.');
+        appToastService.show('Failed to update feed URL.');
         return;
       }
 
@@ -1379,7 +1429,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       feedLibraryMutationBus.publishFeedPatched(state.feedId, { url: updatedFeed.url });
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to update feed URL.';
-      setError(message);
+      appToastService.show(message);
     }
   }, []);
 
@@ -1405,7 +1455,6 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
         : currentStation.feedIds.filter((currentFeedId) => currentFeedId !== feedId),
     };
 
-    setError(null);
     setStationEditState((current) => (
       current && current.feedId === feedId
         ? { ...current, draftStationNames: nextStationNames }
@@ -1446,7 +1495,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       });
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to update feed stations.';
-      setError(message);
+      appToastService.show(message);
       void loadData();
     }
   }, [feedToStationsMapRef, loadData, stationsRef]);
@@ -1556,7 +1605,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       ));
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to rename station.';
-      setError(message);
+      appToastService.show(message);
       void loadData();
     } finally {
       if (stationNameCommitKeyRef.current === commitKey) {
@@ -1579,7 +1628,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       feedLibraryMutationBus.publishSmartViewsPatched(nextSmartViews);
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to save library item settings.';
-      setError(message);
+      appToastService.show(message);
       void loadData();
     }
   }, [loadData]);
@@ -1606,7 +1655,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       );
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to save station order.';
-      setError(message);
+      appToastService.show(message);
       void loadData();
     }
   }, [loadData]);
@@ -1730,10 +1779,8 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
 
     const targetScrollTop = getCenteredScrollTop(scrollContainer, targetRow);
     const cancelScroll = animateScrollTop(scrollContainer, targetScrollTop, () => {
-      if (!isRowVisibleWithinContainer(scrollContainer, targetRow)) {
-        return;
-      }
       flashFeedEditRow(targetRow);
+      setFocusedRow(feedEditTargetToFocusedRow(feedEditTarget));
       clearFeedEditTarget();
     });
 
@@ -1948,15 +1995,17 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   const handleImportFeeds = async () => {
     setIsOpmlActionLoading(true);
     try {
-      const opmlText = await openOpmlFileForImport();
-      if (!opmlText) {
+      const selectedFile = await openOpmlFileForImport();
+      if (!selectedFile) {
         return;
       }
 
-      const importResult = await importOpmlTextIntoLibrary(opmlText, {
+      const importResult = await importOpmlTextIntoLibrary(selectedFile.opmlText, {
         refreshTotalFeeds,
         notifyFeedLibraryChanged,
+        fileName: selectedFile.fileName,
       });
+      await navigateAfterOpmlImport(importResult, { selectFeed, selectTag });
       showOpmlActionMessage(formatOpmlImportSummary(importResult.summary));
     } catch (importError) {
       showOpmlActionMessage(importError instanceof Error ? importError.message : 'Failed to import OPML file.');
@@ -1966,7 +2015,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   };
 
   const handleExportAllFeeds = async () => {
-    if (!window.electronAPI?.saveOpmlFile) {
+    if (!window.kijiAPI?.saveOpmlFile) {
       showOpmlActionMessage('Export is only available in the desktop app.');
       return;
     }
@@ -1974,7 +2023,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     setIsOpmlActionLoading(true);
     try {
       const opmlText = await opmlExportService.buildOpmlText();
-      const saveResult = await window.electronAPI.saveOpmlFile(opmlText, 'Feeds.opml');
+      const saveResult = await window.kijiAPI.saveOpmlFile(opmlText, 'Feeds.opml');
       if (saveResult.canceled) return;
       showOpmlActionMessage('Exported feeds to OPML successfully.');
     } catch (exportError) {
@@ -1988,7 +2037,6 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     if (!feedToDelete || isFeedDeleteActionLoading) return;
 
     setIsFeedDeleteActionLoading(true);
-    setError(null);
     try {
       const targetFeedId = feedToDelete.id;
       const isDeletingSelectedFeed = selectedFeedId === targetFeedId;
@@ -2043,7 +2091,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       setFeedToDelete(null);
     } catch (deleteError) {
       const message = deleteError instanceof Error ? deleteError.message : 'Failed to delete feed.';
-      setError(message);
+      appToastService.show(message);
       void loadData();
     } finally {
       setIsFeedDeleteActionLoading(false);
@@ -2054,7 +2102,6 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     if (!stationToDelete || isStationDeleteActionLoading) return;
 
     setIsStationDeleteActionLoading(true);
-    setError(null);
     try {
       const targetStationName = stationToDelete.name;
       const deletedStation = stationsRef.current.find((station) => station.name === targetStationName);
@@ -2113,7 +2160,146 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       setStationToDelete(null);
     } catch (deleteError) {
       const message = deleteError instanceof Error ? deleteError.message : 'Failed to delete station.';
-      setError(message);
+      appToastService.show(message);
+      void loadData();
+    } finally {
+      setIsStationDeleteActionLoading(false);
+    }
+  };
+
+  const handleDeleteStationWithFeeds = async () => {
+    if (!stationToDelete || isStationDeleteActionLoading) return;
+
+    setIsStationDeleteActionLoading(true);
+    try {
+      const targetStationName = stationToDelete.name;
+      const deletedStation = stationsRef.current.find((station) => station.name === targetStationName);
+      const affectedFeedIds = deletedStation?.feedIds ?? [];
+      const feedsToDelete: string[] = [];
+      const feedsToUnlink: string[] = [];
+
+      for (const feedId of affectedFeedIds) {
+        const feed = feedsRef.current.find((entry) => entry.id === feedId);
+        if (!feed) {
+          feedsToDelete.push(feedId);
+          continue;
+        }
+
+        const hasOtherStations = feed.tags.some((stationName) => stationName !== targetStationName);
+        if (hasOtherStations) {
+          feedsToUnlink.push(feedId);
+        } else {
+          feedsToDelete.push(feedId);
+        }
+      }
+
+      const deletedFeedIdSet = new Set(feedsToDelete);
+
+      for (const feedId of feedsToDelete) {
+        await articlesManager.deleteArticlesByFeed(feedId);
+        await feedsManager.deleteFeed(feedId);
+
+        if (selectedFeedId === feedId) {
+          clearFeedSelection();
+        }
+      }
+
+      await tagsManager.deleteTag(targetStationName);
+
+      setStations((current) => current
+        .filter((station) => station.name !== targetStationName)
+        .map((station) => ({
+          ...station,
+          feedIds: station.feedIds.filter((feedId) => !deletedFeedIdSet.has(feedId)),
+        })));
+      setFeeds((current) => current
+        .filter((feed) => !deletedFeedIdSet.has(feed.id))
+        .map((feed) => {
+          if (!feed.tags.includes(targetStationName)) {
+            return feed;
+          }
+
+          return {
+            ...feed,
+            tags: feed.tags.filter((stationName) => stationName !== targetStationName),
+          };
+        }));
+      setFeedToStationsMap((current) => {
+        const next = new Map(current);
+
+        for (const feedId of feedsToDelete) {
+          next.delete(feedId);
+        }
+
+        for (const feedId of feedsToUnlink) {
+          const stationNames = next.get(feedId);
+          if (!stationNames) continue;
+
+          const filteredNames = stationNames.filter((stationName) => stationName !== targetStationName);
+          if (filteredNames.length === 0) {
+            next.delete(feedId);
+            continue;
+          }
+
+          next.set(feedId, filteredNames);
+        }
+
+        return next;
+      });
+
+      for (const feedId of feedsToDelete) {
+        if (titleEditState?.feedId === feedId) {
+          setTitleEditState(null);
+        }
+        if (urlEditState?.feedId === feedId) {
+          setUrlEditState(null);
+        }
+        if (stationEditState?.feedId === feedId) {
+          setStationEditState(null);
+        }
+        if (emojiMenuState?.kind === 'feed' && emojiMenuState.id === feedId) {
+          setEmojiMenuState(null);
+        }
+        if (activeEmojiTarget?.kind === 'feed' && activeEmojiTarget.id === feedId) {
+          setActiveEmojiTarget(null);
+        }
+
+        const affectedStations = stationsRef.current.filter(
+          (station) => station.feedIds.includes(feedId) && station.name !== targetStationName,
+        );
+        for (const station of affectedStations) {
+          feedLibraryMutationBus.publishStationPatched(station.name, {
+            ...station,
+            feedIds: station.feedIds.filter((id) => id !== feedId),
+          });
+        }
+
+        feedLibraryMutationBus.publishFeedDeleted(feedId);
+      }
+
+      if (stationNameEditState?.stationName === targetStationName) {
+        setStationNameEditState(null);
+      }
+      if (stationEditState) {
+        setStationEditState(null);
+      }
+      if (emojiMenuState?.kind === 'station' && emojiMenuState.id === targetStationName) {
+        setEmojiMenuState(null);
+      }
+      if (activeEmojiTarget?.kind === 'station' && activeEmojiTarget.id === targetStationName) {
+        setActiveEmojiTarget(null);
+      }
+
+      feedLibraryMutationBus.publishStationDeleted(
+        deletedStation?.name ?? targetStationName,
+        affectedFeedIds,
+      );
+      setStationToDelete(null);
+    } catch (deleteError) {
+      const message = deleteError instanceof Error
+        ? deleteError.message
+        : 'Failed to delete station and feeds.';
+      appToastService.show(message);
       void loadData();
     } finally {
       setIsStationDeleteActionLoading(false);
@@ -2210,7 +2396,10 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   );
 
   return (
-    <div className="article-list feed-edit-view">
+    <div
+      className="article-list feed-edit-view"
+      onMouseDown={handleFeedEditPointerDown}
+    >
       <FeedEditWidgets
         onToggleSearch={handleToggleSearch}
         isSearchOpen={isSearchOpen}
@@ -2251,6 +2440,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
                     <FeedEditLibraryRow
                       key={item.id}
                       item={item}
+                      isRowFocused={isRowFocused('library', item.id)}
                       attachRowRef={attachLibraryRowRef}
                       onRowDragStart={handleDragStart}
                       onRowDragEnd={handleDragEnd}
@@ -2323,6 +2513,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
                       key={station.name}
                       station={station}
                       feedCount={feedCount}
+                      isRowFocused={isRowFocused('station', station.name)}
                       attachRowRef={attachStationRowRef}
                       stationNameEditState={stationNameEditState?.stationName === station.name ? stationNameEditState : null}
                       onRowDragStart={handleDragStart}
@@ -2417,6 +2608,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
                       key={feed.id}
                       feed={feed}
                       stationNames={stationNames}
+                      isRowFocused={isRowFocused('feed', feed.id)}
                       isSearchMatch={matchedFeedIdSet.has(feed.id)}
                       isCurrentSearchMatch={firstMatchedFeedId === feed.id}
                       titleEditState={titleEditState?.feedId === feed.id ? titleEditState : null}
@@ -2510,6 +2702,9 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
           <p className="feed-edit-delete-modal-description">
             Feeds in this station will stay in your library and become unstationed.
           </p>
+          <p className="feed-edit-delete-modal-description">
+            To remove feeds that belong only to this station (and their articles), use Delete Station and Feeds. Feeds shared with other stations are unlinked only.
+          </p>
           <div className="feed-edit-delete-modal-actions">
             <button
               type="button"
@@ -2518,6 +2713,14 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
               disabled={isStationDeleteActionLoading}
             >
               {isStationDeleteActionLoading ? 'Deleting...' : 'Confirm'}
+            </button>
+            <button
+              type="button"
+              className="modal-confirm-button modal-confirm-button-danger feed-edit-delete-modal-button"
+              onClick={() => { void handleDeleteStationWithFeeds(); }}
+              disabled={isStationDeleteActionLoading}
+            >
+              {isStationDeleteActionLoading ? 'Deleting...' : 'Delete Station and Feeds'}
             </button>
             <button
               type="button"

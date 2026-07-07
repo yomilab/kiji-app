@@ -17,12 +17,13 @@ import { feedsManager } from '@/services/feeds/feedsManager';
 import { logger } from '@/services/logger';
 import { appToastService } from '@/services/ui/appToastService';
 import { readerModeService, type ReaderModeContent } from '@/services/articles/readerModeService';
+import { useE2eArticleViewProbes } from '@/hooks/useE2eArticleViewProbes';
 import { postlightParserService } from '@/services/articles/postlightParserService';
 import { faviconFetcher } from '@/services/favicons/faviconFetcher';
 import { extractUrlFromText } from '@/utils/urlValidator';
 import { hasEmbeddableMedia, selectArticleHtmlContent } from '@/utils/articleContentSelection';
 import { createTemporaryArticleFromPostlight } from '@/utils/temporaryArticleFactory';
-import { buildYouTubeEmbedHtml } from '@/utils/youtubeEmbed';
+import { buildYouTubeEmbedHtml, resolveYouTubeWatchUrl } from '@/utils/youtubeEmbed';
 import { injectLeadImage } from '@/utils/articleLeadImage';
 import {
   getLinkOnlySavedContent,
@@ -31,7 +32,8 @@ import {
 import { normalizePublishedDate } from '@/services/articles/publishedDateNormalizer';
 import { renderTextWithNonAsciiFont } from '@/utils/nonAsciiTypography';
 import { StatefulButtonGroup, type ButtonState } from '@/components/common/StatefulButtonGroup';
-import { ArticleContent, ArticleContentSkeleton } from '@/components/common/ArticleContent';
+import { ArticleContent, ArticleContentSkeleton, type ArticleContentMetricsDetail } from '@/components/common/ArticleContent';
+import { ArticlePdfViewer } from '@/components/common/ArticlePdf';
 import { InteractionProfiler } from '@/components/common/InteractionProfiler';
 import { TOOLTIPS } from '@/config/tooltips';
 import {
@@ -52,10 +54,16 @@ import {
   withShortcutHint,
 } from '@/services/shortcuts/shortcutService';
 import { ARTICLE_VIEW_CLOSE_ANIMATION_MS, ARTICLE_VIEW_OPENING_MS } from '@/constants';
+import { isArticleReaderModeRenderable } from './articleViewReaderMode';
 import type { Article } from '@/types/article';
 import { animateElementScrollTop, getScrollableBottom } from '@/utils/fixedTimeScroll';
 import { useDependencyEffect, useUnmountEffect } from '@/hooks/useLifecycleEffects';
 import { useArticleViewPerformanceMetrics } from './hooks/useArticleViewPerformanceMetrics';
+import {
+  estimateUtf8Bytes,
+  logArticleRenderAttribution,
+  logArticleOpenAttribution,
+} from '@/services/diagnostics/webKitAttribution';
 import './ArticleView.css';
 
 interface ArticleViewProps {
@@ -80,7 +88,20 @@ const ARTICLE_VIEW_ELEMENT_TRANSITION = {
 const AUDIO_EXTENSION_PATTERN = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)(?:[?#]|$)/i;
 
 // Simple cache to avoid flash of content for known feeds
+const FEED_READER_MODE_CACHE_MAX_ENTRIES = 256;
 const feedReaderModeCache = new Map<string, boolean>();
+
+const rememberFeedReaderMode = (feedId: string, enabled: boolean): void => {
+  feedReaderModeCache.delete(feedId);
+  feedReaderModeCache.set(feedId, enabled);
+  while (feedReaderModeCache.size > FEED_READER_MODE_CACHE_MAX_ENTRIES) {
+    const oldestKey = feedReaderModeCache.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    feedReaderModeCache.delete(oldestKey);
+  }
+};
 
 function getBasicModeContentForSave(article: Article): string {
   const articleContent = article.content || '';
@@ -106,8 +127,12 @@ function shouldUseSavedArticleSnapshot(
 }
 
 function isAudioEnclosure(articleEnclosure: ArticleEnclosure): boolean {
-  return articleEnclosure.type.toLowerCase().startsWith('audio/')
-    || AUDIO_EXTENSION_PATTERN.test(articleEnclosure.url);
+  const mimeType = typeof articleEnclosure.type === 'string'
+    ? articleEnclosure.type.toLowerCase()
+    : '';
+  const url = articleEnclosure.url ?? '';
+  return mimeType.startsWith('audio/')
+    || AUDIO_EXTENSION_PATTERN.test(url);
 }
 
 function selectPrimaryAudioEnclosure(article: Article | null): ArticleEnclosure | undefined {
@@ -275,7 +300,6 @@ function useEmbeddedArticleOpenBootstrap(params: {
   setProcessedArticleBodyKey: React.Dispatch<React.SetStateAction<string | null>>;
   setArticleBodyProcessing: React.Dispatch<React.SetStateAction<boolean>>;
   setArticleDisplayMode: React.Dispatch<React.SetStateAction<ArticleDisplayMode>>;
-  ensureReaderContentForArticle: (article: Article, requestVersion: number) => void;
   setIsTemporaryArticle: React.Dispatch<React.SetStateAction<boolean>>;
   setClipboardError: React.Dispatch<React.SetStateAction<string | null>>;
   markArticleAsReadOnOpen: (article: Article, isFeedLinked: boolean) => Promise<void>;
@@ -304,7 +328,6 @@ function useEmbeddedArticleOpenBootstrap(params: {
     setProcessedArticleBodyKey,
     setArticleBodyProcessing,
     setArticleDisplayMode,
-    ensureReaderContentForArticle,
     setIsTemporaryArticle,
     setClipboardError,
     markArticleAsReadOnOpen,
@@ -324,7 +347,10 @@ function useEmbeddedArticleOpenBootstrap(params: {
     setIsClosing(false);
     currentArticleHashRef.current = selectedArticle.hash;
     setIsSaved(getInitialSavedState(selectedArticle));
-    
+    setArticleDisplayMode('basic');
+    setReaderLoading(false);
+    setArticleToShow(selectedArticle);
+
     // Ensure we have the full content if it's missing from the list item
     const bootstrapArticle = async () => {
       let fullArticle = selectedArticle;
@@ -353,34 +379,9 @@ function useEmbeddedArticleOpenBootstrap(params: {
           setArticleDisplayMode('basic');
           setReaderLoading(false);
         } else if (selectedIsFeedLinked) {
-          const openRequestVersion = modeRequestVersionRef.current;
-          const cachedMode = feedReaderModeCache.get(fullArticle.feedId);
-          if (cachedMode !== undefined) {
-            setArticleDisplayMode(cachedMode ? 'reader' : 'basic');
-            if (cachedMode) {
-              setReaderLoading(true);
-              if (fullArticle.link) {
-                ensureReaderContentForArticle(fullArticle, openRequestVersion);
-              }
-            } else {
-              setReaderLoading(false);
-            }
-          } else {
-            setArticleDisplayMode('basic');
-            setReaderLoading(false);
-          }
-
           void feedsManager.getFeedById(fullArticle.feedId).then((feed) => {
-            if (articleOpenTrigger === lastOpenTriggerRef.current && openRequestVersion === modeRequestVersionRef.current) {
-              const mode = !!feed?.readerModeEnabled;
-              feedReaderModeCache.set(fullArticle.feedId, mode);
-              setArticleDisplayMode(mode ? 'reader' : 'basic');
-              if (mode && fullArticle.link) {
-                ensureReaderContentForArticle(fullArticle, openRequestVersion);
-              }
-              if (!mode) {
-                setReaderLoading(false);
-              }
+            if (articleOpenTrigger === lastOpenTriggerRef.current) {
+              rememberFeedReaderMode(fullArticle.feedId, !!feed?.readerModeEnabled);
             }
           });
         } else {
@@ -408,8 +409,8 @@ function useEmbeddedArticleOpenBootstrap(params: {
     setProcessedArticleBodyKey(null);
     setArticleBodyProcessing(false);
 
-    if (window.electronAPI) {
-      window.electronAPI.hideTrafficLights();
+    if (window.kijiAPI) {
+      window.kijiAPI.hideTrafficLights();
     }
   }, [
     standalone,
@@ -434,7 +435,6 @@ function useEmbeddedArticleOpenBootstrap(params: {
     setProcessedArticleBodyKey,
     setArticleBodyProcessing,
     setArticleDisplayMode,
-    ensureReaderContentForArticle,
     setIsTemporaryArticle,
     setClipboardError,
     markArticleAsReadOnOpen,
@@ -455,6 +455,7 @@ function useEmbeddedArticleCloseFlow(params: {
   setArticleToShow: React.Dispatch<React.SetStateAction<Article | null>>;
   setProcessedArticleBodyHtml: React.Dispatch<React.SetStateAction<string | null>>;
   setProcessedArticleBodyKey: React.Dispatch<React.SetStateAction<string | null>>;
+  setArticleResourceType: React.Dispatch<React.SetStateAction<'html' | 'pdf' | 'unsupported' | null>>;
   completeArticleClose: () => void;
 }): void {
   const {
@@ -471,6 +472,7 @@ function useEmbeddedArticleCloseFlow(params: {
     setArticleToShow,
     setProcessedArticleBodyHtml,
     setProcessedArticleBodyKey,
+    setArticleResourceType,
     completeArticleClose,
   } = params;
 
@@ -496,12 +498,13 @@ function useEmbeddedArticleCloseFlow(params: {
       flushPendingArticleListUpdate();
       setIsClosing(false);
       setArticleToShow(null);
+      setArticleResourceType(null);
       articleContentProcessingService.clearCache();
       setProcessedArticleBodyHtml(null);
       setProcessedArticleBodyKey(null);
       setArticleBodyProcessing(false);
-      if (window.electronAPI) {
-        window.electronAPI.showTrafficLights();
+      if (window.kijiAPI) {
+        window.kijiAPI.showTrafficLights();
       }
       completeArticleClose();
     }, ARTICLE_VIEW_CLOSE_ANIMATION_MS);
@@ -551,6 +554,12 @@ function useEmbeddedArticlePostOpenSync(params: {
 
     lastProcessedTriggerRef.current = articleOpenTrigger;
     const selectedIsFeedLinked = selectedArticle.isFeedLinked ?? (selectedArticle.feedId !== 'clipboard' && selectedArticle.feedId !== 'saved');
+    logArticleOpenAttribution({
+      articleHash: selectedArticle.hash,
+      feedId: selectedArticle.feedId,
+      mode: 'basic',
+      standalone,
+    });
     void syncSavedState(selectedArticle);
     void configureReaderModeForArticle(selectedArticle, selectedIsFeedLinked);
     void updateLastReadTime(selectedArticle);
@@ -982,6 +991,46 @@ function useArticleAutofocus(params: {
   }, [articleHash, clipboardLoading, deckOpen, standalone, isClosing, articleToShow, scrollContainerRef]);
 }
 
+const ARTICLE_EMBEDDED_MEDIA_FOCUS_SELECTOR = 'iframe, video, audio, embed, object, lite-youtube';
+
+function isArticleEmbeddedMediaFocusEvent(event: FocusEvent, scrollContainer: HTMLElement): boolean {
+  if (!event.composedPath().includes(scrollContainer)) {
+    return false;
+  }
+
+  return event.composedPath().some((node) =>
+    node instanceof HTMLElement && node.matches(ARTICLE_EMBEDDED_MEDIA_FOCUS_SELECTOR),
+  );
+}
+
+// Keep keyboard focus on the scroll container so article shortcuts work after embed clicks.
+function useArticleEmbeddedMediaFocusGuard(params: {
+  enabled: boolean;
+  scrollContainerRef: React.MutableRefObject<HTMLDivElement | null>;
+}): void {
+  const { enabled, scrollContainerRef } = params;
+
+  useDependencyEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const handleFocusIn = (event: FocusEvent) => {
+      const scrollContainer = scrollContainerRef.current;
+      if (!scrollContainer || !isArticleEmbeddedMediaFocusEvent(event, scrollContainer)) {
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        scrollContainer.focus({ preventScroll: true });
+      });
+    };
+
+    document.addEventListener('focusin', handleFocusIn, true);
+    return () => document.removeEventListener('focusin', handleFocusIn, true);
+  }, [enabled, scrollContainerRef]);
+}
+
 // Phase 5: cleanup timers and preprocess tasks on unmount.
 function useArticleViewCleanup(
   cancelArticleBodyProcessing: () => void,
@@ -1020,6 +1069,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   const [readerLoading, setReaderLoading] = useState(false);
   const [readerError, setReaderError] = useState<string | null>(null);
   const [articleResourceType, setArticleResourceType] = useState<'html' | 'pdf' | 'unsupported' | null>(null);
+  const [pdfViewerLoading, setPdfViewerLoading] = useState(false);
   const [clipboardLoading, setClipboardLoading] = useState(false);
   const [clipboardError, setClipboardError] = useState<string | null>(null);
   const [isTemporaryArticle, setIsTemporaryArticle] = useState(false);
@@ -1054,7 +1104,11 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     articleToShow.isFeedLinked ?? (articleToShow.feedId !== 'clipboard' && articleToShow.feedId !== 'saved')
   );
   const canToggleReaderMode = selectedSmartView !== 'saved';
-  const isReaderModeActive = articleDisplayMode === 'reader';
+  const isReaderModeActive = isArticleReaderModeRenderable(
+    articleDisplayMode,
+    articleViewOverlayPhase,
+    standalone,
+  );
   const articleBodyBaseUrl = articleToShow?.link || articleToShow?.feedUrl;
   const useSavedArticleSnapshot = shouldUseSavedArticleSnapshot(articleToShow, selectedSmartView);
   const rawArticleBodyHtml = isReaderModeActive && !useSavedArticleSnapshot
@@ -1123,13 +1177,21 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     updateArticleInList(pending.hash, pending.updates);
   }, [updateArticleInList]);
 
+  useDependencyEffect(() => {
+    if (articleResourceType === 'pdf' && articleToShow?.link) {
+      setPdfViewerLoading(true);
+    } else {
+      setPdfViewerLoading(false);
+    }
+  }, [articleResourceType, articleToShow?.hash, articleToShow?.link]);
+
   const handleBack = useCallback(() => {
     if (isClosing) return;
     requestCloseArticle();
   }, [isClosing, requestCloseArticle]);
 
   const handleOpenInBrowser = useCallback((withPressedFeedback = false) => {
-    if (!articleToShow?.link || !window.electronAPI) {
+    if (!articleToShow?.link || !window.kijiAPI) {
       return;
     }
 
@@ -1137,12 +1199,12 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
       triggerTitlePressFeedback();
     }
 
-    void window.electronAPI.openExternal(articleToShow.link);
+    void window.kijiAPI.openExternal(articleToShow.link);
   }, [articleToShow?.link, triggerTitlePressFeedback]);
 
   const handleOpenInNewWindow = useCallback(async () => {
-    if (articleToShow && window.electronAPI) {
-      await window.electronAPI.openArticleWindow({
+    if (articleToShow && window.kijiAPI) {
+      await window.kijiAPI.openArticleWindow({
         article: articleToShow,
       });
       // Close the article view after the window is opened
@@ -1303,10 +1365,10 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
 
   const handleShareClick = useCallback(async () => {
     // Show native share menu directly
-    if (articleToShow?.title && articleToShow?.link && window.electronAPI && shareButtonRef.current) {
+    if (articleToShow?.title && articleToShow?.link && window.kijiAPI && shareButtonRef.current) {
       try {
         const rect = shareButtonRef.current.getBoundingClientRect();
-        await window.electronAPI.showShareSheet({
+        await window.kijiAPI.showShareSheet({
           title: articleToShow.title,
           url: articleToShow.link,
           buttonRect: {
@@ -1328,12 +1390,12 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     }
 
     try {
-      if (!window.electronAPI?.writeClipboard) {
+      if (!window.kijiAPI?.writeClipboard) {
         appToastService.show('Copy is not available in this environment.');
         return;
       }
 
-      await window.electronAPI.writeClipboard(articleToShow.link);
+      await window.kijiAPI.writeClipboard(articleToShow.link);
     } catch (error) {
       console.error('Error copying article URL:', error);
       appToastService.show('Failed to copy article URL.');
@@ -1341,13 +1403,15 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   }, [articleToShow]);
 
   const handleArticleLinkClick = useCallback((href: string) => {
-    if (window.electronAPI) {
-      window.electronAPI.openExternal(href);
+    if (!window.kijiAPI) {
+      return;
     }
+
+    void window.kijiAPI.openExternal(resolveYouTubeWatchUrl(href) ?? href);
   }, []);
 
   const handleArticleContextMenu = useCallback((detail: { kind: 'link' | 'image'; url: string }) => {
-    if (!window.electronAPI?.showImageContextMenu) {
+    if (!window.kijiAPI?.showImageContextMenu) {
       return;
     }
 
@@ -1360,7 +1424,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
       }
 
       try {
-        await window.electronAPI.showImageContextMenu({
+        await window.kijiAPI.showImageContextMenu({
           url: detail.url,
           kind: detail.kind,
           windowLabel,
@@ -1374,6 +1438,33 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
       }
     })();
   }, []);
+
+  const handleArticleContentMetrics = useCallback((detail: ArticleContentMetricsDetail) => {
+    if (!articleToShow) {
+      return;
+    }
+
+    logArticleRenderAttribution({
+      articleHash: articleToShow.hash,
+      feedId: articleToShow.feedId,
+      feedTitle: articleToShow.feedTitle,
+      articleUrl: articleToShow.link,
+      mode: isReaderModeActive ? 'reader' : 'basic',
+      standalone,
+      htmlBytes: estimateUtf8Bytes(rawArticleBodyHtml),
+      htmlChars: detail.htmlChars,
+      shadowElementCount: detail.shadowElementCount,
+      imageElementCount: detail.imageElementCount,
+      mediaElementCount: detail.mediaElementCount,
+      linkElementCount: detail.linkElementCount,
+      textChars: detail.textChars,
+    });
+  }, [
+    articleToShow,
+    isReaderModeActive,
+    rawArticleBodyHtml,
+    standalone,
+  ]);
 
   const handleArticleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
     if (isClosing) return;
@@ -1469,8 +1560,12 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     }
 
     if (result.resourceType && result.resourceType !== 'html') {
+      readerContentHashRef.current = hash;
       readerFetchKeyRef.current = null;
       setArticleResourceType(result.resourceType);
+      if (result.resourceType === 'pdf') {
+        setPdfViewerLoading(true);
+      }
       setReaderLoading(false);
       return;
     }
@@ -1508,7 +1603,6 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   }, [fetchReaderContent]);
 
   const configureReaderModeForArticle = useCallback(async (article: Article, isFeedLinked: boolean) => {
-    // Phase 2 logic: Actually fetch reader content if mode is enabled
     if (!isFeedLinked || shouldUseSavedArticleSnapshot(article, selectedSmartView)) {
       setArticleDisplayMode('basic');
       setReaderLoading(false);
@@ -1516,25 +1610,43 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     }
 
     const requestVersion = modeRequestVersionRef.current;
+    const applyReaderMode = (shouldUseReaderMode: boolean) => {
+      if (requestVersion !== modeRequestVersionRef.current || currentArticleHashRef.current !== article.hash) {
+        return false;
+      }
+
+      rememberFeedReaderMode(article.feedId, shouldUseReaderMode);
+      setArticleDisplayMode(shouldUseReaderMode ? 'reader' : 'basic');
+
+      if (shouldUseReaderMode && article.link) {
+        ensureReaderContentForArticle(article, requestVersion);
+      } else {
+        setReaderLoading(false);
+      }
+
+      return true;
+    };
+
+    const cachedMode = feedReaderModeCache.get(article.feedId);
+    if (cachedMode !== undefined) {
+      applyReaderMode(cachedMode);
+    }
+
     const feed = await feedsManager.getFeedById(article.feedId);
     if (requestVersion !== modeRequestVersionRef.current || currentArticleHashRef.current !== article.hash) {
       return;
     }
-    const shouldUseReaderMode = feed?.readerModeEnabled || false;
-    
-    // Update cache and state just in case Phase 1 missed it
-    feedReaderModeCache.set(article.feedId, shouldUseReaderMode);
-    setArticleDisplayMode(shouldUseReaderMode ? 'reader' : 'basic');
 
-    if (shouldUseReaderMode && article.link) {
-      ensureReaderContentForArticle(article, requestVersion);
-    } else {
-      setReaderLoading(false);
+    const shouldUseReaderMode = feed?.readerModeEnabled || false;
+    if (cachedMode === shouldUseReaderMode) {
+      return;
     }
+
+    applyReaderMode(shouldUseReaderMode);
   }, [ensureReaderContentForArticle, selectedSmartView]);
 
   const handleClipboardLoad = useCallback(async () => {
-    if (!window.electronAPI) return;
+    if (!window.kijiAPI) return;
 
     // Clear old article metadata immediately
     setArticleToShow(null);
@@ -1546,7 +1658,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
 
     try {
       // Read clipboard
-      const clipboardText = await window.electronAPI.readClipboard();
+      const clipboardText = await window.kijiAPI.readClipboard();
 
       // Validate and extract URL
       const url = extractUrlFromText(clipboardText);
@@ -1571,8 +1683,9 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
       if (readerResult.resourceType && readerResult.resourceType !== 'html') {
         const nowIso = new Date().toISOString();
         setArticleResourceType(readerResult.resourceType);
+        setArticleDisplayMode('reader');
         setClipboardLoading(false);
-        // Create a minimal article so the view can render the PDF iframe / empty state
+        // Create a minimal article so the view can render the inline PDF viewer / empty state
         setArticleToShow({
           hash: url,
           title: hostname,
@@ -1682,7 +1795,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
       }).catch((error) => {
         console.error('Error updating reader mode:', error);
       });
-      feedReaderModeCache.set(articleToShow.feedId, newMode === 'reader');
+      rememberFeedReaderMode(articleToShow.feedId, newMode === 'reader');
     }
 
     if (newMode === 'reader') {
@@ -1695,8 +1808,25 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     } else {
       // If disabling, immediately stop reader-only loading and ignore in-flight reader responses.
       setReaderLoading(false);
+      setArticleResourceType((current) => {
+        if (current === 'pdf') {
+          readerContentHashRef.current = null;
+          return null;
+        }
+        return current;
+      });
     }
   }, [articleToShow, isTemporaryArticle, isFeedLinkedArticle, ensureReaderContentForArticle]);
+
+  const { onPdfFirstPageRendered } = useE2eArticleViewProbes({
+    standalone,
+    articleToShow,
+    articleViewOverlayPhase,
+    articleDisplayMode,
+    readerContent,
+    articleResourceType,
+    onToggleReaderMode: handleReaderModeToggle,
+  });
 
   // Define reader mode button states
   const readerModeStates: ButtonState[] = [
@@ -1773,7 +1903,6 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     setProcessedArticleBodyKey,
     setArticleBodyProcessing,
     setArticleDisplayMode,
-    ensureReaderContentForArticle,
     setIsTemporaryArticle,
     setClipboardError,
     markArticleAsReadOnOpen,
@@ -1795,6 +1924,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     setArticleToShow,
     setProcessedArticleBodyHtml,
     setProcessedArticleBodyKey,
+    setArticleResourceType,
     completeArticleClose,
   });
 
@@ -1878,6 +2008,10 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     articleToShow,
     scrollContainerRef,
   });
+  useArticleEmbeddedMediaFocusGuard({
+    enabled: !isClosing && !!articleToShow,
+    scrollContainerRef,
+  });
   useArticleViewCleanup(cancelArticleBodyProcessing, timeoutRef);
   const { handleArticleViewProfilerRender } = useArticleViewPerformanceMetrics({
     standalone,
@@ -1940,15 +2074,29 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     if (articleResourceType === 'pdf' && articleToShow.link) {
       return (
         <motion.div
-          key="pdf-viewer"
+          key="pdf-panel"
+          className="article-view-pdf-panel"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          <iframe
-            src={articleToShow.link}
-            style={{ width: '100%', height: 'calc(100vh - 120px)', border: 'none', borderRadius: '4px' }}
-            title="PDF viewer"
+          {podcastAudio}
+          {pdfViewerLoading && (
+            <div className="article-view-pdf-loading-overlay reader-loading" aria-busy="true" aria-label="Loading PDF">
+              <ArticleContentSkeleton />
+            </div>
+          )}
+          <ArticlePdfViewer
+            key={`${articleToShow.hash}:${articleToShow.link}`}
+            url={articleToShow.link}
+            suspendProcessing={isClosing}
+            onOpenInBrowser={handleOpenInBrowser}
+            onLoadStart={() => setPdfViewerLoading(true)}
+            onFirstPageRendered={() => {
+              setPdfViewerLoading(false);
+              onPdfFirstPageRendered();
+            }}
+            onLoadError={() => setPdfViewerLoading(false)}
           />
         </motion.div>
       );
@@ -2038,6 +2186,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
             baseUrl={articleToShow?.link || articleToShow?.feedUrl}
             onLinkClick={handleArticleLinkClick}
             onArticleContextMenu={handleArticleContextMenu}
+            onContentMetrics={handleArticleContentMetrics}
             mediaProcessingDelayMs={mediaProcessingDelayMs}
             suspendProcessing={isClosing}
           />
@@ -2066,6 +2215,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
           baseUrl={articleToShow?.link || articleToShow?.feedUrl}
           onLinkClick={handleArticleLinkClick}
           onArticleContextMenu={handleArticleContextMenu}
+          onContentMetrics={handleArticleContentMetrics}
           mediaProcessingDelayMs={mediaProcessingDelayMs}
           suspendProcessing={isClosing}
         />

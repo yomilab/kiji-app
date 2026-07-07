@@ -88,6 +88,15 @@ export async function countByFeed(
   return invokeContract<ArticlesContract["countByFeed"]>("articles_count_by_feed", request);
 }
 
+export async function syncFeedCountsBatch(
+  request: ArticlesContract["syncFeedCountsBatch"]["request"],
+): Promise<ArticlesContract["syncFeedCountsBatch"]["response"]> {
+  return invokeContract<ArticlesContract["syncFeedCountsBatch"]>(
+    "articles_sync_feed_counts_batch",
+    request,
+  );
+}
+
 export async function updateFeedMeta(
   request: ArticlesContract["updateFeedMeta"]["request"],
 ): Promise<ArticlesContract["updateFeedMeta"]["response"]> {

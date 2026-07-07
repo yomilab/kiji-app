@@ -33,7 +33,7 @@
   cursor: pointer;
   gap: 8px;
   color: var(--theme-primary-color);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.01em;
   user-select: none;
@@ -46,6 +46,7 @@
   background-color: var(--theme-hover-overlay-dark);
   color: var(--system-accent-color);
   font-weight: 600;
+  border-radius: 4px;
 }
 
 .tag-item-content {
@@ -53,7 +54,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  overflow: hidden;
   min-width: 0;
 }
 
@@ -77,12 +77,15 @@
 }
 
 .tag-item-emoji {
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: var(--sidebar-item-icon-size);
+  min-width: var(--sidebar-item-icon-size);
+  overflow: visible;
 }
 
 .tag-name {
@@ -147,6 +150,7 @@
 .station-feed-item-selected {
   background-color: var(--theme-hover-overlay-dark);
   color: var(--system-accent-color);
+  border-radius: 4px;
 }
 
 .station-feed-item-content {
@@ -191,7 +195,7 @@
   display: flex;
   align-items: center;
   min-height: calc(var(--sidebar-item-min-height) - (2 * var(--sidebar-item-padding-y)));
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 1.2;
   color: currentColor;

@@ -2,12 +2,26 @@ import { feedsManager } from '@/services/feeds/feedsManager';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { faviconFetcher } from '@/services/favicons/faviconFetcher';
 import * as feedStore from '@/stores/feedStore';
-import { LEGACY_OPML_STATION_NAME_ATTRIBUTE, OPML_STATION_NAME_ATTRIBUTE } from './opmlAttributes';
+import {
+  LEGACY_OPML_STATION_NAME_ATTRIBUTE,
+  OPML_STATION_NAME_ATTRIBUTE,
+  readOpmlOutlineEmoji,
+} from './opmlAttributes';
+import { parseOpmlXmlDocument } from './opmlDocument';
+import {
+  deriveOpmlDefaultStationName,
+  isFlatOpmlRoot,
+  normalizeStationName,
+  resolveOutlineStationName,
+} from './opmlStationResolution';
 
 export interface OpmlImportEntry {
   title?: string;
   url: string;
   station?: string;
+  emoji?: string;
+  stationEmoji?: string;
+  rootOutlineIndex?: number;
 }
 
 export interface OpmlImportSummary {
@@ -23,9 +37,14 @@ export interface OpmlImportedFeedRef {
   url: string;
 }
 
+export type OpmlImportNavigationTarget =
+  | { type: 'station'; stationName: string }
+  | { type: 'feed'; feedId: string; feedUrl: string; feedTitle: string };
+
 export interface OpmlImportResult {
   summary: OpmlImportSummary;
   importedFeeds: OpmlImportedFeedRef[];
+  navigationTarget?: OpmlImportNavigationTarget;
 }
 
 export type OpmlBackgroundTask = () => Promise<void>;
@@ -45,12 +64,6 @@ const getDirectOutlineChildren = (node: Element): Element[] => {
   return Array.from(node.children).filter(
     (child) => child.tagName.toLowerCase() === 'outline'
   );
-};
-
-const normalizeStationName = (value?: string): string | undefined => {
-  if (!value) return undefined;
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  return normalized || undefined;
 };
 
 export const normalizeFeedUrl = (url?: string): string | null => {
@@ -74,52 +87,83 @@ export const normalizeFeedUrl = (url?: string): string | null => {
   }
 };
 
-export const parseOpmlEntries = (opmlText: string): OpmlImportEntry[] => {
+export interface ParseOpmlEntriesOptions {
+  defaultStationName?: string;
+  fileName?: string;
+  url?: string;
+}
+
+export const parseOpmlEntries = (
+  opmlText: string,
+  options: ParseOpmlEntriesOptions = {},
+): OpmlImportEntry[] => {
   if (!opmlText.trim()) {
     throw new Error('OPML file is empty.');
   }
 
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(opmlText, 'text/xml');
-  const parseError = xmlDoc.querySelector('parsererror');
-
-  if (parseError) {
-    throw new Error('Invalid OPML file.');
-  }
-
+  const xmlDoc = parseOpmlXmlDocument(opmlText);
   const body = xmlDoc.querySelector('opml > body') || xmlDoc.querySelector('body');
   if (!body) {
     throw new Error('Invalid OPML file: missing body section.');
   }
 
+  const rootOutlines = getDirectOutlineChildren(body);
+  const rootOutlineHasXmlUrl = rootOutlines.map((outline) => Boolean(outline.getAttribute('xmlUrl')?.trim()));
+  const opmlHeadTitle = xmlDoc.querySelector('opml > head > title')?.textContent?.trim();
+  const flatImportStation = isFlatOpmlRoot(rootOutlineHasXmlUrl)
+    ? (
+      normalizeStationName(options.defaultStationName)
+      ?? deriveOpmlDefaultStationName({
+        fileName: options.fileName,
+        url: options.url,
+        opmlHeadTitle,
+      })
+    )
+    : undefined;
+
   const entries: OpmlImportEntry[] = [];
 
-  const walkOutline = (outline: Element, topStation: string | undefined, depth: number) => {
+  const walkOutline = (
+    outline: Element,
+    topStation: string | undefined,
+    topStationEmoji: string | undefined,
+    depth: number,
+    rootOutlineIndex: number,
+  ) => {
     const label = getOutlineLabel(outline);
     const xmlUrl = outline.getAttribute('xmlUrl')?.trim();
+    const stationName = resolveOutlineStationName({
+      depth,
+      hasXmlUrl: Boolean(xmlUrl),
+      label,
+      explicitStationName: getOutlineStationName(outline),
+      inheritedStation: topStation,
+      flatImportStation,
+    });
+    const stationEmoji = depth === 0
+      ? readOpmlOutlineEmoji(outline)
+      : topStationEmoji;
 
     if (xmlUrl) {
       entries.push({
         url: xmlUrl,
         title: label || undefined,
-        station: topStation,
+        station: stationName,
+        emoji: readOpmlOutlineEmoji(outline),
+        stationEmoji,
+        rootOutlineIndex,
       });
     }
 
     const childOutlines = getDirectOutlineChildren(outline);
-    const nextTopStation = depth === 0
-      ? normalizeStationName(getOutlineStationName(outline) || label)
-      : topStation;
-
     for (const child of childOutlines) {
-      walkOutline(child, nextTopStation, depth + 1);
+      walkOutline(child, stationName, stationEmoji, depth + 1, rootOutlineIndex);
     }
   };
 
-  const rootOutlines = getDirectOutlineChildren(body);
-  for (const outline of rootOutlines) {
-    walkOutline(outline, undefined, 0);
-  }
+  rootOutlines.forEach((outline, rootOutlineIndex) => {
+    walkOutline(outline, undefined, undefined, 0, rootOutlineIndex);
+  });
 
   return entries;
 };
@@ -144,12 +188,34 @@ class OpmlImportService {
   }
 
   async importEntries(entries: OpmlImportEntry[]): Promise<OpmlImportResult> {
-    const existingFeeds = await feedsManager.getAllFeeds();
+    const [existingFeeds, existingTags] = await Promise.all([
+      feedsManager.getAllFeeds(),
+      tagsManager.getAllTags(),
+    ]);
     const existingNormalizedUrls = new Set(
       existingFeeds
         .map((feed) => normalizeFeedUrl(feed.url))
         .filter((url): url is string => Boolean(url))
     );
+
+    const stationOrderInFile = new Map<string, number>();
+    for (const entry of entries) {
+      if (!entry.station || entry.rootOutlineIndex === undefined) {
+        continue;
+      }
+
+      const currentOrder = stationOrderInFile.get(entry.station);
+      if (currentOrder === undefined || entry.rootOutlineIndex < currentOrder) {
+        stationOrderInFile.set(entry.station, entry.rootOutlineIndex);
+      }
+    }
+
+    const maxExistingStationSortOrder = existingTags.reduce(
+      (max, tag) => Math.max(max, tag.sortOrder ?? 0),
+      -1,
+    );
+    const stationSortOrderBase = maxExistingStationSortOrder + 1;
+    const assignedStationSortOrders = new Map<string, number>();
 
     const seenInFileUrls = new Set<string>();
     let imported = 0;
@@ -157,6 +223,8 @@ class OpmlImportService {
     let invalid = 0;
     let failed = 0;
     const importedFeeds: OpmlImportedFeedRef[] = [];
+    const importedStations: string[] = [];
+    let firstImportedFeedNavigation: Extract<OpmlImportNavigationTarget, { type: 'feed' }> | null = null;
     let nextSortOrder = existingFeeds.length;
 
     for (const entry of entries) {
@@ -182,14 +250,51 @@ class OpmlImportService {
 
         if (entry.station) {
           await tagsManager.addTagToFeed(feed.id, entry.station);
+          if (!assignedStationSortOrders.has(entry.station)) {
+            const fileOrder = stationOrderInFile.get(entry.station) ?? assignedStationSortOrders.size;
+            assignedStationSortOrders.set(entry.station, stationSortOrderBase + fileOrder);
+          }
+
+          await tagsManager.updateTag(entry.station, {
+            sortOrder: assignedStationSortOrders.get(entry.station),
+          });
+
+          if (entry.stationEmoji) {
+            const stationTag = (await tagsManager.getAllTags())
+              .find((tag) => tag.name === entry.station);
+            if (stationTag && !stationTag.emoji) {
+              await tagsManager.updateTag(entry.station, { emoji: entry.stationEmoji });
+            }
+          }
+        }
+
+        if (entry.emoji) {
+          await feedsManager.updateFeed(feed.id, { emoji: entry.emoji });
         }
 
         importedFeeds.push({ id: feed.id, url: feed.url });
         imported += 1;
+
+        if (entry.station && !importedStations.includes(entry.station)) {
+          importedStations.push(entry.station);
+        }
+
+        if (!firstImportedFeedNavigation) {
+          firstImportedFeedNavigation = {
+            type: 'feed',
+            feedId: feed.id,
+            feedUrl: feed.url,
+            feedTitle: feed.title || entry.title || feed.url,
+          };
+        }
       } catch {
         failed += 1;
       }
     }
+
+    const navigationTarget: OpmlImportNavigationTarget | undefined = importedStations.length > 0
+      ? { type: 'station', stationName: importedStations[0] }
+      : firstImportedFeedNavigation ?? undefined;
 
     return {
       summary: {
@@ -200,11 +305,15 @@ class OpmlImportService {
         failed,
       },
       importedFeeds,
+      navigationTarget,
     };
   }
 
-  async importFromText(opmlText: string): Promise<OpmlImportResult> {
-    const entries = parseOpmlEntries(opmlText);
+  async importFromText(
+    opmlText: string,
+    options: ParseOpmlEntriesOptions = {},
+  ): Promise<OpmlImportResult> {
+    const entries = parseOpmlEntries(opmlText, options);
     return this.importEntries(entries);
   }
 }

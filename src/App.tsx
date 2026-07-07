@@ -19,6 +19,9 @@ import {
   useOpmlWorkflowListener,
   useStartupMigration,
 } from './hooks/useAppEffects';
+import { useE2eHarness } from './hooks/useE2eHarness';
+import { useE2eCommandHandler } from './hooks/useE2eCommandHandler';
+import { useE2eUiProbes } from './hooks/useE2eUiProbes';
 import { useMountEffect } from './hooks/useLifecycleEffects';
 import {
   useFeedNavigation,
@@ -31,6 +34,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import {
   formatOpmlImportSummary,
   importOpmlTextIntoLibrary,
+  navigateAfterOpmlImport,
 } from './services/feeds/opmlUiWorkflow';
 import { APP_TOAST_CHANNEL, appToastService } from './services/ui/appToastService';
 import { sidebarIndicatorService } from './services/ui/sidebarIndicatorService';
@@ -97,7 +101,13 @@ export const App: React.FC = () => {
     selectedSmartView,
     selectSmartView,
     clearFeedSelection,
+    selectFeed,
+    selectTag,
   } = useFeedNavigation();
+
+  useE2eHarness();
+  useE2eUiProbes();
+  useE2eCommandHandler();
 
   const { refreshFeed, updateArticleInList, reloadCurrentSourceFromStore } = useFeedCollection();
 
@@ -130,6 +140,8 @@ export const App: React.FC = () => {
     selectedSmartView,
     selectSmartView,
     clearFeedSelection,
+    selectFeed,
+    selectTag,
     refreshTotalFeeds,
     notifyFeedLibraryChanged,
     updateArticleInList,
@@ -200,7 +212,9 @@ export const App: React.FC = () => {
       const importResult = await importOpmlTextIntoLibrary(opmlText, {
         refreshTotalFeeds,
         notifyFeedLibraryChanged,
+        fileName: opmlFile.name,
       });
+      await navigateAfterOpmlImport(importResult, { selectFeed, selectTag });
       appToastService.show(formatOpmlImportSummary(importResult.summary));
       logger.info('OPML', 'Completed drag-and-drop OPML import', {
         summary: importResult.summary,

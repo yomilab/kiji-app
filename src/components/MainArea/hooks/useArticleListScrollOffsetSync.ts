@@ -7,7 +7,7 @@ interface UseArticleListScrollOffsetSyncOptions {
   filteredCount: number;
   isSearchActive: boolean;
   setHasListScrollOffset: Dispatch<SetStateAction<boolean>>;
-  syncViewportSnapshot: (isAtTop: boolean) => void;
+  syncViewportSnapshot: (isAtTop: boolean, isScrolling?: boolean, scrollTop?: number) => void;
 }
 
 export const useArticleListScrollOffsetSync = ({
@@ -20,9 +20,10 @@ export const useArticleListScrollOffsetSync = ({
 }: UseArticleListScrollOffsetSyncOptions): void => {
   useDependencyEffect(() => {
     const listElement = articleListItemsRef.current;
-    const isAtTop = (listElement?.scrollTop ?? 0) <= 0;
+    const scrollTop = listElement?.scrollTop ?? 0;
+    const isAtTop = scrollTop <= 0;
     setHasListScrollOffset(!isAtTop);
-    syncViewportSnapshot(isAtTop);
+    syncViewportSnapshot(isAtTop, false, scrollTop);
   }, [
     articleListItemsRef,
     sourceKey,

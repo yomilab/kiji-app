@@ -9,6 +9,7 @@ import { opmlExportService } from '@/services/feeds/opmlExportService';
 import {
   formatOpmlImportSummary,
   importOpmlTextIntoLibrary,
+  navigateAfterOpmlImport,
   openOpmlFileForImport,
 } from '@/services/feeds/opmlUiWorkflow';
 import { APP_DOWNLOADS_URL } from '@/config/appIdentity';
@@ -34,6 +35,8 @@ interface UseApplicationMenuCommandsInput {
   selectedSmartView: SmartViewId | 'pinned' | null;
   selectSmartView: (viewType: 'saved' | 'unread' | 'all' | 'pinned') => Promise<void>;
   clearFeedSelection: () => void;
+  selectFeed: (feedId: string, feedUrl: string, feedTitle: string, options?: { forceNetwork?: boolean }) => Promise<void>;
+  selectTag: (tagName: string) => Promise<void>;
   refreshTotalFeeds: () => Promise<void>;
   notifyFeedLibraryChanged: () => void;
   updateArticleInList: (hash: string, updates?: ArticleListUpdatePayload) => void;
@@ -48,6 +51,8 @@ export const useApplicationMenuCommands = ({
   selectedSmartView,
   selectSmartView,
   clearFeedSelection,
+  selectFeed,
+  selectTag,
   refreshTotalFeeds,
   notifyFeedLibraryChanged,
   updateArticleInList,
@@ -62,7 +67,7 @@ export const useApplicationMenuCommands = ({
   }, [activeArticleHash, requestCloseArticle]);
 
   const handleExportFeeds = useCallback(async () => {
-    if (!window.electronAPI?.saveOpmlFile) {
+    if (!window.kijiAPI?.saveOpmlFile) {
       sidebarIndicatorService.show('Export unavailable', { durationMs: 5000 });
       return;
     }
@@ -70,7 +75,7 @@ export const useApplicationMenuCommands = ({
     sidebarIndicatorService.show(sidebarIndicatorOngoing('exporting'));
     try {
       const opmlText = await opmlExportService.buildOpmlText();
-      const saveResult = await window.electronAPI.saveOpmlFile(opmlText, 'Feeds.opml');
+      const saveResult = await window.kijiAPI.saveOpmlFile(opmlText, 'Feeds.opml');
       if (saveResult.canceled) {
         sidebarIndicatorService.clear();
         return;
@@ -138,22 +143,24 @@ export const useApplicationMenuCommands = ({
 
   const handleImportFeeds = useCallback(async () => {
     try {
-      const opmlText = await openOpmlFileForImport();
-      if (!opmlText) {
+      const selectedFile = await openOpmlFileForImport();
+      if (!selectedFile) {
         return;
       }
 
-      const importResult = await importOpmlTextIntoLibrary(opmlText, {
+      const importResult = await importOpmlTextIntoLibrary(selectedFile.opmlText, {
         refreshTotalFeeds,
         notifyFeedLibraryChanged,
+        fileName: selectedFile.fileName,
       });
+      await navigateAfterOpmlImport(importResult, { selectFeed, selectTag });
       appToastService.show(formatOpmlImportSummary(importResult.summary));
     } catch (importError) {
       appToastService.show(
         importError instanceof Error ? importError.message : 'Failed to import OPML file.'
       );
     }
-  }, [notifyFeedLibraryChanged, refreshTotalFeeds]);
+  }, [notifyFeedLibraryChanged, refreshTotalFeeds, selectFeed, selectTag]);
 
   const handleClearSavedArticles = useCallback(async () => {
     const savedArticles = await savedArticlesManager.getAllSavedArticles();
@@ -294,11 +301,11 @@ export const useApplicationMenuCommands = ({
   ]);
 
   useEffect(() => {
-    if (!window.electronAPI?.updateAppMenuState) {
+    if (!window.kijiAPI?.updateAppMenuState) {
       return;
     }
 
-    void window.electronAPI.updateAppMenuState({
+    void window.kijiAPI.updateAppMenuState({
       theme,
       libraryView: selectedSmartView === 'saved' || selectedSmartView === 'unread' || selectedSmartView === 'all'
         ? selectedSmartView
@@ -307,11 +314,11 @@ export const useApplicationMenuCommands = ({
   }, [selectedSmartView, theme]);
 
   useEffect(() => {
-    if (!window.electronAPI?.onAppMenuCommand) {
+    if (!window.kijiAPI?.onAppMenuCommand) {
       return;
     }
 
-    return window.electronAPI.onAppMenuCommand((command) => {
+    return window.kijiAPI.onAppMenuCommand((command) => {
       logger.info('AppMenu', 'Received native app menu command', { commandType: command.type });
 
       switch (command.type) {
@@ -319,12 +326,12 @@ export const useApplicationMenuCommands = ({
           void handleImportFeeds();
           break;
         case 'checkUpdates':
-          if (!window.electronAPI?.openExternal) {
+          if (!window.kijiAPI?.openExternal) {
             appToastService.show('Downloads page is not available.');
             break;
           }
 
-          void window.electronAPI.openExternal(APP_DOWNLOADS_URL)
+          void window.kijiAPI.openExternal(APP_DOWNLOADS_URL)
             .then(() => {
               appToastService.show('Opened the KiJi downloads page.');
             })

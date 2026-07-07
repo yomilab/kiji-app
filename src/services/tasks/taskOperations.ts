@@ -4,7 +4,17 @@ import TurndownService from 'turndown';
 import { extractArticleContentFromHtml } from '@/services/articles/articleExtractionService';
 import { preprocessArticleViewHtml } from '@/services/articles/articleViewPreprocessTask';
 import { discoverFaviconDataUrl } from '@/services/favicons/faviconDiscovery';
-import { LEGACY_OPML_STATION_NAME_ATTRIBUTE, OPML_STATION_NAME_ATTRIBUTE } from '@/services/feeds/opmlAttributes';
+import {
+  LEGACY_OPML_STATION_NAME_ATTRIBUTE,
+  OPML_STATION_NAME_ATTRIBUTE,
+  readOpmlOutlineEmoji,
+} from '@/services/feeds/opmlAttributes';
+import {
+  deriveOpmlDefaultStationName,
+  isFlatOpmlRoot,
+  normalizeStationName,
+  resolveOutlineStationName,
+} from '@/services/feeds/opmlStationResolution';
 import { filenameService } from '@/services/text/filenameService';
 import { tauriClient } from '@/lib/tauriClient';
 import {
@@ -101,12 +111,6 @@ const toArray = <T>(value: T | T[] | undefined): T[] => {
   return Array.isArray(value) ? value : [value];
 };
 
-const normalizeStationName = (value?: string): string | undefined => {
-  if (!value) return undefined;
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  return normalized || undefined;
-};
-
 interface OpmlOutlineNode {
   text?: string;
   title?: string;
@@ -144,32 +148,62 @@ const parseOpmlTask = (payload: OpmlParseTaskPayload): OpmlParseTaskResult => {
   }
 
   const rootOutlines = toArray(body.outline as OpmlOutlineNode | OpmlOutlineNode[] | undefined);
+  const rootOutlineHasXmlUrl = rootOutlines.map((outline) => Boolean(outline.xmlUrl?.trim()));
+  const head = opmlRoot.head as Record<string, unknown> | undefined;
+  const opmlHeadTitle = typeof head?.title === 'string' ? head.title : undefined;
+  const flatImportStation = isFlatOpmlRoot(rootOutlineHasXmlUrl)
+    ? (
+      normalizeStationName(payload.defaultStationName)
+      ?? deriveOpmlDefaultStationName({
+        fileName: payload.fileName,
+        url: payload.url,
+        opmlHeadTitle,
+      })
+    )
+    : undefined;
   const entries: ParsedOpmlEntry[] = [];
 
-  const walkOutline = (outline: OpmlOutlineNode, topStation: string | undefined, depth: number) => {
+  const walkOutline = (
+    outline: OpmlOutlineNode,
+    topStation: string | undefined,
+    topStationEmoji: string | undefined,
+    depth: number,
+    rootOutlineIndex: number,
+  ) => {
     const label = getOutlineLabel(outline);
     const xmlUrl = outline.xmlUrl?.trim();
+    const stationName = resolveOutlineStationName({
+      depth,
+      hasXmlUrl: Boolean(xmlUrl),
+      label,
+      explicitStationName: getOutlineStationName(outline),
+      inheritedStation: topStation,
+      flatImportStation,
+    });
+    const stationEmoji = depth === 0
+      ? readOpmlOutlineEmoji(outline as Record<string, string | undefined>)
+      : topStationEmoji;
 
     if (xmlUrl) {
       entries.push({
         url: xmlUrl,
         title: label || undefined,
-        station: topStation,
+        station: stationName,
+        emoji: readOpmlOutlineEmoji(outline as Record<string, string | undefined>),
+        stationEmoji,
+        rootOutlineIndex,
       });
     }
 
-    const nextTopStation = depth === 0
-      ? normalizeStationName(getOutlineStationName(outline) || label)
-      : topStation;
     const childOutlines = toArray(outline.outline);
     for (const child of childOutlines) {
-      walkOutline(child, nextTopStation, depth + 1);
+      walkOutline(child, stationName, stationEmoji, depth + 1, rootOutlineIndex);
     }
   };
 
-  for (const outline of rootOutlines) {
-    walkOutline(outline, undefined, 0);
-  }
+  rootOutlines.forEach((outline, rootOutlineIndex) => {
+    walkOutline(outline, undefined, undefined, 0, rootOutlineIndex);
+  });
 
   return { entries };
 };
@@ -200,8 +234,8 @@ const fetchHtmlForUrl = async (url: string, signal: AbortSignal): Promise<string
     throw new DOMException('Task aborted', 'AbortError');
   }
 
-  if (window.electronAPI?.fetchHtmlSafe) {
-    const result = await window.electronAPI.fetchHtmlSafe(url);
+  if (window.kijiAPI?.fetchHtmlSafe) {
+    const result = await window.kijiAPI.fetchHtmlSafe(url);
     if (result.resourceType !== 'html' || !result.html) {
       throw new Error(`Non-HTML content type: ${result.contentType}`);
     }

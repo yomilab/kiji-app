@@ -1,6 +1,10 @@
 import { Readability } from '@mozilla/readability';
 import DOMPurify from 'dompurify';
 import { logger } from '../logger/logger';
+import {
+  estimateUtf8Bytes,
+  logReaderDomAttribution,
+} from '@/services/diagnostics/webKitAttribution';
 
 // Enable file persistence for reader mode logs
 logger.setPersistToFile(true);
@@ -60,12 +64,12 @@ class ReaderModeService {
       // 2. Fetch HTML using fetchHtmlSafe with Content-Type detection
       logger.info('ReaderMode', 'Fetching article', { url });
 
-      if (!window.electronAPI?.fetchHtmlSafe) {
+      if (!window.kijiAPI?.fetchHtmlSafe) {
         logger.error('ReaderMode', 'fetchHtmlSafe not available', { url });
         return { success: false, error: 'Error' };
       }
 
-      const fetchResult = await window.electronAPI.fetchHtmlSafe(url);
+      const fetchResult = await window.kijiAPI.fetchHtmlSafe(url);
 
       // Handle non-HTML resource types
       if (fetchResult.resourceType === 'pdf') {
@@ -95,7 +99,11 @@ class ReaderModeService {
       const htmlWithBase = html.includes('<head>') 
         ? html.replace('<head>', `<head><base href="${url}">`)
         : `<head><base href="${url}"></head>${html}`;
+      const parseStartedAt = performance.now();
       const doc = parser.parseFromString(htmlWithBase, 'text/html');
+      const domNodeCount = doc.querySelectorAll('*').length;
+      const imageElementCount = doc.querySelectorAll('img, picture, source[srcset], source[src]').length;
+      const mediaElementCount = doc.querySelectorAll('img, picture, iframe, video, audio, embed, object, source').length;
 
       // Check for parsing errors
       const parserError = doc.querySelector('parsererror');
@@ -112,6 +120,7 @@ class ReaderModeService {
         keepClasses: true
       });
       const article = reader.parse();
+      const parseDurationMs = Math.round(performance.now() - parseStartedAt);
 
       if (!article) {
         logger.error('ReaderMode', 'Unable to extract article content', { url, reason: 'Readability returned null' });
@@ -145,11 +154,24 @@ class ReaderModeService {
         RETURN_DOM_FRAGMENT: false,
         RETURN_TRUSTED_TYPE: false
       });
+      const sanitizedContentString = String(sanitizedContent ?? '');
+
+      logReaderDomAttribution({
+        url,
+        htmlBytes: estimateUtf8Bytes(html),
+        htmlChars: html.length,
+        domNodeCount,
+        imageElementCount,
+        mediaElementCount,
+        durationMs: parseDurationMs,
+        readabilityLength: article.length ?? undefined,
+        outputHtmlBytes: estimateUtf8Bytes(sanitizedContentString),
+      });
 
       const readerContent: ReaderModeContent = {
         title: article.title ?? '',
         byline: article.byline || undefined,
-        content: String(sanitizedContent ?? ''),
+        content: sanitizedContentString,
         textContent: article.textContent ?? '',
         length: article.length ?? 0,
         excerpt: article.excerpt ?? '',

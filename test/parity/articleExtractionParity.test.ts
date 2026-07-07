@@ -1,5 +1,5 @@
 /**
- * Ported from ../kiji-electron/test/services/articles/articleExtractionService.test.ts
+ * Article extraction parity coverage for shared feed/HTML fixtures.
  * for reader-mode extraction parity (todo 21b).
  */
 import { describe, it, expect, vi } from "vitest";

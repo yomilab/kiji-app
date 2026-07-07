@@ -11,3 +11,10 @@ export function getTextValue(value: unknown): string | undefined {
   }
   return undefined;
 }
+
+export function getOptionalField(item: unknown, key: string): string | undefined {
+  if (!item || typeof item !== "object") {
+    return undefined;
+  }
+  return getTextValue((item as Record<string, unknown>)[key]);
+}

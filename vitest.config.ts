@@ -17,8 +17,10 @@ export default defineConfig({
     ],
   },
   test: {
+    name: "unit",
     environment: "jsdom",
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
+    exclude: ["test/**/*.e2e.test.ts"],
     setupFiles: ["./test/setup.ts"],
     restoreMocks: true,
     clearMocks: true,

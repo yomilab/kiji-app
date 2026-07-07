@@ -1,4 +1,5 @@
 import { faviconFetcher } from '@/services/favicons/faviconFetcher';
+import { isPlaceholderFaviconDataUrl } from '@/services/favicons/faviconQuality';
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { logger } from '@/services/logger';
 import { FAVICON_REFRESH_COOLDOWN_MS } from '@/constants';
@@ -19,15 +20,27 @@ export async function maybeRefreshFavicon(
     // Skip feeds with custom emoji — user has overridden the icon
     if (feed.emoji) return;
 
-    // Check staleness
+    const currentFaviconIsPlaceholder = feed.favicon
+      ? await isPlaceholderFaviconDataUrl(feed.favicon)
+      : false;
+
+    // Check staleness (retry sooner when the stored icon is a known placeholder).
     if (
-      feed.lastFaviconRefresh &&
-      Date.now() - feed.lastFaviconRefresh.getTime() < FAVICON_REFRESH_COOLDOWN_MS
+      !currentFaviconIsPlaceholder
+      && feed.lastFaviconRefresh
+      && Date.now() - feed.lastFaviconRefresh.getTime() < FAVICON_REFRESH_COOLDOWN_MS
     ) {
       return;
     }
 
     const newFavicon = await faviconFetcher.fetchFavicon(feedUrl);
+
+    if (newFavicon && await isPlaceholderFaviconDataUrl(newFavicon)) {
+      if (currentFaviconIsPlaceholder) {
+        await feedsManager.clearStoredFavicon(feedId);
+      }
+      return;
+    }
 
     if (newFavicon && newFavicon !== feed.favicon) {
       const updatedFeed = await feedsManager.applyFaviconResult(feedId, newFavicon);

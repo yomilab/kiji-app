@@ -128,7 +128,7 @@ describe("SettingsWindow", () => {
       savedArticlesSyncFolder: null,
       contentParser: "defuddle",
     });
-    window.electronAPI = {
+    window.kijiAPI = {
       notifySettingsChanged: vi.fn().mockResolvedValue(undefined),
       pickSavedArticlesSyncFolder: vi.fn().mockResolvedValue({
         canceled: false,
@@ -141,7 +141,7 @@ describe("SettingsWindow", () => {
         iconVariant: "dark",
       }),
       windowClose: vi.fn().mockResolvedValue(undefined),
-    } as unknown as typeof window.electronAPI;
+    } as unknown as typeof window.kijiAPI;
   });
 
   afterEach(() => {
@@ -165,10 +165,10 @@ describe("SettingsWindow", () => {
   });
 
   it("does not wait for settings notification before updating saved article sync UI", async () => {
-    // Native settings sync is covered in electronApiCompat.settings.test.ts.
-    window.electronAPI.notifySettingsChanged = vi.fn(
+    // Native settings sync is covered in kijiDesktopApi.settings.test.ts.
+    window.kijiAPI.notifySettingsChanged = vi.fn(
       () => new Promise<void>(() => undefined),
-    ) as typeof window.electronAPI.notifySettingsChanged;
+    ) as typeof window.kijiAPI.notifySettingsChanged;
 
     render(<SettingsWindow />);
 
@@ -180,7 +180,7 @@ describe("SettingsWindow", () => {
     });
 
     expect(await screen.findByText("/tmp/saved-sync")).toBeInTheDocument();
-    expect(window.electronAPI.notifySettingsChanged).toHaveBeenCalledTimes(1);
+    expect(window.kijiAPI.notifySettingsChanged).toHaveBeenCalledTimes(1);
   });
 
   it("shows and saves the no-ascii reading font setting", async () => {

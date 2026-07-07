@@ -21,7 +21,7 @@
   border-radius: 6px;
   cursor: pointer;
   gap: 8px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   font-family: var(--font-family-ui);
   color: var(--theme-primary-color);
@@ -33,6 +33,7 @@
   background-color: var(--theme-hover-overlay-dark);
   color: var(--system-accent-color);
   font-weight: 600;
+  border-radius: 4px;
 }
 
 .smart-view-content {

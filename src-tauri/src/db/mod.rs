@@ -1,25 +1,28 @@
 mod articles;
-mod feeds;
+pub(crate) mod feeds;
 mod migrations;
 mod models;
 mod saved;
-mod schema;
+pub(crate) mod schema;
 mod search;
 mod tags;
 
 pub use articles::{
     articles_clean_old_across_feeds, articles_clean_old_by_feed, articles_count_by_feed,
     articles_count_unread_by_feed, articles_delete_by_feed, articles_exists, articles_get,
-    articles_get_content, articles_insert_batch, articles_query, articles_toggle_starred,
-    articles_update_feed_meta, articles_update_last_read_at, articles_update_read,
-    articles_update_saved_state,
+    articles_get_content, articles_insert_batch, articles_query, articles_sync_feed_counts_batch,
+    articles_toggle_starred, articles_update_feed_meta, articles_update_last_read_at,
+    articles_update_read, articles_update_saved_state, insert_articles_batch,
+    sync_feed_article_counts_batch,
 };
 pub use feeds::{
     feeds_count, feeds_create, feeds_delete, feeds_get, feeds_get_by_url, feeds_list, feeds_update,
     feeds_update_article_count, feeds_update_last_fetched, feeds_update_unread_count,
+    list_feeds, update_feed, FeedUpdate,
 };
-use migrations::{read_current_migration_version, run_migrations};
-pub use models::SavedArticleRecord;
+use migrations::read_current_migration_version;
+pub use migrations::run_migrations;
+pub use models::{ArticleRecord, FeedRecord, SavedArticleRecord};
 use rusqlite::Connection;
 pub use saved::{
     get_saved_article_by_id, get_saved_articles_page, saved_create, saved_delete, saved_get,
@@ -32,7 +35,10 @@ use serde::Serialize;
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
 };
 pub use tags::{
     feeds_tags_attach_feed, feeds_tags_delete, feeds_tags_detach_feed, feeds_tags_list,
@@ -53,9 +59,22 @@ pub struct DatabaseStatus {
     foreign_keys_enabled: bool,
 }
 
-pub struct DbState {
+/// Number of read-only pooled connections. WAL mode lets these run
+/// concurrently with the single writer, so article-list queries never queue
+/// behind a feed-refresh store cycle.
+const READER_POOL_SIZE: usize = 3;
+const BUSY_TIMEOUT_MS: u64 = 5_000;
+
+struct DbStateInner {
     path: PathBuf,
-    connection: Mutex<Connection>,
+    writer: Mutex<Connection>,
+    readers: Vec<Mutex<Connection>>,
+    next_reader: AtomicUsize,
+}
+
+#[derive(Clone)]
+pub struct DbState {
+    inner: Arc<DbStateInner>,
 }
 
 impl DbState {
@@ -63,7 +82,7 @@ impl DbState {
         let path = resolve_database_path(app)?;
         remove_orphaned_wal_sidecars(&path)?;
 
-        let connection = match open_and_initialize(&path) {
+        let writer = match open_and_initialize(&path) {
             Ok(connection) => connection,
             Err(first_error) => {
                 remove_wal_sidecars(&path)?;
@@ -73,14 +92,24 @@ impl DbState {
             }
         };
 
+        // Readers open after the writer so the schema and WAL sidecars exist.
+        let mut readers = Vec::with_capacity(READER_POOL_SIZE);
+        for _ in 0..READER_POOL_SIZE {
+            readers.push(Mutex::new(open_reader_connection(&path)?));
+        }
+
         Ok(Self {
-            path,
-            connection: Mutex::new(connection),
+            inner: Arc::new(DbStateInner {
+                path,
+                writer: Mutex::new(writer),
+                readers,
+                next_reader: AtomicUsize::new(0),
+            }),
         })
     }
 
     pub fn checkpoint_wal(&self) -> Result<(), String> {
-        self.with_connection(|connection| {
+        self.with_writer(|connection| {
             connection
                 .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
                     let _busy: i64 = row.get(0)?;
@@ -93,39 +122,81 @@ impl DbState {
     }
 
     fn status(&self) -> Result<DatabaseStatus, String> {
-        let connection = self
-            .connection
-            .lock()
-            .map_err(|_| "Failed to lock the database connection.".to_string())?;
-
-        Ok(DatabaseStatus {
-            path: self.path.to_string_lossy().to_string(),
-            schema_version: SCHEMA_VERSION,
-            current_migration_version: read_current_migration_version(&connection)?,
-            journal_mode: read_journal_mode(&connection)?,
-            foreign_keys_enabled: read_foreign_keys_enabled(&connection)?,
+        self.with_reader(|connection| {
+            Ok(DatabaseStatus {
+                path: self.inner.path.to_string_lossy().to_string(),
+                schema_version: SCHEMA_VERSION,
+                current_migration_version: read_current_migration_version(connection)?,
+                journal_mode: read_journal_mode(connection)?,
+                foreign_keys_enabled: read_foreign_keys_enabled(connection)?,
+            })
         })
     }
 
-    pub(crate) fn with_connection<T>(
+    /// Runs a read-only statement on a pooled reader connection. Never blocks
+    /// behind the writer; call from `spawn_blocking` (or use [`DbState::read`]).
+    pub(crate) fn with_reader<T>(
+        &self,
+        action: impl FnOnce(&Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let index = self.inner.next_reader.fetch_add(1, Ordering::Relaxed) % self.inner.readers.len();
+        let connection = self.inner.readers[index]
+            .lock()
+            .map_err(|_| "Failed to lock a database reader connection.".to_string())?;
+        action(&connection)
+    }
+
+    /// Runs a mutating statement on the single writer connection. Writes
+    /// serialize here (SQLite is single-writer); keep transactions short.
+    pub(crate) fn with_writer<T>(
         &self,
         action: impl FnOnce(&Connection) -> Result<T, String>,
     ) -> Result<T, String> {
         let connection = self
-            .connection
+            .inner
+            .writer
             .lock()
-            .map_err(|_| "Failed to lock the database connection.".to_string())?;
+            .map_err(|_| "Failed to lock the database writer connection.".to_string())?;
         action(&connection)
     }
 
+    /// Async read helper: pooled reader on the blocking thread pool, keeping
+    /// SQLite work off the Tauri event loop.
+    pub async fn read<T, F>(&self, action: F) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Connection) -> Result<T, String> + Send + 'static,
+    {
+        let db = self.clone();
+        tauri::async_runtime::spawn_blocking(move || db.with_reader(action))
+            .await
+            .map_err(|error| format!("Database read task failed: {error}"))?
+    }
+
+    /// Async write helper: single writer on the blocking thread pool, keeping
+    /// SQLite work off the Tauri event loop.
+    pub async fn write<T, F>(&self, action: F) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Connection) -> Result<T, String> + Send + 'static,
+    {
+        let db = self.clone();
+        tauri::async_runtime::spawn_blocking(move || db.with_writer(action))
+            .await
+            .map_err(|error| format!("Database write task failed: {error}"))?
+    }
+
     pub fn database_path(&self) -> PathBuf {
-        self.path.clone()
+        self.inner.path.clone()
     }
 }
 
 #[tauri::command]
-pub fn db_get_status(state: State<'_, DbState>) -> Result<DatabaseStatus, String> {
-    state.status()
+pub async fn db_get_status(state: State<'_, DbState>) -> Result<DatabaseStatus, String> {
+    let db = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || db.status())
+        .await
+        .map_err(|error| format!("Database status task failed: {error}"))?
 }
 
 fn resolve_database_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -212,7 +283,20 @@ fn open_connection(path: &Path) -> Result<Connection, String> {
     connection
         .pragma_update(None, "foreign_keys", "ON")
         .map_err(|error| format!("Failed to enable foreign keys: {error}"))?;
+    connection
+        .busy_timeout(std::time::Duration::from_millis(BUSY_TIMEOUT_MS))
+        .map_err(|error| format!("Failed to set database busy timeout: {error}"))?;
 
+    Ok(connection)
+}
+
+/// Read-only pooled connection. `query_only` guards against accidental writes
+/// outside the designated writer.
+fn open_reader_connection(path: &Path) -> Result<Connection, String> {
+    let connection = open_connection(path)?;
+    connection
+        .pragma_update(None, "query_only", "ON")
+        .map_err(|error| format!("Failed to set reader connection query-only mode: {error}"))?;
     Ok(connection)
 }
 
@@ -232,7 +316,7 @@ fn read_foreign_keys_enabled(connection: &Connection) -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        articles::{get_article, query_articles, ArticleQueryRequest},
+        articles::{get_article, query_articles, sync_feed_article_counts_batch, ArticleQueryRequest},
         feeds::list_feeds,
         migrations::{read_current_migration_version, run_migrations},
         saved::{get_saved_article_by_hash, query_saved_articles, SavedArticleQueryRequest},
@@ -243,7 +327,7 @@ mod tests {
     use rusqlite::{params, Connection};
 
     #[test]
-    fn synthetic_v15_electron_fixture_round_trips_repository_rows() {
+    fn synthetic_v15_legacy_fixture_round_trips_repository_rows() {
         let mut connection = Connection::open_in_memory().expect("open in-memory database");
         run_migrations(&mut connection).expect("run migrations");
         seed_repository_fixture(&connection);
@@ -391,11 +475,11 @@ mod tests {
     }
 
     #[test]
-    fn synthetic_v13_electron_fixture_migrates_without_identity_loss() {
+    fn synthetic_v13_legacy_fixture_migrates_without_identity_loss() {
         let mut connection = Connection::open_in_memory().expect("open in-memory database");
         connection
             .execute_batch(CREATE_TABLES)
-            .expect("create synthetic electron schema");
+            .expect("create synthetic legacy schema");
         connection
             .execute_batch(
                 r#"
@@ -757,5 +841,181 @@ mod tests {
         assert_eq!(reloaded.sidebar_width, 280);
 
         let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn feed_scoped_query_uses_viewing_feed_metadata_for_shared_url_articles() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+
+        for (feed_id, title, url) in [
+            (
+                "feed-hn",
+                "Hacker News",
+                "https://news.ycombinator.com/rss",
+            ),
+            (
+                "feed-runtime",
+                "RuntimeWire",
+                "https://runtimewire.com/rss",
+            ),
+        ] {
+            connection
+                .execute(
+                    r#"
+                    INSERT INTO feeds (
+                      id, title, url, created_at, description, last_fetched, last_failed_fetch_at,
+                      unread_count, article_count, tags_json, favicon, favicon_has_transparency,
+                      favicon_dominant_color, favicon_bg_light, favicon_bg_dark, favicon_fetch_failed,
+                      emoji, image, categories_json, language, is_podcast,
+                      podcast_metadata_json, reader_mode_enabled, etag, last_modified_header
+                    ) VALUES (
+                      ?1, ?2, ?3, '2026-06-16T00:00:00.000Z', '', NULL, NULL, 0, 0, '[]',
+                      NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, '[]', 'en', 0, NULL,
+                      0, NULL, NULL
+                    )
+                    "#,
+                    params![feed_id, title, url],
+                )
+                .expect("insert feed");
+        }
+
+        let shared_hash = "shared-url-article-hash";
+        let shared_link = "https://runtimewire.com/article/microsoft-github-aws-ai-capacity-crunch";
+        connection
+            .execute(
+                r#"
+                INSERT INTO articles (
+                  hash, feed_id, title, description, content, link, author,
+                  published_date, fetched_date, read, starred, saved, saved_article_id,
+                  last_read_at, metadata_json, feed_url, feed_title, feed_favicon,
+                  feed_favicon_has_transparency, feed_favicon_bg_light, feed_favicon_bg_dark, feed_image
+                ) VALUES (
+                  ?1, 'feed-hn', 'Microsoft turns to AWS as GitHub faces AI capacity crunch',
+                  '', '', ?2, NULL, '2026-06-16T02:47:57.000Z', '2026-06-16T02:47:57.000Z',
+                  0, 0, 0, NULL, NULL, NULL,
+                  'https://news.ycombinator.com/rss', 'Hacker News', NULL, NULL, NULL, NULL, NULL
+                )
+                "#,
+                params![shared_hash, shared_link],
+            )
+            .expect("insert shared article");
+
+        for (feed_id, published_date, fetched_date) in [
+            (
+                "feed-hn",
+                "2026-06-16T02:47:57.000Z",
+                "2026-06-16T02:47:57.000Z",
+            ),
+            (
+                "feed-runtime",
+                "2026-06-16T02:19:39.000Z",
+                "2026-06-16T02:19:39.000Z",
+            ),
+        ] {
+            connection
+                .execute(
+                    r#"
+                    INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date)
+                    VALUES (?1, ?2, ?3, ?4)
+                    "#,
+                    params![feed_id, shared_hash, published_date, fetched_date],
+                )
+                .expect("insert article mapping");
+        }
+
+        let runtime_page = query_articles(
+            &connection,
+            ArticleQueryRequest {
+                feed_id: Some("feed-runtime".to_string()),
+                feed_ids: None,
+                tag_name: None,
+                unread_only: None,
+                saved_only: None,
+                read: None,
+                starred: None,
+                saved: None,
+                sort_field: None,
+                sort_order: None,
+                search_text: None,
+                limit: Some(10),
+                offset: None,
+                cursor_date: None,
+                cursor_hash: None,
+                include_total: None,
+            },
+        )
+        .expect("query runtime feed");
+
+        assert_eq!(runtime_page.total, 1);
+        assert_eq!(runtime_page.articles.len(), 1);
+        assert_eq!(runtime_page.articles[0].hash, shared_hash);
+        assert_eq!(runtime_page.articles[0].feed_id, "feed-runtime");
+        assert_eq!(
+            runtime_page.articles[0].feed_title.as_deref(),
+            Some("RuntimeWire")
+        );
+
+        let hn_page = query_articles(
+            &connection,
+            ArticleQueryRequest {
+                feed_id: Some("feed-hn".to_string()),
+                feed_ids: None,
+                tag_name: None,
+                unread_only: None,
+                saved_only: None,
+                read: None,
+                starred: None,
+                saved: None,
+                sort_field: None,
+                sort_order: None,
+                search_text: None,
+                limit: Some(10),
+                offset: None,
+                cursor_date: None,
+                cursor_hash: None,
+                include_total: None,
+            },
+        )
+        .expect("query hn feed");
+
+        assert_eq!(hn_page.articles[0].feed_id, "feed-hn");
+        assert_eq!(hn_page.articles[0].feed_title.as_deref(), Some("Hacker News"));
+    }
+
+    #[test]
+    fn sync_feed_article_counts_batch_updates_feed_rows_in_one_transaction() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+        seed_repository_fixture(&connection);
+
+        connection
+            .execute(
+                "INSERT INTO articles (hash, feed_id, title, read, fetched_date) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    "article-hash-2",
+                    "feed-1",
+                    "Read article",
+                    1,
+                    "2026-01-02T00:00:00.000Z"
+                ],
+            )
+            .expect("insert read article");
+
+        let synced = sync_feed_article_counts_batch(&connection, &["feed-1".to_string()])
+            .expect("sync feed counts");
+        assert_eq!(synced.len(), 1);
+        assert_eq!(synced[0].feed_id, "feed-1");
+        assert_eq!(synced[0].article_count, 2);
+        assert_eq!(synced[0].unread_count, 1);
+
+        let stored_counts = connection
+            .query_row(
+                "SELECT unread_count, article_count FROM feeds WHERE id = ?1",
+                params!["feed-1"],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .expect("read feed counts");
+        assert_eq!(stored_counts, (1, 2));
     }
 }

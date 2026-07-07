@@ -25,18 +25,18 @@ class SavedArticlesIOService {
   async exportSavedArticles(): Promise<void> {
     this.ensureExportListener();
 
-    if (!window.electronAPI?.pickSavedArticlesExportPath) {
+    if (!window.kijiAPI?.pickSavedArticlesExportPath) {
       logger.error('SavedArticlesIO', 'Saved articles export is only available in the desktop app');
       return;
     }
 
     try {
-      const pathResult = await window.electronAPI.pickSavedArticlesExportPath();
+      const pathResult = await window.kijiAPI.pickSavedArticlesExportPath();
       if (pathResult.canceled || !pathResult.filePath) {
         return;
       }
 
-      const preflight = await window.electronAPI.getSavedArticlesExportPreflight(pathResult.filePath);
+      const preflight = await window.kijiAPI.getSavedArticlesExportPreflight(pathResult.filePath);
       if (preflight.articleCount === 0) {
         userMessageBus.publish('export-progress', sidebarIndicatorDone('exporting', 0), { durationMs: 4000 });
         return;
@@ -57,7 +57,7 @@ class SavedArticlesIOService {
         sidebarIndicatorOngoing('exporting', { count: preflight.articleCount }),
       );
 
-      const startResult = await window.electronAPI.startSavedArticlesExport({
+      const startResult = await window.kijiAPI.startSavedArticlesExport({
         outputPath: pathResult.filePath,
       });
 
@@ -219,16 +219,16 @@ class SavedArticlesIOService {
   }
 
   async chooseSyncFolder(defaultPath?: string): Promise<string | null> {
-    const result = await window.electronAPI.pickSavedArticlesSyncFolder(defaultPath);
+    const result = await window.kijiAPI.pickSavedArticlesSyncFolder(defaultPath);
     return result.canceled ? null : result.folderPath ?? null;
   }
 
   private ensureExportListener(): void {
-    if (this.hasBoundExportListener || !window.electronAPI?.onSavedArticlesExportEvent) {
+    if (this.hasBoundExportListener || !window.kijiAPI?.onSavedArticlesExportEvent) {
       return;
     }
 
-    window.electronAPI.onSavedArticlesExportEvent((event) => {
+    window.kijiAPI.onSavedArticlesExportEvent((event) => {
       this.handleExportEvent(event);
     });
     this.hasBoundExportListener = true;

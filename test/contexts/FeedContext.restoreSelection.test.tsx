@@ -10,16 +10,27 @@ import { convertFeedItemsToArticles } from '@/services/articles/articleConverter
 import * as articleStore from '@/stores/articleStore';
 import * as feedStore from '@/stores/feedStore';
 
+import { clearTagFeedIdsCacheForTests } from '@/services/tags/tagFeedIdsCache';
+import { clearFeedMetadataCacheForTests } from '@/services/feeds/feedMetadataCache';
+
+const feedStoreTagsMock = vi.hoisted(() => ({
+  listWithFeedIds: vi.fn().mockResolvedValue([]),
+  listFeedIds: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('@/stores/articleStore', () => ({
   query: vi.fn(),
   store: vi.fn(),
   getUnreadCount: vi.fn(),
   getArticleCount: vi.fn(),
+  syncFeedCountsBatch: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('@/stores/feedStore', () => ({
   getCount: vi.fn(),
   getById: vi.fn(),
+  getAll: vi.fn(),
+  tags: feedStoreTagsMock,
 }));
 
 vi.mock('@/services/feeds/feedsFetcher', async (importOriginal) => {
@@ -54,6 +65,14 @@ vi.mock('@/services/tags/tagsManager', () => ({
   },
 }));
 
+vi.mock('@/services/scheduler/nativeSchedulerCycle', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/scheduler/nativeSchedulerCycle')>();
+  return {
+    ...actual,
+    isNativeFeedIngestionEnabled: () => false,
+  };
+});
+
 vi.mock('@/services/favicons/faviconRefreshService', () => ({
   maybeRefreshFavicon: vi.fn(),
 }));
@@ -69,7 +88,10 @@ vi.mock('@/services/logger', () => ({
   },
 }));
 
-const RESTORE_REFRESH_DELAY_MS = 1200;
+import {
+  SOURCE_SELECTION_MIN_REFRESH_DELAY_MS,
+  advanceSourceSelectionRefreshSchedule,
+} from '@/services/feeds/sourceSelectionPaintGate';
 
 const waitForExpectation = async (
   expectation: () => void,
@@ -111,10 +133,25 @@ describe('FeedContext restore selection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    clearTagFeedIdsCacheForTests();
+    clearFeedMetadataCacheForTests();
     latestContext = null;
     localStorage.clear();
 
+    const stationFeed = {
+      id: 'feed-a',
+      title: 'Feed A',
+      url: 'https://feed-a.example.com/rss.xml',
+      tags: ['Station'],
+      sortOrder: 0,
+      consecutiveFailures: 0,
+      lastFetched: null,
+    };
+
     (feedStore.getCount as vi.Mock).mockResolvedValue(0);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed]);
+    feedStoreTagsMock.listWithFeedIds.mockResolvedValue([{ name: 'Station', feedIds: ['feed-a'] }]);
+    feedStoreTagsMock.listFeedIds.mockResolvedValue(['feed-a']);
     (articleStore.query as vi.Mock).mockResolvedValue({
       articles: [{
         hash: 'hash-a1',
@@ -176,7 +213,7 @@ describe('FeedContext restore selection', () => {
     });
 
     await act(async () => {
-      vi.advanceTimersByTime(420);
+      advanceSourceSelectionRefreshSchedule(vi.advanceTimersByTime.bind(vi));
       await Promise.resolve();
     });
 
@@ -190,7 +227,7 @@ describe('FeedContext restore selection', () => {
     expect(feedsFetcher.fetchFeed).not.toHaveBeenCalled();
 
     await act(async () => {
-      vi.advanceTimersByTime(RESTORE_REFRESH_DELAY_MS);
+      vi.advanceTimersByTime(SOURCE_SELECTION_MIN_REFRESH_DELAY_MS + 200);
       await Promise.resolve();
     });
 

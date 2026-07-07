@@ -1,13 +1,28 @@
+pub mod webview_delivery;
+
+mod native_cycle;
+mod priority;
+mod refresh_policy;
+mod run_plan;
+pub mod types;
+
+use crate::db::DbState;
 use crate::settings::BackgroundUpdateMode;
+use native_cycle::preview_native_refresh_cycle;
+use run_plan::create_scheduler_run_plan_from_request;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc, Mutex,
 };
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::AppHandle;
 use tokio::sync::watch;
+use types::{
+    SchedulerCreateRunPlanRequest, SchedulerNativeCyclePreviewRequest,
+    SchedulerNativeCyclePreviewResponse, SchedulerRunPlan,
+};
+use webview_delivery::{emit_scheduler_event_to_main_webview, TICK_WAKE_SCRIPT};
 
-const MAIN_WINDOW_LABEL: &str = "main";
 pub const SCHEDULER_CYCLE_TICK_EVENT: &str = "scheduler:cycle-tick";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,7 +84,7 @@ impl FeedSchedulerState {
         }
 
         if mode == BackgroundUpdateMode::OnLaunch {
-            emit_cycle_tick(&app)?;
+            emit_cycle_tick(&app);
             return Ok(SchedulerStartOutcome::Started);
         }
 
@@ -150,10 +165,7 @@ async fn run_interval_loop(
     interval_ms: u64,
     generation: u64,
 ) {
-    if emit_cycle_tick(&app).is_err() {
-        state.on_loop_exited(generation);
-        return;
-    }
+    emit_cycle_tick(&app);
 
     loop {
         tokio::select! {
@@ -163,9 +175,7 @@ async fn run_interval_loop(
                 }
             }
             _ = tokio::time::sleep(Duration::from_millis(interval_ms)) => {
-                if emit_cycle_tick(&app).is_err() {
-                    break;
-                }
+                emit_cycle_tick(&app);
             }
         }
     }
@@ -173,16 +183,13 @@ async fn run_interval_loop(
     state.on_loop_exited(generation);
 }
 
-fn emit_cycle_tick(app: &AppHandle) -> Result<(), String> {
-    if let Some(main_window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        main_window
-            .emit(SCHEDULER_CYCLE_TICK_EVENT, ())
-            .map_err(|error| format!("Failed to emit scheduler tick: {error}"))?;
-        return Ok(());
-    }
-
-    app.emit(SCHEDULER_CYCLE_TICK_EVENT, ())
-        .map_err(|error| format!("Failed to emit scheduler tick: {error}"))
+fn emit_cycle_tick(app: &AppHandle) {
+    emit_scheduler_event_to_main_webview(
+        app,
+        SCHEDULER_CYCLE_TICK_EVENT,
+        TICK_WAKE_SCRIPT,
+        "Scheduler",
+    );
 }
 
 fn interval_ms_for_mode(mode: BackgroundUpdateMode) -> Result<u64, String> {
@@ -196,6 +203,22 @@ fn interval_ms_for_mode(mode: BackgroundUpdateMode) -> Result<u64, String> {
             return Err("Interval mode required".to_string());
         }
     })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn scheduler_create_run_plan(
+    request: SchedulerCreateRunPlanRequest,
+) -> Result<SchedulerRunPlan, String> {
+    Ok(create_scheduler_run_plan_from_request(request))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn scheduler_preview_native_cycle(
+    app: AppHandle,
+    request: SchedulerNativeCyclePreviewRequest,
+    db: tauri::State<'_, DbState>,
+) -> Result<SchedulerNativeCyclePreviewResponse, String> {
+    preview_native_refresh_cycle(&app, &db, request).await
 }
 
 #[tauri::command]

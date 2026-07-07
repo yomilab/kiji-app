@@ -5,7 +5,7 @@ import type { Tag } from '@/types/tag';
 type Listener = () => void;
 
 export type FeedLibraryFeedPatchChanges = Partial<
-  Pick<Feed, 'title' | 'url' | 'tags' | 'emoji' | 'favicon' | 'faviconHasTransparency' | 'faviconBgLight' | 'faviconBgDark'>
+  Pick<Feed, 'title' | 'url' | 'tags' | 'emoji' | 'favicon' | 'faviconHasTransparency' | 'faviconBgLight' | 'faviconBgDark' | 'unreadCount' | 'articleCount'>
 >;
 
 export interface FeedLibraryFeedPatched {
@@ -40,6 +40,11 @@ export interface FeedLibraryStationsReordered {
   stations: Array<Pick<Tag, 'name' | 'sortOrder'>>;
 }
 
+export interface FeedLibraryFeedsCountsUpdated {
+  revision: number;
+  feeds: Array<Pick<Feed, 'id' | 'unreadCount' | 'articleCount'>>;
+}
+
 export interface FeedLibraryStationDeleted {
   revision: number;
   stationName: string;
@@ -72,6 +77,8 @@ class FeedLibraryMutationBus {
 
   private stationsHydrated: FeedLibraryStationsHydrated | null = null;
 
+  private feedsCountsUpdated: FeedLibraryFeedsCountsUpdated | null = null;
+
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
     return () => {
@@ -94,6 +101,8 @@ class FeedLibraryMutationBus {
   getStationDeleted = (): FeedLibraryStationDeleted | null => this.stationDeleted;
 
   getStationsHydrated = (): FeedLibraryStationsHydrated | null => this.stationsHydrated;
+
+  getFeedsCountsUpdated = (): FeedLibraryFeedsCountsUpdated | null => this.feedsCountsUpdated;
 
   publishFeedPatched(feedId: string, changes: FeedLibraryFeedPatchChanges): void {
     this.revision += 1;
@@ -162,6 +171,25 @@ class FeedLibraryMutationBus {
       revision: this.revision,
       stationName,
       affectedFeedIds,
+    };
+    this.emit();
+  }
+
+  publishFeedsCountsUpdated(
+    feeds: Array<{ feedId: string; unreadCount: number; articleCount: number }>,
+  ): void {
+    if (feeds.length === 0) {
+      return;
+    }
+
+    this.revision += 1;
+    this.feedsCountsUpdated = {
+      revision: this.revision,
+      feeds: feeds.map((feed) => ({
+        id: feed.feedId,
+        unreadCount: feed.unreadCount,
+        articleCount: feed.articleCount,
+      })),
     };
     this.emit();
   }

@@ -7,16 +7,17 @@ import {
   roundPerformanceValue,
   type RenderCommitMetric,
 } from '@/services/performance/interactionPerformance';
+import { sidebarSwitchTrace } from '@/services/performance/sidebarSwitchTrace';
 
 interface UseArticleListPerformanceMetricsParams {
   sourceKey: string;
+  navigationNonce: number;
   sourceLabel: string | null;
   variant: 'common' | 'saved';
   filteredCount: number;
   visibleRowCount: number;
   totalVirtualSizePx: number;
   isSearchActive: boolean;
-  isFetchingNew: boolean;
   isLoadingMoreArticles: boolean;
   articleListItemsRef: RefObject<HTMLDivElement | null>;
 }
@@ -35,7 +36,6 @@ interface ActiveScrollSession {
   longTaskCount: number;
   maxLongTaskMs: number;
   pendingPreviewImagesMax: number;
-  sawFetchingNew: boolean;
   sawLoadingMoreArticles: boolean;
   rafId: number | null;
   idleTimerId: number | null;
@@ -66,13 +66,13 @@ const createRenderCommitMetric = (
 
 export const useArticleListPerformanceMetrics = ({
   sourceKey,
+  navigationNonce,
   sourceLabel,
   variant,
   filteredCount,
   visibleRowCount,
   totalVirtualSizePx,
   isSearchActive,
-  isFetchingNew,
   isLoadingMoreArticles,
   articleListItemsRef,
 }: UseArticleListPerformanceMetricsParams): {
@@ -99,7 +99,6 @@ export const useArticleListPerformanceMetrics = ({
       visibleRowCount,
       totalVirtualSizePx: roundPerformanceValue(totalVirtualSizePx),
       isSearchActive,
-      isFetchingNew,
       isLoadingMoreArticles,
       scrollTop: roundPerformanceValue(scrollElement?.scrollTop ?? 0),
       scrollHeight: roundPerformanceValue(scrollElement?.scrollHeight ?? 0),
@@ -110,7 +109,6 @@ export const useArticleListPerformanceMetrics = ({
   }, [
     articleListItemsRef,
     filteredCount,
-    isFetchingNew,
     isLoadingMoreArticles,
     isSearchActive,
     sourceKey,
@@ -144,7 +142,6 @@ export const useArticleListPerformanceMetrics = ({
     const summaryContext = {
       ...getListSnapshot(),
       pendingPreviewImagesMax: session.pendingPreviewImagesMax,
-      fetchingDuringScroll: session.sawFetchingNew,
       paginationDuringScroll: session.sawLoadingMoreArticles,
     };
 
@@ -238,9 +235,14 @@ export const useArticleListPerformanceMetrics = ({
     latestRenderCommitRef.current = createRenderCommitMetric(phase, actualDuration, baseDuration, startTime, commitTime);
   }, []);
 
+  const getListSnapshotRef = useRef(getListSnapshot);
+  getListSnapshotRef.current = getListSnapshot;
+
   // Close sidebar-switch samples on the first committed list render for the new
   // source so we measure the user's visible handoff, not only async fetch work.
   useDependencyEffect(() => {
+    sidebarSwitchTrace.completeInteractive(sourceKey, latestRenderCommitRef.current);
+
     if (!isInteractionPerformanceEnabled) {
       return;
     }
@@ -249,13 +251,13 @@ export const useArticleListPerformanceMetrics = ({
     interactionPerformance.completeTimedInteraction('sidebar-switch', sourceKey, {
       summaryMessage: 'Sidebar switch performance sample',
       lagMessage: 'Sidebar switch lag detected',
-      additionalContext: getListSnapshot(),
+      additionalContext: getListSnapshotRef.current(),
       isLagging: (summary) => {
         return summary.totalDurationMs >= INTERACTION_PERFORMANCE_BUDGETS.sidebarSwitch.firstCommitLagMs
           || (summary.renderCommit?.actualDurationMs ?? 0) >= INTERACTION_PERFORMANCE_BUDGETS.sidebarSwitch.renderCommitLagMs;
       },
     });
-  }, [getListSnapshot, sourceKey]);
+  }, [sourceKey, navigationNonce]);
 
   const handleScrollPerformanceEvent = useCallback((scrollTop: number) => {
     if (!isInteractionPerformanceEnabled) {
@@ -280,7 +282,6 @@ export const useArticleListPerformanceMetrics = ({
         longTaskCount: 0,
         maxLongTaskMs: 0,
         pendingPreviewImagesMax: scrollSnapshot.pendingPreviewImages,
-        sawFetchingNew: scrollSnapshot.isFetchingNew,
         sawLoadingMoreArticles: scrollSnapshot.isLoadingMoreArticles,
         rafId: null,
         idleTimerId: null,
@@ -296,7 +297,6 @@ export const useArticleListPerformanceMetrics = ({
     session.totalScrollDistancePx += Math.abs(scrollTop - session.lastScrollTop);
     session.lastScrollTop = scrollTop;
     session.pendingPreviewImagesMax = Math.max(session.pendingPreviewImagesMax, scrollSnapshot.pendingPreviewImages);
-    session.sawFetchingNew = session.sawFetchingNew || scrollSnapshot.isFetchingNew;
     session.sawLoadingMoreArticles = session.sawLoadingMoreArticles || scrollSnapshot.isLoadingMoreArticles;
 
     if (session.idleTimerId !== null) {

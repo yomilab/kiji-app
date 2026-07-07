@@ -26,11 +26,26 @@ import prismLightTheme from 'prismjs/themes/prism.css?raw';
 import prismDarkTheme from 'prismjs/themes/prism-tomorrow.css?raw';
 import liteYouTubeStyles from 'lite-youtube-embed/src/lite-yt-embed.css?raw';
 import brokenImagePlaceholderSvg from '@/assets/icons/hide_image.svg?raw';
-import { getYouTubeEmbedInfo, normalizeIframeEmbedSrc, sanitizeIframeAllowValue } from './mediaEmbedUtils';
+import { unwrapEmbeddedMediaAnchors, convertYouTubeIframesInContainer } from './mediaEmbedUtils';
+import {
+  activateLiteYoutubeInPlace,
+  createYouTubePlaceholderElement,
+  finalizeYouTubePlaceholders,
+  resolveArticleContentClick,
+} from './liteYoutubeActivation';
 import '../AudioPlayer/FeedAudioPlayerElement';
 
 import { staticResourceService } from '@/services/system/staticResourceService';
 import { wrapNonAsciiTextNodes } from '@/utils/nonAsciiTypography';
+
+interface ArticleContentMetricsDetail {
+  htmlChars: number;
+  shadowElementCount: number;
+  imageElementCount: number;
+  mediaElementCount: number;
+  linkElementCount: number;
+  textChars: number;
+}
 
 // Normalize the bundled placeholder SVG once so every broken-image fallback
 // inherits article text color without rebuilding or restyling the markup later.
@@ -40,7 +55,6 @@ const BROKEN_IMAGE_PLACEHOLDER_SVG = brokenImagePlaceholderSvg
   .replace(/fill="[^"]*"/g, 'fill="currentColor"')
   .replace(/<svg\b/, '<svg aria-hidden="true" focusable="false"')
   .trim();
-let isLiteYoutubeDefinitionRequested = false;
 
 /**
  * ArticleContentElement - Web Component with Shadow DOM for CSS isolation
@@ -408,7 +422,7 @@ class ArticleContentElement extends HTMLElement {
     this.applyPrismTheme();
     this.observeThemeChanges();
 
-    this.root.addEventListener('click', this.handleLinkClick.bind(this) as EventListener);
+    this.root.addEventListener('click', this.handleLinkClick.bind(this) as EventListener, true);
     this.root.addEventListener('contextmenu', this.handleArticleContentContextMenu.bind(this) as EventListener);
     this.root.addEventListener('error', this.handleImageLoadError.bind(this), true);
   }
@@ -434,9 +448,10 @@ class ArticleContentElement extends HTMLElement {
       wrapNonAsciiTextNodes(container);
 
       if (options?.isPreprocessed) {
-        if (html.includes('<lite-youtube')) {
-          this.ensureLiteYoutubeDefined();
-        }
+        unwrapEmbeddedMediaAnchors(container);
+        convertYouTubeIframesInContainer(container, options?.baseUrl ?? window.location.href);
+        finalizeYouTubePlaceholders(container);
+        this.dispatchContentMetrics(container, html);
         return;
       }
 
@@ -447,6 +462,7 @@ class ArticleContentElement extends HTMLElement {
       this.applySyntaxHighlighting(container);
       this.suppressListMarkersForImageItems(container);
       this.scheduleMediaEnhancements(container, options?.deferMediaProcessingMs ?? 0, options?.baseUrl);
+      this.dispatchContentMetrics(container, html);
     }
   }
 
@@ -584,10 +600,11 @@ class ArticleContentElement extends HTMLElement {
       if (token !== this.mediaEnhancementToken) {
         return;
       }
-      this.ensureLiteYoutubeDefined();
+      unwrapEmbeddedMediaAnchors(container);
       this.disableMediaAutoplay(container, baseUrl);
       this.replaceAudioElements(container);
       this.normalizeMediaFigureWrappers(container);
+      this.dispatchContentMetrics(container, this.lastContent);
       this.mediaEnhancementTimer = null;
     };
 
@@ -597,6 +614,25 @@ class ArticleContentElement extends HTMLElement {
     }
 
     runEnhancements();
+  }
+
+  private collectContentMetrics(container: Element, html: string): ArticleContentMetricsDetail {
+    return {
+      htmlChars: html.length,
+      shadowElementCount: container.querySelectorAll('*').length,
+      imageElementCount: container.querySelectorAll('img, picture, source[srcset], source[src]').length,
+      mediaElementCount: container.querySelectorAll('img, picture, iframe, video, audio, feed-audio-player, lite-youtube, embed, object, source').length,
+      linkElementCount: container.querySelectorAll('a[href]').length,
+      textChars: (container.textContent ?? '').length,
+    };
+  }
+
+  private dispatchContentMetrics(container: Element, html: string): void {
+    this.dispatchEvent(new CustomEvent<ArticleContentMetricsDetail>('article-content-metrics', {
+      detail: this.collectContentMetrics(container, html),
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   private replaceAudioElements(container: Element): void {
@@ -731,80 +767,8 @@ class ArticleContentElement extends HTMLElement {
       }
     });
 
-    container.querySelectorAll('iframe').forEach((iframeElement) => {
-      const currentSrc = iframeElement.getAttribute('src');
-      if (!currentSrc) {
-        return;
-      }
-
-      const allowAttr = iframeElement.getAttribute('allow');
-      const sanitizedAllow = sanitizeIframeAllowValue(allowAttr);
-      if (sanitizedAllow) {
-        iframeElement.setAttribute('allow', sanitizedAllow);
-      } else {
-        iframeElement.removeAttribute('allow');
-      }
-
-      iframeElement.setAttribute('loading', 'lazy');
-
-      const resolveBase = baseUrl ?? window.location.href;
-      const normalized = normalizeIframeEmbedSrc(currentSrc, resolveBase);
-      if (!normalized.normalizedSrc) {
-        const fallback = this.createIframeFallbackLink(normalized.fallbackUrl ?? currentSrc);
-        iframeElement.replaceWith(fallback);
-        return;
-      }
-
-      const ytEmbedInfo = getYouTubeEmbedInfo(normalized.normalizedSrc, resolveBase);
-      if (ytEmbedInfo) {
-        const liteYoutubeElement = this.createLiteYoutubeElement(ytEmbedInfo.videoId, ytEmbedInfo.params, iframeElement);
-        iframeElement.replaceWith(liteYoutubeElement);
-        return;
-      }
-
-      iframeElement.setAttribute('src', normalized.normalizedSrc);
-    });
-  }
-
-  private createLiteYoutubeElement(videoId: string, params: string, sourceIframe: Element): HTMLElement {
-    const liteYoutubeElement = document.createElement('lite-youtube');
-    liteYoutubeElement.setAttribute('videoid', videoId);
-    liteYoutubeElement.setAttribute('playlabel', 'Play YouTube video');
-
-    const title = sourceIframe.getAttribute('title');
-    if (title) {
-      liteYoutubeElement.setAttribute('title', title);
-      liteYoutubeElement.setAttribute('aria-label', title);
-    } else {
-      liteYoutubeElement.setAttribute('aria-label', 'YouTube video');
-    }
-
-    if (params) {
-      liteYoutubeElement.setAttribute('params', params);
-    }
-
-    return liteYoutubeElement;
-  }
-
-  private ensureLiteYoutubeDefined(): void {
-    if (customElements.get('lite-youtube') || isLiteYoutubeDefinitionRequested) {
-      return;
-    }
-    isLiteYoutubeDefinitionRequested = true;
-    void import('lite-youtube-embed/src/lite-yt-embed.js').catch(() => {
-      isLiteYoutubeDefinitionRequested = false;
-    });
-  }
-
-  private createIframeFallbackLink(url: string): HTMLElement {
-    const wrapper = document.createElement('p');
-    const link = document.createElement('a');
-    link.href = url;
-    link.textContent = 'Open embedded media in browser';
-    link.setAttribute('target', '_blank');
-    link.setAttribute('rel', 'noopener noreferrer');
-    wrapper.appendChild(link);
-    return wrapper;
+    convertYouTubeIframesInContainer(container, baseUrl ?? window.location.href);
+    finalizeYouTubePlaceholders(container);
   }
 
   private normalizeMediaFigureWrappers(container: Element): void {
@@ -921,20 +885,47 @@ class ArticleContentElement extends HTMLElement {
    * Intercept link clicks and dispatch custom event
    */
   private handleLinkClick(event: MouseEvent): void {
-    const target = event.target as HTMLElement;
-    const link = target.closest('a');
-
-    if (link && link.href) {
-      event.preventDefault();
-
-      const customEvent = new CustomEvent('article-link-click', {
-        detail: { href: link.href },
-        bubbles: true,
-        composed: true
-      });
-
-      this.dispatchEvent(customEvent);
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
     }
+
+    const clickResult = resolveArticleContentClick(target);
+
+    if (clickResult.type === 'embedded-media') {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const liteYoutube = target.closest('lite-youtube') as HTMLElement | null;
+      if (liteYoutube) {
+        activateLiteYoutubeInPlace(liteYoutube);
+      }
+      return;
+    }
+
+    if (clickResult.type === 'youtube-anchor') {
+      event.preventDefault();
+      const placeholder = createYouTubePlaceholderElement({
+        videoId: clickResult.target.videoId,
+        title: clickResult.link.getAttribute('title') || clickResult.link.textContent?.trim() || null,
+        startSeconds: clickResult.target.startSeconds,
+      });
+      clickResult.link.replaceWith(placeholder);
+      activateLiteYoutubeInPlace(placeholder);
+      return;
+    }
+
+    if (clickResult.type !== 'link') {
+      return;
+    }
+
+    event.preventDefault();
+
+    this.dispatchEvent(new CustomEvent('article-link-click', {
+      detail: { href: clickResult.href },
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   disconnectedCallback(): void {

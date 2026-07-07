@@ -6,7 +6,27 @@
   flex-direction: column;
 }
 
+.add-feed-modal-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--theme-text-primary);
+}
+
+.add-feed-modal-description {
+  margin: 8px 0 0;
+  color: var(--theme-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.add-feed-modal-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem;
+}
+
 .add-feed-modal-input-row {
+  margin-top: 16px;
   margin-bottom: 0;
 }
 
@@ -34,15 +54,12 @@
 .add-feed-modal-button {
   width: 100%;
   min-height: 40px;
-}
-
-.modal-confirm-button.add-feed-modal-button-primary {
   background-color: var(--framework-input-bg);
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
 
-.modal-confirm-button.add-feed-modal-button-primary:hover:not(:disabled) {
+.add-feed-modal-button:hover:not(:disabled) {
   background-color: var(--theme-hover-overlay);
   border-color: var(--color-primary);
   color: var(--color-primary);

@@ -1,0 +1,130 @@
+import { invoke } from '@tauri-apps/api/core';
+
+export interface KijiE2eConfig {
+  dir: string;
+  feedUrl: string;
+  feedId: string;
+  schedulerIntervalMs: number;
+  opmlPath?: string | null;
+  bootstrap?: string;
+  autoConfirm?: boolean;
+}
+
+interface E2eHarnessConfigResponse {
+  dir: string;
+  feedUrl: string;
+  feedId: string;
+  schedulerIntervalMs: number;
+  opmlPath?: string | null;
+  bootstrap?: string;
+  autoConfirm?: boolean;
+}
+
+let cachedConfig: KijiE2eConfig | null | undefined;
+
+function normalizeConfig(config: E2eHarnessConfigResponse): KijiE2eConfig {
+  return {
+    dir: config.dir,
+    feedUrl: config.feedUrl,
+    feedId: config.feedId,
+    schedulerIntervalMs: config.schedulerIntervalMs,
+    opmlPath: config.opmlPath ?? null,
+    bootstrap: config.bootstrap ?? 'feed',
+    autoConfirm: config.autoConfirm ?? false,
+  };
+}
+
+export async function readE2eConfigFromBackend(): Promise<KijiE2eConfig | null> {
+  try {
+    const response = await invoke<E2eHarnessConfigResponse | null>('e2e_get_config');
+    if (!response?.dir) {
+      return null;
+    }
+    return normalizeConfig(response);
+  } catch {
+    return null;
+  }
+}
+
+export function getE2eConfig(): KijiE2eConfig | null {
+  if (cachedConfig !== undefined) {
+    return cachedConfig;
+  }
+
+  const raw = (globalThis as Record<string, unknown>).__KIJI_E2E__;
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+
+  const config = raw as Partial<KijiE2eConfig>;
+  if (typeof config.dir !== 'string' || config.dir.length === 0) {
+    return null;
+  }
+
+  return {
+    dir: config.dir,
+    feedUrl: typeof config.feedUrl === 'string' ? config.feedUrl : '',
+    feedId: typeof config.feedId === 'string' ? config.feedId : 'e2e-feed',
+    schedulerIntervalMs: typeof config.schedulerIntervalMs === 'number'
+      ? config.schedulerIntervalMs
+      : Number(config.schedulerIntervalMs ?? 500),
+    opmlPath: typeof config.opmlPath === 'string' ? config.opmlPath : null,
+    bootstrap: typeof config.bootstrap === 'string' ? config.bootstrap : 'feed',
+    autoConfirm: config.autoConfirm === true,
+  };
+}
+
+export async function resolveE2eConfig(): Promise<KijiE2eConfig | null> {
+  const fromWindow = getE2eConfig();
+  if (fromWindow) {
+    cachedConfig = fromWindow;
+    return fromWindow;
+  }
+
+  const fromBackend = await readE2eConfigFromBackend();
+  if (fromBackend) {
+    cachedConfig = fromBackend;
+    (globalThis as Record<string, unknown>).__KIJI_E2E__ = fromBackend;
+  }
+  return fromBackend;
+}
+
+export async function waitForE2eConfig(timeoutMs = 30_000): Promise<KijiE2eConfig | null> {
+  const immediate = await resolveE2eConfig();
+  if (!immediate) {
+    cachedConfig = null;
+    return null;
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const resolved = getE2eConfig() ?? immediate;
+    cachedConfig = resolved;
+    (globalThis as Record<string, unknown>).__KIJI_E2E__ = resolved;
+    if (getE2eConfig()?.dir) {
+      return resolved;
+    }
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 100);
+    });
+  }
+
+  cachedConfig = immediate;
+  (globalThis as Record<string, unknown>).__KIJI_E2E__ = immediate;
+  return immediate;
+}
+
+export async function writeE2eEvent(
+  name: string,
+  payload: Record<string, unknown> = {},
+): Promise<void> {
+  const config = cachedConfig ?? getE2eConfig() ?? await readE2eConfigFromBackend();
+  if (!config) {
+    return;
+  }
+
+  await invoke('e2e_write_event', {
+    name,
+    payloadJson: JSON.stringify(payload),
+  });
+}

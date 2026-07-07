@@ -1,4 +1,4 @@
-use super::state::DiagnosticsState;
+use super::{snapshot::capture_performance_snapshot_with_system, state::DiagnosticsState};
 use serde_json::json;
 use std::{
     fs::OpenOptions,
@@ -6,15 +6,17 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use sysinfo::{Disks, ProcessesToUpdate, System};
+use sysinfo::{Disks, System};
 
 const MONITOR_INTERVAL_MS: u64 = 30_000;
 const LOG_COOLDOWN_MS: u64 = 15 * 60 * 1_000;
 
 const CPU_WARN: f64 = 120.0;
 const CPU_ERROR: f64 = 200.0;
-const MEMORY_WARN_MB: f64 = 1_000.0;
-const MEMORY_ERROR_MB: f64 = 1_500.0;
+const MEMORY_WARN_MB: f64 = 1_500.0;
+const MEMORY_ERROR_MB: f64 = 2_300.0;
+const WEBKIT_MEMORY_WARN_MB: f64 = 1_200.0;
+const WEBKIT_MEMORY_ERROR_MB: f64 = 2_000.0;
 const PROCESS_COUNT_WARN: usize = 15;
 const PROCESS_COUNT_ERROR: usize = 20;
 const DISK_FREE_WARN_GB: f64 = 2.0;
@@ -22,9 +24,10 @@ const DISK_FREE_ERROR_GB: f64 = 1.0;
 
 pub fn start(state: Arc<DiagnosticsState>) {
     std::thread::spawn(move || {
-        let mut last_logged_at_by_metric = [0_u64; 4];
+        let mut system = System::new();
+        let mut last_logged_at_by_metric = [0_u64; 5];
         loop {
-            if let Err(error) = sample_once(&state, &mut last_logged_at_by_metric) {
+            if let Err(error) = sample_once(&state, &mut system, &mut last_logged_at_by_metric) {
                 eprintln!("[ResourceMonitor] Failed to capture resource snapshot: {error}");
             }
             std::thread::sleep(Duration::from_millis(MONITOR_INTERVAL_MS));
@@ -34,25 +37,20 @@ pub fn start(state: Arc<DiagnosticsState>) {
 
 fn sample_once(
     state: &DiagnosticsState,
-    last_logged_at_by_metric: &mut [u64; 4],
+    system: &mut System,
+    last_logged_at_by_metric: &mut [u64; 5],
 ) -> Result<(), String> {
-    let mut system = System::new();
-    let pid = std::process::id();
-    let current_pid = sysinfo::Pid::from_u32(pid);
-    system.refresh_processes(ProcessesToUpdate::Some(&[current_pid]), true);
-
-    let current = system.process(current_pid).ok_or_else(|| {
-        "Failed to resolve the current process for resource monitoring.".to_string()
-    })?;
-
-    let total_cpu_percent = f64::from(current.cpu_usage());
-    let total_memory_mb = bytes_to_mb(current.memory());
-    let process_count = system.processes().len();
+    let snapshot = capture_performance_snapshot_with_system(system);
+    let total_cpu_percent = snapshot.totals.cpu;
+    let total_memory_mb = snapshot.totals.memory_mb;
+    let native_memory_mb = snapshot.totals.native_memory_mb;
+    let webkit_memory_mb = snapshot.totals.webkit_memory_mb;
+    let process_count = snapshot.totals.process_count;
     let storage_free_gb = read_primary_disk_free_gb();
 
     let timestamp = super::state::timestamp();
     let line = format!(
-        "[{timestamp}] cpu={total_cpu_percent:.2}% memoryMb={total_memory_mb:.1} processCount={process_count} storageFreeGb={}\n",
+        "[{timestamp}] cpu={total_cpu_percent:.2}% totalMemoryMb={total_memory_mb:.1} nativeMemoryMb={native_memory_mb:.1} webkitMemoryMb={webkit_memory_mb:.1} processCount={process_count} storageFreeGb={}\n",
         storage_free_gb
             .map(|value| format!("{value:.2}"))
             .unwrap_or_else(|| "null".to_string())
@@ -74,7 +72,7 @@ fn sample_once(
         state,
         last_logged_at_by_metric,
         1,
-        "memory",
+        "totalMemoryMb",
         total_memory_mb,
         MEMORY_WARN_MB,
         MEMORY_ERROR_MB,
@@ -90,11 +88,21 @@ fn sample_once(
         PROCESS_COUNT_ERROR,
         now_ms,
     )?;
+    maybe_log_breach(
+        state,
+        last_logged_at_by_metric,
+        3,
+        "webkitMemoryMb",
+        webkit_memory_mb,
+        WEBKIT_MEMORY_WARN_MB,
+        WEBKIT_MEMORY_ERROR_MB,
+        now_ms,
+    )?;
     if let Some(free_gb) = storage_free_gb {
         maybe_log_breach_low(
             state,
             last_logged_at_by_metric,
-            3,
+            4,
             "diskFreeGb",
             free_gb,
             DISK_FREE_WARN_GB,
@@ -108,7 +116,7 @@ fn sample_once(
 
 fn maybe_log_breach(
     state: &DiagnosticsState,
-    last_logged_at_by_metric: &mut [u64; 4],
+    last_logged_at_by_metric: &mut [u64; 5],
     index: usize,
     metric: &str,
     value: f64,
@@ -145,7 +153,7 @@ fn maybe_log_breach(
 
 fn maybe_log_breach_usize(
     state: &DiagnosticsState,
-    last_logged_at_by_metric: &mut [u64; 4],
+    last_logged_at_by_metric: &mut [u64; 5],
     index: usize,
     metric: &str,
     value: usize,
@@ -167,7 +175,7 @@ fn maybe_log_breach_usize(
 
 fn maybe_log_breach_low(
     state: &DiagnosticsState,
-    last_logged_at_by_metric: &mut [u64; 4],
+    last_logged_at_by_metric: &mut [u64; 5],
     index: usize,
     metric: &str,
     value: f64,

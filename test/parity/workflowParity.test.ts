@@ -7,14 +7,14 @@ import { normalizeFeedUrl, parseOpmlEntries } from "@/services/feeds/opmlImportS
 import { opmlExportService } from "@/services/feeds/opmlExportService";
 import { feedsManager } from "@/services/feeds/feedsManager";
 import { tagsManager } from "@/services/tags/tagsManager";
-import { electronFixturesAreAvailable, FEEDS_OPML_ENTRY_COUNT, FEEDS_OPML_UNIQUE_URL_COUNT, readElectronFixture } from "./electronFixtures";
+import { parityFixturesAreAvailable, FEEDS_OPML_ENTRY_COUNT, FEEDS_OPML_UNIQUE_URL_COUNT, readParityFixture } from "./parityFixtures";
 import { describeRustIntegration } from "../helpers/rustIntegrationTest";
 
-const describeWithFixtures = electronFixturesAreAvailable() ? describe : describe.skip;
+const describeWithFixtures = parityFixturesAreAvailable() ? describe : describe.skip;
 
-describeWithFixtures("Electron workflow parity (21c)", () => {
+describeWithFixtures("Workflow parity (21c)", () => {
   it("imports Feeds.opml with a stable feed entry count", () => {
-    const entries = parseOpmlEntries(readElectronFixture("Feeds.opml"));
+    const entries = parseOpmlEntries(readParityFixture("Feeds.opml"));
     expect(entries.length).toBe(FEEDS_OPML_ENTRY_COUNT);
     expect(new Set(entries.map((entry) => normalizeFeedUrl(entry.url))).size).toBe(
       FEEDS_OPML_UNIQUE_URL_COUNT,
@@ -22,7 +22,7 @@ describeWithFixtures("Electron workflow parity (21c)", () => {
   });
 
   it("round-trips OPML export structure for fixture-derived feeds", async () => {
-    const entries = parseOpmlEntries(readElectronFixture("Feeds.opml")).slice(0, 12);
+    const entries = parseOpmlEntries(readParityFixture("Feeds.opml")).slice(0, 12);
     const feeds = entries.map((entry, index) => ({
       id: `feed-${index}`,
       title: entry.title,
@@ -53,7 +53,7 @@ describeWithFixtures("Electron workflow parity (21c)", () => {
 
   it("parses androidFeed.xml and longbridge.xml with readable items", () => {
     for (const fixture of ["androidFeed.xml", "longbridge.xml"] as const) {
-      const items = parseFeed(readElectronFixture(fixture), `https://example.com/${fixture}`);
+      const items = parseFeed(readParityFixture(fixture), `https://example.com/${fixture}`);
       expect(items.length).toBeGreaterThan(0);
       expect(items[0].title.length).toBeGreaterThan(0);
     }
@@ -61,7 +61,7 @@ describeWithFixtures("Electron workflow parity (21c)", () => {
 });
 
 describeRustIntegration("Database migration parity (21d)", () => {
-  it("passes Rust synthetic Electron v13/v15 migration tests", () => {
+  it("passes Rust synthetic v13/v15 migration tests", () => {
     const manifestPath = path.join(process.cwd(), "src-tauri/Cargo.toml");
     expect(fs.existsSync(manifestPath)).toBe(true);
 

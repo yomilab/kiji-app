@@ -15,7 +15,7 @@ import type {
  * - Rust JSON (`user-settings.json`): native app config consumed by the Rust runtime
  * - Renderer localStorage (`user-settings-ui`): UI-only preferences not required by Rust services
  *
- * The legacy Electron key `user-settings` is migrated once, then retired.
+ * The legacy `user-settings` key is migrated once, then retired.
  */
 export const SETTINGS_STORAGE_KEYS = {
   legacy: 'user-settings',

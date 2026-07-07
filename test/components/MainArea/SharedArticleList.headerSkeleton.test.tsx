@@ -28,6 +28,7 @@ const mockNavigationState = {
   selectedFeedTitle: 'Test Feed' as string | null,
   selectedTag: null as string | null,
   selectedSmartView: null as 'saved' | 'pinned' | 'unread' | 'all' | null,
+  navigationNonce: 0,
 };
 
 const mockCollectionState = {
@@ -36,8 +37,8 @@ const mockCollectionState = {
   savedArticles: [] as Article[],
   isLoadingArticles: true,
   isLoadingMoreArticles: false,
+  isLoadMoreInFlight: false,
   isSavedListLoading: false,
-  isGlobalLoadingIndicatorActive: true,
   loadMoreArticles: mockLoadMoreArticles,
   updateArticleInList: vi.fn(),
   newArticleHashes: new Set<string>(),
@@ -61,6 +62,28 @@ const mockUIState = {
 
 vi.mock('@/contexts/FeedContext', () => ({
   useFeedNavigation: () => mockNavigationState,
+  useFeedCollectionArticles: () => ({
+    articles: mockCollectionState.articles,
+    articlesTotalCount: mockCollectionState.articlesTotalCount,
+    newArticleCount: 0,
+    newArticleHashes: mockCollectionState.newArticleHashes,
+    articleListScrollRequest: mockCollectionState.articleListScrollRequest,
+  }),
+  useFeedCollectionLoading: () => ({
+    isLoadingArticles: mockCollectionState.isLoadingArticles,
+    isLoadingMoreArticles: mockCollectionState.isLoadingMoreArticles,
+    isLoadMoreInFlight: false,
+    isSavedListLoading: mockCollectionState.isSavedListLoading,
+  }),
+  useFeedCollectionActions: () => ({
+    loadMoreArticles: mockCollectionState.loadMoreArticles,
+    updateArticleInList: mockCollectionState.updateArticleInList,
+    searchCurrentSource: mockCollectionState.searchCurrentSource,
+    clearArticleListSearch: mockCollectionState.clearArticleListSearch,
+    syncArticleListViewport: mockCollectionState.syncArticleListViewport,
+    refreshFeed: vi.fn(),
+    reloadCurrentSourceFromStore: vi.fn(),
+  }),
   useFeedCollection: () => mockCollectionState,
   useFeedOverlay: () => mockOverlayState,
   useFeedUI: () => mockUIState,
@@ -73,14 +96,6 @@ vi.mock('@tanstack/react-virtual', () => ({
     getVirtualItems: (): Array<{ key: string; index: number; start: number }> => [],
     scrollToIndex: vi.fn(),
     measureElement: vi.fn(),
-  }),
-}));
-
-// Mock hooks
-vi.mock('@/components/MainArea/hooks/useFetchIndicatorState', () => ({
-  useFetchIndicatorState: () => ({
-    isFetchIndicatorVisible: false,
-    applySourceSwitchGrace: vi.fn(),
   }),
 }));
 
@@ -132,7 +147,6 @@ describe('SharedArticleList header skeleton', () => {
     mockCollectionState.articlesTotalCount = 0;
     mockCollectionState.isLoadingArticles = true;
     mockCollectionState.isSavedListLoading = false;
-    mockCollectionState.isGlobalLoadingIndicatorActive = true;
   });
 
   it('shows header skeleton when initial loading is true', () => {
@@ -147,7 +161,6 @@ describe('SharedArticleList header skeleton', () => {
 
   it('shows real title when loading is finished', () => {
     mockCollectionState.isLoadingArticles = false;
-    mockCollectionState.isGlobalLoadingIndicatorActive = false;
     mockCollectionState.articles = [makeArticle()];
     mockCollectionState.articlesTotalCount = 1;
     
@@ -160,7 +173,6 @@ describe('SharedArticleList header skeleton', () => {
 
   it('shows real title even when list is empty if selection exists', () => {
     mockCollectionState.isLoadingArticles = false;
-    mockCollectionState.isGlobalLoadingIndicatorActive = false;
     mockCollectionState.articles = [];
     mockCollectionState.articlesTotalCount = 0;
     mockNavigationState.selectedFeedTitle = 'Empty Feed';
@@ -178,7 +190,6 @@ describe('SharedArticleList header skeleton', () => {
     mockNavigationState.selectedSmartView = 'saved';
     mockCollectionState.isLoadingArticles = false;
     mockCollectionState.isSavedListLoading = true;
-    mockCollectionState.isGlobalLoadingIndicatorActive = true;
     mockCollectionState.articles = [];
 
     render(<SharedArticleList variant="saved" />);

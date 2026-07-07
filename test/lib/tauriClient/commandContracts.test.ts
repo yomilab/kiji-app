@@ -102,7 +102,7 @@ describe("tauri command catalog", () => {
         }
 
         if (!registered.has(entry.rustCommand)) {
-          missing.push(`${entry.legacyMethod} -> ${entry.rustCommand}`);
+          missing.push(`${entry.apiMethod} -> ${entry.rustCommand}`);
         }
       }
     }
@@ -116,7 +116,7 @@ describe("tauri command catalog", () => {
     for (const entries of Object.values(tauriCommandCatalog)) {
       for (const entry of entries) {
         if (entry.kind === "invoke" && !entry.rustCommand) {
-          missing.push(entry.legacyMethod);
+          missing.push(entry.apiMethod);
         }
       }
     }
@@ -124,16 +124,16 @@ describe("tauri command catalog", () => {
     expect(missing).toEqual([]);
   });
 
-  it("keeps legacy method and channel identifiers unique", () => {
-    const legacyMethods = new Set<string>();
-    const legacyChannels = new Set<string>();
+  it("keeps API method and IPC channel identifiers unique", () => {
+    const apiMethods = new Set<string>();
+    const ipcChannels = new Set<string>();
 
     for (const entries of Object.values(tauriCommandCatalog)) {
       for (const entry of entries) {
-        expect(legacyMethods.has(entry.legacyMethod)).toBe(false);
-        expect(legacyChannels.has(entry.legacyChannel)).toBe(false);
-        legacyMethods.add(entry.legacyMethod);
-        legacyChannels.add(entry.legacyChannel);
+        expect(apiMethods.has(entry.apiMethod)).toBe(false);
+        expect(ipcChannels.has(entry.ipcChannel)).toBe(false);
+        apiMethods.add(entry.apiMethod);
+        ipcChannels.add(entry.ipcChannel);
       }
     }
   });
@@ -176,7 +176,7 @@ describe("tauri command catalog", () => {
 
     expect(contracts).toMatch(/interface SavedArticleCreateRequest[\s\S]*article:\s*SavedArticleRecord/);
     expect(savedClient).toContain('"saved_create"');
-    expect(rustSaved).toMatch(/pub fn saved_create\(article: SavedArticleRecord/);
+    expect(rustSaved).toMatch(/pub async fn saved_create\(\s*article: SavedArticleRecord/);
   });
 
   it("keeps DB command arguments camelCase-compatible with TypeScript clients", () => {

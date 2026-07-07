@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -47,6 +47,12 @@ impl PendingSyncWork {
             mutation_events: HashMap::new(),
         }
     }
+}
+
+struct IncrementalIndexState {
+    initial_entries: Vec<SavedArticleIndexEntry>,
+    entry_by_file_name: HashMap<String, SavedArticleIndexEntry>,
+    updated_file_names: Vec<String>,
 }
 
 pub struct SavedSyncState {
@@ -264,11 +270,14 @@ fn reconcile_folder(
     fs::create_dir_all(&articles_dir)
         .map_err(|error| format!("Failed to create saved articles sync directory: {error}"))?;
 
+    let index_path = PathBuf::from(&folder_path).join(SAVED_ARTICLES_MARKDOWN_INDEX_FILE);
+    let existing_index_entries = read_index_entries(&index_path)?;
+    let mut known_file_names = index_file_names(&existing_index_entries);
+    let mut used_names = used_names_from_file_names(known_file_names.iter());
+    let mut new_index_entries = Vec::new();
+
     let connection = open_readonly_connection(db_path)?;
     let article_count = count_saved_articles(&connection)?;
-    let mut used_names = HashMap::new();
-    let mut entries = Vec::new();
-    let mut expected_file_names = HashMap::new();
     let mut offset = 0_i64;
 
     while offset < article_count {
@@ -276,21 +285,31 @@ fn reconcile_folder(
         for row in rows {
             let (normalized_title, file_name) =
                 create_saved_article_markdown_file_name(row.title.as_deref(), &mut used_names);
-            let markdown = create_saved_article_markdown(&row);
             let markdown_path = articles_dir.join(&file_name);
-            write_if_changed(&markdown_path, &markdown)?;
-            entries.push(SavedArticleIndexEntry {
+
+            if known_file_names.contains(&file_name) || markdown_path.exists() {
+                continue;
+            }
+
+            write_new_file(&markdown_path, &create_saved_article_markdown(&row))?;
+            known_file_names.insert(file_name.clone());
+            new_index_entries.push(SavedArticleIndexEntry {
                 title: normalized_title,
-                file_name: file_name.clone(),
+                file_name,
             });
-            expected_file_names.insert(file_name, true);
         }
         offset += PAGE_SIZE;
     }
 
-    remove_stale_markdown_files(&articles_dir, &expected_file_names)?;
-    let index_path = PathBuf::from(&folder_path).join(SAVED_ARTICLES_MARKDOWN_INDEX_FILE);
-    write_if_changed(&index_path, &build_saved_articles_index_markdown(&entries))?;
+    if !new_index_entries.is_empty() {
+        let merged_entries =
+            merge_index_entries(&existing_index_entries, &new_index_entries, &[]);
+        write_if_changed(
+            &index_path,
+            &build_saved_articles_index_markdown(&merged_entries),
+        )?;
+    }
+
     Ok(())
 }
 
@@ -314,7 +333,17 @@ fn apply_mutations(
         .map_err(|error| format!("Failed to create saved articles sync directory: {error}"))?;
 
     let index_path = PathBuf::from(&folder_path).join(SAVED_ARTICLES_MARKDOWN_INDEX_FILE);
-    let mut index_entries = read_index_entries(&index_path)?;
+    let index_entries = read_index_entries(&index_path)?;
+    let mut index_state = IncrementalIndexState {
+        initial_entries: index_entries.clone(),
+        entry_by_file_name: index_entries
+            .into_iter()
+            .map(|entry| (entry.file_name.clone(), entry))
+            .collect(),
+        updated_file_names: Vec::new(),
+    };
+    let mut used_names = used_names_from_file_names(index_state.entry_by_file_name.keys());
+
     let connection = open_readonly_connection(db_path)?;
 
     for event in events.values() {
@@ -325,17 +354,21 @@ fn apply_mutations(
             };
 
             let (normalized_title, file_name) =
-                create_saved_article_markdown_file_name(row.title.as_deref(), &mut HashMap::new());
-            let markdown = create_saved_article_markdown(&row);
-            write_if_changed(&articles_dir.join(&file_name), &markdown)?;
-            index_entries.retain(|entry| entry.file_name != file_name);
-            index_entries.insert(
-                0,
+                create_saved_article_markdown_file_name(row.title.as_deref(), &mut used_names);
+            let markdown_path = articles_dir.join(&file_name);
+
+            if !markdown_path.exists() {
+                write_new_file(&markdown_path, &create_saved_article_markdown(&row))?;
+            }
+
+            index_state.entry_by_file_name.insert(
+                file_name.clone(),
                 SavedArticleIndexEntry {
                     title: normalized_title,
                     file_name: file_name.clone(),
                 },
             );
+            track_updated_file_name(&mut index_state.updated_file_names, &file_name);
             continue;
         }
 
@@ -344,13 +377,15 @@ fn apply_mutations(
         };
         let (_, file_name) =
             create_saved_article_markdown_file_name(Some(title), &mut HashMap::new());
-        index_entries.retain(|entry| entry.file_name != file_name);
+        index_state.entry_by_file_name.remove(&file_name);
+        remove_updated_file_name(&mut index_state.updated_file_names, &file_name);
         let _ = fs::remove_file(articles_dir.join(&file_name));
     }
 
+    let merged_entries = build_incremental_index_entries(&index_state);
     write_if_changed(
         &index_path,
-        &build_saved_articles_index_markdown(&index_entries),
+        &build_saved_articles_index_markdown(&merged_entries),
     )?;
     Ok(())
 }
@@ -378,11 +413,150 @@ fn read_index_entries(index_path: &Path) -> Result<Vec<SavedArticleIndexEntry>, 
         };
         entries.push(SavedArticleIndexEntry {
             title: title.replace("\\[", "[").replace("\\]", "]"),
-            file_name: link.to_string(),
+            file_name: decode_path_segment(link),
         });
     }
 
     Ok(entries)
+}
+
+fn index_file_names(entries: &[SavedArticleIndexEntry]) -> HashSet<String> {
+    entries
+        .iter()
+        .map(|entry| entry.file_name.clone())
+        .collect()
+}
+
+fn used_names_from_file_names<'a, I>(file_names: I) -> HashMap<String, u32>
+where
+    I: IntoIterator<Item = &'a String>,
+{
+    let mut used_names = HashMap::new();
+    for file_name in file_names {
+        register_existing_file_name(&mut used_names, file_name);
+    }
+    used_names
+}
+
+fn register_existing_file_name(used_names: &mut HashMap<String, u32>, file_name: &str) {
+    let base = file_name.strip_suffix(".md").unwrap_or(file_name);
+    if let Some(dash_index) = base.rfind('-') {
+        let (base_name, suffix) = base.split_at(dash_index);
+        let suffix = suffix.trim_start_matches('-');
+        if !suffix.is_empty() && suffix.chars().all(|character| character.is_ascii_digit()) {
+            if let Ok(number) = suffix.parse::<u32>() {
+                let entry = used_names.entry(base_name.to_string()).or_insert(0);
+                if number > *entry {
+                    *entry = number;
+                }
+                return;
+            }
+        }
+    }
+
+    let entry = used_names.entry(base.to_string()).or_insert(0);
+    if *entry < 1 {
+        *entry = 1;
+    }
+}
+
+fn merge_index_entries(
+    existing_entries: &[SavedArticleIndexEntry],
+    new_entries: &[SavedArticleIndexEntry],
+    updated_newest_first: &[String],
+) -> Vec<SavedArticleIndexEntry> {
+    let mut seen = HashSet::new();
+    let mut merged = Vec::new();
+
+    for file_name in updated_newest_first.iter().rev() {
+        if let Some(entry) = new_entries
+            .iter()
+            .chain(existing_entries.iter())
+            .find(|entry| &entry.file_name == file_name)
+        {
+            if seen.insert(entry.file_name.clone()) {
+                merged.push(entry.clone());
+            }
+        }
+    }
+
+    for entry in new_entries.iter().chain(existing_entries.iter()) {
+        if seen.insert(entry.file_name.clone()) {
+            merged.push(entry.clone());
+        }
+    }
+
+    merged
+}
+
+fn build_incremental_index_entries(index_state: &IncrementalIndexState) -> Vec<SavedArticleIndexEntry> {
+    let touched_file_names: HashSet<String> = index_state
+        .updated_file_names
+        .iter()
+        .cloned()
+        .collect();
+    let mut merged = Vec::new();
+
+    for file_name in index_state.updated_file_names.iter().rev() {
+        if let Some(entry) = index_state.entry_by_file_name.get(file_name) {
+            merged.push(entry.clone());
+        }
+    }
+
+    for entry in &index_state.initial_entries {
+        if index_state.entry_by_file_name.contains_key(&entry.file_name)
+            && !touched_file_names.contains(&entry.file_name)
+        {
+            merged.push(entry.clone());
+        }
+    }
+
+    merged
+}
+
+fn track_updated_file_name(updated_file_names: &mut Vec<String>, file_name: &str) {
+    remove_updated_file_name(updated_file_names, file_name);
+    updated_file_names.push(file_name.to_string());
+}
+
+fn remove_updated_file_name(updated_file_names: &mut Vec<String>, file_name: &str) {
+    if let Some(index) = updated_file_names.iter().position(|value| value == file_name) {
+        updated_file_names.remove(index);
+    }
+}
+
+fn decode_path_segment(segment: &str) -> String {
+    let bytes = segment.as_bytes();
+    let mut decoded = String::with_capacity(segment.len());
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(value) = u8::from_str_radix(&segment[index + 1..index + 3], 16) {
+                decoded.push(char::from(value));
+                index += 3;
+                continue;
+            }
+        }
+
+        decoded.push(char::from(bytes[index]));
+        index += 1;
+    }
+
+    decoded
+}
+
+fn write_new_file(path: &Path, content: &str) -> Result<(), String> {
+    if path.exists() {
+        return Ok(());
+    }
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create directory for sync file: {error}"))?;
+    }
+
+    fs::write(path, content).map_err(|error| format!("Failed to write sync file: {error}"))
 }
 
 fn write_if_changed(path: &Path, content: &str) -> Result<(), String> {
@@ -399,36 +573,50 @@ fn write_if_changed(path: &Path, content: &str) -> Result<(), String> {
     fs::write(path, content).map_err(|error| format!("Failed to write sync file: {error}"))
 }
 
-fn remove_stale_markdown_files(
-    articles_dir: &Path,
-    expected_file_names: &HashMap<String, bool>,
-) -> Result<(), String> {
-    let entries = fs::read_dir(articles_dir)
-        .map_err(|error| format!("Failed to read saved articles sync directory: {error}"))?;
-
-    for entry in entries {
-        let entry =
-            entry.map_err(|error| format!("Failed to read sync directory entry: {error}"))?;
-        if !entry
-            .file_type()
-            .map(|value| value.is_file())
-            .unwrap_or(false)
-        {
-            continue;
-        }
-
-        let file_name = entry.file_name().to_string_lossy().to_string();
-        if !expected_file_names.contains_key(&file_name) {
-            fs::remove_file(entry.path())
-                .map_err(|error| format!("Failed to remove stale sync file: {error}"))?;
-        }
-    }
-
-    Ok(())
-}
-
 fn count_saved_articles(connection: &Connection) -> Result<i64, String> {
     connection
         .query_row("SELECT COUNT(*) FROM saved_articles", [], |row| row.get(0))
         .map_err(|error| format!("Failed to count saved articles: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merge_index_entries_preserves_existing_and_prepends_new() {
+        let existing = vec![SavedArticleIndexEntry {
+            title: "Existing".to_string(),
+            file_name: "Existing.md".to_string(),
+        }];
+        let new_entries = vec![SavedArticleIndexEntry {
+            title: "Fresh".to_string(),
+            file_name: "Fresh.md".to_string(),
+        }];
+
+        let merged = merge_index_entries(&existing, &new_entries, &[]);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].file_name, "Fresh.md");
+        assert_eq!(merged[1].file_name, "Existing.md");
+    }
+
+    #[test]
+    fn write_new_file_does_not_replace_existing_markdown() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "kiji-sync-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let file_path = temp_dir.join("Existing.md");
+        fs::write(&file_path, "manual content").expect("seed file");
+
+        write_new_file(&file_path, "replacement").expect("write should noop");
+        let contents = fs::read_to_string(&file_path).expect("read file");
+        assert_eq!(contents, "manual content");
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
 }

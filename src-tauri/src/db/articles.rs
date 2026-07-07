@@ -1,5 +1,6 @@
 use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tauri::State;
 
 use super::{
@@ -50,32 +51,39 @@ pub struct ArticleFeedMetaUpdate {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_query(
+pub async fn articles_query(
     request: ArticleQueryRequest,
     state: State<'_, DbState>,
 ) -> Result<ArticleQueryResponse, String> {
-    state.with_connection(|connection| query_articles(connection, request))
+    let db = state.inner().clone();
+    db.read(move |connection| query_articles(connection, request))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_get(
+pub async fn articles_get(
     hash: String,
     state: State<'_, DbState>,
 ) -> Result<Option<ArticleRecord>, String> {
-    state.with_connection(|connection| get_article(connection, &hash))
+    let db = state.inner().clone();
+    db.read(move |connection| get_article(connection, &hash))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_get_content(
+pub async fn articles_get_content(
     hash: String,
     state: State<'_, DbState>,
 ) -> Result<Option<String>, String> {
-    state.with_connection(|connection| get_article_content(connection, &hash))
+    let db = state.inner().clone();
+    db.read(move |connection| get_article_content(connection, &hash))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_exists(hash: String, state: State<'_, DbState>) -> Result<bool, String> {
-    state.with_connection(|connection| {
+pub async fn articles_exists(hash: String, state: State<'_, DbState>) -> Result<bool, String> {
+    let db = state.inner().clone();
+    db.read(move |connection| {
         connection
             .query_row(
                 "SELECT 1 FROM articles WHERE hash = ?1 LIMIT 1",
@@ -86,23 +94,27 @@ pub fn articles_exists(hash: String, state: State<'_, DbState>) -> Result<bool, 
             .map(|row| row.is_some())
             .map_err(|error| format!("Failed to check article existence: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_insert_batch(
+pub async fn articles_insert_batch(
     articles: Vec<ArticleRecord>,
     state: State<'_, DbState>,
 ) -> Result<i64, String> {
-    state.with_connection(|connection| insert_articles_batch(connection, &articles))
+    let db = state.inner().clone();
+    db.write(move |connection| insert_articles_batch(connection, &articles))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_update_read(
+pub async fn articles_update_read(
     hash: String,
     read: bool,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| {
+    let db = state.inner().clone();
+    db.write(move |connection| {
         connection
             .execute(
                 "UPDATE articles SET read = ?1 WHERE hash = ?2",
@@ -111,15 +123,17 @@ pub fn articles_update_read(
             .map(|_| ())
             .map_err(|error| format!("Failed to update article read status: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_update_last_read_at(
+pub async fn articles_update_last_read_at(
     hash: String,
     last_read_at: String,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| {
+    let db = state.inner().clone();
+    db.write(move |connection| {
         connection
             .execute(
                 "UPDATE articles SET last_read_at = ?1 WHERE hash = ?2",
@@ -128,11 +142,16 @@ pub fn articles_update_last_read_at(
             .map(|_| ())
             .map_err(|error| format!("Failed to update article last-read timestamp: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_toggle_starred(hash: String, state: State<'_, DbState>) -> Result<bool, String> {
-    state.with_connection(|connection| {
+pub async fn articles_toggle_starred(
+    hash: String,
+    state: State<'_, DbState>,
+) -> Result<bool, String> {
+    let db = state.inner().clone();
+    db.write(move |connection| {
         connection
             .query_row(
                 "UPDATE articles SET starred = CASE WHEN starred = 0 THEN 1 ELSE 0 END WHERE hash = ?1 RETURNING starred",
@@ -142,16 +161,18 @@ pub fn articles_toggle_starred(hash: String, state: State<'_, DbState>) -> Resul
             .map(|starred| starred == 1)
             .map_err(|error| format!("Failed to toggle article starred state: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_update_saved_state(
+pub async fn articles_update_saved_state(
     hash: String,
     saved: bool,
     saved_article_id: Option<String>,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| {
+    let db = state.inner().clone();
+    db.write(move |connection| {
         connection
             .execute(
                 "UPDATE articles SET saved = ?1, saved_article_id = ?2 WHERE hash = ?3",
@@ -160,39 +181,47 @@ pub fn articles_update_saved_state(
             .map(|_| ())
             .map_err(|error| format!("Failed to update article saved state: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_delete_by_feed(
+pub async fn articles_delete_by_feed(
     feed_id: String,
     state: State<'_, DbState>,
 ) -> Result<Vec<String>, String> {
-    state.with_connection(|connection| delete_articles_by_feed(connection, &feed_id))
+    let db = state.inner().clone();
+    db.write(move |connection| delete_articles_by_feed(connection, &feed_id))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_clean_old_by_feed(
+pub async fn articles_clean_old_by_feed(
     feed_id: String,
     cutoff_date: String,
     state: State<'_, DbState>,
 ) -> Result<i64, String> {
-    state.with_connection(|connection| clean_old_articles(connection, Some(&feed_id), &cutoff_date))
+    let db = state.inner().clone();
+    db.write(move |connection| clean_old_articles(connection, Some(&feed_id), &cutoff_date))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_clean_old_across_feeds(
+pub async fn articles_clean_old_across_feeds(
     cutoff_date: String,
     state: State<'_, DbState>,
 ) -> Result<i64, String> {
-    state.with_connection(|connection| clean_old_articles(connection, None, &cutoff_date))
+    let db = state.inner().clone();
+    db.write(move |connection| clean_old_articles(connection, None, &cutoff_date))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_count_unread_by_feed(
+pub async fn articles_count_unread_by_feed(
     feed_id: String,
     state: State<'_, DbState>,
 ) -> Result<i64, String> {
-    state.with_connection(|connection| {
+    let db = state.inner().clone();
+    db.read(move |connection| {
         connection
             .query_row(
                 "SELECT COUNT(*) FROM articles WHERE feed_id = ?1 AND read = 0",
@@ -201,11 +230,16 @@ pub fn articles_count_unread_by_feed(
             )
             .map_err(|error| format!("Failed to count unread articles: {error}"))
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_count_by_feed(feed_id: String, state: State<'_, DbState>) -> Result<i64, String> {
-    state.with_connection(|connection| {
+pub async fn articles_count_by_feed(
+    feed_id: String,
+    state: State<'_, DbState>,
+) -> Result<i64, String> {
+    let db = state.inner().clone();
+    db.read(move |connection| {
         connection
             .query_row(
                 "SELECT COUNT(*) FROM articles WHERE feed_id = ?1",
@@ -214,15 +248,113 @@ pub fn articles_count_by_feed(feed_id: String, state: State<'_, DbState>) -> Res
             )
             .map_err(|error| format!("Failed to count feed articles: {error}"))
     })
+    .await
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedArticleCounts {
+    pub feed_id: String,
+    pub unread_count: i64,
+    pub article_count: i64,
+}
+
+pub fn sync_feed_article_counts_batch(
+    connection: &Connection,
+    feed_ids: &[String],
+) -> Result<Vec<FeedArticleCounts>, String> {
+    if feed_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut counts_by_feed: HashMap<String, (i64, i64)> = HashMap::new();
+    for feed_id in feed_ids {
+        counts_by_feed.insert(feed_id.clone(), (0, 0));
+    }
+
+    let placeholders = feed_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT feed_id, COUNT(*) AS article_count, \
+         SUM(CASE WHEN read = 0 THEN 1 ELSE 0 END) AS unread_count \
+         FROM articles WHERE feed_id IN ({placeholders}) GROUP BY feed_id"
+    );
+
+    let mut statement = connection
+        .prepare(&sql)
+        .map_err(|error| format!("Failed to prepare batch feed count query: {error}"))?;
+    let query_params: Vec<Value> = feed_ids
+        .iter()
+        .map(|feed_id| Value::Text(feed_id.clone()))
+        .collect();
+    let rows = statement
+        .query_map(params_from_iter(query_params.iter()), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .map_err(|error| format!("Failed to query batch feed counts: {error}"))?;
+
+    for row in rows {
+        let (feed_id, article_count, unread_count) = row
+            .map_err(|error| format!("Failed to read batch feed count row: {error}"))?;
+        counts_by_feed.insert(feed_id, (article_count, unread_count));
+    }
+
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to start feed count sync transaction: {error}"))?;
+
+    let mut synced = Vec::with_capacity(feed_ids.len());
+    for feed_id in feed_ids {
+        let (article_count, unread_count) = counts_by_feed
+            .get(feed_id)
+            .copied()
+            .unwrap_or((0, 0));
+        transaction
+            .execute(
+                "UPDATE feeds SET unread_count = ?1, article_count = ?2 WHERE id = ?3",
+                params![unread_count, article_count, feed_id],
+            )
+            .map_err(|error| format!("Failed to update feed counts for {feed_id}: {error}"))?;
+        synced.push(FeedArticleCounts {
+            feed_id: feed_id.clone(),
+            unread_count,
+            article_count,
+        });
+    }
+
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit feed count sync transaction: {error}"))?;
+
+    Ok(synced)
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn articles_update_feed_meta(
+pub async fn articles_sync_feed_counts_batch(
+    feed_ids: Vec<String>,
+    state: State<'_, DbState>,
+) -> Result<Vec<FeedArticleCounts>, String> {
+    let db = state.inner().clone();
+    db.write(move |connection| sync_feed_article_counts_batch(connection, &feed_ids))
+        .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn articles_update_feed_meta(
     feed_id: String,
     meta: ArticleFeedMetaUpdate,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    state.with_connection(|connection| update_article_feed_meta(connection, &feed_id, meta))
+    let db = state.inner().clone();
+    db.write(move |connection| update_article_feed_meta(connection, &feed_id, meta))
+        .await
 }
 
 pub fn query_articles(
@@ -237,6 +369,7 @@ pub fn query_articles(
         .or_else(|| request.feed_id.clone().map(|feed_id| vec![feed_id]))
         .unwrap_or_default();
     let has_source_filter = !feed_ids.is_empty() || request.tag_name.is_some();
+    let single_feed_only = feed_ids.len() == 1 && request.tag_name.is_none();
 
     if !feed_ids.is_empty() {
         let placeholders = repeat_placeholders(feed_ids.len());
@@ -365,12 +498,14 @@ pub fn query_articles(
     };
 
     let data_where = where_clause(&conditions);
-    let display_feed_id_sql = if has_source_filter {
-        "a.feed_id"
+    // Single-feed lists resolve metadata from the active subscription (afi), not the
+    // canonical articles.feed_id owner when URLs overlap across feeds.
+    let display_feed_id_sql = if single_feed_only {
+        "afi.feed_id"
     } else {
         "a.feed_id"
     };
-    let group_by = if has_source_filter {
+    let group_by = if has_source_filter && !single_feed_only {
         " GROUP BY a.hash"
     } else {
         ""

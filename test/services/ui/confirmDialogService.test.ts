@@ -5,15 +5,15 @@ import { confirmDialog } from '@/services/ui/confirmDialogService';
 describe('confirmDialogService', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    Object.defineProperty(window, 'electronAPI', {
+    Object.defineProperty(window, 'kijiAPI', {
       configurable: true,
       value: undefined,
     });
   });
 
-  it('uses the native confirm dialog when electronAPI is available', async () => {
+  it('uses the native confirm dialog when kijiAPI is available', async () => {
     const confirmDialogMock = vi.fn().mockResolvedValue(true);
-    Object.defineProperty(window, 'electronAPI', {
+    Object.defineProperty(window, 'kijiAPI', {
       configurable: true,
       value: { confirmDialog: confirmDialogMock },
     });

@@ -1,11 +1,11 @@
 import type { Feed } from "./types";
 
-export const FEED_FAILURE_BACKOFF_BASE_MS = 15 * 60_000;
-export const FEED_FAILURE_BACKOFF_MAX_MS = 3 * 60 * 60_000;
+export const FEED_FAILURE_BACKOFF_BASE_MS = 5 * 60_000;
+export const FEED_FAILURE_BACKOFF_MAX_MS = 60 * 60_000;
 
 const FEED_FAILURE_BACKOFF_MAX_BY_FREQUENCY: Array<{ minimumScore: number; maxMs: number }> = [
-  { minimumScore: 1.0, maxMs: 30 * 60_000 },
-  { minimumScore: 0.75, maxMs: 2 * 60 * 60_000 },
+  { minimumScore: 1.0, maxMs: 10 * 60_000 },
+  { minimumScore: 0.75, maxMs: 40 * 60_000 },
 ];
 
 export interface FeedRefreshBlock {

@@ -1,9 +1,14 @@
 import type { Author, Enclosure, MediaThumbnail } from "../../types/article";
 import { FEED_FETCH_TIMEOUT_MS } from "../../constants";
 import { tauriClient } from "../../lib/tauriClient";
-import { normalizePublishedDate } from "../articles/publishedDateNormalizer";
+import { enrichFeedItemsWithMatchedDates, matchPublishedDate, matchPublishedDateFromElement, matchUpdatedDate, matchUpdatedDateFromElement } from "./publishDateMatcher";
 import { logger } from "../logger/logger";
 import { parseFeedWithFeedsmith } from "./feedsmithAdapter";
+import {
+  estimateUtf8Bytes,
+  logFeedNetworkAttribution,
+  type FeedParseAttribution,
+} from "@/services/diagnostics/webKitAttribution";
 
 export type { Author, Enclosure, MediaThumbnail };
 
@@ -38,9 +43,15 @@ export interface FeedNetworkFetchResult {
 
 export interface FeedFetchResult {
   notModified: boolean;
+  data?: string;
   items?: FeedItem[];
   etag?: string;
   lastModified?: string;
+}
+
+export interface FeedParseResultWithDiagnostics {
+  items: FeedItem[];
+  diagnostics: Omit<FeedParseAttribution, "durationMs" | "workerQueueDepth" | "workerPendingCount">;
 }
 
 class FeedsFetcher {
@@ -65,6 +76,7 @@ class FeedsFetcher {
     };
 
     options.signal?.addEventListener("abort", abortListener, { once: true });
+    const startedAt = performance.now();
     try {
       this.throwIfAborted(options.signal);
       const response = await tauriClient.feeds.fetchWithCache({
@@ -75,14 +87,32 @@ class FeedsFetcher {
         timeout: FEED_FETCH_TIMEOUT_MS,
       });
       this.throwIfAborted(options.signal);
+      const durationMs = Math.round(performance.now() - startedAt);
 
       if (response.notModified || !response.data) {
+        logFeedNetworkAttribution({
+          feedUrl: normalizedUrl,
+          requestId,
+          notModified: true,
+          responseBytes: 0,
+          responseChars: 0,
+          durationMs,
+        });
         return {
           notModified: true,
           etag: response.etag ?? undefined,
           lastModified: response.lastModified ?? undefined,
         };
       }
+
+      logFeedNetworkAttribution({
+        feedUrl: normalizedUrl,
+        requestId,
+        notModified: false,
+        responseBytes: response.byteLength ?? estimateUtf8Bytes(response.data),
+        responseChars: response.data.length,
+        durationMs: response.fetchDurationMs ?? durationMs,
+      });
 
       return {
         notModified: false,
@@ -112,6 +142,7 @@ class FeedsFetcher {
 
     return {
       notModified: false,
+      data: networkResult.data,
       items: parseFeed(networkResult.data, normalizedUrl),
       etag: networkResult.etag,
       lastModified: networkResult.lastModified,
@@ -130,13 +161,36 @@ class FeedsFetcher {
 export const feedsFetcher = new FeedsFetcher();
 
 export function parseFeed(rawText: string, feedUrl: string): FeedItem[] {
+  return parseFeedWithDiagnostics(rawText, feedUrl).items;
+}
+
+export function parseFeedWithDiagnostics(rawText: string, feedUrl: string): FeedParseResultWithDiagnostics {
   const trimmed = rawText.trim();
   if (!trimmed) {
     throw new Error("Received empty response from feed URL");
   }
+  const baseDiagnostics = {
+    feedUrl,
+    rawBytes: estimateUtf8Bytes(rawText),
+    rawChars: rawText.length,
+  };
 
   try {
-    return assertItems(parseFeedWithFeedsmith(trimmed, feedUrl));
+    const items = assertItems(parseFeedWithFeedsmith(trimmed, feedUrl));
+    const dateEnrichment = enrichFeedItemsWithMatchedDates(items, trimmed);
+    return {
+      items,
+      diagnostics: {
+        ...baseDiagnostics,
+        parserPath: "feedsmith",
+        itemCount: items.length,
+        domParserUsed: dateEnrichment.domParserUsed,
+        domNodeCount: dateEnrichment.domParserUsed ? dateEnrichment.elementCount : undefined,
+        dateEnrichmentDomParserUsed: dateEnrichment.domParserUsed,
+        dateEnrichmentElementCount: dateEnrichment.elementCount,
+        ...summarizeFeedItems(items),
+      },
+    };
   } catch (feedsmithError) {
     logger.warn("FeedsFetcher", "Feedsmith parsing failed, using fallback parser", {
       feedUrl,
@@ -145,7 +199,17 @@ export function parseFeed(rawText: string, feedUrl: string): FeedItem[] {
   }
 
   if (trimmed.startsWith("{")) {
-    return parseJsonFeed(trimmed, feedUrl);
+    const items = parseJsonFeed(trimmed, feedUrl);
+    return {
+      items,
+      diagnostics: {
+        ...baseDiagnostics,
+        parserPath: "json-feed",
+        itemCount: items.length,
+        domParserUsed: false,
+        ...summarizeFeedItems(items),
+      },
+    };
   }
 
   const xmlDoc = new DOMParser().parseFromString(trimmed, "text/xml");
@@ -155,13 +219,62 @@ export function parseFeed(rawText: string, feedUrl: string): FeedItem[] {
   }
 
   if (xmlDoc.querySelector("feed")) {
-    return parseAtomFeed(xmlDoc, feedUrl);
+    const items = parseAtomFeed(xmlDoc, feedUrl);
+    return {
+      items,
+      diagnostics: {
+        ...baseDiagnostics,
+        parserPath: "atom-dom-fallback",
+        itemCount: items.length,
+        domParserUsed: true,
+        ...summarizeFeedDom(xmlDoc),
+        ...summarizeFeedItems(items),
+      },
+    };
   }
   if (xmlDoc.querySelector("rss, channel, rdf\\:RDF, RDF")) {
-    return parseRssFeed(xmlDoc, feedUrl);
+    const items = parseRssFeed(xmlDoc, feedUrl);
+    return {
+      items,
+      diagnostics: {
+        ...baseDiagnostics,
+        parserPath: "rss-dom-fallback",
+        itemCount: items.length,
+        domParserUsed: true,
+        ...summarizeFeedDom(xmlDoc),
+        ...summarizeFeedItems(items),
+      },
+    };
   }
 
   throw new Error("Feed format not recognized. Expected RSS, Atom, or JSON Feed.");
+}
+
+function summarizeFeedDom(xmlDoc: Document): Pick<FeedParseAttribution, "domNodeCount" | "imageElementCount" | "mediaElementCount"> {
+  return {
+    domNodeCount: xmlDoc.querySelectorAll("*").length,
+    imageElementCount: xmlDoc.querySelectorAll("image, img, media\\:thumbnail, media\\:content, itunes\\:image").length,
+    mediaElementCount: xmlDoc.querySelectorAll("enclosure, media\\:content, media\\:thumbnail, itunes\\:image").length,
+  };
+}
+
+function summarizeFeedItems(items: FeedItem[]): Pick<FeedParseAttribution, "enclosureCount" | "maxItemContentChars" | "totalItemContentChars"> {
+  let enclosureCount = 0;
+  let maxItemContentChars = 0;
+  let totalItemContentChars = 0;
+
+  for (const item of items) {
+    const contentChars = item.content.length + (item.summary?.length ?? 0);
+    totalItemContentChars += contentChars;
+    maxItemContentChars = Math.max(maxItemContentChars, contentChars);
+    enclosureCount += item.enclosures?.length ?? 0;
+  }
+
+  return {
+    enclosureCount,
+    maxItemContentChars,
+    totalItemContentChars,
+  };
 }
 
 function parseRssFeed(xmlDoc: Document, feedUrl: string): FeedItem[] {
@@ -186,7 +299,9 @@ function parseRssFeed(xmlDoc: Document, feedUrl: string): FeedItem[] {
       summary: textFromSelectors(item, ["description"]) || undefined,
       link,
       author: textFromSelectors(item, ["author", "dc\\:creator", "itunes\\:author"]) || undefined,
-      publishedDate: normalizePublishedDate(textFromSelectors(item, ["pubDate", "dc\\:date", "published"])),
+      publishedDate: matchPublishedDateFromElement(item, {
+        explicit: [textFromSelectors(item, ["pubDate", "dc\\:date", "published", "updated"])],
+      }),
       guid: guid || undefined,
       feedId: feedUrl,
       previewImage: image,
@@ -221,8 +336,15 @@ function parseAtomFeed(xmlDoc: Document, feedUrl: string): FeedItem[] {
       summary: textFromSelectors(entry, ["summary"]) || undefined,
       link: cleanLink(link ?? "", feedUrl),
       author: authors[0]?.name,
-      publishedDate: normalizePublishedDate(textFromSelectors(entry, ["published", "updated"])),
-      updatedDate: normalizePublishedDate(textFromSelectors(entry, ["updated"])),
+      publishedDate: matchPublishedDateFromElement(entry, {
+        explicit: [
+          textFromSelectors(entry, ["published"]),
+          textFromSelectors(entry, ["updated"]),
+        ],
+      }),
+      updatedDate: matchUpdatedDateFromElement(entry, {
+        explicit: [textFromSelectors(entry, ["updated"])],
+      }),
       guid: textFromSelectors(entry, ["id"]) || undefined,
       feedId: feedUrl,
       previewImage: image,
@@ -272,8 +394,14 @@ function parseJsonFeed(rawText: string, feedUrl: string): FeedItem[] {
       summary: item.summary,
       link: item.url,
       author: authors?.[0]?.name,
-      publishedDate: normalizePublishedDate(item.date_published),
-      updatedDate: normalizePublishedDate(item.date_modified),
+      publishedDate: matchPublishedDate({
+        explicit: [item.date_published, item.date_modified],
+        source: item,
+      }),
+      updatedDate: matchUpdatedDate({
+        explicit: [item.date_modified],
+        source: item,
+      }),
       guid: item.id,
       feedId: feedUrl,
       previewImage: item.image,

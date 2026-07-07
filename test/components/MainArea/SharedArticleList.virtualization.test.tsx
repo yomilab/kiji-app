@@ -17,61 +17,81 @@ const mockSearchState = {
   isSearchOpen: false,
 };
 
-vi.mock('@/contexts/FeedContext', () => ({
-  useFeedNavigation: (): unknown => ({
-    selectedFeedTitle: 'Test Feed',
-    selectedFeedId: 'feed-1',
-    selectedTag: null,
-    selectedSmartView: null,
-  }),
-  useFeedCollection: (): unknown => ({
-    articles: Array.from({ length: 100 }, (_, index) => ({
-      hash: `hash-${index}`,
-      title: `Article ${index}`,
-      description: `Description ${index}`,
-      content: `Content ${index}`,
-      fetchedDate: '2026-02-25T00:00:00.000Z',
-      feedId: 'feed-1',
-      feedUrl: 'https://example.com/rss.xml',
-      read: false,
-      starred: false,
-      saved: false,
-      feedTitle: 'Feed',
-      publishedDate: '2026-02-25T00:00:00.000Z',
-      feedFaviconHasTransparency: false,
-    })),
-    articlesTotalCount: mockArticlesTotalCount,
-    savedArticles: [],
-    isLoadingArticles: false,
-    isLoadingMoreArticles: false,
-    isSavedListLoading: false,
-    isGlobalLoadingIndicatorActive: false,
-    loadMoreArticles: mockLoadMoreArticles,
-    updateArticleInList: mockUpdateArticleInList,
-    searchCurrentSource: mockSearchCurrentSource,
-    clearArticleListSearch: mockClearArticleListSearch,
-    newArticleHashes: mockNewArticleHashes,
-    articleListScrollRequest: null,
-    syncArticleListViewport: vi.fn(),
-  }),
-  useFeedOverlay: (): unknown => ({
-    activeArticleHash: null,
-    selectArticle: mockSelectArticle,
-    setActiveArticle: mockSetActiveArticle,
-    articleViewOverlayPhase: 'closed',
-  }),
-  useFeedUI: (): unknown => ({
-    error: null,
-    totalFeeds: 1,
-  }),
-}));
+vi.mock('@/contexts/FeedContext', () => {
+  const mockArticles = () => Array.from({ length: 100 }, (_, index) => ({
+    hash: `hash-${index}`,
+    title: `Article ${index}`,
+    description: `Description ${index}`,
+    content: `Content ${index}`,
+    fetchedDate: '2026-02-25T00:00:00.000Z',
+    feedId: 'feed-1',
+    feedUrl: 'https://example.com/rss.xml',
+    read: false,
+    starred: false,
+    saved: false,
+    feedTitle: 'Feed',
+    publishedDate: '2026-02-25T00:00:00.000Z',
+    feedFaviconHasTransparency: false,
+  }));
 
-vi.mock('@/components/MainArea/hooks/useFetchIndicatorState', () => ({
-  useFetchIndicatorState: () => ({
-    isFetchIndicatorVisible: false,
-    applySourceSwitchGrace: vi.fn(),
-  }),
-}));
+  return {
+    useFeedNavigation: (): unknown => ({
+      selectedFeedTitle: 'Test Feed',
+      selectedFeedId: 'feed-1',
+      selectedTag: null,
+      selectedSmartView: null,
+      navigationNonce: 0,
+    }),
+    useFeedCollectionArticles: (): unknown => ({
+      articles: mockArticles(),
+      articlesTotalCount: mockArticlesTotalCount,
+      newArticleCount: 0,
+      newArticleHashes: mockNewArticleHashes,
+      articleListScrollRequest: null,
+    }),
+    useFeedCollectionLoading: (): unknown => ({
+      isLoadingArticles: false,
+      isLoadingMoreArticles: false,
+      isLoadMoreInFlight: false,
+      isSavedListLoading: false,
+    }),
+    useFeedCollectionActions: (): unknown => ({
+      loadMoreArticles: mockLoadMoreArticles,
+      updateArticleInList: mockUpdateArticleInList,
+      searchCurrentSource: mockSearchCurrentSource,
+      clearArticleListSearch: mockClearArticleListSearch,
+      syncArticleListViewport: vi.fn(),
+      refreshFeed: vi.fn(),
+      reloadCurrentSourceFromStore: vi.fn(),
+    }),
+    useFeedCollection: (): unknown => ({
+      articles: mockArticles(),
+      articlesTotalCount: mockArticlesTotalCount,
+      savedArticles: [],
+      isLoadingArticles: false,
+      isLoadingMoreArticles: false,
+      isLoadMoreInFlight: false,
+      isSavedListLoading: false,
+      loadMoreArticles: mockLoadMoreArticles,
+      updateArticleInList: mockUpdateArticleInList,
+      searchCurrentSource: mockSearchCurrentSource,
+      clearArticleListSearch: mockClearArticleListSearch,
+      newArticleHashes: mockNewArticleHashes,
+      articleListScrollRequest: null,
+      syncArticleListViewport: vi.fn(),
+    }),
+    useFeedOverlay: (): unknown => ({
+      activeArticleHash: null,
+      selectArticle: mockSelectArticle,
+      setActiveArticle: mockSetActiveArticle,
+      articleViewOverlayPhase: 'closed',
+    }),
+    useFeedUI: (): unknown => ({
+      error: null,
+      totalFeeds: 1,
+    }),
+  };
+});
 
 vi.mock('@/components/MainArea/hooks/useArticleListKeyboardNavigation', () => ({
   useArticleListKeyboardNavigation: vi.fn(),
@@ -100,6 +120,16 @@ vi.mock('@/components/MainArea/hooks/useArticleListLayoutResize', () => ({
 vi.mock('@/components/MainArea/ArticleListItem', () => ({
   ArticleListItem: ({ article }: { article: { title: string } }) => (
     <div data-testid="mock-article-row">{article.title}</div>
+  ),
+}));
+
+vi.mock('@/components/MainArea/ArticleListSkeleton', () => ({
+  ArticleListHeaderSkeleton: () => <div data-testid="header-skeleton">Header Skeleton</div>,
+  ArticleListSkeleton: () => <div data-testid="mock-phantom-skeleton">Phantom Skeleton</div>,
+  ArticleListSkeletonGroup: ({ count = 1 }: { count?: number }) => (
+    <div data-testid="mock-skeleton-group">{Array.from({ length: count }).map((_, index) => (
+      <div key={index} data-testid="mock-phantom-skeleton">Phantom Skeleton</div>
+    ))}</div>
   ),
 }));
 
@@ -132,6 +162,7 @@ describe('SharedArticleList virtualization', () => {
 
   const makeVirtualizerMock = (indexes = [0, 1, 2, 3, 4]) => ({
     getTotalSize: () => 2000,
+    getOffsetForIndex: (index: number) => index * 100,
     getVirtualItems: () => indexes.map((index) => ({
       key: `k-${index}`,
       index,
@@ -148,7 +179,7 @@ describe('SharedArticleList virtualization', () => {
 
     expect(mockUseVirtualizer).toHaveBeenCalledWith(expect.objectContaining({
       count: 100,
-      overscan: 10,
+      overscan: 16,
     }));
     expect(getAllByTestId('mock-article-row')).toHaveLength(5);
     expect(queryByText('Article 50')).not.toBeInTheDocument();
@@ -193,7 +224,10 @@ describe('SharedArticleList virtualization', () => {
 
     fireEvent.scroll(listElement);
 
-    expect(mockLoadMoreArticles).toHaveBeenCalledWith({ showLoadingIndicator: false });
+    expect(mockLoadMoreArticles).toHaveBeenCalledWith({
+      showLoadingIndicator: false,
+      priority: 'prefetch',
+    });
     expect(mockSearchCurrentSource).toHaveBeenCalledWith('article');
   });
 
@@ -212,7 +246,10 @@ describe('SharedArticleList virtualization', () => {
 
     fireEvent.scroll(listElement);
 
-    expect(mockLoadMoreArticles).toHaveBeenCalledWith({ showLoadingIndicator: false });
+    expect(mockLoadMoreArticles).toHaveBeenCalledWith({
+      showLoadingIndicator: false,
+      priority: 'prefetch',
+    });
   });
 
   it('does not start pagination around the middle of the loaded rows', () => {
@@ -230,7 +267,10 @@ describe('SharedArticleList virtualization', () => {
 
     renderSharedArticleList();
 
-    expect(mockLoadMoreArticles).toHaveBeenCalledWith({ showLoadingIndicator: false });
+    expect(mockLoadMoreArticles).toHaveBeenCalledWith({
+      showLoadingIndicator: false,
+      priority: 'urgent',
+    });
   });
 
   it('prefers ResizeObserver entry height for row measurement', () => {

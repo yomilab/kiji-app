@@ -1,10 +1,34 @@
 import { feedsManager, type Feed } from '@/services/feeds/feedsManager';
-import type { OpmlImportResult, OpmlImportSummary } from '@/services/feeds/opmlImportService';
+import { assertValidOpmlText } from '@/services/feeds/opmlDocument';
+import type { OpmlImportResult, OpmlImportSummary, ParseOpmlEntriesOptions } from '@/services/feeds/opmlImportService';
 import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
+import { httpClient } from '@/services/http/httpClientFactory';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 
 const pluralizeFeeds = (count: number): string => `${count} feed${count === 1 ? '' : 's'}`;
+
+export const isLikelyOpmlUrl = (url: string): boolean => {
+  try {
+    return new URL(url).pathname.toLowerCase().endsWith('.opml');
+  } catch {
+    return false;
+  }
+};
+
+export { isOpmlDocument } from '@/services/feeds/opmlDocument';
+
+export const fetchOpmlTextFromUrl = async (url: string): Promise<string> => {
+  const text = await httpClient.get(url, {
+    headers: {
+      Accept: 'application/xml, text/xml, application/opml+xml, */*',
+    },
+  });
+
+  assertValidOpmlText(text, { emptyMessage: 'OPML URL returned empty content.' });
+
+  return text;
+};
 
 export const formatOpmlImportSummary = (summary: OpmlImportSummary): string => {
   if (summary.total === 0) {
@@ -14,10 +38,44 @@ export const formatOpmlImportSummary = (summary: OpmlImportSummary): string => {
   return `Imported ${pluralizeFeeds(summary.imported)}. Skipped ${summary.skippedDuplicate} duplicates, ${summary.invalid} invalid, ${summary.failed} failed.`;
 };
 
+export interface OpmlImportNavigationActions {
+  selectTag: (tagName: string) => Promise<void>;
+  selectFeed: (
+    feedId: string,
+    feedUrl: string,
+    feedTitle: string,
+    options?: { forceNetwork?: boolean },
+  ) => Promise<void>;
+}
+
+export const navigateAfterOpmlImport = async (
+  importResult: OpmlImportResult,
+  actions: OpmlImportNavigationActions,
+): Promise<void> => {
+  const { navigationTarget } = importResult;
+  if (!navigationTarget) {
+    return;
+  }
+
+  if (navigationTarget.type === 'station') {
+    await actions.selectTag(navigationTarget.stationName);
+    return;
+  }
+
+  await actions.selectFeed(
+    navigationTarget.feedId,
+    navigationTarget.feedUrl,
+    navigationTarget.feedTitle,
+    { forceNetwork: true },
+  );
+};
+
 interface ApplyOpmlImportResultOptions {
   refreshTotalFeeds: () => Promise<void>;
   notifyFeedLibraryChanged?: () => void;
 }
+
+export interface OpmlImportIntoLibraryOptions extends ApplyOpmlImportResultOptions, ParseOpmlEntriesOptions {}
 
 export const applyOpmlImportResultToLibrary = async (
   importResult: OpmlImportResult,
@@ -59,19 +117,40 @@ export const applyOpmlImportResultToLibrary = async (
 
 export const importOpmlTextIntoLibrary = async (
   opmlText: string,
-  options: ApplyOpmlImportResultOptions
+  options: OpmlImportIntoLibraryOptions,
 ): Promise<OpmlImportResult> => {
-  const importResult = await opmlWorkflowService.importFromOpmlText(opmlText);
-  await applyOpmlImportResultToLibrary(importResult, options);
+  const { refreshTotalFeeds, notifyFeedLibraryChanged, defaultStationName, fileName, url } = options;
+  const importResult = await opmlWorkflowService.importFromOpmlText(opmlText, {
+    defaultStationName,
+    fileName,
+    url,
+  });
+  await applyOpmlImportResultToLibrary(importResult, {
+    refreshTotalFeeds,
+    notifyFeedLibraryChanged,
+  });
   return importResult;
 };
 
-export const openOpmlFileForImport = async (): Promise<string | null> => {
-  if (!window.electronAPI?.openOpmlFile) {
+export const importOpmlFromUrlIntoLibrary = async (
+  url: string,
+  options: OpmlImportIntoLibraryOptions,
+): Promise<OpmlImportResult> => {
+  const opmlText = await fetchOpmlTextFromUrl(url);
+  return importOpmlTextIntoLibrary(opmlText, { ...options, url });
+};
+
+export interface OpmlFileImportResult {
+  opmlText: string;
+  fileName?: string;
+}
+
+export const openOpmlFileForImport = async (): Promise<OpmlFileImportResult | null> => {
+  if (!window.kijiAPI?.openOpmlFile) {
     throw new Error('Import is only available in the desktop app.');
   }
 
-  const selectedFile = await window.electronAPI.openOpmlFile();
+  const selectedFile = await window.kijiAPI.openOpmlFile();
   if (selectedFile.canceled) {
     return null;
   }
@@ -81,5 +160,8 @@ export const openOpmlFileForImport = async (): Promise<string | null> => {
     throw new Error('Selected file is empty.');
   }
 
-  return opmlText;
+  return {
+    opmlText,
+    fileName: selectedFile.fileName,
+  };
 };

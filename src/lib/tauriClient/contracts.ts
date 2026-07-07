@@ -113,6 +113,12 @@ export interface ArticleFeedMetadata {
   feedImage: UrlString | null;
 }
 
+export interface FeedArticleCountsRecord {
+  feedId: string;
+  unreadCount: number;
+  articleCount: number;
+}
+
 export interface ArticleRecord extends ArticleFeedMetadata {
   hash: string;
   feedId: string;
@@ -268,6 +274,93 @@ export interface FeedFetchWithCacheResponse {
   etag: string | null;
   lastModified: string | null;
   notModified: boolean;
+  byteLength?: number;
+  contentLengthHeader?: number | null;
+  fetchDurationMs?: number;
+  exceededSoftWarn?: boolean;
+}
+
+export interface NativeFeedAuthor {
+  name: string;
+  email?: string;
+  uri?: string;
+}
+
+export interface NativeMediaThumbnail {
+  url: string;
+  width?: number;
+  height?: number;
+}
+
+export interface NativeEnclosure {
+  url: string;
+  type?: string | null;
+  length?: number;
+  duration?: number;
+}
+
+/** Renderer-parity feed item shape for native parse preview and future ingestion. */
+export interface NativeFeedItem {
+  id: string;
+  title: string;
+  content: string;
+  link?: string;
+  author?: string;
+  publishedDate?: string;
+  feedId: string;
+  updatedDate?: string;
+  summary?: string;
+  guid?: string;
+  previewImage?: string;
+  thumbnail?: NativeMediaThumbnail;
+  images?: string[];
+  enclosures?: NativeEnclosure[];
+  categories?: string[];
+  authors?: NativeFeedAuthor[];
+  duration?: number;
+  episodeNumber?: number;
+  seasonNumber?: number;
+}
+
+export interface FeedParsePreviewRequest {
+  rawText: string;
+  feedUrl: UrlString;
+}
+
+export interface FeedParsePreviewResponse {
+  format: string;
+  itemCount: number;
+  items: NativeFeedItem[];
+  parserPath: string;
+  parityGaps: string[];
+}
+
+export interface StoreParsedFeedRequest {
+  feedId: string;
+  feedUrl: UrlString;
+  rawText: string;
+  feedTitle?: string;
+  feedFavicon?: string;
+  feedFaviconHasTransparency?: boolean;
+  feedFaviconBgLight?: string;
+  feedFaviconBgDark?: string;
+  feedImage?: string;
+  etag?: string;
+  lastModified?: string;
+  lastFetched?: string;
+  previousUpdateFrequencyScore?: number;
+}
+
+export interface StoreParsedFeedResponse {
+  feedId: string;
+  insertedCount: number;
+  parsedItemCount: number;
+  updateFrequencyScore?: number;
+  unreadCount: number;
+  articleCount: number;
+  consecutiveFailures: number;
+  parserPath: string;
+  parityGaps: string[];
 }
 
 export interface FeedFetchDataUrlRequest extends FeedFetchRequest {
@@ -433,10 +526,18 @@ export interface PerformanceSnapshot {
   timestamp: ISODateString;
   processes: Array<{
     pid: number;
+    name: string;
     type: string;
     cpu: number;
     mem: number;
   }>;
+  totals: {
+    cpu: number;
+    memoryMb: number;
+    nativeMemoryMb: number;
+    webkitMemoryMb: number;
+    processCount: number;
+  };
   main: {
     pid: number;
     rssMb: number;
@@ -487,6 +588,110 @@ export type HelperTaskResultEvent =
   | { taskId: string; kind: HelperTaskKind; status: "failed"; error: string }
   | { taskId: string; kind: HelperTaskKind; status: "cancelled" };
 
+export type BackgroundUpdateMode =
+  | "on-launch"
+  | "every-5m"
+  | "every-10m"
+  | "every-15m"
+  | "every-30m"
+  | "every-1h"
+  | "never";
+
+export interface SchedulerFeedEntry {
+  feedId: string;
+  feedUrl: UrlString;
+  feedTitle: string;
+  lastFetchedMs?: number | null;
+  lastFailedFetchAtMs?: number | null;
+  sortOrder: number;
+  updateFrequencyScore: number;
+  consecutiveFailures: number;
+}
+
+export interface FeedPriorityEntry extends SchedulerFeedEntry {
+  score: number;
+}
+
+export interface SchedulerRunPlan {
+  prioritized: FeedPriorityEntry[];
+  skippedBackoffCount: number;
+  skippedSuppressedCount: number;
+}
+
+export interface SchedulerRunPlanOptions {
+  frontloadFeedIds?: string[];
+  skipFeedIdsForThisCycle?: string[];
+  onlyFeedIds?: string[];
+  excludeFeedIds?: string[];
+  forceRefreshFeedIds?: string[];
+}
+
+export interface SchedulerBoost {
+  feedId: string;
+  boostUntilMs: number;
+}
+
+export interface SchedulerCreateRunPlanRequest {
+  entries: SchedulerFeedEntry[];
+  boosts: SchedulerBoost[];
+  nowMs?: number;
+  options?: SchedulerRunPlanOptions;
+}
+
+export interface SchedulerNativeCyclePreviewRequest {
+  boosts?: SchedulerBoost[];
+  nowMs?: number;
+  options?: SchedulerRunPlanOptions;
+  maxFeeds?: number;
+  concurrency?: number;
+  execute?: boolean;
+}
+
+export interface SchedulerNativeCycleFeedResult {
+  feedId: string;
+  status: string;
+  insertedCount?: number;
+  error?: string;
+}
+
+export interface SchedulerNativeCycleStartPayload {
+  queuedCount: number;
+  feedIds: string[];
+}
+
+export interface SchedulerNativeCyclePreviewResponse {
+  plan: SchedulerRunPlan;
+  queuedCount: number;
+  executedFeedCount: number;
+  changedFeeds: number;
+  notModifiedFeeds: number;
+  failedFeeds: number;
+  insertedArticles: number;
+  feedResults: SchedulerNativeCycleFeedResult[];
+}
+
+export interface SchedulerContract {
+  start: {
+    request: { mode: BackgroundUpdateMode };
+    response: string;
+  };
+  stop: {
+    response: void;
+  };
+  reconfigure: {
+    request: { mode: BackgroundUpdateMode };
+    response: void;
+  };
+  createRunPlan: {
+    request: SchedulerCreateRunPlanRequest;
+    response: SchedulerRunPlan;
+  };
+  previewNativeCycle: {
+    request: SchedulerNativeCyclePreviewRequest;
+    response: SchedulerNativeCyclePreviewResponse;
+  };
+}
+
 export interface SettingsContract {
   get: {
     response: AppSettings;
@@ -524,6 +729,18 @@ export interface FeedsContract {
   fetchDataUrl: {
     request: FeedFetchDataUrlRequest;
     response: FeedFetchDataUrlResponse;
+  };
+  fetchPdfDataUrl: {
+    request: FeedFetchDataUrlRequest;
+    response: FeedFetchDataUrlResponse;
+  };
+  parsePreview: {
+    request: FeedParsePreviewRequest;
+    response: FeedParsePreviewResponse;
+  };
+  storeParsedContent: {
+    request: StoreParsedFeedRequest;
+    response: StoreParsedFeedResponse;
   };
   abortRequest: {
     request: { requestId: string };
@@ -663,6 +880,10 @@ export interface ArticlesContract {
   countByFeed: {
     request: { feedId: string };
     response: number;
+  };
+  syncFeedCountsBatch: {
+    request: { feedIds: string[] };
+    response: FeedArticleCountsRecord[];
   };
   updateFeedMeta: {
     request: ArticleFeedMetaUpdateRequest;

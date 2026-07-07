@@ -1,13 +1,17 @@
 import * as articleStore from "../../stores/articleStore";
 import * as feedStore from "../../stores/feedStore";
 import { FEED_FETCH_TIMEOUT_MS } from "../../constants";
+import { removeArticleFeedMetadata } from "../articles/articleListMemory";
 import { convertFeedItemsToArticles } from "../articles/articleConverter";
 import { analyzeFaviconAppearance } from "../favicons/faviconTransparency";
+import { isPlaceholderFaviconDataUrl } from "../favicons/faviconQuality";
 import { faviconFetcher } from "../favicons/faviconFetcher";
 import { tauriClient } from "../../lib/tauriClient";
 import { feedRefreshActivity } from "./feedRefreshActivity";
 import { feedRefreshCoordinator } from "./feedRefreshCoordinator";
 import { feedsFetcher, parseFeed } from "./feedsFetcher";
+import { isNativeFeedIngestionEnabled } from "../scheduler/nativeSchedulerCycle";
+import { runNativeFeedRefresh } from "../scheduler/nativeFeedRefresh";
 import type { Feed } from "./types";
 
 export type { Feed } from "./types";
@@ -86,7 +90,11 @@ class FeedsManager {
   }
 
   async deleteFeed(id: string): Promise<boolean> {
-    return feedStore.remove(id);
+    const deleted = await feedStore.remove(id);
+    if (deleted) {
+      removeArticleFeedMetadata(id);
+    }
+    return deleted;
   }
 
   async refreshFeed(
@@ -95,6 +103,46 @@ class FeedsManager {
   ): Promise<RefreshFeedResult> {
     return feedRefreshCoordinator.run(id, async () => {
       const feed = await this.requireFeed(id);
+
+      if (isNativeFeedIngestionEnabled()) {
+        try {
+          const nativeResult = await runNativeFeedRefresh({
+            feedIds: [id],
+            forceRefreshFeedIds: options.force ? new Set([id]) : undefined,
+            signal: options.signal,
+            activityKind: 'foreground',
+          });
+          const feedResult = nativeResult.feedResults.find((result) => result.feedId === id);
+          if (feedResult?.error) {
+            throw new Error(feedResult.error);
+          }
+
+          const articleCount = await articleStore.getArticleCount(id);
+          const unreadCount = await articleStore.getUnreadCount(id);
+          await feedStore.update(id, {
+            lastFetched: new Date(),
+            lastFailedFetchAt: undefined,
+            consecutiveFailures: 0,
+            articleCount,
+            unreadCount,
+          });
+
+          return {
+            feedId: id,
+            notModified: feedResult?.status === 'not-modified',
+            insertedCount: nativeResult.insertedByFeedId.get(id) ?? 0,
+          };
+        } catch (error) {
+          const aborted = error instanceof Error && error.name === "AbortError";
+          if (!aborted) {
+            await feedStore.update(id, {
+              lastFailedFetchAt: new Date(),
+              consecutiveFailures: (feed.consecutiveFailures ?? 0) + 1,
+            });
+          }
+          throw error;
+        }
+      }
 
       try {
         const networkResult = await feedRefreshActivity.track(id, () =>
@@ -154,9 +202,16 @@ class FeedsManager {
   async applyFaviconResult(id: string, favicon: string | null): Promise<Feed | null> {
     const refreshedAt = new Date();
 
+    if (favicon && await isPlaceholderFaviconDataUrl(favicon)) {
+      favicon = null;
+    }
+
     if (!favicon) {
       const existing = await feedStore.getById(id);
       if (existing?.favicon) {
+        if (await isPlaceholderFaviconDataUrl(existing.favicon)) {
+          return await this.clearStoredFavicon(id);
+        }
         return existing;
       }
 
@@ -182,6 +237,31 @@ class FeedsManager {
       feedFaviconHasTransparency: appearance.hasTransparency,
       feedFaviconBgLight: appearance.containerBgLight ?? undefined,
       feedFaviconBgDark: appearance.containerBgDark ?? undefined,
+    });
+    return feedStore.getById(id);
+  }
+
+  async clearStoredFavicon(id: string): Promise<Feed | null> {
+    const existing = await feedStore.getById(id);
+    if (!existing?.favicon) {
+      return existing;
+    }
+
+    const refreshedAt = new Date();
+    await feedStore.update(id, {
+      favicon: undefined,
+      faviconHasTransparency: undefined,
+      faviconDominantColor: undefined,
+      faviconBgLight: undefined,
+      faviconBgDark: undefined,
+      faviconFetchFailed: true,
+      lastFaviconRefresh: refreshedAt,
+    });
+    await articleStore.updateFeedMeta(id, {
+      feedFavicon: undefined,
+      feedFaviconHasTransparency: undefined,
+      feedFaviconBgLight: undefined,
+      feedFaviconBgDark: undefined,
     });
     return feedStore.getById(id);
   }

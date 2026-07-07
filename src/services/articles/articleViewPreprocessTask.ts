@@ -30,10 +30,12 @@ import type {
 import {
   getYouTubeEmbedInfo,
   normalizeIframeEmbedSrc,
+  promoteYouTubeMediaAnchors,
   sanitizeIframeAllowValue,
 } from '@/components/common/ArticleContent/mediaEmbedUtils';
 import { staticResourceService } from '@/services/system/staticResourceService';
 import { sanitizeArticleStylesWithCheerio } from '@/services/articles/articleStyleSanitizer';
+import { resolveYouTubeWatchUrl } from '@/utils/youtubeEmbed';
 
 const normalizeWorkerUrl = (value: string | null | undefined, baseUrl?: string): string | null => {
   if (!value) return null;
@@ -227,11 +229,12 @@ export const preprocessArticleViewHtml = (
     }
 
     iframe.attr('loading', 'lazy');
+    iframe.attr('referrerpolicy', 'strict-origin-when-cross-origin');
 
     const normalized = normalizeIframeEmbedSrc(currentSrc, baseUrl || 'https://localhost');
     if (!normalized.normalizedSrc) {
-      const fallbackLink = $('<p><a target="_blank" rel="noopener noreferrer">Open embedded media in browser</a></p>');
-      fallbackLink.find('a').attr('href', normalized.fallbackUrl || currentSrc);
+      const fallbackLink = $('<p><a target="_blank" rel="noopener noreferrer">Open video in browser</a></p>');
+      fallbackLink.find('a').attr('href', resolveYouTubeWatchUrl(normalized.fallbackUrl || currentSrc) || normalized.fallbackUrl || currentSrc);
       iframe.replaceWith(fallbackLink);
       return;
     }
@@ -277,6 +280,8 @@ export const preprocessArticleViewHtml = (
 
     figure.attr('style', style);
   });
+
+  promoteYouTubeMediaAnchors($);
 
   return {
     html: $('body').html() || $.root().html() || payload.html,

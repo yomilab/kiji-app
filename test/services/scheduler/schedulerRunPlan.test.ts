@@ -22,7 +22,7 @@ describe('schedulerRunPlan', () => {
     const now = new Date('2026-05-09T12:00:00.000Z').getTime();
     const blocked = createEntry('blocked', {
       consecutiveFailures: 2,
-      lastFailedFetchAt: new Date(now - 20 * 60_000),
+      lastFailedFetchAt: new Date(now - 5 * 60_000),
     });
 
     expect(isSchedulerEntryInBackoff(blocked, now)).toBe(true);
@@ -33,11 +33,11 @@ describe('schedulerRunPlan', () => {
     const runnable = createEntry('runnable');
     const blocked = createEntry('blocked', {
       consecutiveFailures: 3,
-      lastFailedFetchAt: new Date(now - 30 * 60_000),
+      lastFailedFetchAt: new Date(now - 10 * 60_000),
     });
     const expired = createEntry('expired', {
       consecutiveFailures: 1,
-      lastFailedFetchAt: new Date(now - 20 * 60_000),
+      lastFailedFetchAt: new Date(now - 6 * 60_000),
     });
 
     const plan = createSchedulerRunPlan(
@@ -68,6 +68,25 @@ describe('schedulerRunPlan', () => {
 
     expect(plan.skippedBackoffCount).toBe(0);
     expect(plan.prioritized.map((entry) => entry.feedId)).toEqual(['active']);
+  });
+
+  it('bypasses backoff when forceRefreshFeedIds includes the feed', () => {
+    const now = new Date('2026-05-09T12:00:00.000Z').getTime();
+    const blocked = createEntry('blocked', {
+      consecutiveFailures: 3,
+      lastFailedFetchAt: new Date(now - 10 * 60_000),
+    });
+
+    const plan = createSchedulerRunPlan(
+      [blocked],
+      1,
+      new Map(),
+      now,
+      { forceRefreshFeedIds: new Set(['blocked']) },
+    );
+
+    expect(plan.skippedBackoffCount).toBe(0);
+    expect(plan.prioritized.map((entry) => entry.feedId)).toEqual(['blocked']);
   });
 
   it('front-loads active station feeds while preserving score order inside each partition', () => {

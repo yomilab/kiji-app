@@ -1,5 +1,10 @@
 import { XMLParser } from 'fast-xml-parser';
 import { extractMainHost } from '@/utils/urlValidator';
+import {
+  isLowQualityIcoDataUrl,
+  isPlaceholderFaviconDataUrl,
+  isUsableFaviconDataUrl,
+} from './faviconQuality';
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -24,6 +29,7 @@ const HTML_ICON_RELS = new Set([
 ]);
 
 const GOOGLE_FAVICON_SIZES = [128, 64] as const;
+const WORDPRESS_ICON_WIDTH_HINTS = [192, 180, 128, 96, 64, 48, 32];
 
 export interface FaviconDiscoveryAdapter {
   fetchImageDataUrl: (url: string, signal?: AbortSignal) => Promise<string | null>;
@@ -33,15 +39,6 @@ export interface FaviconDiscoveryAdapter {
 export interface DiscoverFaviconOptions {
   feedXmlText?: string;
   signal?: AbortSignal;
-}
-
-interface ParsedIcoMetadata {
-  width: number;
-  height: number;
-  colorCount: number;
-  bitCount: number;
-  byteLength: number;
-  imageCount: number;
 }
 
 function normalizeUrl(url: string): string {
@@ -86,6 +83,63 @@ function readStringCandidates(value: unknown): string[] {
   return [];
 }
 
+function estimateIconCandidateSize(url: string): number {
+  try {
+    const parsed = new URL(url);
+    const widthParam = parsed.searchParams.get('w') ?? parsed.searchParams.get('width');
+    if (widthParam) {
+      const width = Number.parseInt(widthParam, 10);
+      if (Number.isFinite(width) && width > 0) {
+        return width;
+      }
+    }
+
+    const sizeMatch = /[-_/](\d{2,3})x\d{2,3}\./i.exec(parsed.pathname);
+    if (sizeMatch) {
+      return Number.parseInt(sizeMatch[1], 10);
+    }
+  } catch {
+    // Ignore malformed URLs in sorting.
+  }
+
+  return 0;
+}
+
+function expandFeedIconCandidates(urls: string[]): string[] {
+  const expanded = new Set<string>();
+
+  for (const url of urls) {
+    expanded.add(url);
+
+    try {
+      const parsed = new URL(url);
+      if (!parsed.search) {
+        continue;
+      }
+
+      const withoutQuery = normalizeUrl(`${parsed.origin}${parsed.pathname}`);
+      expanded.add(withoutQuery);
+
+      const hasWidthHint = parsed.searchParams.has('w') || parsed.searchParams.has('width');
+      if (hasWidthHint) {
+        for (const width of WORDPRESS_ICON_WIDTH_HINTS) {
+          const next = new URL(parsed.toString());
+          next.searchParams.set('w', String(width));
+          expanded.add(normalizeUrl(next.toString()));
+        }
+      }
+    } catch {
+      // Keep the original candidate only.
+    }
+  }
+
+  return Array.from(expanded);
+}
+
+function sortIconCandidatesByPreferredSize(candidates: string[]): string[] {
+  return [...candidates].sort((left, right) => estimateIconCandidateSize(right) - estimateIconCandidateSize(left));
+}
+
 function extractFeedXmlIconUrls(feedXmlText: string, feedUrl: string): string[] {
   try {
     const parsed = parser.parse(feedXmlText) as Record<string, unknown>;
@@ -107,7 +161,7 @@ function extractFeedXmlIconUrls(feedXmlText: string, feedUrl: string): string[] 
       }
     }
 
-    return Array.from(resolved);
+    return expandFeedIconCandidates(Array.from(resolved));
   } catch {
     return [];
   }
@@ -122,7 +176,6 @@ function extractHtmlIconUrls(html: string, origin: string): string[] {
   const results = new Set<string>();
   const tags = html.match(/<link\b[^>]*>/gi) || [];
 
-  // Scan link tags once and keep only icon-like rel values to avoid full DOM parsing work.
   for (const tag of tags) {
     const relValue = extractAttributeValue(tag, 'rel');
     const hrefValue = extractAttributeValue(tag, 'href');
@@ -141,78 +194,23 @@ function extractHtmlIconUrls(html: string, origin: string): string[] {
     }
   }
 
-  return Array.from(results);
-}
-
-function decodeBase64(base64: string): Uint8Array | null {
-  try {
-    if (typeof atob === 'function') {
-      const binary = atob(base64);
-      return Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-function readUint16LE(bytes: Uint8Array, offset: number): number {
-  return bytes[offset] | (bytes[offset + 1] << 8);
-}
-
-function extractIcoMetadata(dataUrl: string): ParsedIcoMetadata | null {
-  const match = /^data:image\/(?:x-icon|vnd\.microsoft\.icon);base64,([^#?]+)$/i.exec(dataUrl);
-  if (!match) {
-    return null;
-  }
-
-  const bytes = decodeBase64(match[1]);
-  if (!bytes || bytes.length < 22) {
-    return null;
-  }
-
-  const reserved = readUint16LE(bytes, 0);
-  const type = readUint16LE(bytes, 2);
-  const imageCount = readUint16LE(bytes, 4);
-  if (reserved !== 0 || type !== 1 || imageCount < 1) {
-    return null;
-  }
-
-  return {
-    width: bytes[6] || 256,
-    height: bytes[7] || 256,
-    colorCount: bytes[8],
-    bitCount: readUint16LE(bytes, 12),
-    byteLength: bytes.length,
-    imageCount,
-  };
-}
-
-function isLowQualityIcoFallback(dataUrl: string): boolean {
-  const metadata = extractIcoMetadata(dataUrl);
-  if (!metadata) {
-    return false;
-  }
-
-  // Tiny single-entry monochrome ICO files are often generic placeholders.
-  return (
-    metadata.imageCount === 1
-    && metadata.width <= 16
-    && metadata.height <= 16
-    && metadata.byteLength <= 256
-    && (metadata.bitCount <= 4 || (metadata.colorCount > 0 && metadata.colorCount <= 4))
-  );
+  return sortIconCandidatesByPreferredSize(Array.from(results));
 }
 
 async function tryCandidates(
   candidates: string[],
   adapter: FaviconDiscoveryAdapter,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<string | null> {
-  for (const candidate of candidates) {
+  const orderedCandidates = sortIconCandidatesByPreferredSize(candidates);
+
+  for (const candidate of orderedCandidates) {
     const favicon = await adapter.fetchImageDataUrl(candidate, signal);
-    if (favicon) {
+    if (!favicon) {
+      continue;
+    }
+
+    if (await isUsableFaviconDataUrl(favicon)) {
       return favicon;
     }
   }
@@ -230,7 +228,7 @@ function buildGoogleProviderCandidates(origin: string, mainHost: string): string
 export async function discoverFaviconDataUrl(
   feedUrl: string,
   adapter: FaviconDiscoveryAdapter,
-  options: DiscoverFaviconOptions = {}
+  options: DiscoverFaviconOptions = {},
 ): Promise<string | null> {
   let targetUrl: URL;
   try {
@@ -241,54 +239,44 @@ export async function discoverFaviconDataUrl(
 
   const origin = targetUrl.origin;
   const mainHost = extractMainHost(feedUrl);
-  let lowQualityOriginFallback: string | null = null;
   let hasTriedGoogleProvider = false;
 
-  // Try explicit feed-declared icons first because they are usually the most intentional source.
   if (options.feedXmlText) {
     const feedXmlFavicon = await tryCandidates(
       extractFeedXmlIconUrls(options.feedXmlText, feedUrl),
       adapter,
-      options.signal
+      options.signal,
     );
     if (feedXmlFavicon) {
       return feedXmlFavicon;
     }
   }
 
-  // Prefer the standard origin favicon for the cheap happy path, but keep obviously low-quality
-  // placeholder ICOs as a fallback while continuing to look for site-declared icons.
   const originFavicon = await tryCandidates(
     [`${origin}/favicon.ico`],
     adapter,
-    options.signal
+    options.signal,
   );
   if (originFavicon) {
-    if (!isLowQualityIcoFallback(originFavicon)) {
-      return originFavicon;
-    }
-    lowQualityOriginFallback = originFavicon;
-  } else {
-    // Use Google's favicon endpoint as the fast common fallback when the origin does not expose a
-    // standard favicon at all, so feeds without local icon files can still resolve quickly.
-    const googleProviderFavicon = await tryCandidates(
-      buildGoogleProviderCandidates(origin, mainHost),
-      adapter,
-      options.signal
-    );
-    if (googleProviderFavicon) {
-      return googleProviderFavicon;
-    }
-    hasTriedGoogleProvider = true;
+    return originFavicon;
   }
 
-  // Prefer page-declared icons before external providers so we do not lock onto generic placeholders.
+  const googleProviderFavicon = await tryCandidates(
+    buildGoogleProviderCandidates(origin, mainHost),
+    adapter,
+    options.signal,
+  );
+  if (googleProviderFavicon) {
+    return googleProviderFavicon;
+  }
+  hasTriedGoogleProvider = true;
+
   try {
     const html = await adapter.fetchText(`${origin}/`, options.signal);
     const htmlFavicon = await tryCandidates(
       extractHtmlIconUrls(html, origin),
       adapter,
-      options.signal
+      options.signal,
     );
     if (htmlFavicon) {
       return htmlFavicon;
@@ -300,7 +288,7 @@ export async function discoverFaviconDataUrl(
   const commonPathFavicon = await tryCandidates(
     COMMON_ICON_PATHS.map((path) => `${origin}${path}`),
     adapter,
-    options.signal
+    options.signal,
   );
   if (commonPathFavicon) {
     return commonPathFavicon;
@@ -315,5 +303,13 @@ export async function discoverFaviconDataUrl(
     return providerFavicon;
   }
 
-  return lowQualityOriginFallback;
+  return null;
 }
+
+export const __faviconDiscoveryTestUtils = {
+  extractFeedXmlIconUrls,
+  extractHtmlIconUrls,
+  sortIconCandidatesByPreferredSize,
+  isLowQualityIcoDataUrl,
+  isPlaceholderFaviconDataUrl,
+};

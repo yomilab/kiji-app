@@ -9,6 +9,7 @@ const DEFAULT_TITLE: &str = "Untitled";
 const MAX_TITLE_LENGTH: usize = 180;
 const MAX_FILENAME_LENGTH: usize = 180;
 
+#[derive(Clone)]
 pub struct SavedArticleIndexEntry {
     pub title: String,
     pub file_name: String,
@@ -92,7 +93,7 @@ pub fn create_saved_article_markdown(article: &SavedArticleRecord) -> String {
     )
 }
 
-/// Mirror Electron `savedArticlesExportFormat.createSavedArticleMarkdown`:
+/// Saved-article markdown export format used by KiJi desktop.
 /// convert stored HTML bodies to markdown before writing `.md` export/sync files.
 fn content_to_markdown_body(content: &str) -> String {
     if content.is_empty() {

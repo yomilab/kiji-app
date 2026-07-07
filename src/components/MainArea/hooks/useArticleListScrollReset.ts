@@ -8,7 +8,6 @@ interface RowVirtualizerLike {
 
 interface UseArticleListScrollResetOptions {
   sourceKey: string;
-  isListLoading: boolean;
   filteredCount: number;
   articleListItemsRef: RefObject<HTMLDivElement>;
   rowVirtualizer: RowVirtualizerLike;
@@ -17,14 +16,12 @@ interface UseArticleListScrollResetOptions {
 
 export const useArticleListScrollReset = ({
   sourceKey,
-  isListLoading,
   filteredCount,
   articleListItemsRef,
   rowVirtualizer,
   setHasListScrollOffset,
 }: UseArticleListScrollResetOptions): void => {
   const currentSourceKeyRef = useRef(sourceKey);
-  const pendingScrollResetSourceKeyRef = useRef<string | null>(null);
   const resetFrameRef = useRef<number | null>(null);
 
   const resetScrollPosition = useCallback((): boolean => {
@@ -43,25 +40,14 @@ export const useArticleListScrollReset = ({
     if (sourceKey === currentSourceKeyRef.current) return;
 
     currentSourceKeyRef.current = sourceKey;
-    pendingScrollResetSourceKeyRef.current = sourceKey;
     if (resetFrameRef.current !== null) {
       window.cancelAnimationFrame(resetFrameRef.current);
       resetFrameRef.current = null;
     }
-    resetScrollPosition();
-  }, [resetScrollPosition, sourceKey]);
-
-  useDependencyEffect(() => {
-    if (pendingScrollResetSourceKeyRef.current !== sourceKey) return;
-    if (isListLoading) return;
 
     resetFrameRef.current = requestAnimationFrame(() => {
       resetFrameRef.current = null;
-      if (pendingScrollResetSourceKeyRef.current !== sourceKey) return;
-
-      if (resetScrollPosition()) {
-        pendingScrollResetSourceKeyRef.current = null;
-      }
+      resetScrollPosition();
     });
 
     return () => {
@@ -70,5 +56,5 @@ export const useArticleListScrollReset = ({
         resetFrameRef.current = null;
       }
     };
-  }, [sourceKey, isListLoading, resetScrollPosition]);
+  }, [resetScrollPosition, sourceKey]);
 };

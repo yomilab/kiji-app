@@ -27,6 +27,7 @@ KiJi is **GPL-3.0-or-later** ([LICENSE](LICENSE)). Major open-source components 
 | `jszip` | MIT |
 | `linkedom` | ISC |
 | `lite-youtube-embed` | Apache-2.0 |
+| `pdfjs-dist` | Apache-2.0 |
 
 ## Rust (`src-tauri/Cargo.toml` dependencies)
 

@@ -44,7 +44,7 @@ describe("useFeedSchedulerLifecycle", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
-    Object.defineProperty(window, "electronAPI", {
+    Object.defineProperty(window, "kijiAPI", {
       configurable: true,
       value: {
         onSettingsChanged: vi.fn(() => vi.fn()),

@@ -51,6 +51,21 @@ pub fn feed_network_error(error: reqwest::Error) -> String {
     .to_invoke_error()
 }
 
+pub fn feed_body_too_large_error(
+    bytes_read: u64,
+    cap_bytes: u64,
+    content_length_header: Option<u64>,
+) -> String {
+    FeedCommandError {
+        code: "FEED_BODY_TOO_LARGE".to_string(),
+        message: format!(
+            "Feed response exceeded the {cap_bytes} byte limit after reading {bytes_read} bytes (content-length header: {content_length_header:?})."
+        ),
+        http_status: None,
+    }
+    .to_invoke_error()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -69,5 +84,14 @@ mod tests {
         let parsed: FeedCommandError = serde_json::from_str(&payload).expect("json error");
         assert_eq!(parsed.code, "FEED_REQUEST_CANCELLED");
         assert!(parsed.http_status.is_none());
+    }
+
+    #[test]
+    fn serializes_body_too_large_errors_with_code() {
+        let payload = feed_body_too_large_error(33_554_432, 32_000_000, Some(40_000_000));
+        let parsed: FeedCommandError = serde_json::from_str(&payload).expect("json error");
+        assert_eq!(parsed.code, "FEED_BODY_TOO_LARGE");
+        assert!(parsed.http_status.is_none());
+        assert!(parsed.message.contains("32000000"));
     }
 }

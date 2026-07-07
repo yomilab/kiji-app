@@ -3,12 +3,98 @@
  *
  * Provides a single source of truth for the Chrome user-agent string and
  * utilities that ensure outgoing HTTP requests carry browser-like headers
- * instead of Electron's local origins (which trigger hotlink protection).
+ * instead of desktop app local origins (which trigger hotlink protection).
  */
 
 /** Chrome 144 on macOS — used everywhere a browser-like UA is needed. */
 export const CHROME_USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36';
+
+function baseLanguageTag(locale: string): string | null {
+  const base = locale.split(/[-_]/)[0]?.trim();
+  return base || null;
+}
+
+/** Broad fallback locales appended after OS preferences (not domain-specific). */
+const BROAD_FALLBACK_LOCALES = [
+  'en-US', 'en', 'zh-CN', 'zh-TW', 'zh', 'ja-JP', 'ja', 'ko-KR', 'ko', 'de-DE', 'de', 'fr-FR',
+  'fr', 'es-ES', 'es', 'pt-BR', 'pt', 'it-IT', 'it', 'ru-RU', 'ru', 'ar', 'hi-IN', 'hi',
+  'nl-NL', 'nl', 'pl-PL', 'pl', 'tr-TR', 'tr', 'vi-VN', 'vi', 'th-TH', 'th', 'id-ID', 'id',
+  'sv-SE', 'sv', 'da-DK', 'da', 'fi-FI', 'fi', 'nb-NO', 'nb', 'he-IL', 'he', 'uk-UA', 'uk',
+  'cs-CZ', 'cs', 'el-GR', 'el', 'ro-RO', 'ro', 'hu-HU', 'hu',
+] as const;
+
+/**
+ * Build a browser-style Accept-Language header from an ordered locale list.
+ * Mirrors `net/accept_language.rs` for renderer-side or test fetches.
+ */
+export function buildAcceptLanguageFromLocales(locales: readonly string[]): string {
+  const parts: string[] = [];
+  const seen = new Set<string>();
+
+  const pushTag = (tag: string, q?: number) => {
+    const normalized = tag.trim();
+    if (!normalized) return;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    parts.push(q === undefined ? normalized : `${normalized};q=${q.toFixed(1)}`);
+  };
+
+  const usable = locales.map((locale) => locale.trim()).filter(Boolean).slice(0, 8);
+  usable.forEach((locale, index) => {
+    if (index === 0) {
+      pushTag(locale);
+      const base = baseLanguageTag(locale);
+      if (base && base.length < locale.length) {
+        pushTag(base, 0.9);
+      }
+      return;
+    }
+
+    const q = Math.max(0.1, 0.8 - (index - 1) * 0.1);
+    pushTag(locale, q);
+  });
+
+  let fallbackQ = 0.5;
+  for (const locale of BROAD_FALLBACK_LOCALES) {
+    if (seen.has(locale.toLowerCase())) continue;
+
+    if (parts.length === 0) {
+      pushTag(locale);
+      if (locale === 'en-US') {
+        pushTag('en', 0.9);
+      }
+      continue;
+    }
+
+    pushTag(locale, fallbackQ);
+    fallbackQ = Math.max(0.1, fallbackQ - 0.05);
+  }
+
+  if (parts.length === 0) {
+    return 'en-US,en;q=0.9,*;q=0.1';
+  }
+
+  pushTag('*', 0.1);
+  return parts.join(', ');
+}
+
+/** Resolve Accept-Language from the runtime environment (OS / browser preferences). */
+export function resolveBrowserAcceptLanguage(): string {
+  if (typeof navigator !== 'undefined') {
+    const locales = navigator.languages?.length
+      ? navigator.languages
+      : navigator.language
+        ? [navigator.language]
+        : [];
+    if (locales.length > 0) {
+      return buildAcceptLanguageFromLocales(locales);
+    }
+  }
+
+  return buildAcceptLanguageFromLocales([]);
+}
 
 // Chrome client-hints + fetch-metadata headers. Some origins (Cloudflare,
 // Akamai bot rules, custom UA sniffers) treat requests without these as
@@ -33,7 +119,7 @@ export function isLocalOrigin(url: string): boolean {
 }
 
 // Case-insensitive lookup for an existing header key. Header objects in this
-// codebase mix casings ("User-Agent" from us, "user-agent" from net/Electron).
+// codebase mix casings ("User-Agent" from us, "user-agent" from native fetch).
 function hasHeader(headers: Record<string, string>, name: string): boolean {
   const target = name.toLowerCase();
   for (const key of Object.keys(headers)) {
@@ -46,7 +132,7 @@ function hasHeader(headers: Record<string, string>, name: string): boolean {
 export function buildDefaultHeaders(): Record<string, string> {
   return {
     'User-Agent': CHROME_USER_AGENT,
-    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Language': resolveBrowserAcceptLanguage(),
     'Cache-Control': 'no-cache',
     ...CHROME_CLIENT_HINTS,
   };
@@ -85,7 +171,7 @@ export function sanitizeRequestHeaders(
     headers['User-Agent'] = CHROME_USER_AGENT;
   }
   if (!hasHeader(headers, 'Accept-Language')) {
-    headers['Accept-Language'] = 'en-US,en;q=0.9';
+    headers['Accept-Language'] = resolveBrowserAcceptLanguage();
   }
 
   // Backfill Chrome client-hints / Sec-Fetch-* without overwriting any value

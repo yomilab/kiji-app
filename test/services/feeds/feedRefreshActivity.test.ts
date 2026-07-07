@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FeedRefreshActivity, type FeedRefreshActivitySnapshot } from '@/services/feeds/feedRefreshActivity';
+import { FeedRefreshActivity, isInteractiveStationRefreshInProgress, type FeedRefreshActivitySnapshot } from '@/services/feeds/feedRefreshActivity';
 
 const createDeferred = <T,>() => {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -10,6 +10,11 @@ const createDeferred = <T,>() => {
   });
   return { promise, resolve, reject };
 };
+
+const INTERACTIVE_SCOPE_IDLE = {
+  interactiveRefreshScopeTotal: 0,
+  interactiveRefreshCompleted: 0,
+} as const;
 
 const flushMicrotasks = async () => {
   await Promise.resolve();
@@ -44,6 +49,7 @@ describe('FeedRefreshActivity', () => {
       isAnyFeedRefreshing: true,
       isForegroundFeedRefreshing: true,
       isBackgroundFeedRefreshing: false,
+      ...INTERACTIVE_SCOPE_IDLE,
     });
 
     firstTurn.resolve();
@@ -57,6 +63,7 @@ describe('FeedRefreshActivity', () => {
       isAnyFeedRefreshing: true,
       isForegroundFeedRefreshing: true,
       isBackgroundFeedRefreshing: false,
+      ...INTERACTIVE_SCOPE_IDLE,
     });
 
     secondTurn.resolve();
@@ -70,13 +77,14 @@ describe('FeedRefreshActivity', () => {
       isAnyFeedRefreshing: false,
       isForegroundFeedRefreshing: false,
       isBackgroundFeedRefreshing: false,
+      ...INTERACTIVE_SCOPE_IDLE,
     });
 
     expect(snapshots).toEqual([
-      { activeFeedCount: 1, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 1, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false },
-      { activeFeedCount: 2, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 2, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false },
-      { activeFeedCount: 1, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 1, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false },
-      { activeFeedCount: 0, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 0, isAnyFeedRefreshing: false, isForegroundFeedRefreshing: false, isBackgroundFeedRefreshing: false },
+      { activeFeedCount: 1, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 1, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false, ...INTERACTIVE_SCOPE_IDLE },
+      { activeFeedCount: 2, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 2, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false, ...INTERACTIVE_SCOPE_IDLE },
+      { activeFeedCount: 1, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 1, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false, ...INTERACTIVE_SCOPE_IDLE },
+      { activeFeedCount: 0, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 0, isAnyFeedRefreshing: false, isForegroundFeedRefreshing: false, isBackgroundFeedRefreshing: false, ...INTERACTIVE_SCOPE_IDLE },
     ]);
 
     unsubscribe();
@@ -101,6 +109,7 @@ describe('FeedRefreshActivity', () => {
       isAnyFeedRefreshing: true,
       isForegroundFeedRefreshing: true,
       isBackgroundFeedRefreshing: false,
+      ...INTERACTIVE_SCOPE_IDLE,
     });
 
     releaseQueuedFeed('feed-1');
@@ -113,6 +122,7 @@ describe('FeedRefreshActivity', () => {
       isAnyFeedRefreshing: true,
       isForegroundFeedRefreshing: true,
       isBackgroundFeedRefreshing: false,
+      ...INTERACTIVE_SCOPE_IDLE,
     });
 
     releaseQueuedFeed();
@@ -125,12 +135,13 @@ describe('FeedRefreshActivity', () => {
       isAnyFeedRefreshing: false,
       isForegroundFeedRefreshing: false,
       isBackgroundFeedRefreshing: false,
+      ...INTERACTIVE_SCOPE_IDLE,
     });
 
     expect(snapshots).toEqual([
-      { activeFeedCount: 0, queuedFeedCount: 3, foregroundQueuedFeedCount: 3, backgroundQueuedFeedCount: 0, displayFeedCount: 3, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false },
-      { activeFeedCount: 0, queuedFeedCount: 2, foregroundQueuedFeedCount: 2, backgroundQueuedFeedCount: 0, displayFeedCount: 2, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false },
-      { activeFeedCount: 0, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 0, isAnyFeedRefreshing: false, isForegroundFeedRefreshing: false, isBackgroundFeedRefreshing: false },
+      { activeFeedCount: 0, queuedFeedCount: 3, foregroundQueuedFeedCount: 3, backgroundQueuedFeedCount: 0, displayFeedCount: 3, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false, ...INTERACTIVE_SCOPE_IDLE },
+      { activeFeedCount: 0, queuedFeedCount: 2, foregroundQueuedFeedCount: 2, backgroundQueuedFeedCount: 0, displayFeedCount: 2, isAnyFeedRefreshing: true, isForegroundFeedRefreshing: true, isBackgroundFeedRefreshing: false, ...INTERACTIVE_SCOPE_IDLE },
+      { activeFeedCount: 0, queuedFeedCount: 0, foregroundQueuedFeedCount: 0, backgroundQueuedFeedCount: 0, displayFeedCount: 0, isAnyFeedRefreshing: false, isForegroundFeedRefreshing: false, isBackgroundFeedRefreshing: false, ...INTERACTIVE_SCOPE_IDLE },
     ]);
 
     unsubscribe();
@@ -152,9 +163,9 @@ describe('FeedRefreshActivity', () => {
     expect(activity.getSnapshot()).toMatchObject({
       foregroundQueuedFeedCount: 2,
       backgroundQueuedFeedCount: 1,
-      displayFeedCount: 3,
+      displayFeedCount: 2,
       isForegroundFeedRefreshing: true,
-      isBackgroundFeedRefreshing: true,
+      isBackgroundFeedRefreshing: false,
     });
 
     releaseForeground();
@@ -174,5 +185,75 @@ describe('FeedRefreshActivity', () => {
       isForegroundFeedRefreshing: false,
       isBackgroundFeedRefreshing: false,
     });
+  });
+
+  it('releases all foreground queued batches when selection is superseded', () => {
+    const activity = new FeedRefreshActivity();
+
+    activity.beginQueuedFeeds(['feed-a', 'feed-b']);
+    activity.beginQueuedFeeds(['feed-c', 'feed-d', 'feed-e']);
+
+    expect(activity.getSnapshot()).toMatchObject({
+      foregroundQueuedFeedCount: 5,
+      displayFeedCount: 5,
+    });
+
+    activity.releaseAllForegroundQueued();
+
+    expect(activity.getSnapshot()).toMatchObject({
+      foregroundQueuedFeedCount: 0,
+      displayFeedCount: 0,
+      isForegroundFeedRefreshing: false,
+    });
+  });
+
+  it('uses foreground queue size for displayFeedCount when both scopes are active', () => {
+    const activity = new FeedRefreshActivity();
+
+    activity.beginQueuedFeeds(['scheduler-1', 'scheduler-2'], 'background');
+    activity.beginQueuedFeeds(['station-1'], 'foreground');
+
+    expect(activity.getSnapshot()).toMatchObject({
+      queuedFeedCount: 3,
+      foregroundQueuedFeedCount: 1,
+      backgroundQueuedFeedCount: 2,
+      displayFeedCount: 1,
+      isForegroundFeedRefreshing: true,
+      isBackgroundFeedRefreshing: false,
+    });
+  });
+
+  it('suppresses background refresh indicator while foreground station refresh is active', () => {
+    const activity = new FeedRefreshActivity();
+
+    activity.beginQueuedFeeds(['station-1'], 'foreground');
+    activity.beginQueuedFeeds(['scheduler-1'], 'background');
+    expect(activity.getSnapshot()).toMatchObject({
+      backgroundQueuedFeedCount: 1,
+      isForegroundFeedRefreshing: true,
+      isBackgroundFeedRefreshing: false,
+    });
+
+    activity.releaseAllForegroundQueued();
+    expect(activity.getSnapshot()).toMatchObject({
+      backgroundQueuedFeedCount: 1,
+      isForegroundFeedRefreshing: false,
+      isBackgroundFeedRefreshing: true,
+    });
+  });
+
+  it('keeps isAnyFeedRefreshing false for scope-only station switch until queue starts', () => {
+    const activity = new FeedRefreshActivity();
+
+    activity.beginQueuedFeeds([], 'foreground', { scopeTotal: 12 });
+    activity.markInteractiveRefreshDeferredTail(true, 12);
+
+    expect(activity.getSnapshot()).toMatchObject({
+      displayFeedCount: 0,
+      isAnyFeedRefreshing: false,
+      interactiveRefreshScopeTotal: 12,
+      interactiveRefreshCompleted: 0,
+    });
+    expect(isInteractiveStationRefreshInProgress(activity.getSnapshot())).toBe(true);
   });
 });

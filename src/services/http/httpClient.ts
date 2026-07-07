@@ -3,7 +3,7 @@
  * 
  * Abstract interface for making HTTP requests.
  * This allows swapping the underlying implementation
- * (Electron IPC, fetch API, axios, etc.) without changing
+ * (native IPC, fetch API, axios, etc.) without changing
  * the code that uses it.
  */
 export interface FetchFeedResult {

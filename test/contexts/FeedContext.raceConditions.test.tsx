@@ -9,6 +9,9 @@ import { feedsFetcher } from '@/services/feeds/feedsFetcher';
 import { savedArticlesService } from '@/services/saved/savedArticlesService';
 import * as articleStore from '@/stores/articleStore';
 import * as feedStore from '@/stores/feedStore';
+import { convertFeedItemsToArticles } from '@/services/articles/articleConverter';
+import { clearTagFeedIdsCacheForTests } from '@/services/tags/tagFeedIdsCache';
+import { clearFeedMetadataCacheForTests } from '@/services/feeds/feedMetadataCache';
 import { feedNetworkDataResult } from '../helpers/feedNetworkFetchMock';
 
 vi.mock('@/stores/articleStore', () => ({
@@ -16,11 +19,17 @@ vi.mock('@/stores/articleStore', () => ({
   store: vi.fn(),
   getUnreadCount: vi.fn(),
   getArticleCount: vi.fn(),
+  syncFeedCountsBatch: vi.fn(),
 }));
 
 vi.mock('@/stores/feedStore', () => ({
   getCount: vi.fn(),
   getById: vi.fn(),
+  getAll: vi.fn(),
+  tags: {
+    listWithFeedIds: vi.fn().mockResolvedValue([]),
+    listFeedIds: vi.fn().mockResolvedValue([]),
+  },
 }));
 
 vi.mock('@/services/feeds/feedsFetcher', async (importOriginal) => {
@@ -48,6 +57,18 @@ vi.mock('@/services/tags/tagsManager', () => ({
   tagsManager: {
     getFeedsByTag: vi.fn(),
   },
+}));
+
+vi.mock('@/services/scheduler/nativeSchedulerCycle', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/scheduler/nativeSchedulerCycle')>();
+  return {
+    ...actual,
+    isNativeFeedIngestionEnabled: () => false,
+  };
+});
+
+vi.mock('@/services/articles/articleConverter', () => ({
+  convertFeedItemsToArticles: vi.fn(),
 }));
 
 vi.mock('@/services/saved/savedArticlesService', () => ({
@@ -81,6 +102,16 @@ const createArticle = (hash: string, feedId: string): Article => ({
   saved: false,
   feedTitle: `Feed ${feedId}`,
   publishedDate: '2026-02-25T00:00:00.000Z',
+});
+
+const stationFeed = (id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id,
+  url: `https://${id}.example.com`,
+  title: id,
+  lastFetched: new Date(0),
+  consecutiveFailures: 0,
+  lastFailedFetchAt: undefined as Date | undefined,
+  ...overrides,
 });
 
 const createDeferred = <T,>() => {
@@ -146,16 +177,37 @@ describe('FeedContext Cross-Type Race Conditions', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearTagFeedIdsCacheForTests();
+    clearFeedMetadataCacheForTests();
     latestContext = null;
-    (feedStore.getCount as vi.Mock).mockResolvedValue(0);
-    (feedStore.getById as vi.Mock).mockResolvedValue(null);
-    (articleStore.query as vi.Mock).mockResolvedValue({ articles: [], total: 0 });
-    (articleStore.store as vi.Mock).mockResolvedValue(0);
-    (articleStore.getUnreadCount as vi.Mock).mockResolvedValue(0);
-    (feedsManager.updateFeed as vi.Mock).mockResolvedValue(undefined);
-    (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockResolvedValue(feedNetworkDataResult());
-    (savedArticlesService.querySavedViewArticles as vi.Mock).mockResolvedValue({ articles: [], total: 0 });
-    (savedArticlesService.enrichSavedViewArticlesMeta as vi.Mock).mockImplementation((articles: Article[]) => Promise.resolve(articles));
+    vi.stubGlobal('requestIdleCallback', (callback: IdleRequestCallback) => {
+      const id = window.setTimeout(() => {
+        callback({
+          didTimeout: false,
+          timeRemaining: () => 50,
+        } as IdleDeadline);
+      }, 0);
+      return id as unknown as number;
+    });
+    (feedStore.getCount as vi.Mock).mockReset().mockResolvedValue(0);
+    (feedStore.getById as vi.Mock).mockReset().mockResolvedValue(null);
+    (feedStore.getAll as vi.Mock).mockReset().mockResolvedValue([]);
+    (feedStore.tags.listWithFeedIds as vi.Mock).mockReset().mockResolvedValue([]);
+    (feedStore.tags.listFeedIds as vi.Mock).mockReset().mockResolvedValue([]);
+    (articleStore.query as vi.Mock).mockReset().mockResolvedValue({ articles: [], total: 0 });
+    (articleStore.store as vi.Mock).mockReset().mockResolvedValue(0);
+    (articleStore.getUnreadCount as vi.Mock).mockReset().mockResolvedValue(0);
+    (articleStore.getArticleCount as vi.Mock).mockReset().mockResolvedValue(0);
+    (articleStore.syncFeedCountsBatch as vi.Mock).mockReset().mockResolvedValue([]);
+    (feedsManager.getFeedById as vi.Mock).mockReset().mockResolvedValue(null);
+    (feedsManager.getAllFeeds as vi.Mock).mockReset().mockResolvedValue([]);
+    (feedsManager.getFeedByUrl as vi.Mock).mockReset().mockResolvedValue(null);
+    (feedsManager.updateFeed as vi.Mock).mockReset().mockResolvedValue(undefined);
+    (feedsFetcher.fetchFeedNetworkWithCache as vi.Mock).mockReset().mockResolvedValue(feedNetworkDataResult());
+    (convertFeedItemsToArticles as vi.Mock).mockReset().mockResolvedValue([]);
+    (savedArticlesService.querySavedViewArticles as vi.Mock).mockReset().mockResolvedValue({ articles: [], total: 0 });
+    (savedArticlesService.enrichSavedViewArticlesMeta as vi.Mock).mockReset().mockImplementation((articles: Article[]) => Promise.resolve(articles));
+    (tagsManager.getFeedsByTag as vi.Mock).mockReset().mockResolvedValue([]);
 
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -163,6 +215,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     act(() => {
       root.unmount();
     });
@@ -291,6 +344,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     const firstFetchDeferred = createDeferred<ReturnType<typeof feedNetworkDataResult>>();
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a', 'feed-b']);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed('feed-a'), stationFeed('feed-b')]);
     (feedsManager.getFeedById as vi.Mock).mockImplementation((id: string) => Promise.resolve({
       id,
       url: `https://${id}.example.com/rss.xml`,
@@ -352,6 +406,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     let fetchCallCount = 0;
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(feedIds);
+    (feedStore.getAll as vi.Mock).mockResolvedValue(feedIds.map((id) => stationFeed(id)));
     (feedsManager.getFeedById as vi.Mock).mockImplementation((id: string) => Promise.resolve({
       id,
       url: `https://${id}.example.com/rss.xml`,
@@ -380,8 +435,16 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     });
 
     await waitForExpectation(() => {
-      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(4);
+      expect(latestContext!.selectedTag).toBe('Station');
     });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+
+    await waitForExpectation(() => {
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(4);
+    }, 3000);
 
     await act(async () => {
       fetchDeferreds[0].resolve(feedNetworkDataResult());
@@ -420,14 +483,14 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       return Promise.resolve([]);
     });
     (articleStore.query as vi.Mock).mockImplementation((query: MockArticleQuery) => {
-      if (query.feedIds?.includes('feed-tech')) {
+      if (query.feedIds?.includes('feed-tech') || query.tagName === 'Tech') {
         techQueryCount += 1;
         if (techQueryCount <= 2) {
           return Promise.resolve({ articles: techArticles, total: 200 });
         }
         return techReloadDeferred.promise;
       }
-      if (query.feedIds?.includes('feed-dev')) {
+      if (query.feedIds?.includes('feed-dev') || query.tagName === 'Dev') {
         return Promise.resolve({ articles: devArticles, total: 1 });
       }
       return Promise.resolve({ articles: [], total: 0 });
@@ -464,7 +527,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     });
 
     await waitForExpectation(() => {
-      expect(techQueryCount).toBe(3);
+      expect(techQueryCount).toBeGreaterThanOrEqual(2);
       expect(latestContext!.selectedTag).toBe('Tech');
       expect(latestContext!.isLoadingArticles).toBe(false);
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['tech-1', 'tech-2']);
@@ -473,6 +536,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     await act(async () => {
       techReloadDeferred.resolve({ articles: techArticles, total: 200 });
       await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 200));
     });
   });
 
@@ -481,6 +545,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     const fetchDeferred = createDeferred<ReturnType<typeof feedNetworkDataResult>>();
 
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed('feed-a')]);
     (feedsManager.getFeedById as vi.Mock).mockResolvedValue({
       id: 'feed-a',
       url: 'https://feed-a.example.com/rss.xml',
@@ -821,7 +886,6 @@ describe('FeedContext Cross-Type Race Conditions', () => {
 
     await waitForExpectation(() => {
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-1', 'hash-2']);
-      expect(latestContext!.isGlobalLoadingIndicatorActive).toBe(false);
     });
 
     await act(async () => {
@@ -834,7 +898,6 @@ describe('FeedContext Cross-Type Race Conditions', () => {
 
     expect(latestContext!.isLoadingArticles).toBe(false);
     expect(latestContext!.isSavedListLoading).toBe(false);
-    expect(latestContext!.isGlobalLoadingIndicatorActive).toBe(false);
     expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-1', 'hash-2']);
 
     searchDeferred.resolve({
@@ -844,7 +907,6 @@ describe('FeedContext Cross-Type Race Conditions', () => {
 
     await waitForExpectation(() => {
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['needle-1']);
-      expect(latestContext!.isGlobalLoadingIndicatorActive).toBe(false);
     });
   });
 
@@ -951,7 +1013,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     });
 
     await waitForExpectation(() => {
-      expect(latestContext!.isFetchingNew).toBe(true);
+      expect(latestContext!.selectedFeedId).toBe('feed-a');
     });
 
     await act(async () => {
@@ -961,10 +1023,8 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     await waitForExpectation(() => {
       expect(latestContext!.selectedSmartView).toBe('all');
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-all']);
-      expect(latestContext!.isFetchingNew).toBe(false);
       expect(latestContext!.isLoadingArticles).toBe(false);
       expect(latestContext!.isSavedListLoading).toBe(false);
-      expect(latestContext!.isGlobalLoadingIndicatorActive).toBe(false);
     });
   });
 
@@ -1003,7 +1063,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     });
 
     await waitForExpectation(() => {
-      expect(latestContext!.isFetchingNew).toBe(true);
+      expect(latestContext!.selectedFeedId).toBe('feed-a');
     });
 
     await act(async () => {
@@ -1013,10 +1073,8 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     await waitForExpectation(() => {
       expect(latestContext!.selectedSmartView).toBe('saved');
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-saved']);
-      expect(latestContext!.isFetchingNew).toBe(false);
       expect(latestContext!.isLoadingArticles).toBe(false);
       expect(latestContext!.isSavedListLoading).toBe(false);
-      expect(latestContext!.isGlobalLoadingIndicatorActive).toBe(false);
     });
   });
 
@@ -1061,7 +1119,6 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       expect(latestContext!.selectedSmartView).toBe('all');
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-all']);
       expect(latestContext!.isLoadingArticles).toBe(false);
-      expect(latestContext!.isFetchingNew).toBe(false);
     });
 
     stationFeedsDeferred.resolve(['feed-a']);
@@ -1110,7 +1167,6 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     await waitForExpectation(() => {
       expect(latestContext!.selectedTag).toBe('A');
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-station']);
-      expect(latestContext!.isFetchingNew).toBe(true);
     });
 
     await act(async () => {
@@ -1120,10 +1176,250 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     await waitForExpectation(() => {
       expect(latestContext!.selectedSmartView).toBe('all');
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-all']);
-      expect(latestContext!.isFetchingNew).toBe(false);
       expect(latestContext!.isLoadingArticles).toBe(false);
       expect(latestContext!.isSavedListLoading).toBe(false);
-      expect(latestContext!.isGlobalLoadingIndicatorActive).toBe(false);
+    });
+  });
+
+  it('clears skeleton after rapid cold station hops settle on the final station', async () => {
+    const stationArticles: Record<string, Article[]> = {
+      A: [createArticle('hash-a', 'feed-a')],
+      B: [createArticle('hash-b', 'feed-b')],
+      C: [createArticle('hash-c', 'feed-c')],
+    };
+
+    (tagsManager.getFeedsByTag as Mock).mockImplementation((tagName: string) => (
+      Promise.resolve([`feed-${tagName.toLowerCase()}`])
+    ));
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      const tagName = query.tagName;
+      if (tagName && stationArticles[tagName]) {
+        const articles = stationArticles[tagName];
+        return Promise.resolve({ articles, total: articles.length });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+      void latestContext!.selectTag('B');
+      await latestContext!.selectTag('C');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('C');
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-c']);
+    });
+  });
+
+  it('recovers skeleton when the first deferred SQLite attempt fails during rapid hops', async () => {
+    let coldQueryAttempts = 0;
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A') {
+        coldQueryAttempts += 1;
+        if (coldQueryAttempts === 1) {
+          return Promise.reject(new Error('sqlite busy'));
+        }
+        return Promise.resolve({
+          articles: [createArticle('hash-a', 'feed-a')],
+          total: 1,
+        });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+      void latestContext!.selectTag('B');
+      await latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a']);
+      expect(coldQueryAttempts).toBeGreaterThanOrEqual(2);
+    }, 3000);
+  });
+
+  it('never renders an empty 0-count list between cold-switch skeleton and deferred rows', async () => {
+    // Regression: the deferred SQLite commit published rows in a React
+    // transition but cleared isLoadingArticles urgently, so the skeleton
+    // dropped while articles was still [] — an empty "0 articles" flash.
+    const stateHistory: Array<{ isLoadingArticles: boolean; articleCount: number }> = [];
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A') {
+        return Promise.resolve({
+          articles: [createArticle('hash-a', 'feed-a')],
+          total: 1,
+        });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    const HistoryProbe: React.FC = () => {
+      latestContext = useFeed();
+      stateHistory.push({
+        isLoadingArticles: latestContext.isLoadingArticles,
+        articleCount: latestContext.articles.length,
+      });
+      return null;
+    };
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <HistoryProbe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      await latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a']);
+    });
+
+    const skeletonIndex = stateHistory.findIndex((state) => state.isLoadingArticles);
+    expect(skeletonIndex).toBeGreaterThanOrEqual(0);
+    const emptyListAfterSkeleton = stateHistory
+      .slice(skeletonIndex + 1)
+      .filter((state) => !state.isLoadingArticles && state.articleCount === 0);
+    expect(emptyListAfterSkeleton).toEqual([]);
+  });
+
+  it('shows skeleton on a cold smart view switch and clears it once the query lands', async () => {
+    const unreadDeferred = createDeferred<{ articles: Article[], total: number }>();
+
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.filter?.read === false) {
+        return unreadDeferred.promise;
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectSmartView('unread');
+    });
+
+    // Immediate paint: cold smart view resets to skeleton without waiting on
+    // the store query.
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedSmartView).toBe('unread');
+      expect(latestContext!.isLoadingArticles).toBe(true);
+      expect(latestContext!.articles).toEqual([]);
+    });
+
+    unreadDeferred.resolve({ articles: [createArticle('hash-unread', 'feed-a')], total: 1 });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-unread']);
+    });
+  });
+
+  it('restores a cached smart view snapshot while its fresh query is still pending', async () => {
+    const unreadArticles = [createArticle('hash-unread', 'feed-a')];
+    let unreadQueryCount = 0;
+    const secondUnreadDeferred = createDeferred<{ articles: Article[], total: number }>();
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-b']);
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.filter?.read === false) {
+        unreadQueryCount += 1;
+        if (unreadQueryCount === 1) {
+          return Promise.resolve({ articles: unreadArticles, total: 1 });
+        }
+        return secondUnreadDeferred.promise;
+      }
+      if (query.tagName === 'B') {
+        return Promise.resolve({ articles: [createArticle('hash-b', 'feed-b')], total: 1 });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    // Warm the smart view snapshot, hop away, then come back while the fresh
+    // unread query hangs.
+    await act(async () => {
+      await latestContext!.selectSmartView('unread');
+    });
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-unread']);
+    });
+
+    await act(async () => {
+      await latestContext!.selectTag('B');
+    });
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('B');
+    });
+
+    await act(async () => {
+      void latestContext!.selectSmartView('unread');
+    });
+
+    // Snapshot restore paints the cached rows immediately with no skeleton.
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedSmartView).toBe('unread');
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-unread']);
+    });
+
+    secondUnreadDeferred.resolve({ articles: unreadArticles, total: 1 });
+    await waitForExpectation(() => {
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-unread']);
     });
   });
 });

@@ -2,9 +2,9 @@ import React from 'react';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AddIcon from '@mui/icons-material/Add';
 import { useFeedCollection, useFeedNavigation } from '@/contexts/FeedContext';
-import { useFetchIndicatorState } from '@/components/MainArea/hooks/useFetchIndicatorState';
 import { TOOLTIPS } from '@/config/tooltips';
 import { useFeedRefreshActivity } from '@/hooks/useFeedRefreshActivity';
+import { isInteractiveStationRefreshInProgress } from '@/services/feeds/feedRefreshActivity';
 import { SHORTCUT_LABELS, withShortcutHint } from '@/services/shortcuts/shortcutService';
 import './SidebarWidgets.css';
 
@@ -19,11 +19,10 @@ export const SidebarWidgets: React.FC<SidebarWidgetsProps> = ({ onAddFeed }) => 
     selectedTag,
     selectedSmartView,
   } = useFeedNavigation();
-  const { isAnyFeedRefreshing } = useFeedRefreshActivity();
-  const { isFetchIndicatorVisible } = useFetchIndicatorState({
-    enabled: true,
-    isActive: isAnyFeedRefreshing,
-  });
+  const refreshActivity = useFeedRefreshActivity();
+  const { isAnyFeedRefreshing } = refreshActivity;
+  const stationRefreshInProgress = isInteractiveStationRefreshInProgress(refreshActivity);
+  const showRefreshSpin = isAnyFeedRefreshing || stationRefreshInProgress;
 
   const handleRefresh = async () => {
     if (selectedFeedId || selectedTag || selectedSmartView) {
@@ -45,7 +44,7 @@ export const SidebarWidgets: React.FC<SidebarWidgetsProps> = ({ onAddFeed }) => 
         disabled={!hasRefreshableSelection}
         data-widget="refresh"
       >
-        <span className={`icon ${isAnyFeedRefreshing || isFetchIndicatorVisible ? 'is-spinning' : ''}`}>
+        <span className={`icon ${showRefreshSpin ? 'is-spinning' : ''}`}>
           <RefreshIcon sx={{ fontSize: 'var(--widget-button-icon-size)' }} />
         </span>
       </button>

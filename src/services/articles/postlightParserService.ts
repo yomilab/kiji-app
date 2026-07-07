@@ -36,11 +36,11 @@ class PostlightParserService {
     try {
       console.log('[Postlight] Parsing URL:', url);
 
-      // Check if we're in Electron environment
-      if (!window.electronAPI?.parseArticle) {
+      // Desktop article parsing requires the native API shim.
+      if (!window.kijiAPI?.parseArticle) {
         return {
           success: false,
-          error: 'Article parsing not available (not in Electron environment)',
+          error: 'Article parsing not available outside the desktop app',
         };
       }
 
@@ -55,7 +55,7 @@ class PostlightParserService {
       }
 
       // Call IPC handler in main process (where the extractor runs)
-      const result = await window.electronAPI.parseArticle(url, parser);
+      const result = await window.kijiAPI.parseArticle(url, parser);
 
       if (!result.success || !result.content) {
         return {
