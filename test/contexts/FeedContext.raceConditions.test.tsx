@@ -1265,6 +1265,60 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     }, 3000);
   });
 
+  it('never renders an empty 0-count list between cold-switch skeleton and deferred rows', async () => {
+    // Regression: the deferred SQLite commit published rows in a React
+    // transition but cleared isLoadingArticles urgently, so the skeleton
+    // dropped while articles was still [] — an empty "0 articles" flash.
+    const stateHistory: Array<{ isLoadingArticles: boolean; articleCount: number }> = [];
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A') {
+        return Promise.resolve({
+          articles: [createArticle('hash-a', 'feed-a')],
+          total: 1,
+        });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    const HistoryProbe: React.FC = () => {
+      latestContext = useFeed();
+      stateHistory.push({
+        isLoadingArticles: latestContext.isLoadingArticles,
+        articleCount: latestContext.articles.length,
+      });
+      return null;
+    };
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <HistoryProbe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      await latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a']);
+    });
+
+    const skeletonIndex = stateHistory.findIndex((state) => state.isLoadingArticles);
+    expect(skeletonIndex).toBeGreaterThanOrEqual(0);
+    const emptyListAfterSkeleton = stateHistory
+      .slice(skeletonIndex + 1)
+      .filter((state) => !state.isLoadingArticles && state.articleCount === 0);
+    expect(emptyListAfterSkeleton).toEqual([]);
+  });
+
   it('shows skeleton on a cold smart view switch and clears it once the query lands', async () => {
     const unreadDeferred = createDeferred<{ articles: Article[], total: number }>();
 

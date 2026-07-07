@@ -41,7 +41,7 @@
         "transparent": true,
         "dragDropEnabled": false,
         "windowEffects": {
-          "effects": ["underWindowBackground"],
+          "effects": ["sidebar"],
           "state": "active",
           "radius": 14
         }

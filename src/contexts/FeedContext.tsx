@@ -882,15 +882,29 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return switchLifecycle.isActive(token);
   }, [switchLifecycle]);
 
-  const dispatchArticlesTransition = useCallback((list: Article[], total: number) => {
+  const dispatchArticlesTransition = useCallback((
+    list: Article[],
+    total: number,
+    options?: { clearSwitchLoading?: boolean },
+  ) => {
     // Treat full-list swaps as non-urgent so rapid sidebar navigation can keep
     // updating selection affordances while the heavier article tree catches up.
+    // When the publish ends a switch skeleton, the loading clear must land in
+    // the same transition commit: an urgent SET_LOADING would render before the
+    // deferred SET_ARTICLES and flash an empty "0 articles" list.
     startTransition(() => {
       collectionDispatch({ type: 'SET_ARTICLES', payload: { list, total } });
+      if (options?.clearSwitchLoading) {
+        collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+      }
     });
   }, [startTransition]);
 
-  const dispatchArticlesTransitionIfChanged = useCallback((list: Article[], total: number): boolean => {
+  const dispatchArticlesTransitionIfChanged = useCallback((
+    list: Article[],
+    total: number,
+    options?: { clearSwitchLoading?: boolean },
+  ): boolean => {
     const isSearchActive = articleListSearchQueryRef.current !== null;
 
     if (isSearchActive) {
@@ -899,7 +913,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       currentArticlesRef.current = list;
-      dispatchArticlesTransition(list, total);
+      dispatchArticlesTransition(list, total, options);
       return true;
     }
 
@@ -913,9 +927,17 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     currentArticlesRef.current = list;
     nonSearchArticlesRef.current = list;
     nonSearchArticlesTotalCountRef.current = total;
-    dispatchArticlesTransition(list, total);
+    dispatchArticlesTransition(list, total, options);
     return true;
   }, [dispatchArticlesTransition]);
+
+  const clearSwitchLoadingInTransition = useCallback(() => {
+    // Sequence the skeleton clear behind any pending article-list transition so
+    // the empty pre-switch list is never rendered with loading already false.
+    startTransition(() => {
+      collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+    });
+  }, [startTransition]);
 
   const rememberSourceArticleSnapshot = useCallback((
     sourceKey: string,
@@ -1815,8 +1837,15 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           : Math.max(stored.length, nonSearchArticlesTotalCountRef.current);
 
         const dispatchStartedAt = performance.now();
-        dispatchArticlesTransitionIfChanged(stored, resolvedTotal);
-        collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+        // Rows and skeleton clear must commit in one transition — an urgent
+        // loading clear renders before the transition-lane SET_ARTICLES and
+        // flashes an empty "0 articles" list on cold switches under load.
+        const dispatchedRows = dispatchArticlesTransitionIfChanged(stored, resolvedTotal, {
+          clearSwitchLoading: true,
+        });
+        if (!dispatchedRows) {
+          clearSwitchLoadingInTransition();
+        }
         sidebarSwitchTrace.markDuration(
           token,
           'dispatch-articles',
@@ -1835,6 +1864,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       { limit: limit ?? SMART_VIEW_ARTICLE_LIMIT, taggedFeedCount, deferred: true },
     );
   }, [
+    clearSwitchLoadingInTransition,
     dispatchArticlesTransitionIfChanged,
     isSelectionActive,
   ]);
@@ -1858,24 +1888,26 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
 
         if (currentArticlesRef.current.length > 0) {
-          collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+          // Refs update eagerly on dispatch; the rows may still be pending in
+          // the transition lane, so clear loading in the same lane.
+          clearSwitchLoadingInTransition();
           return;
         }
 
         try {
           const dispatched = await commitDeferredSwitchSqlitePage(args);
           if (!dispatched && isSelectionActive(token)) {
-            collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+            clearSwitchLoadingInTransition();
           }
         } catch (error) {
           logger.warn('FeedContext', 'Deferred switch SQLite recovery failed', { error, sourceKey, token });
           if (isSelectionActive(token)) {
-            collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+            clearSwitchLoadingInTransition();
           }
         }
       })();
     });
-  }, [commitDeferredSwitchSqlitePage, isSelectionActive, switchLifecycle]);
+  }, [clearSwitchLoadingInTransition, commitDeferredSwitchSqlitePage, isSelectionActive, switchLifecycle]);
 
   const scheduleDeferredSwitchSqlitePage = useCallback((args: {
     token: number;
@@ -2084,7 +2116,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       clearError();
     } finally {
       if (isSelectionActive(token)) {
-        collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+        clearSwitchLoadingInTransition();
       }
       completeSelectionSwitchNetworkPriority(token);
       sidebarSwitchTrace.markDuration(
@@ -2097,6 +2129,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [
     clearError,
+    clearSwitchLoadingInTransition,
     completeSelectionSwitchNetworkPriority,
     dispatchArticlesTransitionIfChanged,
     isSelectionActive,
@@ -2172,10 +2205,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       opmlWorkflowService.scheduleMissingFaviconsAfterStationSelection(feedIds);
     } finally {
       if (isSelectionActive(token)) {
-        collectionDispatch({
-          type: 'SET_LOADING',
-          payload: { isLoadingArticles: false },
-        });
+        clearSwitchLoadingInTransition();
       }
       feedRefreshActivity.clearInteractiveRefreshScope(interactiveRefreshScopeTokenRef.current);
       completeSelectionSwitchNetworkPriority(token);
@@ -2185,6 +2215,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
     }
   }, [
+    clearSwitchLoadingInTransition,
     completeSelectionSwitchNetworkPriority,
     dispatchArticlesTransitionIfChanged,
     isArticleViewTransitioning,
