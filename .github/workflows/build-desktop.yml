@@ -57,7 +57,9 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            xdg-utils \
+            libfuse2
 
       - name: Install dependencies
         run: npm ci
@@ -159,6 +161,8 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
+            xdg-utils \
+            libfuse2 \
             xvfb
 
       - name: Log toolchain versions
@@ -302,7 +306,9 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            xdg-utils \
+            libfuse2
 
       - name: Install dependencies
         run: npm ci
