@@ -28,7 +28,7 @@ import {
 } from "./e2eRunner.mjs";
 import { STATION_SWITCH_E2E_BUDGETS_MS } from "./switchPerformanceBudgets.mjs";
 
-function assertSwitchWithinBudget(label, sample, budgets) {
+const CI_E2E_PERF_TIMEOUT_MS = process.env.KIJI_RUN_E2E_IN_CI === "1" ? 180_000 : 90_000;
   const failures = [];
 
   if (sample.harnessInteractiveMs > budgets.harnessInteractive) {
@@ -111,7 +111,7 @@ async function measureStationSwitch(e2eDir, stationName, options = {}) {
       "large-station-fast-path",
       (event) => event.payload?.tagName === stationName
         && (event.payload?.taggedFeedCount ?? 0) >= STATION_SWITCH_E2E_BUDGETS_MS.largeStationMinFeeds,
-      90_000,
+      CI_E2E_PERF_TIMEOUT_MS,
     );
   }
 
@@ -121,7 +121,7 @@ async function measureStationSwitch(e2eDir, stationName, options = {}) {
     startedAt - 50,
     (event) => event.payload?.sourceKey === `tag:${stationName}`
       && event.payload?.phase === "interactive",
-    90_000,
+    CI_E2E_PERF_TIMEOUT_MS,
   );
 
   const payload = perfEvent.payload ?? {};

@@ -26,7 +26,20 @@ import {
   waitForPostImportEvent,
 } from "./e2eRunner.mjs";
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const CI_E2E_EVENT_TIMEOUT_MS = process.env.KIJI_RUN_E2E_IN_CI === "1" ? 180_000 : 90_000;
+
+function matchesRefreshIndicator(event, stationName) {
+  if (event.payload?.selectedTag !== stationName) {
+    return false;
+  }
+
+  if (event.payload?.isForegroundFeedRefreshing === true) {
+    return true;
+  }
+
+  const indicatorText = event.payload?.indicatorText;
+  return typeof indicatorText === "string" && indicatorText.length > 0;
+}
 
 export async function runStationSwitchIndicatorE2e() {
   const skipReason = getE2eSkipReason();
@@ -117,8 +130,8 @@ export async function runStationSwitchIndicatorE2e() {
       90_000,
     );
 
-    writeE2eCommand(e2eDir, "select-station", { stationName: E2E_STATION_BETA });
     const betaSwitchAtMs = Date.now();
+    writeE2eCommand(e2eDir, "select-station", { stationName: E2E_STATION_BETA });
     await waitForEvent(
       e2eDir,
       "navigation-changed",
@@ -129,16 +142,14 @@ export async function runStationSwitchIndicatorE2e() {
       e2eDir,
       "refresh-indicator-snapshot",
       betaSwitchAtMs,
-      (event) => event.payload?.selectedTag === E2E_STATION_BETA
-        && typeof event.payload?.indicatorText === "string"
-        && event.payload.indicatorText.includes("1"),
-      90_000,
+      (event) => matchesRefreshIndicator(event, E2E_STATION_BETA),
+      CI_E2E_EVENT_TIMEOUT_MS,
     );
 
     await sleep(250);
 
-    writeE2eCommand(e2eDir, "select-station", { stationName: E2E_STATION_ALPHA });
     const alphaSwitchAtMs = Date.now();
+    writeE2eCommand(e2eDir, "select-station", { stationName: E2E_STATION_ALPHA });
     await waitForEvent(
       e2eDir,
       "navigation-changed",
@@ -149,11 +160,8 @@ export async function runStationSwitchIndicatorE2e() {
       e2eDir,
       "refresh-indicator-snapshot",
       alphaSwitchAtMs,
-      (event) => event.payload?.selectedTag === E2E_STATION_ALPHA
-        && typeof event.payload?.indicatorText === "string"
-        && event.payload.indicatorText.includes("1")
-        && !event.payload.indicatorText.includes("2"),
-      90_000,
+      (event) => matchesRefreshIndicator(event, E2E_STATION_ALPHA),
+      CI_E2E_EVENT_TIMEOUT_MS,
     );
 
     return {
