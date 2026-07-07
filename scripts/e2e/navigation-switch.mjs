@@ -120,7 +120,7 @@ export async function runNavigationSwitchE2e() {
       e2eDir,
       "article-list-snapshot",
       (event) => event.payload?.selectedFeedId === betaFeed.id && (event.payload?.articleCount ?? 0) >= 1,
-      90_000,
+      CI_E2E_LIST_TIMEOUT_MS,
     );
 
     writeE2eCommand(e2eDir, "select-station", { stationName: E2E_STATION_ALPHA });
