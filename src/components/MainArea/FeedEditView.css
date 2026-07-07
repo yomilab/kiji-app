@@ -315,7 +315,7 @@
   width: 2px;
   height: 80%;
   border-radius: 999px;
-  background: var(--resize-handle-guide-bg);
+  background: var(--theme-primary);
 }
 
 .feed-edit-th-resizable:hover .feed-edit-col-resize-handle,
@@ -326,11 +326,11 @@
 
 .feed-edit-col-resize-handle:hover,
 .feed-edit-col-resize-handle:focus-visible {
-  background-color: var(--resize-handle-hover-bg);
+  background-color: color-mix(in srgb, var(--theme-primary) 10%, transparent);
 }
 
 .feed-edit-col-resize-handle.is-active {
-  background-color: var(--resize-handle-drag-bg);
+  background-color: color-mix(in srgb, var(--theme-primary) 30%, transparent);
   transition: none;
 }
 

@@ -32,11 +32,9 @@ KiJi is **local-first by design.**
 
 ## 📋 Status
 
-All platform versions are currently under active development. A public release is coming soon — follow progress on [kiji.yomilab.app](https://kiji.yomilab.app).
+KiJi is in **active pre-release development** (`0.1.0`). The Tauri desktop app targets **macOS, Windows, and Linux**; cross-platform builds and tests run on every push to `dev` and `main`.
 
-## 📄 License
-
-KiJi is free software licensed under [GPL-3.0-or-later](LICENSE). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for major bundled libraries.
+Installers and release notes are published through **[kiji.yomilab.app](https://kiji.yomilab.app)** as builds stabilize ahead of a **1.0** release. Expect rough edges, fast iteration, and breaking changes until then.
 
 <p align="center">
   <sub>📰 KiJi · <a href="https://kiji.yomilab.app">kiji.yomilab.app</a></sub>
