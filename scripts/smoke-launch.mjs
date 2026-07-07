@@ -54,11 +54,16 @@ function isolatedHomeDir() {
 
 function launchEnv(homeDir) {
   if (process.platform === "win32") {
+    const appDataRoaming = path.join(homeDir, "AppData", "Roaming");
+    const appDataLocal = path.join(homeDir, "AppData", "Local");
+    fs.mkdirSync(appDataRoaming, { recursive: true });
+    fs.mkdirSync(appDataLocal, { recursive: true });
+
     return {
       ...process.env,
       USERPROFILE: homeDir,
-      APPDATA: path.join(homeDir, "AppData", "Roaming"),
-      LOCALAPPDATA: path.join(homeDir, "AppData", "Local"),
+      APPDATA: appDataRoaming,
+      LOCALAPPDATA: appDataLocal,
     };
   }
 
@@ -82,10 +87,15 @@ export async function runLaunchSmoke() {
   }
 
   const homeDir = isolatedHomeDir();
+  let stderr = "";
   const child = spawn(binaryPath, [], {
     env: launchEnv(homeDir),
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
     detached: process.platform !== "win32",
+  });
+
+  child.stderr?.on("data", (chunk) => {
+    stderr += chunk.toString();
   });
 
   let exitedEarly = false;
@@ -99,8 +109,9 @@ export async function runLaunchSmoke() {
     await sleep(STABLE_RUNTIME_MS);
 
     if (exitedEarly) {
+      const stderrSuffix = stderr.trim() ? `\nstderr:\n${stderr.trim()}` : "";
       throw new Error(
-        `KiJi exited early during launch smoke (code ${exitCode ?? "unknown"})`,
+        `KiJi exited early during launch smoke (code ${exitCode ?? "unknown"})${stderrSuffix}`,
       );
     }
 
@@ -108,9 +119,10 @@ export async function runLaunchSmoke() {
       sleep(LAUNCH_TIMEOUT_MS - STABLE_RUNTIME_MS),
       new Promise((_, reject) => {
         child.once("exit", (code) => {
+          const stderrSuffix = stderr.trim() ? `\nstderr:\n${stderr.trim()}` : "";
           reject(
             new Error(
-              `KiJi exited unexpectedly during launch smoke (code ${code ?? "unknown"})`,
+              `KiJi exited unexpectedly during launch smoke (code ${code ?? "unknown"})${stderrSuffix}`,
             ),
           );
         });

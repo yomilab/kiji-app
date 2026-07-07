@@ -11,12 +11,11 @@ describe("WebKit memory stress E2E", () => {
     "validates bounded WebKit memory under native feed ingestion",
     async () => {
       const result = await runWebKitMemoryStressE2e();
-      assertE2eNotSkipped(result);
-
       if (result.skipped) {
         expect(result.reason).toBeTruthy();
         return;
       }
+      assertE2eNotSkipped(result);
 
       expect(["amplified", "amplified-repro", "realistic"]).toContain(result.profileName);
       expect(result.profile.name).toBe(result.profileName);

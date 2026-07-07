@@ -34,7 +34,7 @@ function normalizeConfig(config: E2eHarnessConfigResponse): KijiE2eConfig {
   };
 }
 
-async function readE2eConfigFromBackend(): Promise<KijiE2eConfig | null> {
+export async function readE2eConfigFromBackend(): Promise<KijiE2eConfig | null> {
   try {
     const response = await invoke<E2eHarnessConfigResponse | null>('e2e_get_config');
     if (!response?.dir) {
@@ -74,8 +74,23 @@ export function getE2eConfig(): KijiE2eConfig | null {
   };
 }
 
+export async function resolveE2eConfig(): Promise<KijiE2eConfig | null> {
+  const fromWindow = getE2eConfig();
+  if (fromWindow) {
+    cachedConfig = fromWindow;
+    return fromWindow;
+  }
+
+  const fromBackend = await readE2eConfigFromBackend();
+  if (fromBackend) {
+    cachedConfig = fromBackend;
+    (globalThis as Record<string, unknown>).__KIJI_E2E__ = fromBackend;
+  }
+  return fromBackend;
+}
+
 export async function waitForE2eConfig(timeoutMs = 30_000): Promise<KijiE2eConfig | null> {
-  const immediate = await readE2eConfigFromBackend();
+  const immediate = await resolveE2eConfig();
   if (!immediate) {
     cachedConfig = null;
     return null;
@@ -83,9 +98,15 @@ export async function waitForE2eConfig(timeoutMs = 30_000): Promise<KijiE2eConfi
 
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    cachedConfig = getE2eConfig() ?? immediate;
-    (globalThis as Record<string, unknown>).__KIJI_E2E__ = cachedConfig;
-    return cachedConfig;
+    const resolved = getE2eConfig() ?? immediate;
+    cachedConfig = resolved;
+    (globalThis as Record<string, unknown>).__KIJI_E2E__ = resolved;
+    if (getE2eConfig()?.dir) {
+      return resolved;
+    }
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 100);
+    });
   }
 
   cachedConfig = immediate;

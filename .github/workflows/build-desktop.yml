@@ -260,6 +260,8 @@ jobs:
       - name: Build debug bundle for E2E
         env:
           CI: true
+          VITE_KIJI_E2E: "1"
+          VITE_KIJI_E2E_SCHEDULER_INTERVAL_MS: "500"
         run: npm run build:debug
 
       - name: Run macOS real-app E2E

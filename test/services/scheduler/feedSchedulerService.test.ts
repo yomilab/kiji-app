@@ -48,9 +48,11 @@ const syncFeedCountsBatch = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const publishFeedsCountsUpdated = vi.hoisted(() => vi.fn());
 
 const getE2eConfig = vi.hoisted(() => vi.fn(() => ({ schedulerIntervalMs: 1 })));
+const resolveE2eConfig = vi.hoisted(() => vi.fn(async () => ({ schedulerIntervalMs: 1 })));
 
 vi.mock("@/services/e2e/e2eHarness", () => ({
   getE2eConfig,
+  resolveE2eConfig,
 }));
 
 vi.mock("@/lib/tauriClient", () => ({
@@ -149,6 +151,7 @@ describe("feedSchedulerService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getE2eConfig.mockReturnValue({ schedulerIntervalMs: 1 });
+    resolveE2eConfig.mockResolvedValue({ schedulerIntervalMs: 1 });
     getSettings.mockResolvedValue({ backgroundUpdate: "every-5m" });
     getAll.mockResolvedValue([
       {
@@ -513,6 +516,7 @@ describe("feedSchedulerService", () => {
 
   it("aborts a stuck cycle after repeated deferred native ticks", async () => {
     getE2eConfig.mockReturnValue(null);
+    resolveE2eConfig.mockResolvedValue(null);
     let releaseRefresh!: () => void;
     fetchFeedNetworkWithCache.mockImplementation((_url, options?: { signal?: AbortSignal }) => new Promise((resolve, reject) => {
       const onAbort = (): void => {
@@ -799,6 +803,7 @@ describe("feedSchedulerService", () => {
   describe("native feed ingestion cycle", () => {
     beforeEach(() => {
       getE2eConfig.mockReturnValue(null);
+    resolveE2eConfig.mockResolvedValue(null);
       isNativeFeedIngestionEnabled.mockReturnValue(true);
       previewNativeCycle.mockResolvedValue({
         plan: {

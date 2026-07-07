@@ -169,7 +169,12 @@ export function formatE2eFailure(error, e2eDir, getStderr) {
   const details = bootstrapError
     ? ` bootstrapError=${JSON.stringify(bootstrapError.payload)}`
     : "";
+  const eventsDir = path.join(e2eDir, "events");
+  const eventNames = fs.existsSync(eventsDir)
+    ? fs.readdirSync(eventsDir).map((fileName) => fileName.replace(/\.json$/, "")).sort()
+    : [];
+  const eventsSuffix = eventNames.length > 0 ? `\nevents: ${eventNames.join(", ")}` : "";
   const stderr = getStderr?.() ?? "";
   const suffix = stderr ? `\nstderr:\n${stderr}` : "";
-  return `${error instanceof Error ? error.message : String(error)}${details}${suffix}`;
+  return `${error instanceof Error ? error.message : String(error)}${details}${eventsSuffix}${suffix}`;
 }

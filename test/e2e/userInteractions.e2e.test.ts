@@ -46,13 +46,13 @@ describe("User interaction E2E", () => {
       expect(result.reason).toBeTruthy();
       return;
     }
-    expect(result.alphaCold.harnessInteractiveMs).toBeLessThanOrEqual(1_200);
-    expect(result.alphaWarm.harnessInteractiveMs).toBeLessThanOrEqual(1_200);
+    expect(result.dailyCold.harnessInteractiveMs).toBeLessThanOrEqual(1_200);
+    expect(result.dailyWarm.harnessInteractiveMs).toBeLessThanOrEqual(1_200);
     if (
-      typeof result.alphaWarm.traceInteractiveMs === "number"
-      && typeof result.alphaCold.traceInteractiveMs === "number"
+      typeof result.dailyWarm.traceInteractiveMs === "number"
+      && typeof result.dailyCold.traceInteractiveMs === "number"
     ) {
-      expect(result.alphaWarm.traceInteractiveMs).toBeLessThanOrEqual(result.alphaCold.traceInteractiveMs);
+      expect(result.dailyWarm.traceInteractiveMs).toBeLessThanOrEqual(result.dailyCold.traceInteractiveMs);
     }
   }, E2E_TIMEOUT_MS);
 

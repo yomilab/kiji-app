@@ -1,5 +1,6 @@
 import { sourceSelectionBus } from '@/services/feeds/sourceSelectionBus';
 import type { SourceSelectionReadyPayload } from '@/services/feeds/sourceSelectionTypes';
+import { getE2eConfig } from '@/services/e2e/e2eHarness';
 import { sidebarSwitchTrace } from '@/services/performance/sidebarSwitchTrace';
 
 /** Short settle window after the first paint frames before scheduling refresh. */
@@ -17,12 +18,18 @@ export interface ArticleListPaintGateOptions {
 }
 
 let paintGateRafId: number | null = null;
+let paintGateTimeoutId: number | null = null;
 let refreshDebounceTimerId: number | null = null;
 
 export const cancelSourceSelectionRefreshSchedule = (): void => {
   if (paintGateRafId !== null) {
     window.cancelAnimationFrame(paintGateRafId);
     paintGateRafId = null;
+  }
+
+  if (paintGateTimeoutId !== null) {
+    window.clearTimeout(paintGateTimeoutId);
+    paintGateTimeoutId = null;
   }
 
   if (refreshDebounceTimerId !== null) {
@@ -54,6 +61,26 @@ const waitPaintGateBudget = (ms: number): Promise<void> => (
     window.setTimeout(resolve, ms);
   })
 );
+
+const shouldBypassAnimationFrameGate = (): boolean => (
+  getE2eConfig() !== null
+  || (typeof document !== 'undefined' && document.visibilityState === 'hidden')
+);
+
+const schedulePaintGateCallback = (callback: () => void): void => {
+  if (shouldBypassAnimationFrameGate()) {
+    paintGateTimeoutId = window.setTimeout(() => {
+      paintGateTimeoutId = null;
+      callback();
+    }, 0);
+    return;
+  }
+
+  paintGateRafId = window.requestAnimationFrame(() => {
+    paintGateRafId = null;
+    callback();
+  });
+};
 
 export const waitForArticleListPaintGate = async (
   isSelectionActive: (token: number) => boolean,
@@ -112,9 +139,7 @@ export const scheduleSourceRefreshAfterPaint = (
   sidebarSwitchTrace.mark(payload.token, 'paint-gate-scheduled');
   const paintGateStartedAt = performance.now();
 
-  paintGateRafId = window.requestAnimationFrame(() => {
-    paintGateRafId = null;
-
+  schedulePaintGateCallback(() => {
     void (async () => {
       const painted = await waitForArticleListPaintGate(options.isSelectionActive, payload.token);
       if (!painted) {

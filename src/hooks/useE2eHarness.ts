@@ -19,8 +19,36 @@ export const useE2eHarness = (): void => {
 
   useMountEffect(() => {
     let cycleCount = 0;
+    let schedulerReadyEmitted = false;
     let disposed = false;
     let config: Awaited<ReturnType<typeof waitForE2eConfig>> = null;
+
+    const countLibraryArticles = async (): Promise<number> => {
+      const allFeeds = await feedsManager.getAllFeeds();
+      let articleCount = 0;
+      for (const feed of allFeeds) {
+        articleCount += await articleStore.getArticleCount(feed.id);
+      }
+      return articleCount;
+    };
+
+    const emitSchedulerReadyIfNeeded = async (source: string): Promise<void> => {
+      if (schedulerReadyEmitted || disposed) {
+        return;
+      }
+
+      const articleCount = await countLibraryArticles();
+      if (articleCount <= 0) {
+        return;
+      }
+
+      schedulerReadyEmitted = true;
+      await writeE2eEvent('scheduler-ready', {
+        cycleCount,
+        articleCount,
+        source,
+      });
+    };
 
     const bootstrapFeed = async (): Promise<void> => {
       if (!config?.feedUrl || disposed) {
@@ -87,24 +115,18 @@ export const useE2eHarness = (): void => {
     };
 
     const unsubscribe = feedScheduler.on((event) => {
-      if (disposed || event.type !== 'cycle-complete' || !config) {
+      if (disposed || event.type !== 'cycle-complete') {
         return;
       }
 
       cycleCount += 1;
       void (async () => {
-        const allFeeds = await feedsManager.getAllFeeds();
-        let articleCount = 0;
-        for (const feed of allFeeds) {
-          articleCount += await articleStore.getArticleCount(feed.id);
-        }
+        const articleCount = await countLibraryArticles();
         await writeE2eEvent('cycle-complete', {
           cycleCount,
           articleCount,
         });
-        if (cycleCount === 1 && articleCount > 0) {
-          await writeE2eEvent('scheduler-ready', { cycleCount, articleCount });
-        }
+        await emitSchedulerReadyIfNeeded('cycle-complete');
       })();
     });
 
@@ -127,7 +149,14 @@ export const useE2eHarness = (): void => {
         await bootstrapFeed();
       }
 
+      // Bootstrap selection runs async in FeedContext; give the foreground refresh
+      // time to finish and release the station-selection scheduler pause.
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 5_000);
+      });
+      await feedScheduler.kickE2eHarnessScheduler();
       void feedScheduler.catchUpAfterResume();
+      await emitSchedulerReadyIfNeeded('bootstrap-poll');
     })();
 
     return () => {
