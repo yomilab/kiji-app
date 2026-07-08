@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- macOS CI release builds: import Developer ID certificate, notarize via App Store Connect API key, and verify `Developer ID Application` + stapler on `KiJi.app` (`build-desktop.yml`).
+
 ### Added
 
 - Cross-platform release-test monitor: `npm run release:test` dispatches `build-desktop.yml`, polls GitHub Actions, and retries failed runs up to 10 times (`scripts/monitor-release-test.mjs`).
