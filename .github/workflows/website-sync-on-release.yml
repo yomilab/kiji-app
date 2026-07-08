@@ -1,0 +1,48 @@
+name: Sync website on release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  sync-website:
+    if: ${{ !github.event.release.draft && !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Generate release.json from GitHub Release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          node scripts/generate-release-manifest.mjs \
+            --tag "${{ github.event.release.tag_name }}" \
+            --output release.json
+
+      - name: Attach release.json to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "${{ github.event.release.tag_name }}" release.json --clobber
+
+      - name: Dispatch kiji-website release sync
+        env:
+          GH_TOKEN: ${{ secrets.WEBSITE_DISPATCH_TOKEN }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "WEBSITE_DISPATCH_TOKEN is not configured; skipping website metadata sync."
+            exit 0
+          fi
+          MANIFEST_URL="https://github.com/yomilab/kiji-app/releases/download/${TAG_NAME}/release.json"
+          gh api repos/yomilab/kiji-website/dispatches \
+            --method POST \
+            -f event_type=kiji-release-published \
+            -f "client_payload[tag]=${TAG_NAME}" \
+            -f "client_payload[release_manifest_url]=${MANIFEST_URL}"

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `website-sync-on-release.yml`: on GitHub Release publish, generate `release.json`, attach to the release, and dispatch `kiji-website` sync (`scripts/generate-release-manifest.mjs`).
+
 ## [1.0.1] - 2026-07-08
 
 ### Fixed
