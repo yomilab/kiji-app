@@ -385,7 +385,7 @@ fn apply_runtime_icon(app: &AppHandle, icon_path: &Path) -> Result<(), String> {
     let bytes = rgba.into_raw();
     let icon = Image::new(&bytes, width, height);
 
-    for label in ["main", "settings", "article"] {
+    for label in ["main", "settings", "article", "update", "version"] {
         if let Some(window) = app.get_webview_window(label) {
             window
                 .set_icon(icon.clone())

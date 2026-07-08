@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { App } from "./App";
 import { ArticleWindow } from "./components/ArticleWindow/ArticleWindow";
+import { UpdateWindow } from "./components/UpdateWindow/UpdateWindow";
+import { VersionWindow } from "./components/VersionWindow/VersionWindow";
 import { SettingsWindow } from "./components/SettingsWindow/SettingsWindow";
 import { TrafficLights } from "./components/TrafficLights/TrafficLights";
 import { FeedProvider } from "./contexts/FeedContext";
@@ -153,6 +155,28 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
         <ThemeProvider>
           <TrafficLights />
           <ArticleWindowBranch />
+        </ThemeProvider>
+      </React.StrictMode>
+    );
+  }
+
+  if (windowType === "update") {
+    return (
+      <React.StrictMode>
+        <ThemeProvider>
+          <TrafficLights />
+          <UpdateWindow />
+        </ThemeProvider>
+      </React.StrictMode>
+    );
+  }
+
+  if (windowType === "version") {
+    return (
+      <React.StrictMode>
+        <ThemeProvider>
+          <TrafficLights />
+          <VersionWindow />
         </ThemeProvider>
       </React.StrictMode>
     );

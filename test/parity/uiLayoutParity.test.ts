@@ -8,9 +8,12 @@ import {
   type ReadingLayoutSettings,
 } from "@/services/settings/styleVariables";
 
-function resolveRendererWindowType(search: string): "main" | "settings" | "article" {
+function resolveRendererWindowType(search: string): "main" | "settings" | "article" | "update" | "version" {
   const windowType = new URLSearchParams(search).get("window");
-  return windowType === "settings" || windowType === "article" ? windowType : "main";
+  if (windowType === "settings" || windowType === "article" || windowType === "update" || windowType === "version") {
+    return windowType;
+  }
+  return "main";
 }
 
 describe("UI layout parity (21b)", () => {
@@ -26,6 +29,8 @@ describe("UI layout parity (21b)", () => {
     expect(resolveRendererWindowType("")).toBe("main");
     expect(resolveRendererWindowType("?window=settings")).toBe("settings");
     expect(resolveRendererWindowType("?window=article")).toBe("article");
+    expect(resolveRendererWindowType("?window=update")).toBe("update");
+    expect(resolveRendererWindowType("?window=version")).toBe("version");
     expect(resolveRendererWindowType("?window=article&foo=1")).toBe("article");
   });
 

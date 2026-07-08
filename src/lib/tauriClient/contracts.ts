@@ -1,4 +1,5 @@
 import type { AppSettings, AppSettingsPatch } from "../settings";
+import type { UpdateWindowPayload, VersionWindowPayload } from "@/services/system/appUpdateTypes";
 
 export type ISODateString = string;
 export type DataUrlString = string;
@@ -470,6 +471,7 @@ export interface AppMenuState {
 
 export type AppMenuCommand =
   | { type: "checkUpdates" }
+  | { type: "showVersion" }
   | { type: "exportFeeds" }
   | { type: "exportSavedArticles" }
   | { type: "clearFeeds" }
@@ -1011,6 +1013,20 @@ export interface ShellContract {
   };
   getArticleWindowData: {
     response: ArticleRecord;
+  };
+  openUpdateWindow: {
+    request: UpdateWindowPayload;
+    response: void;
+  };
+  getUpdateWindowData: {
+    response: UpdateWindowPayload;
+  };
+  openVersionWindow: {
+    request: VersionWindowPayload;
+    response: void;
+  };
+  getVersionWindowData: {
+    response: VersionWindowPayload;
   };
   share: {
     request: ShareRequest;

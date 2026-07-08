@@ -5,6 +5,7 @@ export type AppMenuCommand =
   | { type: 'openAddSubscription' }
   | { type: 'importFeeds' }
   | { type: 'checkUpdates' }
+  | { type: 'showVersion' }
   | { type: 'exportFeeds' }
   | { type: 'exportSavedArticles' }
   | { type: 'clearFeeds' }
