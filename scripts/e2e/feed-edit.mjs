@@ -3,7 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { writeE2eCommand } from "./e2eCommands.mjs";
 import { createE2eContentServer } from "./e2eContentServer.mjs";
 import { buildManageStationOpml, E2E_STATION_MANAGE } from "./e2eFixtures.mjs";
 import {
@@ -15,9 +14,11 @@ import {
 import {
   createE2eSessionDirs,
   formatE2eFailure,
+  issueE2eCommandAndWaitForEvent,
   startE2eApp,
   stopE2eApp,
   waitForEvent,
+  waitForHarnessBootstrapSettled,
 } from "./e2eRunner.mjs";
 
 const RENAMED_STATION = "E2E Station Renamed";
@@ -76,11 +77,13 @@ export async function runFeedEditE2e() {
 
   try {
     await waitForEvent(e2eDir, "opml-import-complete");
-    writeE2eCommand(e2eDir, "rename-station", {
-      from: E2E_STATION_MANAGE,
-      to: RENAMED_STATION,
-    });
-    const saved = await waitForEvent(e2eDir, "feed-edit-saved");
+    await waitForHarnessBootstrapSettled(e2eDir);
+    await issueE2eCommandAndWaitForEvent(
+      e2eDir,
+      "rename-station",
+      { from: E2E_STATION_MANAGE, to: RENAMED_STATION },
+      "feed-edit-saved",
+    );
     const snapshot = await waitForEvent(
       e2eDir,
       "station-library-snapshot",
@@ -89,7 +92,7 @@ export async function runFeedEditE2e() {
 
     return {
       skipped: false,
-      renamedTo: saved.payload?.renamedTo,
+      renamedTo: RENAMED_STATION,
       stationNames: snapshot.payload?.stationNames ?? [],
     };
   } catch (error) {

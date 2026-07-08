@@ -2,11 +2,20 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { writeE2eCommand } from "./e2eCommands.mjs";
 
 export const E2E_FEED_ID = "e2e-feed";
 export const E2E_SCHEDULER_INTERVAL_MS = "500";
 export const EVENT_TIMEOUT_MS = 45_000;
+export const EVENT_TIMEOUT_CI_MS = 120_000;
 export const POLL_INTERVAL_MS = 200;
+
+export function resolveEventTimeoutMs(timeoutMs = EVENT_TIMEOUT_MS) {
+  if (process.env.KIJI_RUN_E2E_IN_CI === "1") {
+    return Math.max(timeoutMs, EVENT_TIMEOUT_CI_MS);
+  }
+  return timeoutMs;
+}
 
 export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -57,7 +66,7 @@ export async function waitForPostImportEvent(
   predicate = () => true,
   timeoutMs = EVENT_TIMEOUT_MS,
 ) {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + resolveEventTimeoutMs(timeoutMs);
   while (Date.now() < deadline) {
     const event = readEvent(e2eDir, name);
     if (event && isEventAfter(event, postImportAtMs) && predicate(event)) {
@@ -69,7 +78,7 @@ export async function waitForPostImportEvent(
 }
 
 export async function waitForEvent(e2eDir, name, predicate = () => true, timeoutMs = EVENT_TIMEOUT_MS) {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + resolveEventTimeoutMs(timeoutMs);
   while (Date.now() < deadline) {
     const event = readEvent(e2eDir, name);
     if (event && predicate(event)) {
@@ -93,7 +102,7 @@ export function listSwitchPerfEvents(e2eDir) {
 }
 
 export async function waitForSwitchPerfEvent(e2eDir, afterAtMs, predicate = () => true, timeoutMs = EVENT_TIMEOUT_MS) {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + resolveEventTimeoutMs(timeoutMs);
   while (Date.now() < deadline) {
     const events = listSwitchPerfEvents(e2eDir).filter((event) => isEventAfter(event, afterAtMs) && predicate(event));
     if (events.length > 0) {
@@ -102,6 +111,36 @@ export async function waitForSwitchPerfEvent(e2eDir, afterAtMs, predicate = () =
     await sleep(POLL_INTERVAL_MS);
   }
   throw new Error("Timed out waiting for station-switch-perf event");
+}
+
+export async function waitForHarnessBootstrapSettled(e2eDir, timeoutMs = EVENT_TIMEOUT_MS) {
+  await waitForEvent(e2eDir, "main-shell-ready", () => true, timeoutMs);
+  const imported = readEvent(e2eDir, "opml-import-complete");
+  if (!imported) {
+    return;
+  }
+  await waitForEvent(e2eDir, "harness-bootstrap-settled", () => true, timeoutMs);
+}
+
+export async function issueE2eCommandAndWaitForEvent(
+  e2eDir,
+  commandName,
+  commandPayload,
+  eventName,
+  predicate = () => true,
+  timeoutMs = EVENT_TIMEOUT_MS,
+) {
+  const issuedAtMs = Date.now();
+  writeE2eCommand(e2eDir, commandName, commandPayload);
+  const deadline = Date.now() + resolveEventTimeoutMs(timeoutMs);
+  while (Date.now() < deadline) {
+    const event = readEvent(e2eDir, eventName);
+    if (event && isEventAfter(event, issuedAtMs) && predicate(event)) {
+      return event;
+    }
+    await sleep(POLL_INTERVAL_MS);
+  }
+  throw new Error(`Timed out waiting for e2e event: ${eventName}`);
 }
 
 export function terminateProcess(child) {

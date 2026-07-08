@@ -156,6 +156,9 @@ export const useE2eHarness = (): void => {
       });
       void feedScheduler.catchUpAfterResume();
       await emitSchedulerReadyIfNeeded('bootstrap-poll');
+      await writeE2eEvent('harness-bootstrap-settled', {
+        bootstrap: bootstrapMode,
+      });
     })();
 
     return () => {

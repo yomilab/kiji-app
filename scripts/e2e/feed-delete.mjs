@@ -3,7 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { writeE2eCommand } from "./e2eCommands.mjs";
 import { createE2eContentServer } from "./e2eContentServer.mjs";
 import { buildManageStationOpml, E2E_STATION_MANAGE } from "./e2eFixtures.mjs";
 import {
@@ -15,9 +14,11 @@ import {
 import {
   createE2eSessionDirs,
   formatE2eFailure,
+  issueE2eCommandAndWaitForEvent,
   startE2eApp,
   stopE2eApp,
   waitForEvent,
+  waitForHarnessBootstrapSettled,
 } from "./e2eRunner.mjs";
 
 export async function runFeedDeleteE2e() {
@@ -75,8 +76,13 @@ export async function runFeedDeleteE2e() {
 
   try {
     await waitForEvent(e2eDir, "opml-import-complete");
-    writeE2eCommand(e2eDir, "delete-station", { stationName: E2E_STATION_MANAGE });
-    await waitForEvent(e2eDir, "feed-delete-confirmed");
+    await waitForHarnessBootstrapSettled(e2eDir);
+    await issueE2eCommandAndWaitForEvent(
+      e2eDir,
+      "delete-station",
+      { stationName: E2E_STATION_MANAGE },
+      "feed-delete-confirmed",
+    );
     const snapshot = await waitForEvent(
       e2eDir,
       "station-library-snapshot",

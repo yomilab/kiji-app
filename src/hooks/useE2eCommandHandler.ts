@@ -41,17 +41,21 @@ function scrollArticleListElement(options: { toEnd?: boolean; delta?: number }):
 }
 
 export const useE2eCommandHandler = (): void => {
-  const {
-    selectFeed,
-    selectTag,
-    openFeedEditView,
-    closeFeedEditView,
-    selectedTag,
-    selectedFeedId,
-  } = useFeedNavigation();
-  const { articles, loadMoreArticles } = useFeedCollection();
-  const { selectArticle, requestCloseArticle } = useFeedOverlay();
-  const { refreshTotalFeeds, notifyFeedLibraryChanged } = useFeedUIActions();
+  const navigation = useFeedNavigation();
+  const collection = useFeedCollection();
+  const overlay = useFeedOverlay();
+  const uiActions = useFeedUIActions();
+
+  const navigationRef = useRef(navigation);
+  const collectionRef = useRef(collection);
+  const overlayRef = useRef(overlay);
+  const uiActionsRef = useRef(uiActions);
+
+  navigationRef.current = navigation;
+  collectionRef.current = collection;
+  overlayRef.current = overlay;
+  uiActionsRef.current = uiActions;
+
   const busyRef = useRef(false);
 
   useEffect(() => {
@@ -63,6 +67,9 @@ export const useE2eCommandHandler = (): void => {
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const runImportOpml = async (path: string): Promise<void> => {
+      const { refreshTotalFeeds, notifyFeedLibraryChanged } = uiActionsRef.current;
+      const { selectTag, selectFeed } = navigationRef.current;
+
       await writeE2eEvent('opml-import-started', { path });
       const opmlText = await readE2eTextFile(path);
       const importResult = await importOpmlTextIntoLibrary(opmlText, {
@@ -96,6 +103,8 @@ export const useE2eCommandHandler = (): void => {
     };
 
     const runRenameStation = async (from: string, to: string): Promise<void> => {
+      const { openFeedEditView } = navigationRef.current;
+
       await openFeedEditView();
       await writeE2eEvent('feed-edit-opened', { isFeedEditView: true });
       const stations = await tagsManager.getAllTags();
@@ -118,7 +127,6 @@ export const useE2eCommandHandler = (): void => {
     };
 
     const runDeleteStation = async (stationName: string): Promise<void> => {
-      await openFeedEditView();
       const stations = await tagsManager.getAllTags();
       const target = stations.find((station) => station.name === stationName);
       const affectedFeedIds = target?.feedIds ?? [];
@@ -132,6 +140,17 @@ export const useE2eCommandHandler = (): void => {
     };
 
     const handleCommand = async (command: { name: string; payload: Record<string, unknown> }): Promise<void> => {
+      const {
+        selectFeed,
+        selectTag,
+        openFeedEditView,
+        closeFeedEditView,
+        selectedTag,
+        selectedFeedId,
+      } = navigationRef.current;
+      const { articles, loadMoreArticles } = collectionRef.current;
+      const { selectArticle, requestCloseArticle } = overlayRef.current;
+
       switch (command.name) {
         case 'select-station': {
           const stationName = String(command.payload.stationName ?? '');
@@ -301,18 +320,5 @@ export const useE2eCommandHandler = (): void => {
         clearInterval(timer);
       }
     };
-  }, [
-    articles,
-    closeFeedEditView,
-    loadMoreArticles,
-    notifyFeedLibraryChanged,
-    openFeedEditView,
-    refreshTotalFeeds,
-    requestCloseArticle,
-    selectArticle,
-    selectFeed,
-    selectedFeedId,
-    selectedTag,
-    selectTag,
-  ]);
+  }, []);
 };

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- E2E harness: keep command polling mounted via refs (no FeedContext-driven effect teardown), emit `harness-bootstrap-settled` after OPML bootstrap, wait for settle before feed-management/export commands, run delete via library API without opening feed edit, lengthen CI event timeouts, and serialize E2E vitest files with retries.
+
 ### Changed
 
 - macOS CI release builds: import Developer ID certificate, notarize via App Store Connect API key, and verify `Developer ID Application` + stapler on `KiJi.app` (`build-desktop.yml`).

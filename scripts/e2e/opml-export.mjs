@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { readHarnessExport, writeE2eCommand } from "./e2eCommands.mjs";
+import { readHarnessExport } from "./e2eCommands.mjs";
 import { createE2eContentServer } from "./e2eContentServer.mjs";
 import { buildImportOpml } from "./e2eFixtures.mjs";
 import {
@@ -15,9 +15,11 @@ import {
 import {
   createE2eSessionDirs,
   formatE2eFailure,
+  issueE2eCommandAndWaitForEvent,
   startE2eApp,
   stopE2eApp,
   waitForEvent,
+  waitForHarnessBootstrapSettled,
 } from "./e2eRunner.mjs";
 
 export async function runOpmlExportE2e() {
@@ -64,9 +66,11 @@ export async function runOpmlExportE2e() {
       "opml-import-complete",
       (event) => (event.payload?.feedCount ?? 0) >= 2,
     );
-    writeE2eCommand(e2eDir, "export-opml");
-    const exported = await waitForEvent(
+    await waitForHarnessBootstrapSettled(e2eDir);
+    const exported = await issueE2eCommandAndWaitForEvent(
       e2eDir,
+      "export-opml",
+      {},
       "opml-export-complete",
       (event) => (event.payload?.outlineCount ?? 0) >= 2,
     );
