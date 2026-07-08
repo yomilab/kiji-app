@@ -244,8 +244,8 @@ jobs:
           set -euo pipefail
           APP="src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/KiJi.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
-          codesign -dv "$APP" 2>&1 | tee /tmp/codesign-info.txt
-          grep -q "Authority=Developer ID Application" /tmp/codesign-info.txt
+          codesign --display --verbose=2 "$APP" 2>&1 | tee /tmp/codesign-info.txt
+          grep -q "Developer ID Application" /tmp/codesign-info.txt
           xcrun stapler validate "$APP"
 
       - name: Desktop launch smoke
