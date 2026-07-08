@@ -90,16 +90,6 @@ export async function getUpdateWindowData(): Promise<ShellContract["getUpdateWin
   return invokeContract<ShellContract["getUpdateWindowData"]>("shell_update_window_get_data");
 }
 
-export async function openVersionWindow(
-  request: ShellContract["openVersionWindow"]["request"],
-): Promise<ShellContract["openVersionWindow"]["response"]> {
-  return invokeCommand<ShellContract["openVersionWindow"]["response"]>("shell_version_window_open", { payload: request });
-}
-
-export async function getVersionWindowData(): Promise<ShellContract["getVersionWindowData"]["response"]> {
-  return invokeContract<ShellContract["getVersionWindowData"]>("shell_version_window_get_data");
-}
-
 export async function share(
   request: ShellContract["share"]["request"],
 ): Promise<ShellContract["share"]["response"]> {

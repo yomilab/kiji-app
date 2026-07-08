@@ -13,7 +13,6 @@ const APP_WEBSITE_URL: &str = "https://kiji.yomilab.app";
 
 const MENU_SETTINGS: &str = "menu-settings";
 const MENU_CHECK_UPDATES: &str = "menu-check-updates";
-const MENU_SHOW_VERSION: &str = "menu-show-version";
 const MENU_EXPORT_FEEDS: &str = "menu-export-feeds";
 const MENU_EXPORT_SAVED: &str = "menu-export-saved";
 const MENU_CLEAR_FEEDS: &str = "menu-clear-feeds";
@@ -38,7 +37,6 @@ pub enum AppMenuCommand {
     OpenAddSubscription,
     ImportFeeds,
     CheckUpdates,
-    ShowVersion,
     ExportFeeds,
     ExportSavedArticles,
     ClearFeeds,
@@ -142,14 +140,6 @@ impl ApplicationMenu {
                         None::<&str>,
                     )
                     .map_err(menu_error)?,
-                    &MenuItem::with_id(
-                        app,
-                        MENU_SHOW_VERSION,
-                        "KiJi Version",
-                        true,
-                        None::<&str>,
-                    )
-                    .map_err(menu_error)?,
                     &PredefinedMenuItem::separator(app).map_err(menu_error)?,
                     &PredefinedMenuItem::services(app, None).map_err(menu_error)?,
                     &PredefinedMenuItem::separator(app).map_err(menu_error)?,
@@ -175,14 +165,6 @@ impl ApplicationMenu {
                         app,
                         MENU_CHECK_UPDATES,
                         "Check Updates",
-                        true,
-                        None::<&str>,
-                    )
-                    .map_err(menu_error)?,
-                    &MenuItem::with_id(
-                        app,
-                        MENU_SHOW_VERSION,
-                        "KiJi Version",
                         true,
                         None::<&str>,
                     )
@@ -348,9 +330,6 @@ impl ApplicationMenu {
             }
             MENU_CHECK_UPDATES => {
                 emit_menu_command(app, AppMenuCommand::CheckUpdates);
-            }
-            MENU_SHOW_VERSION => {
-                emit_menu_command(app, AppMenuCommand::ShowVersion);
             }
             MENU_EXPORT_FEEDS => emit_menu_command(app, AppMenuCommand::ExportFeeds),
             MENU_EXPORT_SAVED => emit_menu_command(app, AppMenuCommand::ExportSavedArticles),

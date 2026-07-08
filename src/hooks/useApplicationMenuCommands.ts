@@ -14,10 +14,8 @@ import {
 } from '@/services/feeds/opmlUiWorkflow';
 import { APP_NAME } from '@/config/appIdentity';
 import {
-  buildVersionWindowPayload,
   checkForUpdateDetailed,
   openUpdateWindow,
-  openVersionWindow,
   toUpdateWindowPayload,
 } from '@/services/system/appUpdateService';
 import { dismissUpdatePromptForSession } from '@/services/system/appUpdateSession';
@@ -351,17 +349,6 @@ export const useApplicationMenuCommands = ({
             } catch (error) {
               logger.error('AppMenu', 'Failed to open update window from Check Updates', { error });
               appToastService.show('Failed to open the update window.');
-            }
-          })();
-          break;
-        case 'showVersion':
-          void (async () => {
-            try {
-              const payload = await buildVersionWindowPayload();
-              await openVersionWindow(payload);
-            } catch (error) {
-              logger.error('AppMenu', 'Failed to open version window', { error });
-              appToastService.show('Failed to open the version window.');
             }
           })();
           break;

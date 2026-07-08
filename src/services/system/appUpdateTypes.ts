@@ -39,14 +39,6 @@ export interface UpdateWindowPayload {
   notesUrl?: string;
 }
 
-export interface VersionWindowPayload {
-  currentVersion: string;
-  latestVersion?: string;
-  releasedAt?: string;
-  isUpToDate: boolean;
-  notesUrl?: string;
-}
-
 export type UpdateCheckResult =
   | { status: 'available'; availability: UpdateAvailability }
   | { status: 'up-to-date'; currentVersion: string }

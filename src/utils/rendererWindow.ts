@@ -1,8 +1,8 @@
-export type RendererWindowType = 'main' | 'settings' | 'article' | 'update' | 'version';
+export type RendererWindowType = 'main' | 'settings' | 'article' | 'update';
 
 export function getRendererWindowType(): RendererWindowType {
   const windowType = new URLSearchParams(window.location.search).get('window');
-  if (windowType === 'settings' || windowType === 'article' || windowType === 'update' || windowType === 'version') {
+  if (windowType === 'settings' || windowType === 'article' || windowType === 'update') {
     return windowType;
   }
   return 'main';

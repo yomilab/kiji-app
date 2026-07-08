@@ -38,8 +38,6 @@ export const tauriCommandCatalog: Record<
     { apiMethod: "getArticleWindowData", ipcChannel: "get-article-window-data", kind: "invoke", targetCommand: "shell.articleWindow.getData", rustCommand: "shell_article_window_get_data" },
     { apiMethod: "openUpdateWindow", ipcChannel: "open-update-window", kind: "invoke", targetCommand: "shell.updateWindow.open", rustCommand: "shell_update_window_open" },
     { apiMethod: "getUpdateWindowData", ipcChannel: "get-update-window-data", kind: "invoke", targetCommand: "shell.updateWindow.getData", rustCommand: "shell_update_window_get_data" },
-    { apiMethod: "openVersionWindow", ipcChannel: "open-version-window", kind: "invoke", targetCommand: "shell.versionWindow.open", rustCommand: "shell_version_window_open" },
-    { apiMethod: "getVersionWindowData", ipcChannel: "get-version-window-data", kind: "invoke", targetCommand: "shell.versionWindow.getData", rustCommand: "shell_version_window_get_data" },
     { apiMethod: "showShareSheet", ipcChannel: "show-share-sheet", kind: "invoke", targetCommand: "shell.share.openSheet", rustCommand: "shell_share" },
     { apiMethod: "showImageContextMenu", ipcChannel: "show-image-context-menu", kind: "invoke", targetCommand: "shell.contextMenu.showImage", rustCommand: "shell_context_menu_show_image" },
     { apiMethod: "getShareServices", ipcChannel: "get-share-services", kind: "invoke", targetCommand: "shell.share.listServices", rustCommand: "shell_share_list_services" },

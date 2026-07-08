@@ -19,16 +19,10 @@ const SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
 const SETTINGS_WINDOW_LABEL: &str = "settings";
 const ARTICLE_WINDOW_LABEL: &str = "article";
 const UPDATE_WINDOW_LABEL: &str = "update";
-const VERSION_WINDOW_LABEL: &str = "version";
 const MAIN_WINDOW_LABEL: &str = "main";
 const UPDATE_WINDOW_OPEN_EVENT: &str = "update-window:open";
-const VERSION_WINDOW_OPEN_EVENT: &str = "version-window:open";
 
 pub struct UpdateWindowState {
-    payload: Mutex<Option<JsonValue>>,
-}
-
-pub struct VersionWindowState {
     payload: Mutex<Option<JsonValue>>,
 }
 
@@ -56,33 +50,6 @@ impl UpdateWindowState {
         guard
             .clone()
             .ok_or_else(|| "No update payload was provided for the Tauri update window.".to_string())
-    }
-}
-
-impl VersionWindowState {
-    pub fn new() -> Self {
-        Self {
-            payload: Mutex::new(None),
-        }
-    }
-
-    pub fn set_payload(&self, payload: JsonValue) -> Result<(), String> {
-        let mut guard = self
-            .payload
-            .lock()
-            .map_err(|_| "Version window state lock poisoned.".to_string())?;
-        *guard = Some(payload);
-        Ok(())
-    }
-
-    pub fn clone_payload(&self) -> Result<JsonValue, String> {
-        let guard = self
-            .payload
-            .lock()
-            .map_err(|_| "Version window state lock poisoned.".to_string())?;
-        guard
-            .clone()
-            .ok_or_else(|| "No version payload was provided for the Tauri version window.".to_string())
     }
 }
 
@@ -268,35 +235,6 @@ pub fn shell_update_window_get_data(
     if window.label() != UPDATE_WINDOW_LABEL {
         return Err(format!(
             "Update window payload can only be read from the update webview (got {}).",
-            window.label()
-        ));
-    }
-    state.clone_payload()
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub fn shell_version_window_open(
-    app: AppHandle,
-    payload: JsonValue,
-    state: State<'_, Arc<VersionWindowState>>,
-) -> Result<(), String> {
-    state.set_payload(payload)?;
-    let existed = app.get_webview_window(VERSION_WINDOW_LABEL).is_some();
-    open_secondary_window(&app, VERSION_WINDOW_LABEL)?;
-    if existed {
-        emit_secondary_window_open(&app, VERSION_WINDOW_LABEL, VERSION_WINDOW_OPEN_EVENT)?;
-    }
-    Ok(())
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub fn shell_version_window_get_data(
-    window: WebviewWindow,
-    state: State<'_, Arc<VersionWindowState>>,
-) -> Result<JsonValue, String> {
-    if window.label() != VERSION_WINDOW_LABEL {
-        return Err(format!(
-            "Version window payload can only be read from the version webview (got {}).",
             window.label()
         ));
     }

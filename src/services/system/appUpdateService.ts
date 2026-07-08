@@ -12,7 +12,6 @@ import type {
   UpdateAvailability,
   UpdateCheckResult,
   UpdateWindowPayload,
-  VersionWindowPayload,
 } from './appUpdateTypes';
 
 const MANIFEST_FETCH_TIMEOUT_MS = 20_000;
@@ -237,34 +236,8 @@ export function toUpdateWindowPayload(availability: UpdateAvailability): UpdateW
   };
 }
 
-export async function buildVersionWindowPayload(): Promise<VersionWindowPayload> {
-  const currentVersion = await getCurrentAppVersion();
-
-  try {
-    const manifest = await fetchReleaseManifest();
-    const isUpToDate = compareReleaseVersions(manifest.version, currentVersion) <= 0;
-    return {
-      currentVersion,
-      latestVersion: manifest.version,
-      releasedAt: manifest.date,
-      isUpToDate,
-      notesUrl: resolveNotesUrl(manifest),
-    };
-  } catch (error) {
-    logger.warn('AppUpdate', 'Failed to load latest version for version window', { error });
-    return {
-      currentVersion,
-      isUpToDate: true,
-    };
-  }
-}
-
 export async function openUpdateWindow(payload: UpdateWindowPayload): Promise<void> {
   await tauriClient.shell.openUpdateWindow(payload);
-}
-
-export async function openVersionWindow(payload: VersionWindowPayload): Promise<void> {
-  await tauriClient.shell.openVersionWindow(payload);
 }
 
 export async function downloadUpdateArtifact(url: string): Promise<void> {

@@ -81,23 +81,6 @@
           "state": "active",
           "radius": 14
         }
-      },
-      {
-        "label": "version",
-        "title": "KiJi Version",
-        "url": "index.html?window=version",
-        "width": 420,
-        "height": 280,
-        "visible": false,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "dragDropEnabled": false,
-        "windowEffects": {
-          "effects": ["sidebar"],
-          "state": "active",
-          "radius": 14
-        }
       }
     ],
     "security": {
