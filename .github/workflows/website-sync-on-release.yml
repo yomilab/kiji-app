@@ -1,18 +1,39 @@
 name: Sync website on release
 
+# Manual / UI-published releases still use this workflow.
+# Tag builds create the GitHub Release with GITHUB_TOKEN, which does NOT fire
+# `release: published` — those runs sync the website from publish-github-release
+# in build-desktop.yml instead.
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to sync (e.g. v1.0.2)
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   sync-website:
-    if: ${{ !github.event.release.draft && !github.event.release.prerelease }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (!github.event.release.draft && !github.event.release.prerelease) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Generate release.json from GitHub Release assets
         env:
@@ -20,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/generate-release-manifest.mjs \
-            --tag "${{ github.event.release.tag_name }}" \
+            --tag "${{ steps.tag.outputs.name }}" \
             --output release.json
 
       - name: Attach release.json to GitHub Release
@@ -28,12 +49,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh release upload "${{ github.event.release.tag_name }}" release.json --clobber
+          gh release upload "${{ steps.tag.outputs.name }}" release.json --clobber
 
       - name: Dispatch kiji-website release sync
         env:
           GH_TOKEN: ${{ secrets.WEBSITE_DISPATCH_TOKEN }}
-          TAG_NAME: ${{ github.event.release.tag_name }}
+          TAG_NAME: ${{ steps.tag.outputs.name }}
         run: |
           set -euo pipefail
           if [[ -z "${GH_TOKEN}" ]]; then

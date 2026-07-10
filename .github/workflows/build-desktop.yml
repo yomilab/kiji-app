@@ -440,3 +440,37 @@ jobs:
               --verify-tag \
               "${PRERELEASE_ARGS[@]}"
           fi
+
+      # GITHUB_TOKEN-created releases do not fire `release: published` workflows.
+      # Generate/upload release.json and dispatch the website here instead.
+      - name: Generate and attach release.json
+        if: ${{ !startsWith(github.ref_name, 'v0.') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          node scripts/generate-release-manifest.mjs \
+            --tag "$TAG" \
+            --output release.json
+          gh release upload "$TAG" release.json --clobber
+
+      - name: Dispatch kiji-website release sync
+        if: ${{ !startsWith(github.ref_name, 'v0.') }}
+        env:
+          GH_TOKEN: ${{ secrets.WEBSITE_DISPATCH_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "WEBSITE_DISPATCH_TOKEN is not configured; skipping website metadata sync."
+            exit 0
+          fi
+          MANIFEST_URL="https://github.com/yomilab/kiji-app/releases/download/${TAG_NAME}/release.json"
+          gh api repos/yomilab/kiji-website/dispatches \
+            --method POST \
+            -f event_type=kiji-release-published \
+            -f "client_payload[tag]=${TAG_NAME}" \
+            -f "client_payload[release_manifest_url]=${MANIFEST_URL}"
