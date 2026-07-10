@@ -371,3 +371,72 @@ jobs:
           name: kiji-linux-x86_64-debug
           path: src-tauri/target/debug/bundle/artifacts/linux-x86_64/debug/*
           if-no-files-found: error
+
+  publish-github-release:
+    name: Publish GitHub Release
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify tag matches package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          CONF_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [[ "$CONF_VERSION" != "$PKG_VERSION" ]]; then
+            echo "package.json ($PKG_VERSION) and tauri.conf.json ($CONF_VERSION) versions differ."
+            exit 1
+          fi
+          if [[ "$TAG" != "v${CONF_VERSION}" ]]; then
+            echo "Tag $TAG does not match app version v${CONF_VERSION}."
+            echo "Bump package.json and src-tauri/tauri.conf.json before tagging."
+            exit 1
+          fi
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: kiji-*-release
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          MAJOR="${VERSION%%.*}"
+          shopt -s nullglob
+          ASSETS=(release-assets/*)
+          if [[ ${#ASSETS[@]} -eq 0 ]]; then
+            echo "No release assets downloaded."
+            exit 1
+          fi
+          echo "Publishing ${#ASSETS[@]} assets for ${TAG}:"
+          ls -la release-assets
+
+          PRERELEASE_ARGS=()
+          if [[ "$MAJOR" -eq 0 ]]; then
+            PRERELEASE_ARGS+=(--prerelease)
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists; uploading assets."
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+          else
+            gh release create "$TAG" "${ASSETS[@]}" \
+              --title "KiJi ${VERSION}" \
+              --generate-notes \
+              --verify-tag \
+              "${PRERELEASE_ARGS[@]}"
+          fi
