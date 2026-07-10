@@ -77,5 +77,8 @@ describe("UI layout parity (21b)", () => {
     expect(themeCss).toContain("--theme-article-bg");
     expect(themeCss).toContain("--theme-primary-color");
     expect(themeCss).toContain("--font-family-ui");
+    expect(themeCss).toContain('html[data-os="windows"]');
+    expect(themeCss).toContain("rgba(247, 246, 244, 0.82)");
+    expect(themeCss).toContain("rgba(30, 30, 32, 0.88)");
   });
 });

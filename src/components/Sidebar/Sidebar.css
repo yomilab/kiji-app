@@ -11,6 +11,15 @@
   user-select: none;
 }
 
+/* Windows / Linux: stronger glass when native macOS vibrancy is unavailable */
+html[data-os="windows"] .sidebar,
+html[data-os="linux"] .sidebar,
+html[data-os="other"] .sidebar {
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--theme-border) 70%, transparent);
+}
+
 .sidebar-top-chrome {
   position: relative;
   z-index: 3;

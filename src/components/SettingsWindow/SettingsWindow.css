@@ -61,6 +61,13 @@ body {
   user-select: none;
 }
 
+html[data-os="windows"] .settings-sidebar,
+html[data-os="linux"] .settings-sidebar,
+html[data-os="other"] .settings-sidebar {
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+}
+
 .settings-sidebar-top-chrome {
   position: absolute;
   top: 0;

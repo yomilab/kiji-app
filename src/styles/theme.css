@@ -84,6 +84,17 @@
   --theme-shadow: rgba(0, 0, 0, 0.1);
 }
 
+/*
+ * Windows / Linux: no macOS sidebar vibrancy. Use a denser frosted fill so the
+ * sidebar is not see-through empty; backdrop-filter still softens when the
+ * compositor supports it (and when Windows acrylic/mica is active under the pane).
+ */
+html[data-os="windows"],
+html[data-os="linux"],
+html[data-os="other"] {
+  --theme-sidebar-bg: rgba(247, 246, 244, 0.82);
+}
+
 .article-text-non-ascii {
   font-family: var(--font-family-article-no-ascii);
 }
@@ -131,4 +142,10 @@
   /* Scrollbar styles for dark theme */
   --scrollbar-thumb-color: rgba(255, 255, 255, 0.2);
   --scrollbar-thumb-hover-color: rgba(255, 255, 255, 0.3);
+}
+
+html[data-os="windows"][data-theme="dark"],
+html[data-os="linux"][data-theme="dark"],
+html[data-os="other"][data-theme="dark"] {
+  --theme-sidebar-bg: rgba(30, 30, 32, 0.88);
 }
