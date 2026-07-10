@@ -340,7 +340,7 @@ export const Sidebar: React.FC = () => {
   return (
     <aside
       ref={sidebarRef}
-      className="sidebar p-0 u-h-100vh sidebar-bg is-flex is-flex-direction-column is-overflow-hidden has-border-right"
+      className="sidebar p-0 u-h-100 sidebar-bg is-flex is-flex-direction-column is-overflow-hidden has-border-right"
       style={{ width: `${sidebarWidth}px` }}
       data-section="sidebar"
       data-component="sidebar"

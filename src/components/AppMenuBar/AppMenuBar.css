@@ -1,0 +1,156 @@
+.app-menu-bar {
+  --app-menu-bar-height: 36px;
+  height: var(--app-menu-bar-height);
+  min-height: var(--app-menu-bar-height);
+  width: 100%;
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  z-index: 10001;
+  background-color: color-mix(in srgb, var(--theme-sidebar-bg) 92%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--theme-border) 80%, transparent);
+  font-family: var(--font-family-ui);
+  user-select: none;
+}
+
+.app-menu-bar-menus {
+  display: flex;
+  align-items: stretch;
+  padding-left: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.app-menu-top {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.app-menu-top-button {
+  border: none;
+  background: transparent;
+  color: var(--theme-text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0 10px;
+  cursor: default;
+  -webkit-app-region: no-drag;
+}
+
+.app-menu-top.is-open .app-menu-top-button,
+.app-menu-top-button:hover {
+  background-color: var(--theme-hover-overlay);
+}
+
+.app-menu-bar-drag {
+  flex: 1;
+  min-width: 24px;
+  height: 100%;
+}
+
+.app-menu-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 240px;
+  max-width: min(360px, 90vw);
+  padding: 4px;
+  border-radius: 8px;
+  background-color: color-mix(in srgb, var(--theme-sidebar-bg) 96%, #fff 4%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  border: 1px solid color-mix(in srgb, var(--theme-border) 70%, transparent);
+  z-index: 10002;
+}
+
+[data-theme="dark"] .app-menu-dropdown {
+  background-color: color-mix(in srgb, var(--theme-sidebar-bg) 94%, #000 6%);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
+.app-menu-dropdown-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.app-menu-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background-color: color-mix(in srgb, var(--theme-border) 80%, transparent);
+}
+
+.app-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--theme-text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: default;
+  -webkit-app-region: no-drag;
+}
+
+.app-menu-item:hover {
+  background-color: var(--theme-hover-overlay);
+}
+
+.app-menu-item-check {
+  width: 14px;
+  flex-shrink: 0;
+  font-size: 11px;
+  text-align: center;
+}
+
+.app-menu-item-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-menu-item-shortcut {
+  margin-left: 16px;
+  opacity: 0.55;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.app-menu-submenu {
+  position: relative;
+}
+
+.app-menu-submenu-trigger {
+  justify-content: space-between;
+}
+
+.app-menu-submenu-chevron {
+  opacity: 0.6;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.app-menu-submenu-panel {
+  position: absolute;
+  top: -4px;
+  left: calc(100% - 4px);
+  min-width: 160px;
+  padding: 4px;
+  border-radius: 8px;
+  background-color: inherit;
+  background-color: color-mix(in srgb, var(--theme-sidebar-bg) 96%, #fff 4%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  border: 1px solid color-mix(in srgb, var(--theme-border) 70%, transparent);
+  z-index: 10003;
+}
+
+[data-theme="dark"] .app-menu-submenu-panel {
+  background-color: color-mix(in srgb, var(--theme-sidebar-bg) 94%, #000 6%);
+}

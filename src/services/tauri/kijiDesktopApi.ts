@@ -27,6 +27,10 @@ import { isContentParser } from '@/services/settings/types';
 import type { KijiDesktopAPI } from '@/types/kijiDesktopApi';
 import type { AppMenuCommand } from '@/types/appMenu';
 import { trafficLightVisibilityBus } from '@/services/ui/trafficLightVisibilityBus';
+import {
+  publishAppMenuCommand,
+  subscribeAppMenuCommand,
+} from '@/services/ui/appMenuCommandBus';
 
 function fileNameFromPath(path: string): string | undefined {
   const parts = path.split(/[\\/]/).filter(Boolean);
@@ -42,6 +46,7 @@ function installKijiDesktopApi(): void {
 
   let helperTaskListenerInstalled = false;
   const helperTaskListeners = new Set<(event: HelperTaskResultEvent) => void>();
+  let appMenuNativeListenerInstalled = false;
 
   const ensureHelperTaskListener = (): void => {
     if (helperTaskListenerInstalled) {
@@ -54,6 +59,19 @@ function installKijiDesktopApi(): void {
       }
     });
     helperTaskListenerInstalled = true;
+  };
+
+  const ensureAppMenuNativeListener = (): void => {
+    if (appMenuNativeListenerInstalled) {
+      return;
+    }
+
+    createDeferredUnsubscribe(
+      listen<AppMenuCommand>('app-menu:command', (event) => {
+        publishAppMenuCommand(event.payload);
+      }),
+    );
+    appMenuNativeListenerInstalled = true;
   };
 
   const api: KijiDesktopAPI = {
@@ -104,9 +122,8 @@ function installKijiDesktopApi(): void {
       await tauriClient.shell.updateMenuState(state);
     },
     onAppMenuCommand(callback: (command: AppMenuCommand) => void) {
-      return createDeferredUnsubscribe(listen<AppMenuCommand>('app-menu:command', (event) => {
-        callback(event.payload);
-      }));
+      ensureAppMenuNativeListener();
+      return subscribeAppMenuCommand(callback);
     },
     async openExternal(url) {
       await tauriClient.shell.openExternal({ url });

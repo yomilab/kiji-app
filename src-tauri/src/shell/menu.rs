@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
-    AppHandle, Emitter, Manager, State, Wry,
+    AppHandle, Emitter, Manager, Wry,
 };
 use tauri_plugin_opener::OpenerExt;
 
@@ -79,10 +79,15 @@ pub struct AppMenuStatePatch {
 
 impl ApplicationMenu {
     pub fn install(app: &AppHandle) -> Result<(), String> {
-        let (menu, handles) = Self::build_menu(app)?;
-        app.set_menu(menu)
-            .map_err(|error| format!("Failed to install the application menu: {error}"))?;
-        app.manage(handles);
+        // Native HMENU is reliable on macOS (system menu bar). On Windows/Linux with
+        // frameless windows it is intermittent and overlaps in-app sidebar chrome —
+        // those platforms use the renderer AppMenuBar instead.
+        if cfg!(target_os = "macos") {
+            let (menu, handles) = Self::build_menu(app)?;
+            app.set_menu(menu)
+                .map_err(|error| format!("Failed to install the application menu: {error}"))?;
+            app.manage(handles);
+        }
 
         let app_handle = app.clone();
         app.on_menu_event(move |app, event| {
@@ -452,10 +457,14 @@ impl ApplicationMenu {
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn shell_menu_update_state(
+    app: AppHandle,
     patch: AppMenuStatePatch,
-    menu: State<'_, ApplicationMenu>,
 ) -> Result<(), String> {
-    menu.apply_patch(patch)
+    // No-op on Windows/Linux where the native ApplicationMenu is not installed.
+    if let Some(menu) = app.try_state::<ApplicationMenu>() {
+        menu.apply_patch(patch)?;
+    }
+    Ok(())
 }
 
 fn emit_menu_command(app: &AppHandle, command: AppMenuCommand) {

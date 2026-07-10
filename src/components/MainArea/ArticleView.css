@@ -6,7 +6,7 @@
   right: 0;
   bottom: 0;
   width: 100vw;
-  height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -18,6 +18,16 @@
   backface-visibility: hidden;
   transform: translateZ(0);
   contain: layout paint style;
+}
+
+/* Keep the Windows/Linux in-app menu bar reachable while reading */
+html[data-os="windows"] .article-view,
+html[data-os="linux"] .article-view,
+html[data-os="other"] .article-view {
+  top: 36px;
+  height: auto;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 [data-theme="dark"] .article-view {

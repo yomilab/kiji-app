@@ -1,15 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { trafficLightVisibilityBus } from '@/services/ui/trafficLightVisibilityBus';
+import { isInAppMenuBarOs, readDocumentOs } from '@/services/ui/appMenuModel';
+import { WindowCaptionButtons } from '@/components/WindowChrome/WindowCaptionButtons';
 import './TrafficLights.css';
 
 interface TrafficLightsProps {
   visible?: boolean;
+  /** When true, skip rendering on Windows/Linux (main window uses AppMenuBar captions). */
+  hideOnInAppMenuBarOs?: boolean;
 }
 
-export const TrafficLights: React.FC<TrafficLightsProps> = ({ visible: visibleProp = true }) => {
+export const TrafficLights: React.FC<TrafficLightsProps> = ({
+  visible: visibleProp = true,
+  hideOnInAppMenuBarOs = false,
+}) => {
   const [isHovered, setIsHovered] = useState(false);
   const [visible, setVisible] = useState(() => trafficLightVisibilityBus.getVisible() && visibleProp);
+  const os = readDocumentOs();
+  const useWindowsCaptions = isInAppMenuBarOs(os);
 
   useEffect(() => trafficLightVisibilityBus.subscribe((nextVisible) => {
     setVisible(nextVisible && visibleProp);
@@ -18,6 +27,18 @@ export const TrafficLights: React.FC<TrafficLightsProps> = ({ visible: visiblePr
   useEffect(() => {
     setVisible(trafficLightVisibilityBus.getVisible() && visibleProp);
   }, [visibleProp]);
+
+  if (!visible) {
+    return null;
+  }
+
+  if (hideOnInAppMenuBarOs && useWindowsCaptions) {
+    return null;
+  }
+
+  if (useWindowsCaptions) {
+    return <WindowCaptionButtons className="window-caption-buttons-fixed" />;
+  }
 
   const handleClose = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -45,10 +66,6 @@ export const TrafficLights: React.FC<TrafficLightsProps> = ({ visible: visiblePr
     }
     void getCurrentWindow().toggleMaximize();
   };
-
-  if (!visible) {
-    return null;
-  }
 
   return (
     <div

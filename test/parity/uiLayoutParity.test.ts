@@ -81,4 +81,17 @@ describe("UI layout parity (21b)", () => {
     expect(themeCss).toContain("rgba(247, 246, 244, 0.82)");
     expect(themeCss).toContain("rgba(30, 30, 32, 0.88)");
   });
+
+  it("settings content pane tokens follow data-theme light and dark", () => {
+    const settingsCss = readFileSync(
+      join(process.cwd(), "src/components/SettingsWindow/SettingsWindow.css"),
+      "utf8",
+    );
+
+    expect(settingsCss).toContain("--settings-main-bg: #f7f6f4");
+    expect(settingsCss).toContain('[data-theme="dark"] .settings-window');
+    expect(settingsCss).toContain("--settings-main-bg: #1f1f20");
+    expect(settingsCss).toContain("--settings-row-border");
+    expect(settingsCss).toContain("--settings-select-chevron");
+  });
 });

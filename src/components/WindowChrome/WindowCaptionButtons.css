@@ -1,0 +1,53 @@
+.window-caption-buttons {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.window-caption-button {
+  width: 46px;
+  height: 100%;
+  min-height: 32px;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  color: var(--theme-text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: no-drag;
+  transition: background-color 0.12s ease;
+}
+
+.window-caption-icon {
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 500;
+  opacity: 0.85;
+  user-select: none;
+}
+
+.window-caption-button:hover {
+  background-color: var(--theme-hover-overlay);
+}
+
+.window-caption-close:hover {
+  background-color: #e81123;
+  color: #fff;
+}
+
+.window-caption-close:hover .window-caption-icon {
+  opacity: 1;
+}
+
+.window-caption-buttons-fixed {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 36px;
+  z-index: 10000;
+}

@@ -47,15 +47,38 @@ body {
   overscroll-behavior: none;
 }
 
+.app-window-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+.app-window-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
 .app-container {
   display: flex;
-  height: 100vh;
-  width: 100vw;
+  height: 100%;
+  width: 100%;
   overflow: hidden;
   overscroll-behavior: none;
   background-color: transparent !important;
   background: transparent !important;
   border-radius: var(--app-window-radius);
+}
+
+.app-window-shell.has-app-menu-bar .app-container {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .app-deck-root {

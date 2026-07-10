@@ -5,6 +5,7 @@ import { App } from "./App";
 import { ArticleWindow } from "./components/ArticleWindow/ArticleWindow";
 import { UpdateWindow } from "./components/UpdateWindow/UpdateWindow";
 import { SettingsWindow } from "./components/SettingsWindow/SettingsWindow";
+import { AppMenuBar } from "./components/AppMenuBar/AppMenuBar";
 import { TrafficLights } from "./components/TrafficLights/TrafficLights";
 import { FeedProvider } from "./contexts/FeedContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -19,6 +20,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { installKijiDesktopApi } from "./services/tauri/kijiDesktopApi";
 import { createDeferredUnsubscribe } from "./services/tauri/tauriEventSubscription";
 import { installInteractionFreezeWatchdog } from "./services/performance/interactionFreezeWatchdog";
+import { isInAppMenuBarOs, readDocumentOs } from "./services/ui/appMenuModel";
 import type { Article } from "./types/article";
 import { getRendererWindowType, type RendererWindowType } from "./utils/rendererWindow";
 import "./styles/google-sans.css";
@@ -137,6 +139,8 @@ function ArticleWindowBranch() {
 }
 
 function renderWindow(windowType: RendererWindowType): React.ReactElement {
+  const showInAppMenuBar = windowType === "main" && isInAppMenuBarOs(readDocumentOs());
+
   if (windowType === "settings") {
     return (
       <React.StrictMode>
@@ -174,8 +178,13 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
     <React.StrictMode>
       <ThemeProvider>
         <FeedProvider>
-          <TrafficLights />
-          <App />
+          <div className={`app-window-shell ${showInAppMenuBar ? "has-app-menu-bar" : ""}`}>
+            {showInAppMenuBar ? <AppMenuBar /> : null}
+            <div className="app-window-body">
+              <TrafficLights hideOnInAppMenuBarOs />
+              <App />
+            </div>
+          </div>
         </FeedProvider>
       </ThemeProvider>
     </React.StrictMode>
