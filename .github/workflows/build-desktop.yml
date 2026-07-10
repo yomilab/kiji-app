@@ -14,8 +14,9 @@ on:
           - both
   push:
     branches:
-      - dev
       - main
+    tags:
+      - 'v*.*.*'
 
 concurrency:
   group: tauri-desktop-${{ github.ref }}-${{ github.event.inputs.profile || 'release' }}
