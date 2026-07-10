@@ -13,12 +13,45 @@ use std::{
     },
     time::Duration,
 };
-use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, State, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
 const SETTINGS_WINDOW_LABEL: &str = "settings";
 const ARTICLE_WINDOW_LABEL: &str = "article";
+const UPDATE_WINDOW_LABEL: &str = "update";
 const MAIN_WINDOW_LABEL: &str = "main";
+const UPDATE_WINDOW_OPEN_EVENT: &str = "update-window:open";
+
+pub struct UpdateWindowState {
+    payload: Mutex<Option<JsonValue>>,
+}
+
+impl UpdateWindowState {
+    pub fn new() -> Self {
+        Self {
+            payload: Mutex::new(None),
+        }
+    }
+
+    pub fn set_payload(&self, payload: JsonValue) -> Result<(), String> {
+        let mut guard = self
+            .payload
+            .lock()
+            .map_err(|_| "Update window state lock poisoned.".to_string())?;
+        *guard = Some(payload);
+        Ok(())
+    }
+
+    pub fn clone_payload(&self) -> Result<JsonValue, String> {
+        let guard = self
+            .payload
+            .lock()
+            .map_err(|_| "Update window state lock poisoned.".to_string())?;
+        guard
+            .clone()
+            .ok_or_else(|| "No update payload was provided for the Tauri update window.".to_string())
+    }
+}
 
 pub struct MainWindowBoundsSaveGuard(pub Arc<AtomicBool>);
 
@@ -115,31 +148,44 @@ pub fn shell_settings_window_open(app: AppHandle) -> Result<(), String> {
 }
 
 pub fn open_article_window(app: &AppHandle) -> Result<(), String> {
-    let article_window = match app.get_webview_window(ARTICLE_WINDOW_LABEL) {
+    open_secondary_window(app, ARTICLE_WINDOW_LABEL)
+}
+
+fn open_secondary_window(app: &AppHandle, label: &str) -> Result<(), String> {
+    let window = match app.get_webview_window(label) {
         Some(window) => window,
         None => {
-            let article_config = app
+            let window_config = app
                 .config()
                 .app
                 .windows
                 .iter()
-                .find(|window| window.label == ARTICLE_WINDOW_LABEL)
-                .ok_or_else(|| "Article window config was not found.".to_string())?;
+                .find(|window| window.label == label)
+                .ok_or_else(|| format!("{label} window config was not found."))?;
 
-            WebviewWindowBuilder::from_config(app, article_config)
-                .map_err(|error| format!("Failed to prepare article window: {error}"))?
+            WebviewWindowBuilder::from_config(app, window_config)
+                .map_err(|error| format!("Failed to prepare {label} window: {error}"))?
                 .build()
-                .map_err(|error| format!("Failed to create article window: {error}"))?
+                .map_err(|error| format!("Failed to create {label} window: {error}"))?
         }
     };
 
-    let _ = article_window.unminimize();
-    article_window
+    let _ = window.unminimize();
+    window
         .show()
-        .map_err(|error| format!("Failed to show article window: {error}"))?;
-    article_window
+        .map_err(|error| format!("Failed to show {label} window: {error}"))?;
+    window
         .set_focus()
-        .map_err(|error| format!("Failed to focus article window: {error}"))
+        .map_err(|error| format!("Failed to focus {label} window: {error}"))
+}
+
+fn emit_secondary_window_open(app: &AppHandle, label: &str, event_name: &str) -> Result<(), String> {
+    let Some(window) = app.get_webview_window(label) else {
+        return Ok(());
+    };
+    window
+        .emit(event_name, ())
+        .map_err(|error| format!("Failed to emit {event_name}: {error}"))
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -160,6 +206,35 @@ pub fn shell_article_window_get_data(
     if window.label() != ARTICLE_WINDOW_LABEL {
         return Err(format!(
             "Article window payload can only be read from the article webview (got {}).",
+            window.label()
+        ));
+    }
+    state.clone_payload()
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn shell_update_window_open(
+    app: AppHandle,
+    payload: JsonValue,
+    state: State<'_, Arc<UpdateWindowState>>,
+) -> Result<(), String> {
+    state.set_payload(payload)?;
+    let existed = app.get_webview_window(UPDATE_WINDOW_LABEL).is_some();
+    open_secondary_window(&app, UPDATE_WINDOW_LABEL)?;
+    if existed {
+        emit_secondary_window_open(&app, UPDATE_WINDOW_LABEL, UPDATE_WINDOW_OPEN_EVENT)?;
+    }
+    Ok(())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn shell_update_window_get_data(
+    window: WebviewWindow,
+    state: State<'_, Arc<UpdateWindowState>>,
+) -> Result<JsonValue, String> {
+    if window.label() != UPDATE_WINDOW_LABEL {
+        return Err(format!(
+            "Update window payload can only be read from the update webview (got {}).",
             window.label()
         ));
     }

@@ -80,6 +80,16 @@ export async function getArticleWindowData(): Promise<ShellContract["getArticleW
   return invokeContract<ShellContract["getArticleWindowData"]>("shell_article_window_get_data");
 }
 
+export async function openUpdateWindow(
+  request: ShellContract["openUpdateWindow"]["request"],
+): Promise<ShellContract["openUpdateWindow"]["response"]> {
+  return invokeCommand<ShellContract["openUpdateWindow"]["response"]>("shell_update_window_open", { payload: request });
+}
+
+export async function getUpdateWindowData(): Promise<ShellContract["getUpdateWindowData"]["response"]> {
+  return invokeContract<ShellContract["getUpdateWindowData"]>("shell_update_window_get_data");
+}
+
 export async function share(
   request: ShellContract["share"]["request"],
 ): Promise<ShellContract["share"]["response"]> {

@@ -6,6 +6,7 @@ import { TOOLTIPS } from '@/config/tooltips';
 import { useFeedRefreshActivity } from '@/hooks/useFeedRefreshActivity';
 import { isInteractiveStationRefreshInProgress } from '@/services/feeds/feedRefreshActivity';
 import { SHORTCUT_LABELS, withShortcutHint } from '@/services/shortcuts/shortcutService';
+import { UpdatePromptButton } from './UpdatePromptButton';
 import './SidebarWidgets.css';
 
 interface SidebarWidgetsProps {
@@ -59,6 +60,7 @@ export const SidebarWidgets: React.FC<SidebarWidgetsProps> = ({ onAddFeed }) => 
           <AddIcon sx={{ fontSize: 'var(--widget-button-icon-size)' }} />
         </span>
       </button>
+      <UpdatePromptButton />
     </div>
   );
 };

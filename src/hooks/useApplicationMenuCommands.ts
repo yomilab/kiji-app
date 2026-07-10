@@ -12,7 +12,13 @@ import {
   navigateAfterOpmlImport,
   openOpmlFileForImport,
 } from '@/services/feeds/opmlUiWorkflow';
-import { APP_DOWNLOADS_URL } from '@/config/appIdentity';
+import { APP_NAME } from '@/config/appIdentity';
+import {
+  checkForUpdateDetailed,
+  openUpdateWindow,
+  toUpdateWindowPayload,
+} from '@/services/system/appUpdateService';
+import { dismissUpdatePromptForSession } from '@/services/system/appUpdateSession';
 import { logger } from '@/services/logger';
 import { savedArticlesIOService } from '@/services/saved/savedArticlesIOService';
 import { savedArticlesService } from '@/services/saved/savedArticlesService';
@@ -326,19 +332,25 @@ export const useApplicationMenuCommands = ({
           void handleImportFeeds();
           break;
         case 'checkUpdates':
-          if (!window.kijiAPI?.openExternal) {
-            appToastService.show('Downloads page is not available.');
-            break;
-          }
+          void (async () => {
+            const result = await checkForUpdateDetailed();
+            if (result.status === 'up-to-date') {
+              appToastService.show(`${APP_NAME} ${result.currentVersion} is up to date.`);
+              return;
+            }
+            if (result.status === 'error') {
+              appToastService.show('Could not check for updates. Try again later.');
+              return;
+            }
 
-          void window.kijiAPI.openExternal(APP_DOWNLOADS_URL)
-            .then(() => {
-              appToastService.show('Opened the KiJi downloads page.');
-            })
-            .catch((error) => {
-              logger.error('AppMenu', 'Failed to open downloads page from Check Updates', { error });
-              appToastService.show('Failed to open the KiJi downloads page.');
-            });
+            dismissUpdatePromptForSession();
+            try {
+              await openUpdateWindow(toUpdateWindowPayload(result.availability));
+            } catch (error) {
+              logger.error('AppMenu', 'Failed to open update window from Check Updates', { error });
+              appToastService.show('Failed to open the update window.');
+            }
+          })();
           break;
         case 'exportFeeds':
           void handleExportFeeds();

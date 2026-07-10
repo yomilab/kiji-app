@@ -11,5 +11,7 @@ export const CONTACT_EMAIL_ADDRESS = 'hello@yomilab.app';
 export const APP_WEBSITE_URL = 'https://kiji.yomilab.app';
 export const APP_DOWNLOADS_URL = `${APP_WEBSITE_URL}/download/`;
 export const APP_UPDATES_FEED_URL = `${APP_WEBSITE_URL}/feed.xml`;
-export const PUBLIC_RELEASE_MANIFEST_URL = 'https://github.com/yomilab/kiji-release/releases/latest/download/release.json';
+export const APP_RELEASE_MANIFEST_URL = `${APP_WEBSITE_URL}/release.json`;
+/** @deprecated Use APP_RELEASE_MANIFEST_URL */
+export const PUBLIC_RELEASE_MANIFEST_URL = APP_RELEASE_MANIFEST_URL;
 export const RECOMMENDED_OPML_DIRECTORY_URL = 'https://raw.githubusercontent.com/yomilab/kiji-resource/main/recommended.opml';

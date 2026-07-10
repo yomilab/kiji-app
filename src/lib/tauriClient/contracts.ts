@@ -1,4 +1,5 @@
 import type { AppSettings, AppSettingsPatch } from "../settings";
+import type { UpdateWindowPayload } from "@/services/system/appUpdateTypes";
 
 export type ISODateString = string;
 export type DataUrlString = string;
@@ -1011,6 +1012,13 @@ export interface ShellContract {
   };
   getArticleWindowData: {
     response: ArticleRecord;
+  };
+  openUpdateWindow: {
+    request: UpdateWindowPayload;
+    response: void;
+  };
+  getUpdateWindowData: {
+    response: UpdateWindowPayload;
   };
   share: {
     request: ShareRequest;

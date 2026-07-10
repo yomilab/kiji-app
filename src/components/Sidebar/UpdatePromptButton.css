@@ -1,0 +1,16 @@
+.update-prompt-button .update-prompt-icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.update-prompt-badge {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background-color: #e5484d;
+  box-shadow: 0 0 0 1px var(--theme-sidebar-bg, rgba(0, 0, 0, 0.2));
+  pointer-events: none;
+}

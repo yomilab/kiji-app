@@ -1,8 +1,6 @@
 # 📰 KiJi
 
-### A simple, private RSS reader that runs *entirely on your machine.*
-
-KiJi helps you follow feeds, save articles, sync saved reading to a local Markdown folder, and export your data — without tracking, accounts, or algorithmic noise. Your subscriptions, reading state, and saved articles stay in a local SQLite database on your device.
+### A simple, private reader.
 
 [![Build](https://github.com/yomilab/kiji-app/actions/workflows/build-desktop.yml/badge.svg)](https://github.com/yomilab/kiji-app/actions/workflows/build-desktop.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](./LICENSE)
@@ -14,31 +12,23 @@ KiJi helps you follow feeds, save articles, sync saved reading to a local Markdo
 
 ## Preview
 
-### Article list
-
 ![KiJi article list with stations sidebar](screenshots/preview-article-list.png)
-
-### Reader mode
 
 ![KiJi reader mode](screenshots/preview-reader-mode.png)
 
 ## ✨ Features
 
-- **🔒 Completely local.** Feeds, articles, saved items, Markdown files, and reading state live in a SQLite database on your machine. KiJi does not collect personal reading data.
+- **🔒 Completely local.** Feeds, articles, saved items, Markdown files, and reading state stay in a local SQLite database on your machine.
 - **📥 Portable subscriptions.** Import and export feeds with OPML so your subscriptions stay portable.
 - **📝 Markdown sync and exports.** Sync saved articles to a local Markdown folder and export the full saved archive when you want a portable backup.
 - **📖 Reader mode.** Clean article reading with saved-article support, typography controls, and distraction-free layout.
 - **🏷️ Stations and smart views.** Group feeds into stations; browse All, Unread, and Saved from the sidebar.
-- **🖥️ Native desktop shell.** Built with Tauri 2 — frameless window, macOS vibrancy, and platform-native packaging for macOS, Windows, and Linux.
 
 ## 🛡️ Privacy
 
-KiJi is **local-first by design.**
-
-- Your feeds, articles, saved items, and reading state stay **on your device** in `kiji.db` and optional local Markdown sync folders.
-- There is **no account**, **no telemetry**, and **no reading analytics** in the app.
-- Network requests are limited to **fetching RSS/Atom feeds** (and optional update checks when you use the built-in updater).
-- OPML import/export and saved-article export give you **portable, user-owned copies** of your data.
+- **OPML import/export** — bring subscriptions in and take them with you.
+- **Markdown sync** — sync saved articles to a local folder on your machine.
+- **Saved-article export** — export your full saved archive whenever you want a portable backup.
 
 <p align="center">
   <sub>📰 KiJi · <a href="https://kiji.yomilab.app">kiji.yomilab.app</a></sub>

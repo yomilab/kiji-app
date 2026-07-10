@@ -8,9 +8,12 @@ import {
   type ReadingLayoutSettings,
 } from "@/services/settings/styleVariables";
 
-function resolveRendererWindowType(search: string): "main" | "settings" | "article" {
+function resolveRendererWindowType(search: string): "main" | "settings" | "article" | "update" {
   const windowType = new URLSearchParams(search).get("window");
-  return windowType === "settings" || windowType === "article" ? windowType : "main";
+  if (windowType === "settings" || windowType === "article" || windowType === "update") {
+    return windowType;
+  }
+  return "main";
 }
 
 describe("UI layout parity (21b)", () => {
@@ -26,6 +29,7 @@ describe("UI layout parity (21b)", () => {
     expect(resolveRendererWindowType("")).toBe("main");
     expect(resolveRendererWindowType("?window=settings")).toBe("settings");
     expect(resolveRendererWindowType("?window=article")).toBe("article");
+    expect(resolveRendererWindowType("?window=update")).toBe("update");
     expect(resolveRendererWindowType("?window=article&foo=1")).toBe("article");
   });
 
@@ -73,5 +77,8 @@ describe("UI layout parity (21b)", () => {
     expect(themeCss).toContain("--theme-article-bg");
     expect(themeCss).toContain("--theme-primary-color");
     expect(themeCss).toContain("--font-family-ui");
+    expect(themeCss).toContain('html[data-os="windows"]');
+    expect(themeCss).toContain("rgba(247, 246, 244, 0.82)");
+    expect(themeCss).toContain("rgba(30, 30, 32, 0.88)");
   });
 });

@@ -29,6 +29,19 @@
 
         root.setAttribute("data-theme", resolvedTheme);
         root.style.colorScheme = resolvedTheme;
+
+        // Platform chrome: macOS uses native sidebar vibrancy; Windows/Linux need CSS glass.
+        const ua = navigator.userAgent.toLowerCase();
+        const platform = navigator.platform ? navigator.platform.toLowerCase() : "";
+        const os =
+          ua.includes("mac") || platform.includes("mac")
+            ? "macos"
+            : ua.includes("win") || platform.includes("win")
+              ? "windows"
+              : ua.includes("linux") || platform.includes("linux")
+                ? "linux"
+                : "other";
+        root.setAttribute("data-os", os);
       })();
     </script>
   </head>
