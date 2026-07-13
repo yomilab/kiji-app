@@ -1,3 +1,26 @@
 .update-window .app-info-window-body {
   padding-top: 4px;
 }
+
+.update-window-error {
+  color: var(--theme-text-primary);
+}
+
+.update-window-error h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.update-window-error p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--theme-text-secondary);
+  max-width: 28em;
+}
+
+.update-window-error-actions {
+  margin-top: 8px;
+  width: min(100%, 240px);
+}

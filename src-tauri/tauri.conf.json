@@ -31,6 +31,7 @@
       },
       {
         "label": "settings",
+        "create": false,
         "title": "KiJi Settings",
         "url": "index.html?window=settings",
         "width": 700,
@@ -67,6 +68,7 @@
       },
       {
         "label": "update",
+        "create": false,
         "title": "KiJi Update",
         "url": "index.html?window=update",
         "width": 420,

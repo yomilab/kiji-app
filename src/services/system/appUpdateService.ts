@@ -14,7 +14,7 @@ import type {
   UpdateWindowPayload,
 } from './appUpdateTypes';
 
-const MANIFEST_FETCH_TIMEOUT_MS = 20_000;
+const MANIFEST_FETCH_TIMEOUT_MS = 3_000;
 const SUMMARY_MAX_LENGTH = 200;
 
 const DOWNLOAD_ORDER = [
@@ -220,8 +220,20 @@ export async function checkForUpdateDetailed(): Promise<UpdateCheckResult> {
       },
     };
   } catch (error) {
-    logger.warn('AppUpdate', 'Failed to check for updates', { error });
-    return { status: 'error' };
+    const message = error instanceof Error ? error.message : String(error);
+    const timedOut = error instanceof DOMException && error.name === 'AbortError'
+      || /aborted|timed out|timeout/i.test(message);
+    logger.warn('AppUpdate', 'Failed to check for updates', {
+      error: message,
+      timedOut,
+      timeoutMs: MANIFEST_FETCH_TIMEOUT_MS,
+    });
+    return {
+      status: 'error',
+      message: timedOut
+        ? `Update check timed out after ${MANIFEST_FETCH_TIMEOUT_MS / 1000}s.`
+        : message || 'Failed to check for updates.',
+    };
   }
 }
 

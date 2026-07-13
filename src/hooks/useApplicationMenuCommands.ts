@@ -339,7 +339,7 @@ export const useApplicationMenuCommands = ({
               return;
             }
             if (result.status === 'error') {
-              appToastService.show('Could not check for updates. Try again later.');
+              appToastService.show(result.message ?? 'Could not check for updates. Try again later.');
               return;
             }
 

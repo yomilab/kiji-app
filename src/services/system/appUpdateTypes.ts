@@ -42,4 +42,4 @@ export interface UpdateWindowPayload {
 export type UpdateCheckResult =
   | { status: 'available'; availability: UpdateAvailability }
   | { status: 'up-to-date'; currentVersion: string }
-  | { status: 'error' };
+  | { status: 'error'; message?: string };
