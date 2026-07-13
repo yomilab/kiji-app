@@ -77,7 +77,7 @@ export async function buildE2eDebugBundleIfNeeded() {
   };
 
   await runNpmScript("build:web", buildEnv);
-  await runNpmScript("build:debug", buildEnv);
+  await runNpmScript("build:debug:app", buildEnv);
   return resolveE2eBundledBinary();
 }
 
