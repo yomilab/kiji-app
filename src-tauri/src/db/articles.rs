@@ -547,42 +547,95 @@ pub fn query_articles(
     } else {
         "a.feed_id"
     };
-    let group_by = if has_source_filter && !single_feed_only {
-        " GROUP BY a.hash"
+
+    let mut data_sql = if grouped_source_fast_path {
+        // Page keys from the covering feed-date index, then join metadata for
+        // the LIMIT rows only. Avoids sorting tens of thousands of joined
+        // article+feed rows on every cold station switch (H17).
+        let page_sort_expr = if request.sort_field.as_deref() == Some("fetched_date") {
+            "afi.fetched_date"
+        } else {
+            "COALESCE(afi.published_date, afi.fetched_date)"
+        };
+        let having_sql = if having_conditions.is_empty() {
+            String::new()
+        } else {
+            format!(" HAVING {}", having_conditions.join(" AND "))
+        };
+        format!(
+            r#"
+            SELECT
+              a.hash,
+              a.feed_id AS feed_id,
+              a.title,
+              a.description,
+              '' AS content,
+              a.link,
+              a.author,
+              a.published_date,
+              a.fetched_date,
+              a.read,
+              a.starred,
+              a.saved,
+              a.saved_article_id,
+              a.last_read_at,
+              a.metadata_json,
+              COALESCE(f.url, a.feed_url) AS feed_url,
+              COALESCE(f.title, a.feed_title) AS feed_title,
+              COALESCE(f.favicon, a.feed_favicon) AS feed_favicon,
+              COALESCE(f.favicon_has_transparency, a.feed_favicon_has_transparency) AS feed_favicon_has_transparency,
+              COALESCE(f.favicon_bg_light, a.feed_favicon_bg_light) AS feed_favicon_bg_light,
+              COALESCE(f.favicon_bg_dark, a.feed_favicon_bg_dark) AS feed_favicon_bg_dark,
+              COALESCE(f.image, a.feed_image) AS feed_image
+            FROM (
+              SELECT
+                afi.article_hash AS article_hash,
+                MAX({page_sort_expr}) AS sort_date
+              FROM article_feed_items afi
+              {data_where}
+              GROUP BY afi.article_hash
+              {having_sql}
+              ORDER BY sort_date {sort_order}, article_hash ASC
+            "#
+        )
     } else {
-        ""
+        let group_by = if has_source_filter && !single_feed_only {
+            " GROUP BY a.hash"
+        } else {
+            ""
+        };
+        format!(
+            r#"
+            SELECT
+              a.hash,
+              {display_feed_id_sql} AS feed_id,
+              a.title,
+              a.description,
+              '' AS content,
+              a.link,
+              a.author,
+              a.published_date,
+              a.fetched_date,
+              a.read,
+              a.starred,
+              a.saved,
+              a.saved_article_id,
+              a.last_read_at,
+              a.metadata_json,
+              COALESCE(f.url, a.feed_url) AS feed_url,
+              COALESCE(f.title, a.feed_title) AS feed_title,
+              COALESCE(f.favicon, a.feed_favicon) AS feed_favicon,
+              COALESCE(f.favicon_has_transparency, a.feed_favicon_has_transparency) AS feed_favicon_has_transparency,
+              COALESCE(f.favicon_bg_light, a.feed_favicon_bg_light) AS feed_favicon_bg_light,
+              COALESCE(f.favicon_bg_dark, a.feed_favicon_bg_dark) AS feed_favicon_bg_dark,
+              COALESCE(f.image, a.feed_image) AS feed_image
+            FROM {from_sql}
+            LEFT JOIN feeds f ON f.id = {display_feed_id_sql}
+            {data_where}{group_by}
+            ORDER BY {sort_expr} {sort_order}, {sort_hash_expr} ASC
+            "#
+        )
     };
-    let mut data_sql = format!(
-        r#"
-        SELECT
-          a.hash,
-          {display_feed_id_sql} AS feed_id,
-          a.title,
-          a.description,
-          '' AS content,
-          a.link,
-          a.author,
-          a.published_date,
-          a.fetched_date,
-          a.read,
-          a.starred,
-          a.saved,
-          a.saved_article_id,
-          a.last_read_at,
-          a.metadata_json,
-          COALESCE(f.url, a.feed_url) AS feed_url,
-          COALESCE(f.title, a.feed_title) AS feed_title,
-          COALESCE(f.favicon, a.feed_favicon) AS feed_favicon,
-          COALESCE(f.favicon_has_transparency, a.feed_favicon_has_transparency) AS feed_favicon_has_transparency,
-          COALESCE(f.favicon_bg_light, a.feed_favicon_bg_light) AS feed_favicon_bg_light,
-          COALESCE(f.favicon_bg_dark, a.feed_favicon_bg_dark) AS feed_favicon_bg_dark,
-          COALESCE(f.image, a.feed_image) AS feed_image
-        FROM {from_sql}
-        LEFT JOIN feeds f ON f.id = {display_feed_id_sql}
-        {data_where}{group_by}
-        ORDER BY {sort_expr} {sort_order}, {sort_hash_expr} ASC
-        "#
-    );
 
     if let Some(limit) = request.limit {
         data_sql.push_str(" LIMIT ?");
@@ -591,6 +644,19 @@ pub fn query_articles(
             data_sql.push_str(" OFFSET ?");
             bindings.push(Value::Integer(offset));
         }
+    }
+
+    if grouped_source_fast_path {
+        // Close the page subquery, then join metadata for the limited rows.
+        data_sql.push_str(
+            r#"
+            ) page
+            JOIN articles a ON a.hash = page.article_hash
+            LEFT JOIN feeds f ON f.id = a.feed_id
+            ORDER BY page.sort_date "#,
+        );
+        data_sql.push_str(sort_order);
+        data_sql.push_str(", page.article_hash ASC");
     }
 
     let mut statement = connection

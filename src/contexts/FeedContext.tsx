@@ -2179,15 +2179,23 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      const { articles: fresh, total: freshTotal } = await articleStore.query(feedQuery);
-      if (!isSelectionActive(token)) {
-        return;
+      // Cold deferred Phase A owns the first DB page. Skip a competing query
+      // when the network refresh inserted nothing (common on switch cooldown /
+      // native boostMany handoff).
+      const coldDeferredOwnsFirstPage =
+        pendingColdSwitchSqliteTokenRef.current === token
+        && currentArticlesRef.current.length === 0;
+      if (!(coldDeferredOwnsFirstPage && insertedCount === 0)) {
+        const { articles: fresh, total: freshTotal } = await articleStore.query(feedQuery);
+        if (!isSelectionActive(token)) {
+          return;
+        }
+        dispatchArticlesTransitionIfChanged(fresh, freshTotal);
+        interactionPerformance.markTimedInteractionStage('sidebar-switch', `feed:${feedId}`, 'freshReady', {
+          freshArticleCount: fresh.length,
+          freshArticleTotal: freshTotal,
+        });
       }
-      dispatchArticlesTransitionIfChanged(fresh, freshTotal);
-      interactionPerformance.markTimedInteractionStage('sidebar-switch', `feed:${feedId}`, 'freshReady', {
-        freshArticleCount: fresh.length,
-        freshArticleTotal: freshTotal,
-      });
 
       if (perfMark && HAS_PERFORMANCE_API) {
         performance.mark(`${perfMark}:fresh-ready`);
@@ -2259,7 +2267,15 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       let freshArticleCount = currentArticlesRef.current.length;
       let freshArticleTotal = nonSearchArticlesTotalCountRef.current;
-      if (isArticleViewTransitioning()) {
+      // Cold Phase A owns the first DB page. A concurrent reconcile here used
+      // includeTotal:true (COUNT DISTINCT) and raced the deferred page query —
+      // 2026-07-14 Tech switch: sqlite-query-deferred 6071ms while Phase B
+      // waited on the same reader pool (H17).
+      const coldDeferredOwnsFirstPage = pendingColdSwitchSqliteTokenRef.current === token;
+      if (coldDeferredOwnsFirstPage) {
+        // Phase A will publish; background apply picks up any later inserts
+        // after the scheduler resumes.
+      } else if (isArticleViewTransitioning()) {
         pendingBackgroundRefreshSourceKeyRef.current = sourceKey;
       } else {
         await reconcileSwitchVisiblePage({

@@ -1064,6 +1064,146 @@ mod tests {
     }
 
     #[test]
+    fn multi_feed_tag_query_pages_via_feed_item_index_fast_path() {
+        // H17: station/tag lists must page from article_feed_items before joining
+        // article/feed metadata so LIMIT does not sort the full joined station.
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+
+        for feed_id in ["feed-a", "feed-b"] {
+            connection
+                .execute(
+                    r#"
+                    INSERT INTO feeds (
+                      id, title, url, created_at, description, last_fetched, last_failed_fetch_at,
+                      unread_count, article_count, tags_json, favicon, favicon_has_transparency,
+                      favicon_dominant_color, favicon_bg_light, favicon_bg_dark, favicon_fetch_failed,
+                      emoji, image, categories_json, language, is_podcast,
+                      podcast_metadata_json, reader_mode_enabled, etag, last_modified_header
+                    ) VALUES (
+                      ?1, ?1, ?2, '2026-07-14T00:00:00.000Z', '', NULL, NULL, 0, 0, '["Station"]',
+                      NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, '[]', 'en', 0, NULL,
+                      0, NULL, NULL
+                    )
+                    "#,
+                    params![feed_id, format!("https://example.com/{feed_id}.xml")],
+                )
+                .expect("insert feed");
+        }
+
+        connection
+            .execute(
+                "INSERT INTO tags (name, color, emoji, created_at, sort_order) VALUES ('Station', NULL, NULL, '2026-07-14T00:00:00.000Z', 0)",
+                [],
+            )
+            .expect("insert tag");
+
+        for feed_id in ["feed-a", "feed-b"] {
+            connection
+                .execute(
+                    "INSERT INTO feed_tags (feed_id, tag_name) VALUES (?1, 'Station')",
+                    params![feed_id],
+                )
+                .expect("tag feed");
+        }
+
+        for index in 0..20 {
+            let feed_id = if index % 2 == 0 { "feed-a" } else { "feed-b" };
+            let hash = format!("station-hash-{index:02}");
+            let published = format!("2026-07-14T{:02}:00:00.000Z", 20 - index);
+            connection
+                .execute(
+                    r#"
+                    INSERT INTO articles (
+                      hash, feed_id, title, description, content, link, author,
+                      published_date, fetched_date, read, starred, saved, saved_article_id,
+                      last_read_at, metadata_json, feed_url, feed_title, feed_favicon,
+                      feed_favicon_has_transparency, feed_favicon_bg_light, feed_favicon_bg_dark, feed_image
+                    ) VALUES (
+                      ?1, ?2, ?3, '', '', ?4, NULL,
+                      ?5, ?5, 0, 0, 0, NULL,
+                      NULL, NULL, NULL, NULL, NULL,
+                      NULL, NULL, NULL, NULL
+                    )
+                    "#,
+                    params![
+                        hash,
+                        feed_id,
+                        format!("Station article {index}"),
+                        format!("https://example.com/{hash}"),
+                        published
+                    ],
+                )
+                .expect("insert article");
+            connection
+                .execute(
+                    r#"
+                    INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date)
+                    VALUES (?1, ?2, ?3, ?3)
+                    "#,
+                    params![feed_id, hash, published],
+                )
+                .expect("insert feed item");
+        }
+
+        let page = query_articles(
+            &connection,
+            ArticleQueryRequest {
+                feed_id: None,
+                feed_ids: None,
+                tag_name: Some("Station".to_string()),
+                unread_only: None,
+                saved_only: None,
+                read: None,
+                starred: None,
+                saved: None,
+                sort_field: None,
+                sort_order: Some("desc".to_string()),
+                search_text: None,
+                limit: Some(5),
+                offset: None,
+                cursor_date: None,
+                cursor_hash: None,
+                include_total: Some(false),
+            },
+        )
+        .expect("query station tag page");
+
+        assert_eq!(page.articles.len(), 5);
+        assert_eq!(page.articles[0].hash, "station-hash-00");
+        assert_eq!(page.articles[4].hash, "station-hash-04");
+        assert_eq!(page.articles[0].title, "Station article 0");
+        assert_eq!(page.total, 0);
+
+        let cursor_page = query_articles(
+            &connection,
+            ArticleQueryRequest {
+                feed_id: None,
+                feed_ids: Some(vec!["feed-a".to_string(), "feed-b".to_string()]),
+                tag_name: None,
+                unread_only: None,
+                saved_only: None,
+                read: None,
+                starred: None,
+                saved: None,
+                sort_field: None,
+                sort_order: Some("desc".to_string()),
+                search_text: None,
+                limit: Some(3),
+                offset: None,
+                cursor_date: Some("2026-07-14T20:00:00.000Z".to_string()),
+                cursor_hash: Some("station-hash-00".to_string()),
+                include_total: Some(false),
+            },
+        )
+        .expect("query station feed_ids cursor page");
+
+        assert_eq!(cursor_page.articles.len(), 3);
+        assert_eq!(cursor_page.articles[0].hash, "station-hash-01");
+        assert_eq!(cursor_page.articles[2].hash, "station-hash-03");
+    }
+
+    #[test]
     fn sync_feed_article_counts_batch_updates_feed_rows_in_one_transaction() {
         let mut connection = Connection::open_in_memory().expect("open in-memory database");
         run_migrations(&mut connection).expect("run migrations");

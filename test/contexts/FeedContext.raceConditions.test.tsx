@@ -1409,6 +1409,73 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     expect(emptyAfterSkeleton).toEqual([]);
   });
 
+  it('skips Phase B reconcile query while cold deferred SQLite owns the skeleton', async () => {
+    // Production (2026-07-14 Tech): Phase B reconcile (includeTotal:true) raced
+    // the deferred page and stretched sqlite-query-deferred to ~6s. Cold Phase A
+    // must be the only DB reader until it publishes.
+    const coldDeferred = createDeferred<{ articles: Article[]; total: number }>();
+    let tagAQueryCount = 0;
+    let reconcileStyleQueryCount = 0;
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    );
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A') {
+        tagAQueryCount += 1;
+        if (query.includeTotal === false) {
+          return coldDeferred.promise;
+        }
+        reconcileStyleQueryCount += 1;
+        return Promise.resolve({ articles: [], total: 0 });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isLoadingArticles).toBe(true);
+      expect(tagAQueryCount).toBeGreaterThanOrEqual(1);
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(latestContext!.isLoadingArticles).toBe(true);
+    expect(reconcileStyleQueryCount).toBe(0);
+
+    coldDeferred.resolve({
+      articles: [createArticle('hash-a', 'feed-a')],
+      total: 1,
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a']);
+    });
+
+    expect(reconcileStyleQueryCount).toBe(0);
+  });
+
   it('shows skeleton on a cold smart view switch and clears it once the query lands', async () => {
     const unreadDeferred = createDeferred<{ articles: Article[], total: number }>();
 
