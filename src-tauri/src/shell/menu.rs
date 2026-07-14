@@ -18,7 +18,6 @@ const MENU_EXPORT_FEEDS: &str = "menu-export-feeds";
 const MENU_EXPORT_SAVED: &str = "menu-export-saved";
 const MENU_CLEAR_FEEDS: &str = "menu-clear-feeds";
 const MENU_CLEAR_SAVED: &str = "menu-clear-saved";
-const MENU_CLEAR_OLD_1M: &str = "menu-clear-old-1m";
 const MENU_CLEAR_OLD_3M: &str = "menu-clear-old-3m";
 const MENU_CLEAR_ALL_ARTICLES: &str = "menu-clear-all-articles";
 const MENU_THEME_AUTO: &str = "menu-theme-auto";
@@ -187,7 +186,6 @@ impl ApplicationMenu {
                 &PredefinedMenuItem::separator(app).map_err(menu_error)?,
                 &menu_command_item(app, MENU_CLEAR_FEEDS, "Clear Feeds")?,
                 &menu_command_item(app, MENU_CLEAR_SAVED, "Clear Saved Articles")?,
-                &menu_command_item(app, MENU_CLEAR_OLD_1M, "Clear Articles Older Than 1 Month")?,
                 &menu_command_item(app, MENU_CLEAR_OLD_3M, "Clear Articles Older Than 3 Months")?,
                 &menu_command_item(app, MENU_CLEAR_ALL_ARTICLES, "Clear All Articles")?,
             ],
@@ -333,9 +331,6 @@ impl ApplicationMenu {
             MENU_EXPORT_SAVED => emit_menu_command(app, AppMenuCommand::ExportSavedArticles),
             MENU_CLEAR_FEEDS => emit_menu_command(app, AppMenuCommand::ClearFeeds),
             MENU_CLEAR_SAVED => emit_menu_command(app, AppMenuCommand::ClearSavedArticles),
-            MENU_CLEAR_OLD_1M => {
-                emit_menu_command(app, AppMenuCommand::ClearArticlesOlderThan { months: 1 })
-            }
             MENU_CLEAR_OLD_3M => {
                 emit_menu_command(app, AppMenuCommand::ClearArticlesOlderThan { months: 3 })
             }

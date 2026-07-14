@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { APP_NAME } from '@/config/appIdentity';
 import { useSecondaryWindowPayload } from '@/hooks/useSecondaryWindowPayload';
+import { useSystemAccentColor } from '@/hooks/useSystemAccentColor';
 import { tauriClient } from '@/lib/tauriClient';
 import {
   checkForUpdateDetailed,
@@ -42,6 +43,9 @@ function LoadingGlyph() {
 }
 
 export const UpdateWindow: React.FC = () => {
+  // Keep --system-accent-color / --theme-primary in sync for primary CTA.
+  useSystemAccentColor();
+
   const { payload, errorMessage, isLoading, retry } = useSecondaryWindowPayload<UpdateWindowPayload>({
     eventName: UPDATE_WINDOW_OPEN_EVENT,
     loadPayload: () => tauriClient.shell.getUpdateWindowData(),

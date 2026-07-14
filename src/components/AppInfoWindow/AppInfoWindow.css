@@ -61,13 +61,14 @@
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  background-color: var(--theme-primary-color);
-  color: #fff;
-  transition: opacity 0.2s ease;
+  /* Use accent primary — not --theme-primary-color (dark theme text white). */
+  background-color: var(--theme-primary);
+  color: var(--color-primary-content, #ffffff);
+  transition: background-color 0.2s ease, opacity 0.2s ease;
 }
 
 .app-info-window-primary-button:hover {
-  opacity: 0.9;
+  background-color: var(--theme-primary-hover);
 }
 
 .app-info-window-secondary-link {
@@ -76,7 +77,7 @@
   background: transparent;
   padding: 0;
   font-size: 13px;
-  color: var(--theme-primary-color);
+  color: var(--theme-primary);
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;

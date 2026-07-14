@@ -37,7 +37,7 @@
   width: 16px;
   height: 16px;
   border: 2px solid color-mix(in srgb, var(--theme-text-secondary) 35%, transparent);
-  border-top-color: var(--theme-primary-color);
+  border-top-color: var(--theme-primary);
   border-radius: 50%;
   animation: app-info-window-spin 0.7s linear infinite;
   flex-shrink: 0;

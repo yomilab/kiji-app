@@ -266,10 +266,10 @@ export const useApplicationMenuCommands = ({
     reloadCurrentSourceFromStore,
   ]);
 
-  const handleClearArticlesOlderThan = useCallback(async (months: 1 | 3) => {
+  const handleClearArticlesOlderThan = useCallback(async (months: 3) => {
     const confirmed = await confirmDialog({
-      title: `Clear articles older than ${months === 1 ? '1 month' : `${months} months`}`,
-      message: `Clear articles older than ${months === 1 ? '1 month' : `${months} months`}?\n\nThis deletes non-saved, non-starred subscription articles older than ${months === 1 ? '1 month' : `${months} months`}. Your feeds, starred articles, and saved articles stay in place.`,
+      title: 'Clear articles older than 3 months',
+      message: 'Clear articles older than 3 months?\n\nThis deletes non-saved, non-starred subscription articles older than 3 months. Your feeds, starred articles, and saved articles stay in place.',
     });
     if (!confirmed) {
       return;

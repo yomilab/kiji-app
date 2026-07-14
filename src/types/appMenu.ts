@@ -10,7 +10,7 @@ export type AppMenuCommand =
   | { type: 'clearFeeds' }
   | { type: 'clearSavedArticles' }
   | { type: 'clearArticles' }
-  | { type: 'clearArticlesOlderThan'; months: 1 | 3 }
+  | { type: 'clearArticlesOlderThan'; months: 3 }
   | { type: 'setTheme'; theme: Theme }
   | { type: 'selectLibraryView'; libraryView: SmartViewId };
 

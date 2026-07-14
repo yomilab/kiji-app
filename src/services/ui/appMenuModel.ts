@@ -92,17 +92,10 @@ export function buildWindowsAppMenuTree(state: AppMenuState): AppMenuTopLevel[] 
         },
         {
           kind: 'item',
-          id: 'clear-old-1m',
-          label: 'Clear Articles Older Than 1 Month',
-          action: { type: 'clearArticlesOlderThan', months: 1 },
-        },
-        {
-          kind: 'item',
           id: 'clear-old-3m',
           label: 'Clear Articles Older Than 3 Months',
           action: { type: 'clearArticlesOlderThan', months: 3 },
-        },
-        {
+        },        {
           kind: 'item',
           id: 'clear-all-articles',
           label: 'Clear All Articles',
