@@ -46,16 +46,23 @@ export function buildWindowsAppMenuTree(state: AppMenuState): AppMenuTopLevel[] 
       items: [
         {
           kind: 'item',
-          id: 'settings',
-          label: 'Settings...',
-          action: { type: 'openSettings' },
-          shortcutHint: 'Ctrl+,',
+          id: 'about',
+          label: 'About KiJi',
+          action: { type: 'about' },
         },
         {
           kind: 'item',
           id: 'check-updates',
-          label: 'Check Updates',
+          label: state.updateAvailable ? 'Update KiJi' : 'Check for Updates',
           action: { type: 'checkUpdates' },
+        },
+        { kind: 'separator', id: 'file-sep-app' },
+        {
+          kind: 'item',
+          id: 'settings',
+          label: 'Settings...',
+          action: { type: 'openSettings' },
+          shortcutHint: 'Ctrl+,',
         },
         { kind: 'separator', id: 'file-sep-1' },
         {
@@ -209,12 +216,6 @@ export function buildWindowsAppMenuTree(state: AppMenuState): AppMenuTopLevel[] 
           id: 'help-website',
           label: 'Visit Our Website',
           action: { type: 'helpWebsite' },
-        },
-        {
-          kind: 'item',
-          id: 'about',
-          label: 'About KiJi',
-          action: { type: 'about' },
         },
       ],
     },

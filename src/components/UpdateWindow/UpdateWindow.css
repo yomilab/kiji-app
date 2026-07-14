@@ -24,3 +24,27 @@
   margin-top: 8px;
   width: min(100%, 240px);
 }
+
+.app-info-window-check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--theme-text-secondary);
+}
+
+.app-info-window-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, var(--theme-text-secondary) 35%, transparent);
+  border-top-color: var(--theme-primary-color);
+  border-radius: 50%;
+  animation: app-info-window-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes app-info-window-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

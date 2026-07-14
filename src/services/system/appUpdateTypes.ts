@@ -30,13 +30,16 @@ export interface UpdateAvailability {
   notesUrl?: string;
 }
 
+/** Payload for the shared About / update secondary window. */
 export interface UpdateWindowPayload {
   currentVersion: string;
-  latestVersion: string;
-  releasedAt?: string;
-  summary: string;
-  downloadUrl: string;
-  notesUrl?: string;
+  /**
+   * When true (About / Check for Updates), the window fetches the release
+   * manifest on open and shows a loading state until the check settles.
+   */
+  checkOnOpen?: boolean;
+  /** Prefill when the caller already knows an update is available (sidebar). */
+  update?: UpdateAvailability | null;
 }
 
 export type UpdateCheckResult =

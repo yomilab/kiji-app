@@ -11,6 +11,13 @@ import {
 } from '@/services/system/appUpdateSession';
 import type { UpdateAvailability } from '@/services/system/appUpdateTypes';
 
+function syncUpdateMenuLabel(updateAvailable: boolean): void {
+  if (!window.kijiAPI?.updateAppMenuState) {
+    return;
+  }
+  void window.kijiAPI.updateAppMenuState({ updateAvailable });
+}
+
 export function useAppUpdatePrompt() {
   const [availability, setAvailability] = useState<UpdateAvailability | null>(null);
   const [sessionDismissed, setSessionDismissed] = useState(isUpdatePromptDismissedForSession);
@@ -19,9 +26,11 @@ export function useAppUpdatePrompt() {
     const result = await checkForUpdateDetailed();
     if (result.status === 'available') {
       setAvailability(result.availability);
+      syncUpdateMenuLabel(true);
       return result.availability;
     }
     setAvailability(null);
+    syncUpdateMenuLabel(false);
     return null;
   }, []);
 

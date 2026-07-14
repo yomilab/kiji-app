@@ -12,6 +12,7 @@ const CONTACT_EMAIL: &str = "hello@yomilab.app";
 const APP_WEBSITE_URL: &str = "https://kiji.yomilab.app";
 
 const MENU_SETTINGS: &str = "menu-settings";
+const MENU_ABOUT: &str = "menu-about";
 const MENU_CHECK_UPDATES: &str = "menu-check-updates";
 const MENU_EXPORT_FEEDS: &str = "menu-export-feeds";
 const MENU_EXPORT_SAVED: &str = "menu-export-saved";
@@ -68,6 +69,7 @@ pub struct ApplicationMenu {
     library_saved: CheckMenuItem<Wry>,
     library_unread: CheckMenuItem<Wry>,
     library_all: CheckMenuItem<Wry>,
+    check_updates: MenuItem<Wry>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -75,6 +77,7 @@ pub struct ApplicationMenu {
 pub struct AppMenuStatePatch {
     pub theme: Option<String>,
     pub library_view: Option<Option<String>>,
+    pub update_available: Option<bool>,
 }
 
 impl ApplicationMenu {
@@ -110,6 +113,16 @@ impl ApplicationMenu {
         let library_saved = menu_check(app, MENU_LIBRARY_SAVED, "Saved", false)?;
         let library_unread = menu_check(app, MENU_LIBRARY_UNREAD, "Unread", false)?;
         let library_all = menu_check(app, MENU_LIBRARY_ALL, "All Items", false)?;
+        let check_updates = MenuItem::with_id(
+            app,
+            MENU_CHECK_UPDATES,
+            "Check for Updates",
+            true,
+            None::<&str>,
+        )
+        .map_err(menu_error)?;
+        let about_item =
+            MenuItem::with_id(app, MENU_ABOUT, "About KiJi", true, None::<&str>).map_err(menu_error)?;
 
         let handles = ApplicationMenu {
             runtime: Mutex::new(AppMenuRuntimeState {
@@ -122,6 +135,7 @@ impl ApplicationMenu {
             library_saved,
             library_unread,
             library_all,
+            check_updates,
         };
 
         let settings_item =
@@ -134,23 +148,12 @@ impl ApplicationMenu {
                 APP_NAME,
                 true,
                 &[
-                    &PredefinedMenuItem::about(app, Some(APP_NAME), None).map_err(menu_error)?,
+                    &about_item,
+                    &handles.check_updates,
                     &PredefinedMenuItem::separator(app).map_err(menu_error)?,
                     &settings_item,
-                    &MenuItem::with_id(
-                        app,
-                        MENU_CHECK_UPDATES,
-                        "Check Updates",
-                        true,
-                        None::<&str>,
-                    )
-                    .map_err(menu_error)?,
                     &PredefinedMenuItem::separator(app).map_err(menu_error)?,
                     &PredefinedMenuItem::services(app, None).map_err(menu_error)?,
-                    &PredefinedMenuItem::separator(app).map_err(menu_error)?,
-                    &PredefinedMenuItem::hide(app, None).map_err(menu_error)?,
-                    &PredefinedMenuItem::hide_others(app, None).map_err(menu_error)?,
-                    &PredefinedMenuItem::show_all(app, None).map_err(menu_error)?,
                     &PredefinedMenuItem::separator(app).map_err(menu_error)?,
                     &PredefinedMenuItem::quit(app, None).map_err(menu_error)?,
                 ],
@@ -162,18 +165,10 @@ impl ApplicationMenu {
                 APP_NAME,
                 true,
                 &[
-                    &MenuItem::with_id(app, "menu-about", "About KiJi", true, None::<&str>)
-                        .map_err(menu_error)?,
+                    &about_item,
+                    &handles.check_updates,
                     &PredefinedMenuItem::separator(app).map_err(menu_error)?,
                     &settings_item,
-                    &MenuItem::with_id(
-                        app,
-                        MENU_CHECK_UPDATES,
-                        "Check Updates",
-                        true,
-                        None::<&str>,
-                    )
-                    .map_err(menu_error)?,
                     &PredefinedMenuItem::separator(app).map_err(menu_error)?,
                     &PredefinedMenuItem::quit(app, Some(&format!("Quit {APP_NAME}")))
                         .map_err(menu_error)?,
@@ -187,8 +182,6 @@ impl ApplicationMenu {
             "File",
             true,
             &[
-                &PredefinedMenuItem::close_window(app, None).map_err(menu_error)?,
-                &PredefinedMenuItem::separator(app).map_err(menu_error)?,
                 &menu_command_item(app, MENU_EXPORT_FEEDS, "Export Feeds")?,
                 &menu_command_item(app, MENU_EXPORT_SAVED, "Export Saved Articles")?,
                 &PredefinedMenuItem::separator(app).map_err(menu_error)?,
@@ -333,7 +326,7 @@ impl ApplicationMenu {
             MENU_SETTINGS => {
                 let _ = open_settings_window(app);
             }
-            MENU_CHECK_UPDATES => {
+            MENU_ABOUT | MENU_CHECK_UPDATES => {
                 emit_menu_command(app, AppMenuCommand::CheckUpdates);
             }
             MENU_EXPORT_FEEDS => emit_menu_command(app, AppMenuCommand::ExportFeeds),
@@ -440,6 +433,17 @@ impl ApplicationMenu {
 
         if let Some(library_view) = patch.library_view {
             self.set_library_view(library_view);
+        }
+
+        if let Some(update_available) = patch.update_available {
+            let label = if update_available {
+                "Update KiJi"
+            } else {
+                "Check for Updates"
+            };
+            self.check_updates
+                .set_text(label)
+                .map_err(|error| format!("Failed to update Check for Updates label: {error}"))?;
         }
 
         Ok(())

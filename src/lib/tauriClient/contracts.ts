@@ -467,6 +467,7 @@ export type AppMenuLibraryView = "saved" | "unread" | "all" | null;
 export interface AppMenuState {
   theme: AppSettings["theme"];
   libraryView: AppMenuLibraryView;
+  updateAvailable?: boolean;
 }
 
 export type AppMenuCommand =

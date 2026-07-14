@@ -1,15 +1,10 @@
-import { getVersion } from '@tauri-apps/api/app';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import {
-  APP_NAME,
-  APP_WEBSITE_URL,
-  CONTACT_EMAIL_ADDRESS,
-} from '@/config/appIdentity';
+import { APP_NAME, APP_WEBSITE_URL, CONTACT_EMAIL_ADDRESS } from '@/config/appIdentity';
 import type { AppMenuCommand } from '@/types/appMenu';
-import { appToastService } from '@/services/ui/appToastService';
 import { publishAppMenuCommand } from '@/services/ui/appMenuCommandBus';
 import { logger } from '@/services/logger';
 import type { AppMenuAction, AppMenuLocalAction } from '@/services/ui/appMenuModel';
+import { openAboutWindow } from '@/services/system/appUpdateService';
 
 function isLocalAction(action: AppMenuAction): action is AppMenuLocalAction {
   return (
@@ -28,11 +23,9 @@ async function dispatchLocalAction(action: AppMenuLocalAction): Promise<void> {
       return;
     case 'about': {
       try {
-        const version = await getVersion();
-        appToastService.show(`${APP_NAME} ${version}`);
+        await openAboutWindow({ checkOnOpen: true });
       } catch (error) {
-        logger.error('AppMenu', 'Failed to read app version for About', { error });
-        appToastService.show(APP_NAME);
+        logger.error('AppMenu', 'Failed to open About window', { error });
       }
       return;
     }

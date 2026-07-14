@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFeedNavigation } from '@/contexts/FeedContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAppUpdatePrompt } from '@/hooks/useAppUpdatePrompt';
 import { isCloseOnEscapeShortcut, keybindingService } from '@/services/shortcuts/shortcutService';
 import {
   buildWindowsAppMenuTree,
@@ -92,6 +93,7 @@ function MenuItems({
 export const AppMenuBar: React.FC = () => {
   const { theme } = useTheme();
   const { selectedSmartView } = useFeedNavigation();
+  const { availability } = useAppUpdatePrompt();
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -106,8 +108,9 @@ export const AppMenuBar: React.FC = () => {
           || selectedSmartView === 'all'
             ? selectedSmartView
             : null,
+        updateAvailable: Boolean(availability),
       }),
-    [selectedSmartView, theme],
+    [availability, selectedSmartView, theme],
   );
 
   const closeMenus = useCallback(() => {

@@ -240,12 +240,21 @@ export async function checkForUpdateDetailed(): Promise<UpdateCheckResult> {
 export function toUpdateWindowPayload(availability: UpdateAvailability): UpdateWindowPayload {
   return {
     currentVersion: availability.currentVersion,
-    latestVersion: availability.latestVersion,
-    releasedAt: availability.releasedAt,
-    summary: availability.summary,
-    downloadUrl: availability.downloadUrl,
-    notesUrl: availability.notesUrl,
+    checkOnOpen: false,
+    update: availability,
   };
+}
+
+export async function openAboutWindow(options?: {
+  update?: UpdateAvailability | null;
+  checkOnOpen?: boolean;
+}): Promise<void> {
+  const currentVersion = await getVersion();
+  await openUpdateWindow({
+    currentVersion,
+    checkOnOpen: options?.checkOnOpen ?? options?.update == null,
+    update: options?.update ?? null,
+  });
 }
 
 export async function openUpdateWindow(payload: UpdateWindowPayload): Promise<void> {

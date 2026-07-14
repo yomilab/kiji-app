@@ -17,4 +17,6 @@ export type AppMenuCommand =
 export interface AppMenuState {
   theme: Theme;
   libraryView: SmartViewId | null;
+  /** When true, Check for Updates becomes Update KiJi. */
+  updateAvailable?: boolean;
 }

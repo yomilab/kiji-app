@@ -12,13 +12,7 @@ import {
   navigateAfterOpmlImport,
   openOpmlFileForImport,
 } from '@/services/feeds/opmlUiWorkflow';
-import { APP_NAME } from '@/config/appIdentity';
-import {
-  checkForUpdateDetailed,
-  openUpdateWindow,
-  toUpdateWindowPayload,
-} from '@/services/system/appUpdateService';
-import { dismissUpdatePromptForSession } from '@/services/system/appUpdateSession';
+import { openAboutWindow } from '@/services/system/appUpdateService';
 import { logger } from '@/services/logger';
 import { savedArticlesIOService } from '@/services/saved/savedArticlesIOService';
 import { savedArticlesService } from '@/services/saved/savedArticlesService';
@@ -333,22 +327,10 @@ export const useApplicationMenuCommands = ({
           break;
         case 'checkUpdates':
           void (async () => {
-            const result = await checkForUpdateDetailed();
-            if (result.status === 'up-to-date') {
-              appToastService.show(`${APP_NAME} ${result.currentVersion} is up to date.`);
-              return;
-            }
-            if (result.status === 'error') {
-              appToastService.show(result.message ?? 'Could not check for updates. Try again later.');
-              return;
-            }
-
-            dismissUpdatePromptForSession();
             try {
-              await openUpdateWindow(toUpdateWindowPayload(result.availability));
+              await openAboutWindow({ checkOnOpen: true });
             } catch (error) {
-              logger.error('AppMenu', 'Failed to open update window from Check Updates', { error });
-              appToastService.show('Failed to open the update window.');
+              logger.error('AppMenu', 'Failed to open About window from Check for Updates', { error });
             }
           })();
           break;
