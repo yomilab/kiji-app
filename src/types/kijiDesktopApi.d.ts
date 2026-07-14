@@ -17,7 +17,7 @@ import type {
   HelperTaskResultEvent,
 } from '@/services/tasks/helperTaskContracts';
 
-type SystemAppIconVariant = 'light' | 'dark';
+type SystemAppIconVariant = 'light' | 'dark' | 'sunset' | 'sunset-dark';
 
 export interface KijiDesktopAPI {
   fetchFeed: (url: string, options?: { requestId?: string }) => Promise<string>;

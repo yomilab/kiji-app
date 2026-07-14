@@ -30,6 +30,8 @@ import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined';
 import { StatefulButtonGroup, type ButtonState } from '@/components/common/StatefulButtonGroup';
 import defaultAppIconPreview from '@/assets/images/kiji-logo.png';
 import defaultDarkAppIconPreview from '@/assets/images/kiji-logo-dark.png';
+import sunsetAppIconPreview from '@/assets/images/kiji-logo-sunset.png';
+import sunsetDarkAppIconPreview from '@/assets/images/kiji-logo-sunset-dark.png';
 import './SettingsWindow.css';
 
 type ConfigCategory = 'general' | 'appearance' | 'reading' | 'shortcuts' | 'contact';
@@ -66,13 +68,23 @@ interface SystemAppIconState {
   iconVariant: SystemAppIconVariant;
 }
 
-type SystemAppIconVariant = 'light' | 'dark';
-const DEFAULT_SYSTEM_APP_ICON_VARIANT: SystemAppIconVariant = 'dark';
-const DEFAULT_APP_ICON_PREVIEW = defaultAppIconPreview;
-const DEFAULT_DARK_APP_ICON_PREVIEW = defaultDarkAppIconPreview;
+type SystemAppIconVariant = 'light' | 'dark' | 'sunset' | 'sunset-dark';
+const DEFAULT_SYSTEM_APP_ICON_VARIANT: SystemAppIconVariant = 'light';
+
+const APP_ICON_VARIANT_OPTIONS: ReadonlyArray<{
+  value: SystemAppIconVariant;
+  label: string;
+  source: string;
+}> = [
+  { value: 'light', label: 'Light', source: defaultAppIconPreview },
+  { value: 'dark', label: 'Dark', source: defaultDarkAppIconPreview },
+  { value: 'sunset', label: 'Sunset', source: sunsetAppIconPreview },
+  { value: 'sunset-dark', label: 'Sunset Dark', source: sunsetDarkAppIconPreview },
+];
 
 const getDefaultAppIconPreview = (variant: SystemAppIconVariant): string => (
-  variant === 'dark' ? DEFAULT_DARK_APP_ICON_PREVIEW : DEFAULT_APP_ICON_PREVIEW
+  APP_ICON_VARIANT_OPTIONS.find((option) => option.value === variant)?.source
+    ?? defaultAppIconPreview
 );
 
 const createSteppedSliderTransform = (
@@ -910,14 +922,11 @@ export const SettingsWindow: React.FC = () => {
                     <div className="settings-item-info">
                       <label className="settings-item-label">Default app icon</label>
                       <p className="settings-item-description">
-                        Choose the built-in app icon used when no custom icon is selected. Dark is the default; picking one clears any custom icon.
+                        Choose the built-in app icon used when no custom icon is selected. Light is the default; picking one clears any custom icon.
                       </p>
                     </div>
                     <div className="settings-app-icon-variant-options" role="group" aria-label="Default app icon">
-                      {([
-                        { value: 'dark' as const, label: 'Dark', source: DEFAULT_DARK_APP_ICON_PREVIEW },
-                        { value: 'light' as const, label: 'Light', source: DEFAULT_APP_ICON_PREVIEW },
-                      ]).map((option) => (
+                      {APP_ICON_VARIANT_OPTIONS.map((option) => (
                         <button
                           key={option.value}
                           type="button"

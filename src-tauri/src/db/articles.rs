@@ -459,11 +459,33 @@ pub fn query_articles(
     let count_conditions = conditions.clone();
     let count_bindings = bindings.clone();
 
+    // Multi-feed/tag lists without article-level filters can dedupe and sort on
+    // the covering `idx_article_feed_items_feed_date` index alone, then join
+    // article/feed metadata for the final page only. The legacy shape joined
+    // `articles` + `feeds` for every station row before GROUP BY/ORDER BY —
+    // 0.3–0.9s per switch on a multi-GB library (H17: cold-switch skeleton
+    // stuck while the deferred page query sorted ~65k joined rows).
+    let grouped_source_fast_path = has_source_filter
+        && !single_feed_only
+        && normalized_search_text.is_none()
+        && read_filter.is_none()
+        && request.starred.is_none()
+        && saved_filter.is_none();
+
+    let mut having_conditions: Vec<String> = Vec::new();
     if let (Some(cursor_date), Some(cursor_hash)) = (request.cursor_date, request.cursor_hash) {
         let cursor_operator = if sort_order == "ASC" { ">" } else { "<" };
-        conditions.push(format!(
-            "({sort_expr} {cursor_operator} ? OR ({sort_expr} = ? AND {sort_hash_expr} > ?))"
-        ));
+        if grouped_source_fast_path {
+            // The aggregated sort date only exists after GROUP BY, so cursor
+            // paging filters in HAVING on the aggregate alias.
+            having_conditions.push(format!(
+                "(sort_date {cursor_operator} ? OR (sort_date = ? AND article_hash > ?))"
+            ));
+        } else {
+            conditions.push(format!(
+                "({sort_expr} {cursor_operator} ? OR ({sort_expr} = ? AND {sort_hash_expr} > ?))"
+            ));
+        }
         bindings.push(Value::Text(cursor_date.clone()));
         bindings.push(Value::Text(cursor_date));
         bindings.push(Value::Text(cursor_hash));

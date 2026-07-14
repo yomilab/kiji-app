@@ -12,18 +12,22 @@ const APP_ICON_STATE_FILE: &str = "app-icon-state.json";
 const CUSTOM_ICON_BASENAME: &str = "custom-app-icon";
 const LIGHT_ICON_RESOURCE_DIR: &str = "icons";
 const DARK_ICON_RESOURCE_DIR: &str = "icons-dark";
+const SUNSET_ICON_RESOURCE_DIR: &str = "icons-sunset";
+const SUNSET_DARK_ICON_RESOURCE_DIR: &str = "icons-sunset-dark";
 const RUNTIME_ICON_FILE_NAME: &str = "icon.png";
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum SystemAppIconVariant {
     Light,
     Dark,
+    Sunset,
+    SunsetDark,
 }
 
 impl Default for SystemAppIconVariant {
     fn default() -> Self {
-        Self::Dark
+        Self::Light
     }
 }
 
@@ -330,6 +334,8 @@ fn built_in_icon_folder(variant: SystemAppIconVariant) -> &'static str {
     match variant {
         SystemAppIconVariant::Light => LIGHT_ICON_RESOURCE_DIR,
         SystemAppIconVariant::Dark => DARK_ICON_RESOURCE_DIR,
+        SystemAppIconVariant::Sunset => SUNSET_ICON_RESOURCE_DIR,
+        SystemAppIconVariant::SunsetDark => SUNSET_DARK_ICON_RESOURCE_DIR,
     }
 }
 
