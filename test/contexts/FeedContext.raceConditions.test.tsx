@@ -1319,6 +1319,96 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     expect(emptyListAfterSkeleton).toEqual([]);
   });
 
+  it('keeps skeleton when Phase B finishes before slow cold deferred SQLite', async () => {
+    // Production race (2026-07-14 logs): Phase B network finally cleared
+    // isLoadingArticles while sqlite-query-deferred was still in flight, so the
+    // UI flashed an empty "0 articles" list until the DB page landed. Also
+    // keep the scheduler pause so a resumed background cycle cannot starve the
+    // Phase A read.
+    const stateHistory: Array<{ isLoadingArticles: boolean; articleCount: number }> = [];
+    const coldDeferred = createDeferred<{ articles: Article[]; total: number }>();
+    let tagAQueryCount = 0;
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    );
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A') {
+        tagAQueryCount += 1;
+        // Phase A deferred page always sets includeTotal: false (H12). Phase B
+        // reconcile does not — hang only the cold path so network can finish first.
+        if (query.includeTotal === false) {
+          return coldDeferred.promise;
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    const HistoryProbe: React.FC = () => {
+      latestContext = useFeed();
+      stateHistory.push({
+        isLoadingArticles: latestContext.isLoadingArticles,
+        articleCount: latestContext.articles.length,
+      });
+      return null;
+    };
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <HistoryProbe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isLoadingArticles).toBe(true);
+      expect(latestContext!.articles).toEqual([]);
+      expect(tagAQueryCount).toBeGreaterThanOrEqual(1);
+    });
+
+    // Let Phase B paint-gate + debounce + reconcile settle while Phase A hangs.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(latestContext!.isLoadingArticles).toBe(true);
+    expect(latestContext!.articles).toEqual([]);
+    const skeletonIndex = stateHistory.findIndex((state) => state.isLoadingArticles);
+    expect(skeletonIndex).toBeGreaterThanOrEqual(0);
+    const emptyWhileWaiting = stateHistory
+      .slice(skeletonIndex + 1)
+      .filter((state) => !state.isLoadingArticles && state.articleCount === 0);
+    expect(emptyWhileWaiting).toEqual([]);
+
+    coldDeferred.resolve({
+      articles: [createArticle('hash-a', 'feed-a')],
+      total: 1,
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a']);
+    });
+
+    const emptyAfterSkeleton = stateHistory
+      .slice(skeletonIndex + 1)
+      .filter((state) => !state.isLoadingArticles && state.articleCount === 0);
+    expect(emptyAfterSkeleton).toEqual([]);
+  });
+
   it('shows skeleton on a cold smart view switch and clears it once the query lands', async () => {
     const unreadDeferred = createDeferred<{ articles: Article[], total: number }>();
 

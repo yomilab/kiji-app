@@ -670,6 +670,12 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }
   const switchLifecycle = switchLifecycleRef.current;
   const selectionSchedulerPauseTokenRef = useRef<number | null>(null);
+  // Cold switches keep the skeleton until deferred SQLite publishes. Phase B
+  // must not clear loading (or resume the scheduler writer) while this token
+  // still owns an empty list — that race flashes "0 articles" and can stall
+  // the Phase A read behind a resumed background cycle (H16 / 2026-07 logs).
+  const pendingColdSwitchSqliteTokenRef = useRef<number | null>(null);
+  const deferNetworkSchedulerResumeTokenRef = useRef<number | null>(null);
   const interactiveRefreshScopeTokenRef = useRef(0);
   const lastQueryRef = useRef<ArticleQuery | null>(null);
   const hasAttemptedSidebarRestoreRef = useRef(false);
@@ -1021,6 +1027,56 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
+  const clearPendingColdSwitchSqlite = useCallback((token: number) => {
+    if (pendingColdSwitchSqliteTokenRef.current === token) {
+      pendingColdSwitchSqliteTokenRef.current = null;
+    }
+  }, []);
+
+  const finishColdSwitchSqliteAndResumeIfNeeded = useCallback((token: number) => {
+    clearPendingColdSwitchSqlite(token);
+    if (deferNetworkSchedulerResumeTokenRef.current === token) {
+      deferNetworkSchedulerResumeTokenRef.current = null;
+      completeSelectionSwitchNetworkPriority(token);
+    }
+  }, [clearPendingColdSwitchSqlite, completeSelectionSwitchNetworkPriority]);
+
+  /**
+   * Phase B `finally` helper: keep the cold-switch skeleton (and scheduler
+   * pause) while deferred SQLite still owns an empty list. Otherwise clear
+   * loading and resume as before.
+   */
+  const completeNetworkPhaseSwitchLoading = useCallback((token: number) => {
+    if (!isSelectionActive(token)) {
+      return;
+    }
+
+    if (
+      pendingColdSwitchSqliteTokenRef.current === token
+      && currentArticlesRef.current.length > 0
+    ) {
+      // Phase B reconcile (or a racing deferred commit) already published rows.
+      clearPendingColdSwitchSqlite(token);
+    }
+
+    const coldSqliteOwnsSkeleton =
+      pendingColdSwitchSqliteTokenRef.current === token
+      && currentArticlesRef.current.length === 0;
+
+    if (coldSqliteOwnsSkeleton) {
+      deferNetworkSchedulerResumeTokenRef.current = token;
+      return;
+    }
+
+    clearSwitchLoadingInTransition();
+    completeSelectionSwitchNetworkPriority(token);
+  }, [
+    clearPendingColdSwitchSqlite,
+    clearSwitchLoadingInTransition,
+    completeSelectionSwitchNetworkPriority,
+    isSelectionActive,
+  ]);
+
   const beginSelectionSwitchNetworkPriority = useCallback((token: number) => {
     feedScheduler.pauseForStationSelection();
     selectionSchedulerPauseTokenRef.current = token;
@@ -1035,6 +1091,8 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     pendingLoadMoreCommitMetricRef.current = null;
     pendingBackgroundRefreshSourceKeyRef.current = null;
     pendingSwitchVisibleReconcileRef.current = null;
+    pendingColdSwitchSqliteTokenRef.current = null;
+    deferNetworkSchedulerResumeTokenRef.current = null;
     clearStationUiRefreshTimer();
     cancelSourceSelectionRefreshSchedule();
     if (previousToken > 0) {
@@ -1884,6 +1942,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const { token, sourceKey } = args;
 
         if (!isSelectionActive(token)) {
+          clearPendingColdSwitchSqlite(token);
           return;
         }
 
@@ -1891,6 +1950,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           // Refs update eagerly on dispatch; the rows may still be pending in
           // the transition lane, so clear loading in the same lane.
           clearSwitchLoadingInTransition();
+          finishColdSwitchSqliteAndResumeIfNeeded(token);
           return;
         }
 
@@ -1904,10 +1964,19 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           if (isSelectionActive(token)) {
             clearSwitchLoadingInTransition();
           }
+        } finally {
+          finishColdSwitchSqliteAndResumeIfNeeded(token);
         }
       })();
     });
-  }, [clearSwitchLoadingInTransition, commitDeferredSwitchSqlitePage, isSelectionActive, switchLifecycle]);
+  }, [
+    clearPendingColdSwitchSqlite,
+    clearSwitchLoadingInTransition,
+    commitDeferredSwitchSqlitePage,
+    finishColdSwitchSqliteAndResumeIfNeeded,
+    isSelectionActive,
+    switchLifecycle,
+  ]);
 
   const scheduleDeferredSwitchSqlitePage = useCallback((args: {
     token: number;
@@ -1918,6 +1987,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     interactionExtra?: Record<string, unknown>;
   }) => {
     const { token, sourceKey } = args;
+    pendingColdSwitchSqliteTokenRef.current = token;
     let paintGateCancelled = false;
     const unregisterPaintGateCancel = switchLifecycle.onSupersede(() => {
       paintGateCancelled = true;
@@ -1925,9 +1995,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     void (async () => {
       let dispatched = false;
+      let painted = false;
 
       try {
-        const painted = await waitForArticleListPaintGate(isSelectionActive, token, {
+        painted = await waitForArticleListPaintGate(isSelectionActive, token, {
           isCancelled: () => paintGateCancelled,
         });
         if (!painted || !isSelectionActive(token)) {
@@ -1940,17 +2011,33 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       } finally {
         unregisterPaintGateCancel();
 
+        if (!isSelectionActive(token)) {
+          clearPendingColdSwitchSqlite(token);
+          return;
+        }
+
         if (
           !dispatched
-          && isSelectionActive(token)
           && currentArticlesRef.current.length === 0
         ) {
-          scheduleDeferredSwitchSqliteRecovery(args);
+          // Only recover when the paint gate succeeded but the page commit
+          // failed. A cancelled gate must not start recovery — that races a
+          // newer selection and can clear the skeleton onto an empty list.
+          if (painted) {
+            scheduleDeferredSwitchSqliteRecovery(args);
+            return;
+          }
+          clearPendingColdSwitchSqlite(token);
+          return;
         }
+
+        finishColdSwitchSqliteAndResumeIfNeeded(token);
       }
     })();
   }, [
+    clearPendingColdSwitchSqlite,
     commitDeferredSwitchSqlitePage,
+    finishColdSwitchSqliteAndResumeIfNeeded,
     isSelectionActive,
     scheduleDeferredSwitchSqliteRecovery,
     switchLifecycle,
@@ -2115,10 +2202,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch {
       clearError();
     } finally {
-      if (isSelectionActive(token)) {
-        clearSwitchLoadingInTransition();
-      }
-      completeSelectionSwitchNetworkPriority(token);
+      // Cold deferred SQLite may still own the skeleton; this helper either
+      // clears+resumes or defers resume until Phase A finishes.
+      completeNetworkPhaseSwitchLoading(token);
       sidebarSwitchTrace.markDuration(
         token,
         'feed-network-refresh',
@@ -2129,8 +2215,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [
     clearError,
-    clearSwitchLoadingInTransition,
-    completeSelectionSwitchNetworkPriority,
+    completeNetworkPhaseSwitchLoading,
     dispatchArticlesTransitionIfChanged,
     isSelectionActive,
     notifyFeedLibraryChanged,
@@ -2204,19 +2289,17 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       sourceSelectionBus.publishRefreshSettled(token, sourceKey, insertedCount);
       opmlWorkflowService.scheduleMissingFaviconsAfterStationSelection(feedIds);
     } finally {
-      if (isSelectionActive(token)) {
-        clearSwitchLoadingInTransition();
-      }
+      // Cold deferred SQLite may still own the skeleton; this helper either
+      // clears+resumes or defers resume until Phase A finishes.
+      completeNetworkPhaseSwitchLoading(token);
       feedRefreshActivity.clearInteractiveRefreshScope(interactiveRefreshScopeTokenRef.current);
-      completeSelectionSwitchNetworkPriority(token);
       sidebarSwitchTrace.completeNetwork(token, {
         kind: 'tag',
         insertedCount: insertedCount ?? 0,
       });
     }
   }, [
-    clearSwitchLoadingInTransition,
-    completeSelectionSwitchNetworkPriority,
+    completeNetworkPhaseSwitchLoading,
     dispatchArticlesTransitionIfChanged,
     isArticleViewTransitioning,
     isSelectionActive,
