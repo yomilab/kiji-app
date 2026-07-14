@@ -49,13 +49,13 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   useEffect(() => {
     const initializeSettings = async () => {
       try {
-        const savedTheme = await settingsManager.getTheme();
-        const savedFonts = await settingsManager.getFontFamilies();
-        const savedReadingLayout = await settingsManager.getReadingLayout();
-        setThemeState(savedTheme);
-        setEffectiveTheme(resolveTheme(savedTheme));
-        setFontFamilies(savedFonts);
-        setReadingLayout(savedReadingLayout);
+        // One settings load covers theme, fonts, and reading layout; the
+        // per-field getters each issue a separate native IPC round-trip.
+        const settings = await settingsManager.getSettings();
+        setThemeState(settings.theme);
+        setEffectiveTheme(resolveTheme(settings.theme));
+        setFontFamilies(settings.fontFamilies);
+        setReadingLayout(settings.readingLayout);
       } catch (error) {
         console.error('Error loading settings:', error);
         // Fallback to auto mode following system preference
@@ -185,13 +185,11 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     const handleSettingsChanged = async () => {
       try {
         console.log('[ThemeContext] Settings changed, reloading appearance settings...');
-        const updatedTheme = await settingsManager.getTheme();
-        const updatedFonts = await settingsManager.getFontFamilies();
-        const updatedReadingLayout = await settingsManager.getReadingLayout();
-        setThemeState(updatedTheme);
-        setEffectiveTheme(resolveTheme(updatedTheme));
-        setFontFamilies(updatedFonts);
-        setReadingLayout(updatedReadingLayout);
+        const settings = await settingsManager.getSettings();
+        setThemeState(settings.theme);
+        setEffectiveTheme(resolveTheme(settings.theme));
+        setFontFamilies(settings.fontFamilies);
+        setReadingLayout(settings.readingLayout);
       } catch (error) {
         console.error('[ThemeContext] Error reloading appearance settings after settings change:', error);
       }

@@ -7,6 +7,7 @@ use crate::{
 };
 use serde_json::Value as JsonValue;
 use std::{
+    collections::HashSet,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -53,7 +54,30 @@ impl UpdateWindowState {
     }
 }
 
-pub struct MainWindowBoundsSaveGuard(pub Arc<AtomicBool>);
+/// Labels of secondary windows that this process explicitly opened. Secondary
+/// webviews that load without an entry here were recreated by macOS session
+/// restore and should be torn down instead of silently booting a full
+/// renderer (extra WebContent process + bundle parse on every launch).
+#[derive(Default)]
+pub struct UserInitiatedWindowsState(Mutex<HashSet<String>>);
+
+impl UserInitiatedWindowsState {
+    fn allow(&self, label: &str) {
+        if let Ok(mut guard) = self.0.lock() {
+            guard.insert(label.to_string());
+        }
+    }
+
+    pub fn is_allowed(&self, label: &str) -> bool {
+        if label == MAIN_WINDOW_LABEL {
+            return true;
+        }
+        self.0
+            .lock()
+            .map(|guard| guard.contains(label))
+            .unwrap_or(true)
+    }
+}
 
 pub struct ArticleWindowState {
     payload: Mutex<Option<JsonValue>>,
@@ -100,21 +124,9 @@ pub fn restore_main_window_bounds(
     Ok(())
 }
 
-#[tauri::command]
-pub fn shell_main_window_apply_saved_bounds(
-    app: AppHandle,
-    settings: State<'_, Arc<SettingsState>>,
-    bounds_guard: State<'_, MainWindowBoundsSaveGuard>,
-) -> Result<(), String> {
-    let Some(main_window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
-        return Ok(());
-    };
-
-    apply_main_window_bounds(&main_window, settings.inner(), &bounds_guard.0)?;
-    Ok(())
-}
-
 pub fn open_settings_window(app: &AppHandle) -> Result<(), String> {
+    app.state::<UserInitiatedWindowsState>()
+        .allow(SETTINGS_WINDOW_LABEL);
     let settings_window = match app.get_webview_window(SETTINGS_WINDOW_LABEL) {
         Some(window) => window,
         None => {
@@ -152,6 +164,7 @@ pub fn open_article_window(app: &AppHandle) -> Result<(), String> {
 }
 
 fn open_secondary_window(app: &AppHandle, label: &str) -> Result<(), String> {
+    app.state::<UserInitiatedWindowsState>().allow(label);
     let window = match app.get_webview_window(label) {
         Some(window) => window,
         None => {

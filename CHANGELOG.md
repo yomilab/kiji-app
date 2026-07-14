@@ -6,6 +6,19 @@
 
 - `website-sync-on-release.yml`: on GitHub Release publish, generate `release.json`, attach to the release, and dispatch `kiji-website` sync (`scripts/generate-release-manifest.mjs`).
 
+### Fixed
+
+- Cold-start freeze (~30s beach ball on a 2.5 GB library): `PRAGMA quick_check` no longer runs synchronously in the Tauri `setup()` hook on every launch. A `kiji.db.dirty` marker is written at open and removed after the exit WAL checkpoint; only when the marker survives (unclean shutdown) does the check run, 15s after startup on a background read-only connection, logging the outcome to diagnostics (`db/mod.rs`, `lib.rs`).
+- Secondary windows (`settings`/`article`/`update`) recreated by macOS session restore no longer boot full renderers at launch (extra WebContent processes, 2.4 MB bundle parse each, and a spurious `shell_update_window_get_data` error every launch). `UserInitiatedWindowsState` records windows opened via app commands; an `on_page_load` hook destroys secondary webviews that load without an entry (`shell/window.rs`, `lib.rs`).
+- Resource monitor false "threshold breach" errors: WebKit XPC helpers are launchd children, so system-wide totals also counted Safari/Mail/iOS-app processes (e.g. `processCount=39` at launch). `/System/iOSSupport/` WebKit processes are now excluded from classification, and breach alerts fire only on attributable metrics — native CPU, native memory, disk free (`diagnostics/snapshot.rs`, `diagnostics/resource_monitor.rs`).
+
+### Changed
+
+- `user-settings.json` is only rewritten at load when its normalized serialization differs from the on-disk content (was: unconditional write every launch) (`settings.rs`).
+- "Clean Old Articles" now runs `PRAGMA wal_checkpoint(TRUNCATE); VACUUM;` on a background writer task after deleting rows so the database file actually shrinks; the deleted count still returns immediately (`db/articles.rs`).
+- Removed the renderer's duplicate `shell_main_window_apply_saved_bounds` IPC on bootstrap (native `setup()` already applies saved bounds before the webview loads); dropped the now-unused command and `MainWindowBoundsSaveGuard` managed state (`renderer.tsx`, `shell/window.rs`).
+- `ThemeProvider` loads settings once via `settingsManager.getSettings()` instead of three per-field getters (3 native IPC round-trips) at mount and on cross-window settings changes (`ThemeContext.tsx`).
+
 ## [1.0.1] - 2026-07-08
 
 ### Fixed

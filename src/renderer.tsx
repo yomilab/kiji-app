@@ -211,15 +211,10 @@ async function bootstrapRenderer(): Promise<void> {
     // Harness inactive outside e2e runs.
   }
 
+  // Saved window bounds are applied natively in the Tauri setup hook before
+  // this webview loads, so the renderer does not re-apply them here.
   try {
     await initializeAppSettings();
-    if (windowType === "main") {
-      try {
-        await invoke("shell_main_window_apply_saved_bounds");
-      } catch (error) {
-        logger.error("Renderer", "Failed to apply saved main window bounds", { error });
-      }
-    }
   } catch (error: unknown) {
     logger.error("Renderer", "Failed to initialize app settings on bootstrap", { error });
   }

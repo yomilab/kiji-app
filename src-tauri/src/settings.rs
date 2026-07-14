@@ -206,8 +206,17 @@ pub struct SettingsState {
 impl SettingsState {
     pub fn load(app: &AppHandle) -> Result<Self, String> {
         let path = resolve_settings_path(app)?;
-        let settings = load_settings_snapshot(&path)?;
-        write_settings_snapshot(&path, &settings)?;
+        let raw = read_settings_file(&path)?;
+        let settings = parse_settings_snapshot(raw.as_deref())?;
+
+        // Only rewrite the file when its normalized form differs (missing
+        // file, new fields, formatting drift); skip the disk write on the
+        // common startup path.
+        let serialized = serialize_settings(&settings)?;
+        if raw.as_deref() != Some(serialized.as_str()) {
+            fs::write(&path, &serialized)
+                .map_err(|error| format!("Failed to write the settings file: {error}"))?;
+        }
 
         Ok(Self {
             path,
@@ -303,25 +312,34 @@ fn resolve_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(config_dir.join(SETTINGS_FILE_NAME))
 }
 
-fn load_settings_snapshot(path: &Path) -> Result<AppSettings, String> {
+fn read_settings_file(path: &Path) -> Result<Option<String>, String> {
     match fs::read_to_string(path) {
-        Ok(raw) => {
-            let settings: AppSettings = serde_json::from_str(&raw)
-                .map_err(|error| format!("Failed to parse the settings file: {error}"))?;
-            settings.validate()?;
-            Ok(settings)
-        }
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(AppSettings::default()),
+        Ok(raw) => Ok(Some(raw)),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
         Err(error) => Err(format!("Failed to read the settings file: {error}")),
     }
 }
 
-fn write_settings_snapshot(path: &Path, settings: &AppSettings) -> Result<(), String> {
+fn parse_settings_snapshot(raw: Option<&str>) -> Result<AppSettings, String> {
+    match raw {
+        Some(raw) => {
+            let settings: AppSettings = serde_json::from_str(raw)
+                .map_err(|error| format!("Failed to parse the settings file: {error}"))?;
+            settings.validate()?;
+            Ok(settings)
+        }
+        None => Ok(AppSettings::default()),
+    }
+}
+
+fn serialize_settings(settings: &AppSettings) -> Result<String, String> {
     settings.validate()?;
+    serde_json::to_string_pretty(settings)
+        .map_err(|error| format!("Failed to serialize settings: {error}"))
+}
 
-    let raw = serde_json::to_string_pretty(settings)
-        .map_err(|error| format!("Failed to serialize settings: {error}"))?;
-
+fn write_settings_snapshot(path: &Path, settings: &AppSettings) -> Result<(), String> {
+    let raw = serialize_settings(settings)?;
     fs::write(path, raw).map_err(|error| format!("Failed to write the settings file: {error}"))
 }
 

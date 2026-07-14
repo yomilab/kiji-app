@@ -32,6 +32,7 @@ pub use saved::{
 };
 use schema::SCHEMA_VERSION;
 use serde::Serialize;
+use serde_json::json;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -39,6 +40,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
     },
+    time::Duration,
 };
 pub use tags::{
     feeds_tags_attach_feed, feeds_tags_delete, feeds_tags_detach_feed, feeds_tags_list,
@@ -70,6 +72,7 @@ struct DbStateInner {
     writer: Mutex<Connection>,
     readers: Vec<Mutex<Connection>>,
     next_reader: AtomicUsize,
+    previous_shutdown_unclean: bool,
 }
 
 #[derive(Clone)]
@@ -82,6 +85,11 @@ impl DbState {
         let path = resolve_database_path(app)?;
         remove_orphaned_wal_sidecars(&path)?;
 
+        // The dirty marker only survives a launch when the previous process
+        // exited without reaching its clean-shutdown path.
+        let dirty_marker = dirty_marker_path(&path);
+        let previous_shutdown_unclean = path.exists() && dirty_marker.exists();
+
         let writer = match open_and_initialize(&path) {
             Ok(connection) => connection,
             Err(first_error) => {
@@ -91,6 +99,10 @@ impl DbState {
                 ))?
             }
         };
+
+        if let Err(error) = fs::write(&dirty_marker, b"") {
+            eprintln!("[KiJi] Failed to create database dirty marker: {error}");
+        }
 
         // Readers open after the writer so the schema and WAL sidecars exist.
         let mut readers = Vec::with_capacity(READER_POOL_SIZE);
@@ -104,8 +116,61 @@ impl DbState {
                 writer: Mutex::new(writer),
                 readers,
                 next_reader: AtomicUsize::new(0),
+                previous_shutdown_unclean,
             }),
         })
+    }
+
+    /// Removes the dirty marker after the WAL checkpoint so the next launch
+    /// can skip the integrity check.
+    pub fn mark_clean_shutdown(&self) {
+        let marker = dirty_marker_path(&self.inner.path);
+        if marker.exists() {
+            if let Err(error) = fs::remove_file(&marker) {
+                eprintln!("[KiJi] Failed to remove database dirty marker: {error}");
+            }
+        }
+    }
+
+    /// Runs `PRAGMA quick_check` on a background thread when the previous
+    /// session did not shut down cleanly. The check reads the entire database
+    /// file, so it must never run on the startup path (a 2+ GB library takes
+    /// tens of seconds cold and freezes the app before the window appears).
+    pub fn spawn_integrity_check_if_needed(
+        &self,
+        diagnostics: Arc<crate::diagnostics::DiagnosticsState>,
+    ) {
+        if !self.inner.previous_shutdown_unclean {
+            return;
+        }
+
+        let path = self.inner.path.clone();
+        std::thread::spawn(move || {
+            // Let startup I/O settle before scanning the whole file.
+            std::thread::sleep(Duration::from_secs(15));
+            let outcome = run_background_integrity_check(&path);
+            let payload = match &outcome {
+                Ok(()) => json!({
+                    "level": "info",
+                    "category": "Database",
+                    "event": "startup-integrity-check",
+                    "message": "Database integrity check passed after unclean shutdown",
+                }),
+                Err(error) => json!({
+                    "level": "error",
+                    "category": "Database",
+                    "event": "startup-integrity-check",
+                    "message": "Database integrity check failed after unclean shutdown",
+                    "error": error,
+                }),
+            };
+            if let Err(log_error) = diagnostics.log_internal(payload) {
+                eprintln!("[KiJi] Failed to log database integrity outcome: {log_error}");
+            }
+            if let Err(error) = outcome {
+                eprintln!("[KiJi] Database integrity check failed: {error}");
+            }
+        });
     }
 
     pub fn checkpoint_wal(&self) -> Result<(), String> {
@@ -213,9 +278,24 @@ fn resolve_database_path(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn open_and_initialize(path: &Path) -> Result<Connection, String> {
     let mut connection = open_connection(path)?;
-    verify_database_integrity(&connection, path)?;
     run_migrations(&mut connection)?;
     Ok(connection)
+}
+
+fn dirty_marker_path(path: &Path) -> PathBuf {
+    wal_sidecar_path(path, ".dirty")
+}
+
+fn run_background_integrity_check(path: &Path) -> Result<(), String> {
+    let connection = Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|error| format!("Failed to open the KiJi database for integrity check: {error}"))?;
+    connection
+        .busy_timeout(std::time::Duration::from_millis(BUSY_TIMEOUT_MS))
+        .map_err(|error| format!("Failed to set integrity check busy timeout: {error}"))?;
+    verify_database_integrity(&connection, path)
 }
 
 fn wal_sidecar_path(path: &Path, extension: &str) -> PathBuf {

@@ -51,12 +51,13 @@ use settings::{settings_get, settings_reset, settings_update, SettingsState};
 use shell::{
     restore_main_window_bounds, shell_article_window_get_data, shell_article_window_open,
     shell_context_menu_show_image, shell_dialog_confirm, shell_dialog_open_file,
-    shell_main_window_apply_saved_bounds, shell_dialog_pick_folder, shell_dialog_save_file,
+    shell_dialog_pick_folder, shell_dialog_save_file,
     shell_file_read_text, shell_file_write_text,
     shell_links_open_external, shell_menu_update_state, shell_settings_window_open,
     shell_update_window_get_data, shell_update_window_open, shell_share,
     shell_share_list_services, shell_share_to_service, window_guards_plugin, ApplicationMenu,
-    ArticleWindowState, ImageContextMenuState, MainWindowBoundsSaveGuard, UpdateWindowState,
+    ArticleWindowState, ImageContextMenuState, UpdateWindowState,
+    UserInitiatedWindowsState,
 };
 use system::{
     start_accent_color_watch, start_system_power_watch, system_app_icon_get_state,
@@ -64,11 +65,30 @@ use system::{
     system_clipboard_read_text, system_clipboard_write_text, system_theme_get_accent_color,
     AppIconState,
 };
-use tauri::{Manager, RunEvent};
+use tauri::{webview::PageLoadEvent, Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(UserInitiatedWindowsState::default())
+        .on_page_load(|webview, payload| {
+            if payload.event() != PageLoadEvent::Started {
+                return;
+            }
+            let label = webview.label().to_string();
+            let app = webview.app_handle().clone();
+            if app.state::<UserInitiatedWindowsState>().is_allowed(&label) {
+                return;
+            }
+            // Secondary window recreated by macOS session restore: tear it
+            // down before it boots a full renderer.
+            eprintln!("[KiJi] Destroying session-restored window: {label}");
+            tauri::async_runtime::spawn(async move {
+                if let Some(window) = app.get_webview_window(&label) {
+                    let _ = window.destroy();
+                }
+            });
+        })
         .setup(|app| {
             let settings_state =
                 Arc::new(SettingsState::load(&app.handle()).map_err(std::io::Error::other)?);
@@ -82,6 +102,7 @@ pub fn run() {
             let diagnostics_state =
                 DiagnosticsState::load(&app.handle()).map_err(std::io::Error::other)?;
             let diagnostics_arc = Arc::new(diagnostics_state);
+            db_state.spawn_integrity_check_if_needed(Arc::clone(&diagnostics_arc));
             start_background_monitoring(Arc::clone(&diagnostics_arc));
             let app_icon_state =
                 AppIconState::load(&app.handle()).map_err(std::io::Error::other)?;
@@ -104,7 +125,6 @@ pub fn run() {
             e2e::start_e2e_harness(&app.handle());
 
             app.manage(settings_state);
-            app.manage(MainWindowBoundsSaveGuard(bounds_save_guard));
             app.manage(Arc::new(ArticleWindowState::new()));
             app.manage(Arc::new(UpdateWindowState::new()));
             app.manage(db_state);
@@ -202,7 +222,6 @@ pub fn run() {
             shell_file_write_text,
             shell_links_open_external,
             shell_menu_update_state,
-            shell_main_window_apply_saved_bounds,
             shell_settings_window_open,
             shell_article_window_open,
             shell_article_window_get_data,
@@ -234,6 +253,7 @@ pub fn run() {
                     if let Err(error) = db_state.checkpoint_wal() {
                         eprintln!("[KiJi] Failed to checkpoint database WAL on exit: {error}");
                     }
+                    db_state.mark_clean_shutdown();
                 }
             }
         });

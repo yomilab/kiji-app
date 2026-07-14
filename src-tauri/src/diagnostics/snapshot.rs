@@ -112,6 +112,11 @@ fn classify_webkit_process(name: &str, command: &str) -> Option<&'static str> {
     if !haystack.contains("com.apple.WebKit.") && !haystack.contains("/WebKit.framework/") {
         return None;
     }
+    // iOS-apps-on-Mac spawn WebKit helpers from the iOSSupport runtime; those
+    // can never belong to this app.
+    if haystack.contains("/System/iOSSupport/") {
+        return None;
+    }
 
     if haystack.contains("com.apple.WebKit.WebContent") {
         Some("webkit-webcontent")
@@ -194,6 +199,17 @@ mod tests {
     fn ignores_non_webkit_processes() {
         assert_eq!(classify_webkit_process("kiji-app", ""), None);
         assert_eq!(classify_webkit_process("Safari", ""), None);
+    }
+
+    #[test]
+    fn ignores_ios_support_webkit_processes() {
+        assert_eq!(
+            classify_webkit_process(
+                "",
+                "/System/iOSSupport/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+            ),
+            None
+        );
     }
 
     #[test]

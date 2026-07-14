@@ -211,8 +211,28 @@ pub async fn articles_clean_old_across_feeds(
     state: State<'_, DbState>,
 ) -> Result<i64, String> {
     let db = state.inner().clone();
-    db.write(move |connection| clean_old_articles(connection, None, &cutoff_date))
-        .await
+    let removed = db
+        .write(move |connection| clean_old_articles(connection, None, &cutoff_date))
+        .await?;
+
+    if removed > 0 {
+        // Deleting rows only marks pages free; VACUUM is required to shrink
+        // the file. Run it in the background so the cleanup result returns
+        // immediately; writes queue behind the writer lock until it finishes.
+        let db = state.inner().clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let result = db.with_writer(|connection| {
+                connection
+                    .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
+                    .map_err(|error| format!("Failed to vacuum database after cleanup: {error}"))
+            });
+            if let Err(error) = result {
+                eprintln!("[KiJi] {error}");
+            }
+        });
+    }
+
+    Ok(removed)
 }
 
 #[tauri::command(rename_all = "camelCase")]
