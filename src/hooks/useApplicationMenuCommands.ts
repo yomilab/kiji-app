@@ -72,7 +72,7 @@ export const useApplicationMenuCommands = ({
       return;
     }
 
-    sidebarIndicatorService.show(sidebarIndicatorOngoing('exporting'));
+    sidebarIndicatorService.show(sidebarIndicatorOngoing('exporting', undefined, { subject: 'feeds' }));
     try {
       const opmlText = await opmlExportService.buildOpmlText();
       const saveResult = await window.kijiAPI.saveOpmlFile(opmlText, 'Feeds.opml');
@@ -81,10 +81,16 @@ export const useApplicationMenuCommands = ({
         return;
       }
 
-      sidebarIndicatorService.show(sidebarIndicatorDone('exporting'), { durationMs: 5000 });
+      sidebarIndicatorService.show(
+        sidebarIndicatorDone('exporting', undefined, { subject: 'feeds' }),
+        { durationMs: 5000 },
+      );
     } catch (error) {
       logger.error('AppMenu', 'Failed to export feeds from menu', { error });
-      sidebarIndicatorService.show(sidebarIndicatorFailed('exporting'), { durationMs: 5000 });
+      sidebarIndicatorService.show(
+        sidebarIndicatorFailed('exporting', { subject: 'feeds' }),
+        { durationMs: 5000 },
+      );
     }
   }, []);
 

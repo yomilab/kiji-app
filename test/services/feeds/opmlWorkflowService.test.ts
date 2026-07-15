@@ -97,4 +97,20 @@ describe("opmlWorkflowService", () => {
     );
     expect(importEntries).toHaveBeenCalled();
   });
+
+  it("shows parse failure text when OPML parse task fails", async () => {
+    runTask.mockRejectedValueOnce(new Error("invalid opml"));
+
+    await expect(opmlWorkflowService.importFromOpmlText("<bad>")).rejects.toThrow("invalid opml");
+
+    expect(showIndicator).toHaveBeenCalledWith("Parse OPML failed", { durationMs: 6000 });
+  });
+
+  it("shows import failure text when entry import fails", async () => {
+    importEntries.mockRejectedValueOnce(new Error("db failed"));
+
+    await expect(opmlWorkflowService.importFromOpmlText("<opml></opml>")).rejects.toThrow("db failed");
+
+    expect(showIndicator).toHaveBeenCalledWith("Import feeds failed", { durationMs: 6000 });
+  });
 });

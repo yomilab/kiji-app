@@ -200,15 +200,26 @@ export const App: React.FC = () => {
       return;
     }
 
+    sidebarIndicatorService.show(sidebarIndicatorOngoing('parsing'));
+    logger.info('OPML', 'Starting drag-and-drop OPML import', {
+      fileName: opmlFile.name,
+      fileSize: opmlFile.size,
+    });
+
+    let opmlText: string;
     try {
-      // Surface the expensive parse/import phases in the sidebar indicator so
-      // first-run OPML imports do not look stalled.
-      sidebarIndicatorService.show(sidebarIndicatorOngoing('parsing'));
-      logger.info('OPML', 'Starting drag-and-drop OPML import', {
-        fileName: opmlFile.name,
-        fileSize: opmlFile.size,
-      });
-      const opmlText = await opmlFile.text();
+      opmlText = await opmlFile.text();
+    } catch (error) {
+      const errorMessage = error instanceof Error
+        ? error.message
+        : 'Failed to read OPML file.';
+      sidebarIndicatorService.show(sidebarIndicatorFailed('parsing'), { durationMs: 6000 });
+      logger.error('OPML', 'OPML drag-and-drop read failed', { error });
+      appToastService.show(errorMessage);
+      return;
+    }
+
+    try {
       const importResult = await importOpmlTextIntoLibrary(opmlText, {
         refreshTotalFeeds,
         notifyFeedLibraryChanged,
@@ -219,12 +230,10 @@ export const App: React.FC = () => {
       logger.info('OPML', 'Completed drag-and-drop OPML import', {
         summary: importResult.summary,
       });
-
     } catch (error) {
       const errorMessage = error instanceof Error
         ? error.message
         : 'Failed to import OPML file.';
-      sidebarIndicatorService.show(sidebarIndicatorFailed('importing'), { durationMs: 6000 });
       logger.error('OPML', 'OPML drag-and-drop import failed', { error });
       appToastService.show(errorMessage);
     }

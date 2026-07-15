@@ -12,6 +12,7 @@ import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 import { sidebarIndicatorService } from '@/services/ui/sidebarIndicatorService';
 import {
   sidebarIndicatorDone,
+  sidebarIndicatorFailed,
   sidebarIndicatorOngoing,
 } from '@/services/ui/sidebarIndicatorText';
 
@@ -82,22 +83,34 @@ class OpmlWorkflowService {
     this.faviconTaskFeedMap.clear();
     this.visibleStationFaviconBoosted.clear();
 
-    const parsedOpml = await helperTaskClient.runTask({
-      kind: HELPER_TASK_KIND.OPML_PARSE,
-      priority: 'high',
-      payload: {
-        opmlText,
-        defaultStationName: parseOptions.defaultStationName,
-        fileName: parseOptions.fileName,
-        url: parseOptions.url,
-      },
-    });
+    let parsedOpml;
+    try {
+      parsedOpml = await helperTaskClient.runTask({
+        kind: HELPER_TASK_KIND.OPML_PARSE,
+        priority: 'high',
+        payload: {
+          opmlText,
+          defaultStationName: parseOptions.defaultStationName,
+          fileName: parseOptions.fileName,
+          url: parseOptions.url,
+        },
+      });
+    } catch (error) {
+      sidebarIndicatorService.show(sidebarIndicatorFailed('parsing'), { durationMs: 6000 });
+      throw error;
+    }
 
     sidebarIndicatorService.show(
       sidebarIndicatorOngoing('importing', { count: parsedOpml.entries.length }),
     );
 
-    const importResult = await opmlImportService.importEntries(parsedOpml.entries);
+    let importResult;
+    try {
+      importResult = await opmlImportService.importEntries(parsedOpml.entries);
+    } catch (error) {
+      sidebarIndicatorService.show(sidebarIndicatorFailed('importing'), { durationMs: 6000 });
+      throw error;
+    }
 
     sidebarIndicatorService.show(
       sidebarIndicatorDone('importing', importResult.importedFeeds.length || undefined),

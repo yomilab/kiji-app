@@ -18,10 +18,16 @@ describe('sidebarIndicatorText', () => {
   });
 
   it('formats done and failed states with subject nouns', () => {
-    expect(sidebarIndicatorDone('exporting')).toBe('Exported articles');
+    expect(sidebarIndicatorOngoing('exporting', { count: 42 })).toBe('Exporting 42 articles');
+    expect(sidebarIndicatorDone('exporting', 12)).toBe('Exported 12 articles');
+    expect(sidebarIndicatorDone('exporting', undefined, { subject: 'feeds' })).toBe('Exported feeds');
+    expect(sidebarIndicatorOngoing('exporting', undefined, { subject: 'feeds' })).toBe('Exporting feeds');
     expect(sidebarIndicatorDone('importing', 12)).toBe('Imported 12 feeds');
     expect(sidebarIndicatorDone('clearing', 5, { subject: 'saved' })).toBe('Cleared 5 saved');
     expect(sidebarIndicatorFailed('exporting')).toBe('Export articles failed');
+    expect(sidebarIndicatorFailed('exporting', { subject: 'feeds' })).toBe('Export feeds failed');
+    expect(sidebarIndicatorFailed('parsing')).toBe('Parse OPML failed');
+    expect(sidebarIndicatorFailed('importing')).toBe('Import feeds failed');
     expect(sidebarIndicatorFailed('clearing', { subject: 'feeds' })).toBe('Clear feeds failed');
   });
 });
