@@ -1,6 +1,6 @@
 # KiJi
 
-### <ruby>記事<rt>きじ</rt></ruby> · A simple, private reader.
+### <ruby>記事<rt>きじ</rt></ruby> · A local, modern RSS reader.
 
 [![Build](https://github.com/yomilab/kiji-app/actions/workflows/build-desktop.yml/badge.svg)](https://github.com/yomilab/kiji-app/actions/workflows/build-desktop.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](./LICENSE)
@@ -27,7 +27,7 @@
 
 - Local storage
 - OPML import/export for portable subscriptions.
-- Saved articles sync to a Markdown folder under your control.
+- Saved articles sync to your local machine
 
 <p align="center">
   <sub>📰 KiJi · <a href="https://kiji.yomilab.app">kiji.yomilab.app</a></sub>
