@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 15;
+pub const SCHEMA_VERSION: i64 = 16;
 
 pub const CREATE_TABLES: &str = r#"
   CREATE TABLE IF NOT EXISTS feeds (

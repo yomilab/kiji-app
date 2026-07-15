@@ -203,6 +203,10 @@ fn migration_15(connection: &Connection) -> Result<(), String> {
     ensure_query_indexes(connection)
 }
 
+fn migration_16(connection: &Connection) -> Result<(), String> {
+    ensure_articles_unsaved_hash_index(connection)
+}
+
 static MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         version: 1,
@@ -263,6 +267,10 @@ static MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         version: 15,
         up: migration_15,
+    },
+    MigrationStep {
+        version: 16,
+        up: migration_16,
     },
 ];
 
@@ -383,6 +391,20 @@ fn ensure_query_indexes(connection: &Connection) -> Result<(), String> {
     connection
         .execute_batch(CREATE_INDEXES)
         .map_err(|error| format!("Failed to ensure database query indexes: {error}"))
+}
+
+/// Partial covering index for feed-delete orphan cleanup (`delete_articles_by_feed`).
+/// Applied only via versioned migration v16 — not added to `ensure_schema_shape` startup
+/// self-healing so large libraries are not forced to rebuild the index on every launch.
+fn ensure_articles_unsaved_hash_index(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_articles_unsaved_hash
+              ON articles(hash) WHERE saved = 0;
+            "#,
+        )
+        .map_err(|error| format!("Failed to create articles unsaved hash index: {error}"))
 }
 
 fn resync_feed_tags_json_cache(connection: &Connection) -> Result<(), String> {
@@ -519,5 +541,55 @@ mod tests {
         assert!(has_column(&connection, "feeds", "last_favicon_refresh")
             .expect("feed favicon refresh column exists"));
         assert!(has_column(&connection, "feeds", "sort_order").expect("feed sort column exists"));
+        assert!(
+            index_exists(&connection, "idx_articles_unsaved_hash").expect("query index exists"),
+            "idx_articles_unsaved_hash should exist after migrations"
+        );
+    }
+
+    #[test]
+    fn migration_16_recreates_unsaved_hash_index_on_upgrade_from_v15() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+
+        connection
+            .execute("DROP INDEX IF EXISTS idx_articles_unsaved_hash", [])
+            .expect("drop index");
+        connection
+            .execute("DELETE FROM _migrations WHERE version >= 16", [])
+            .expect("rewind migration ledger");
+
+        assert_eq!(
+            read_current_migration_version(&connection).expect("read migration version"),
+            15
+        );
+        assert!(
+            !index_exists(&connection, "idx_articles_unsaved_hash").expect("query index"),
+            "simulated v15 database should not have idx_articles_unsaved_hash"
+        );
+
+        run_migrations(&mut connection).expect("run migration 16");
+        assert_eq!(
+            read_current_migration_version(&connection).expect("read migration version"),
+            SCHEMA_VERSION
+        );
+        assert!(
+            index_exists(&connection, "idx_articles_unsaved_hash").expect("query index"),
+            "migration 16 should add idx_articles_unsaved_hash"
+        );
+    }
+
+    fn index_exists(connection: &Connection, name: &str) -> Result<bool, String> {
+        connection
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM sqlite_master
+                    WHERE type = 'index' AND name = ?1
+                )",
+                params![name],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|exists| exists == 1)
+            .map_err(|error| format!("Failed to inspect index {name}: {error}"))
     }
 }
