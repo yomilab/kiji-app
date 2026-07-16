@@ -32,6 +32,8 @@ import defaultAppIconPreview from '@/assets/images/kiji-logo.png';
 import defaultDarkAppIconPreview from '@/assets/images/kiji-logo-dark.png';
 import sunsetAppIconPreview from '@/assets/images/kiji-logo-sunset.png';
 import sunsetDarkAppIconPreview from '@/assets/images/kiji-logo-sunset-dark.png';
+import cosmosAppIconPreview from '@/assets/images/kiji-logo-cosmos.png';
+import cosmosDarkAppIconPreview from '@/assets/images/kiji-logo-cosmos-dark.png';
 import './SettingsWindow.css';
 
 type ConfigCategory = 'general' | 'appearance' | 'reading' | 'shortcuts' | 'contact';
@@ -68,7 +70,7 @@ interface SystemAppIconState {
   iconVariant: SystemAppIconVariant;
 }
 
-type SystemAppIconVariant = 'light' | 'dark' | 'sunset' | 'sunset-dark';
+type SystemAppIconVariant = 'light' | 'dark' | 'sunset' | 'sunset-dark' | 'cosmos' | 'cosmos-dark';
 const DEFAULT_SYSTEM_APP_ICON_VARIANT: SystemAppIconVariant = 'light';
 
 const APP_ICON_VARIANT_OPTIONS: ReadonlyArray<{
@@ -80,6 +82,8 @@ const APP_ICON_VARIANT_OPTIONS: ReadonlyArray<{
   { value: 'dark', label: 'Dark', source: defaultDarkAppIconPreview },
   { value: 'sunset', label: 'Sunset', source: sunsetAppIconPreview },
   { value: 'sunset-dark', label: 'Sunset Dark', source: sunsetDarkAppIconPreview },
+  { value: 'cosmos', label: 'Cosmos', source: cosmosAppIconPreview },
+  { value: 'cosmos-dark', label: 'Cosmos Dark', source: cosmosDarkAppIconPreview },
 ];
 
 const getDefaultAppIconPreview = (variant: SystemAppIconVariant): string => (

@@ -140,6 +140,12 @@ describe("SettingsWindow", () => {
         hasCustomIcon: false,
         iconVariant: "dark",
       }),
+      setSystemAppIconVariant: vi.fn().mockResolvedValue({
+        iconPath: null,
+        previewDataUrl: null,
+        hasCustomIcon: false,
+        iconVariant: "cosmos",
+      }),
       windowClose: vi.fn().mockResolvedValue(undefined),
     } as unknown as typeof window.kijiAPI;
   });
@@ -201,6 +207,23 @@ describe("SettingsWindow", () => {
 
     await waitFor(() => {
       expect(themeValue.updateFontFamilies).toHaveBeenCalledWith({ articleNonAsciiFont: FontStack.PINGFANG_SC });
+    });
+  });
+
+  it("shows Cosmos and Cosmos Dark as default app icon choices", async () => {
+    render(<SettingsWindow />);
+
+    clickSidebarCategory("Appearance");
+
+    const iconGroup = await screen.findByRole("group", { name: "Default app icon" });
+    expect(within(iconGroup).getByRole("button", { name: "Cosmos" })).toBeInTheDocument();
+    expect(within(iconGroup).getByRole("button", { name: "Cosmos Dark" })).toBeInTheDocument();
+    expect(within(iconGroup).getByRole("button", { name: "Sunset" })).toBeInTheDocument();
+
+    fireEvent.click(within(iconGroup).getByRole("button", { name: "Cosmos" }));
+
+    await waitFor(() => {
+      expect(window.kijiAPI.setSystemAppIconVariant).toHaveBeenCalledWith("cosmos");
     });
   });
 

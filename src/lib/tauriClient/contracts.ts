@@ -504,7 +504,14 @@ export interface ShareService {
   icon?: string;
 }
 
-export type SystemAppIconVariant = "light" | "dark" | "sunset" | "sunset-dark" | "custom";
+export type SystemAppIconVariant =
+  | "light"
+  | "dark"
+  | "sunset"
+  | "sunset-dark"
+  | "cosmos"
+  | "cosmos-dark"
+  | "custom";
 
 export interface SystemAppIconState {
   variant: SystemAppIconVariant;
@@ -1033,11 +1040,11 @@ export interface SystemContract {
       iconPath: FilePathString | null;
       previewDataUrl: DataUrlString | null;
       hasCustomIcon: boolean;
-      iconVariant: "light" | "dark" | "sunset" | "sunset-dark";
+      iconVariant: "light" | "dark" | "sunset" | "sunset-dark" | "cosmos" | "cosmos-dark";
     };
   };
   appIconSetVariant: {
-    request: { variant: "light" | "dark" | "sunset" | "sunset-dark" };
+    request: { variant: "light" | "dark" | "sunset" | "sunset-dark" | "cosmos" | "cosmos-dark" };
     response: SystemContract["appIconGetState"]["response"];
   };
   appIconPick: {

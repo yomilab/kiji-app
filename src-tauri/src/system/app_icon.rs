@@ -14,6 +14,8 @@ const LIGHT_ICON_RESOURCE_DIR: &str = "icons";
 const DARK_ICON_RESOURCE_DIR: &str = "icons-dark";
 const SUNSET_ICON_RESOURCE_DIR: &str = "icons-sunset";
 const SUNSET_DARK_ICON_RESOURCE_DIR: &str = "icons-sunset-dark";
+const COSMOS_ICON_RESOURCE_DIR: &str = "icons-cosmos";
+const COSMOS_DARK_ICON_RESOURCE_DIR: &str = "icons-cosmos-dark";
 const RUNTIME_ICON_FILE_NAME: &str = "icon.png";
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -23,6 +25,8 @@ pub enum SystemAppIconVariant {
     Dark,
     Sunset,
     SunsetDark,
+    Cosmos,
+    CosmosDark,
 }
 
 impl Default for SystemAppIconVariant {
@@ -336,6 +340,8 @@ fn built_in_icon_folder(variant: SystemAppIconVariant) -> &'static str {
         SystemAppIconVariant::Dark => DARK_ICON_RESOURCE_DIR,
         SystemAppIconVariant::Sunset => SUNSET_ICON_RESOURCE_DIR,
         SystemAppIconVariant::SunsetDark => SUNSET_DARK_ICON_RESOURCE_DIR,
+        SystemAppIconVariant::Cosmos => COSMOS_ICON_RESOURCE_DIR,
+        SystemAppIconVariant::CosmosDark => COSMOS_DARK_ICON_RESOURCE_DIR,
     }
 }
 

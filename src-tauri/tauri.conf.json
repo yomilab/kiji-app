@@ -100,7 +100,9 @@
       "icons/": "icons",
       "icons-dark/": "icons-dark",
       "icons-sunset/": "icons-sunset",
-      "icons-sunset-dark/": "icons-sunset-dark"
+      "icons-sunset-dark/": "icons-sunset-dark",
+      "icons-cosmos/": "icons-cosmos",
+      "icons-cosmos-dark/": "icons-cosmos-dark"
     },
     "icon": [
       "icons/32x32.png",
