@@ -31,7 +31,7 @@ pub enum SystemAppIconVariant {
 
 impl Default for SystemAppIconVariant {
     fn default() -> Self {
-        Self::Light
+        Self::Cosmos
     }
 }
 

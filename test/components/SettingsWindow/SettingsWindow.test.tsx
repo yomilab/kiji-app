@@ -138,7 +138,7 @@ describe("SettingsWindow", () => {
         iconPath: null,
         previewDataUrl: null,
         hasCustomIcon: false,
-        iconVariant: "dark",
+        iconVariant: "cosmos",
       }),
       setSystemAppIconVariant: vi.fn().mockResolvedValue({
         iconPath: null,
