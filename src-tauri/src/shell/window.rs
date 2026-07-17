@@ -381,7 +381,12 @@ fn attach_main_window_bounds_listener(
                 eprintln!("[WindowBounds] Failed to save main window bounds on close: {error}");
             }
 
-            app_handle.exit(0);
+            // Exit from a worker thread so RequestExit is not handled re-entrantly
+            // on the main-thread CloseRequested stack (that path can abort).
+            let app_handle = app_handle.clone();
+            std::thread::spawn(move || {
+                app_handle.exit(0);
+            });
             return;
         }
 

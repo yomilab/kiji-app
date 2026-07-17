@@ -102,7 +102,9 @@
       "icons-sunset/": "icons-sunset",
       "icons-sunset-dark/": "icons-sunset-dark",
       "icons-cosmos/": "icons-cosmos",
-      "icons-cosmos-dark/": "icons-cosmos-dark"
+      "icons-cosmos-dark/": "icons-cosmos-dark",
+      "icons-particle/": "icons-particle",
+      "icons-particle-dark/": "icons-particle-dark"
     },
     "icon": [
       "icons-cosmos/32x32.png",

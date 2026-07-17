@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use image::ImageReader;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     fs,
     io::Cursor,
@@ -16,6 +16,8 @@ const SUNSET_ICON_RESOURCE_DIR: &str = "icons-sunset";
 const SUNSET_DARK_ICON_RESOURCE_DIR: &str = "icons-sunset-dark";
 const COSMOS_ICON_RESOURCE_DIR: &str = "icons-cosmos";
 const COSMOS_DARK_ICON_RESOURCE_DIR: &str = "icons-cosmos-dark";
+const PARTICLE_ICON_RESOURCE_DIR: &str = "icons-particle";
+const PARTICLE_DARK_ICON_RESOURCE_DIR: &str = "icons-particle-dark";
 const RUNTIME_ICON_FILE_NAME: &str = "icon.png";
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -27,6 +29,8 @@ pub enum SystemAppIconVariant {
     SunsetDark,
     Cosmos,
     CosmosDark,
+    Particle,
+    ParticleDark,
 }
 
 impl Default for SystemAppIconVariant {
@@ -48,7 +52,27 @@ pub struct SystemAppIconState {
 #[serde(rename_all = "camelCase")]
 struct StoredAppIconState {
     icon_path: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_stored_icon_variant")]
     icon_variant: SystemAppIconVariant,
+}
+
+/// Accepts known kebab-case variants; unknown values (from newer builds) fall
+/// back to the default so setup never aborts on forward-incompatible state.
+fn deserialize_stored_icon_variant<'de, D>(deserializer: D) -> Result<SystemAppIconVariant, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match SystemAppIconVariant::deserialize(&value) {
+        Ok(variant) => Ok(variant),
+        Err(_) => {
+            eprintln!(
+                "[KiJi] Unknown app icon variant {value}; falling back to {:?}",
+                SystemAppIconVariant::default()
+            );
+            Ok(SystemAppIconVariant::default())
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -342,6 +366,8 @@ fn built_in_icon_folder(variant: SystemAppIconVariant) -> &'static str {
         SystemAppIconVariant::SunsetDark => SUNSET_DARK_ICON_RESOURCE_DIR,
         SystemAppIconVariant::Cosmos => COSMOS_ICON_RESOURCE_DIR,
         SystemAppIconVariant::CosmosDark => COSMOS_DARK_ICON_RESOURCE_DIR,
+        SystemAppIconVariant::Particle => PARTICLE_ICON_RESOURCE_DIR,
+        SystemAppIconVariant::ParticleDark => PARTICLE_DARK_ICON_RESOURCE_DIR,
     }
 }
 
@@ -461,4 +487,44 @@ fn path_to_string(path: &Path) -> Result<String, String> {
     path.to_str()
         .map(str::to_string)
         .ok_or_else(|| "Selected path is not valid UTF-8.".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{deserialize_stored_icon_variant, StoredAppIconState, SystemAppIconVariant};
+
+    #[test]
+    fn stored_icon_state_parses_known_variants() {
+        let stored: StoredAppIconState = serde_json::from_str(
+            r#"{"iconPath":null,"iconVariant":"cosmos"}"#,
+        )
+        .expect("known variant should parse");
+        assert_eq!(stored.icon_variant, SystemAppIconVariant::Cosmos);
+        assert!(stored.icon_path.is_none());
+    }
+
+    #[test]
+    fn stored_icon_state_falls_back_on_unknown_variant() {
+        let stored: StoredAppIconState = serde_json::from_str(
+            r#"{"iconPath":null,"iconVariant":"from-the-future"}"#,
+        )
+        .expect("unknown variant should not fail setup");
+        assert_eq!(stored.icon_variant, SystemAppIconVariant::default());
+    }
+
+    #[test]
+    fn stored_icon_state_defaults_missing_variant() {
+        let stored: StoredAppIconState =
+            serde_json::from_str(r#"{"iconPath":null}"#).expect("missing variant should default");
+        assert_eq!(stored.icon_variant, SystemAppIconVariant::default());
+    }
+
+    #[test]
+    fn deserialize_stored_icon_variant_accepts_kebab_case() {
+        let mut deserializer =
+            serde_json::Deserializer::from_str(r#""sunset-dark""#);
+        let variant = deserialize_stored_icon_variant(&mut deserializer)
+            .expect("sunset-dark should deserialize");
+        assert_eq!(variant, SystemAppIconVariant::SunsetDark);
+    }
 }

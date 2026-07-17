@@ -511,6 +511,8 @@ export type SystemAppIconVariant =
   | "sunset-dark"
   | "cosmos"
   | "cosmos-dark"
+  | "particle"
+  | "particle-dark"
   | "custom";
 
 export interface SystemAppIconState {
@@ -1042,11 +1044,29 @@ export interface SystemContract {
       iconPath: FilePathString | null;
       previewDataUrl: DataUrlString | null;
       hasCustomIcon: boolean;
-      iconVariant: "light" | "dark" | "sunset" | "sunset-dark" | "cosmos" | "cosmos-dark";
+      iconVariant:
+        | "light"
+        | "dark"
+        | "sunset"
+        | "sunset-dark"
+        | "cosmos"
+        | "cosmos-dark"
+        | "particle"
+        | "particle-dark";
     };
   };
   appIconSetVariant: {
-    request: { variant: "light" | "dark" | "sunset" | "sunset-dark" | "cosmos" | "cosmos-dark" };
+    request: {
+      variant:
+        | "light"
+        | "dark"
+        | "sunset"
+        | "sunset-dark"
+        | "cosmos"
+        | "cosmos-dark"
+        | "particle"
+        | "particle-dark";
+    };
     response: SystemContract["appIconGetState"]["response"];
   };
   appIconPick: {
