@@ -633,6 +633,8 @@ export interface SchedulerRunPlanOptions {
   onlyFeedIds?: string[];
   excludeFeedIds?: string[];
   forceRefreshFeedIds?: string[];
+  /** When true, do not skip feeds that are inside failure backoff (resume catch-up). */
+  bypassFailureBackoff?: boolean;
 }
 
 export interface SchedulerBoost {

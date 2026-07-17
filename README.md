@@ -9,21 +9,21 @@
 **[kiji.yomilab.app](https://kiji.yomilab.app)** · [Download](https://kiji.yomilab.app/download/)
 
 
-### Features
+## Features
 
-- **🏷️ Stations.** Tag feeds into groups; flip unread ↔ saved — no timeline.
+- **🏷️ Stations.** Tag feeds into groups
 - **📖 Reader mode.** Defuddle + Readability — two engines to parse raw page HTML into article text.
 - **📝 Markdown sync.** Sync articles to local folder as markdown.
 
 
-### Preview
+## Preview
 
 ![KiJi article list with stations sidebar](screenshots/preview-article-list.png)
 
 ![KiJi reader mode](screenshots/preview-reader-mode.png)
 
 
-### Privacy
+## Privacy
 
 - Local storage
 - OPML import/export for portable subscriptions.

@@ -48,6 +48,7 @@ pub fn create_scheduler_run_plan(
         }
 
         if is_scheduler_entry_in_backoff(entry, now_ms)
+            && !options.bypass_failure_backoff.unwrap_or(false)
             && !contains_id(options.force_refresh_feed_ids.as_ref(), &entry.feed_id)
                 .unwrap_or(false)
         {
@@ -359,5 +360,28 @@ mod tests {
         );
         assert_eq!(forced.skipped_backoff_count, 0);
         assert_eq!(forced.prioritized.len(), 1);
+    }
+
+    #[test]
+    fn bypasses_backoff_when_bypass_failure_backoff_flag_set() {
+        let now = current_time_ms();
+        let failing = SchedulerFeedEntry {
+            consecutive_failures: 3,
+            last_failed_fetch_at_ms: Some(now - 60_000),
+            ..base_entry("failing")
+        };
+
+        let plan = create_scheduler_run_plan(
+            &[failing],
+            1,
+            &HashMap::new(),
+            now,
+            &SchedulerRunPlanOptions {
+                bypass_failure_backoff: Some(true),
+                ..SchedulerRunPlanOptions::default()
+            },
+        );
+        assert_eq!(plan.skipped_backoff_count, 0);
+        assert_eq!(plan.prioritized.len(), 1);
     }
 }

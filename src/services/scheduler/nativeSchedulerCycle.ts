@@ -45,6 +45,7 @@ export function buildNativeCycleOptions(
     onlyFeedIds: scope.onlyFeedIds ? [...scope.onlyFeedIds] : undefined,
     excludeFeedIds: scope.excludeFeedIds ? [...scope.excludeFeedIds] : undefined,
     forceRefreshFeedIds: forceRefreshFeedIds ? [...forceRefreshFeedIds] : undefined,
+    bypassFailureBackoff: scope.bypassFailureBackoff === true ? true : undefined,
   };
 }
 

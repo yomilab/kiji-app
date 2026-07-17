@@ -639,6 +639,75 @@ describe("feedSchedulerService", () => {
     }
   });
 
+  it("retries catch-up within the interval after an all-failed cycle (overnight dark wake)", async () => {
+    // Use wall-clock interval (not 1ms E2E) so a just-finished failed cycle is
+    // not treated as overdue solely by the interval gate.
+    getE2eConfig.mockReturnValue(null);
+    getSettings.mockResolvedValue({ backgroundUpdate: "every-15m" });
+    fetchFeedNetworkWithCache.mockRejectedValue(new Error("network down"));
+
+    const cycleEvents: string[] = [];
+    const unsubscribe = feedScheduler.on((event) => {
+      cycleEvents.push(event.type);
+    });
+
+    try {
+      await feedScheduler.start();
+      const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
+      await tickHandler?.();
+      await vi.waitFor(() => {
+        expect(cycleEvents).toContain("cycle-complete");
+      });
+
+      fetchFeedNetworkWithCache.mockClear();
+      getAll.mockClear();
+      fetchFeedNetworkWithCache.mockResolvedValue({
+        notModified: true,
+        etag: "etag-1",
+        lastModified: "date-1",
+      });
+
+      // No timer advance: interval is not overdue, but needsResumeCatchUp is set.
+      await feedScheduler.catchUpAfterResume();
+
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(1);
+      });
+      expect(fetchFeedNetworkWithCache).toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("marks needsResumeCatchUp on sleep-gap heartbeat so short gaps after failures still catch up", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    getE2eConfig.mockReturnValue(null);
+    getSettings.mockResolvedValue({ backgroundUpdate: "every-15m" });
+
+    try {
+      await feedScheduler.start();
+      const tickHandler = getSchedulerEventHandler("scheduler:cycle-tick");
+      await tickHandler?.();
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(1);
+      });
+
+      getAll.mockClear();
+      fetchFeedNetworkWithCache.mockClear();
+
+      // Wall clock jumps 5 minutes (less than 15m interval) — sleep gap ≥ 120s.
+      vi.setSystemTime(Date.now() + 5 * 60_000);
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      await vi.waitFor(() => {
+        expect(getAll).toHaveBeenCalledTimes(1);
+      });
+      expect(fetchFeedNetworkWithCache).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("aborts in-flight refresh on system sleep", async () => {
     let releaseRefresh!: () => void;
     fetchFeedNetworkWithCache.mockImplementation((_url, options?: { signal?: AbortSignal }) => new Promise((resolve, reject) => {
@@ -847,6 +916,51 @@ describe("feedSchedulerService", () => {
           execute: true,
           options: expect.objectContaining({
             onlyFeedIds: ["feed-1", "feed-2"],
+          }),
+        }),
+      );
+    });
+
+    it("passes bypassFailureBackoff on resume catch-up after an all-failed native cycle", async () => {
+      getSettings.mockResolvedValue({ backgroundUpdate: "every-15m" });
+      previewNativeCycle.mockResolvedValue({
+        plan: { prioritized: [], skippedBackoffCount: 0, skippedSuppressedCount: 0 },
+        queuedCount: 1,
+        executedFeedCount: 1,
+        changedFeeds: 0,
+        notModifiedFeeds: 0,
+        failedFeeds: 1,
+        insertedArticles: 0,
+        feedResults: [{ feedId: "feed-1", status: "failed", error: "network down" }],
+      });
+
+      await feedScheduler.start();
+      getSchedulerEventHandler("scheduler:cycle-tick")?.();
+      await vi.waitFor(() => {
+        expect(previewNativeCycle).toHaveBeenCalledTimes(1);
+      });
+
+      previewNativeCycle.mockClear();
+      previewNativeCycle.mockResolvedValue({
+        plan: { prioritized: [], skippedBackoffCount: 0, skippedSuppressedCount: 0 },
+        queuedCount: 1,
+        executedFeedCount: 1,
+        changedFeeds: 0,
+        notModifiedFeeds: 1,
+        failedFeeds: 0,
+        insertedArticles: 0,
+        feedResults: [{ feedId: "feed-1", status: "not-modified", insertedCount: 0 }],
+      });
+
+      await feedScheduler.catchUpAfterResume();
+
+      await vi.waitFor(() => {
+        expect(previewNativeCycle).toHaveBeenCalledTimes(1);
+      });
+      expect(previewNativeCycle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({
+            bypassFailureBackoff: true,
           }),
         }),
       );

@@ -37,6 +37,8 @@ pub struct SchedulerRunPlanOptions {
     pub only_feed_ids: Option<Vec<String>>,
     pub exclude_feed_ids: Option<Vec<String>>,
     pub force_refresh_feed_ids: Option<Vec<String>>,
+    /// Resume catch-up: retry feeds even when overnight sleep left them in failure backoff.
+    pub bypass_failure_backoff: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -24,6 +24,7 @@ import {
   useUnmountEffect,
 } from '@/hooks/useLifecycleEffects';
 import { logger } from '@/services/logger';
+import { subscribeToWindowFocus } from '@/services/tauri/tauriEventSubscription';
 import { appToastService } from '@/services/ui/appToastService';
 import { confirmDialog } from '@/services/ui/confirmDialogService';
 import { isMainRendererWindow } from '@/utils/rendererWindow';
@@ -120,6 +121,13 @@ export const useFeedSchedulerLifecycle = (enabled = true): void => {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    // macOS keeps visibilityState "visible" while another app is focused, so
+    // switching back to an already-open KiJi window must also trigger catch-up
+    // (overnight sleep failures leave needsResumeCatchUp set).
+    const removeFocusListener = subscribeToWindowFocus(() => {
+      void feedScheduler.catchUpAfterResume();
+    });
+
     const handleSettingsChanged = async () => {
       try {
         const settings = await settingsManager.getSettings();
@@ -138,6 +146,7 @@ export const useFeedSchedulerLifecycle = (enabled = true): void => {
     return () => {
       releaseBackgroundWakeLock();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      removeFocusListener();
       if (typeof removeSettingsChangedListener === 'function') {
         removeSettingsChangedListener();
       }

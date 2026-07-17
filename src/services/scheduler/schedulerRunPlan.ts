@@ -14,6 +14,7 @@ export interface SchedulerRunPlanOptions {
   onlyFeedIds?: ReadonlySet<string>;
   excludeFeedIds?: ReadonlySet<string>;
   forceRefreshFeedIds?: ReadonlySet<string>;
+  bypassFailureBackoff?: boolean;
 }
 
 export const isSchedulerEntryInBackoff = (
@@ -48,6 +49,7 @@ export const createSchedulerRunPlan = (
 
     if (
       isSchedulerEntryInBackoff(entry, now)
+      && !options.bypassFailureBackoff
       && !options.forceRefreshFeedIds?.has(entry.feedId)
     ) {
       skippedBackoffCount += 1;

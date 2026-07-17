@@ -89,6 +89,25 @@ describe('schedulerRunPlan', () => {
     expect(plan.prioritized.map((entry) => entry.feedId)).toEqual(['blocked']);
   });
 
+  it('bypasses backoff when bypassFailureBackoff is set (resume catch-up)', () => {
+    const now = new Date('2026-05-09T12:00:00.000Z').getTime();
+    const blocked = createEntry('blocked', {
+      consecutiveFailures: 3,
+      lastFailedFetchAt: new Date(now - 10 * 60_000),
+    });
+
+    const plan = createSchedulerRunPlan(
+      [blocked],
+      1,
+      new Map(),
+      now,
+      { bypassFailureBackoff: true },
+    );
+
+    expect(plan.skippedBackoffCount).toBe(0);
+    expect(plan.prioritized.map((entry) => entry.feedId)).toEqual(['blocked']);
+  });
+
   it('front-loads active station feeds while preserving score order inside each partition', () => {
     const highRest = createEntry('high-rest', { updateFrequencyScore: 1.0, sortOrder: 0 });
     const lowStation = createEntry('low-station', { updateFrequencyScore: 0.1, sortOrder: 2 });

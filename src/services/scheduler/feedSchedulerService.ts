@@ -100,6 +100,8 @@ class FeedSchedulerService {
   private deferredCycleRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private sleepGapHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private lastSleepGapHeartbeatAt = 0;
+  /** Set after sleep or a cycle with no successful fetches; cleared on any changed/304 outcome. */
+  private needsResumeCatchUp = false;
 
   on(listener: (event: SchedulerEvent) => void): () => void {
     this.listeners.add(listener);
@@ -354,10 +356,15 @@ class FeedSchedulerService {
       if (this.shouldAbortStaleCycle()) {
         await this.forceAbortActiveCycle('resume');
       } else {
+        if (this.shouldScheduleCatchUpCycle()) {
+          this.markPendingCycleTick('resume');
+        }
         return;
       }
     }
 
+    // Sleep / focus / failed overnight cycles set needsResumeCatchUp so a brief
+    // power-nap failure does not satisfy the interval and skip the real wake.
     const wasOverdue = this.shouldScheduleCatchUpCycle() || this.pendingCycleTick;
     if (!wasOverdue) {
       return;
@@ -384,15 +391,22 @@ class FeedSchedulerService {
     const overdueMs = this.lastCycleCompletedAt === null
       ? intervalMs
       : Date.now() - this.lastCycleCompletedAt;
+    // Overnight dark-wake failures leave feeds in backoff; resume must retry them.
+    const resumeScope = { bypassFailureBackoff: true as const };
 
     if (wasOverdue && stationFeedIds && stationFeedIds.size > 0) {
       logger.info('Scheduler', 'Running station-first catch-up after resume', {
         mode: this.mode,
         overdueMs,
         stationFeedCount: stationFeedIds.size,
+        bypassFailureBackoff: true,
+        needsResumeCatchUp: this.needsResumeCatchUp,
       });
       this.pendingCycleTick = false;
-      await this.runScheduledCycle(lifecycleId, { onlyFeedIds: stationFeedIds });
+      await this.runScheduledCycle(lifecycleId, {
+        ...resumeScope,
+        onlyFeedIds: stationFeedIds,
+      });
       if (!this.isCurrentLifecycle(lifecycleId)) {
         return;
       }
@@ -406,9 +420,12 @@ class FeedSchedulerService {
       mode: this.mode,
       overdueMs,
       pendingCycleTick: this.pendingCycleTick,
+      bypassFailureBackoff: true,
+      needsResumeCatchUp: this.needsResumeCatchUp,
     });
     this.pendingCycleTick = false;
     await this.runScheduledCycle(lifecycleId, {
+      ...resumeScope,
       excludeFeedIds: stationFeedIds && stationFeedIds.size > 0 ? stationFeedIds : undefined,
     });
   }
@@ -439,6 +456,8 @@ class FeedSchedulerService {
         gapMs,
         mode: this.mode,
       });
+      // Mark before catch-up so a recent all-failed cycle does not look "fresh".
+      this.needsResumeCatchUp = true;
       void this.catchUpAfterResume();
     }, SLEEP_GAP_HEARTBEAT_MS);
   }
@@ -603,7 +622,7 @@ class FeedSchedulerService {
   }
 
   private shouldScheduleCatchUpCycle(): boolean {
-    if (this.pendingCycleTick) {
+    if (this.pendingCycleTick || this.needsResumeCatchUp) {
       return true;
     }
 
@@ -612,6 +631,24 @@ class FeedSchedulerService {
       ? intervalMs
       : Date.now() - this.lastCycleCompletedAt;
     return overdueMs >= intervalMs;
+  }
+
+  private noteCycleFetchOutcome(stats: {
+    changedFeeds: number;
+    notModifiedFeeds: number;
+    failedFeeds: number;
+    executedFeedCount: number;
+  }): void {
+    if (stats.changedFeeds > 0 || stats.notModifiedFeeds > 0) {
+      this.needsResumeCatchUp = false;
+      return;
+    }
+
+    // All attempted feeds failed, or every feed was skipped (e.g. backoff) —
+    // keep retrying on the next sleep gap / window focus / resume.
+    if (stats.failedFeeds > 0 || stats.executedFeedCount === 0) {
+      this.needsResumeCatchUp = true;
+    }
   }
 
   private maybeRunDeferredCycle(lifecycleId: number): void {
@@ -672,6 +709,7 @@ class FeedSchedulerService {
       void this.handleSystemSleep();
     };
     globalScope[SCHEDULER_RESUME_WAKE_GLOBAL] = () => {
+      this.needsResumeCatchUp = true;
       void this.catchUpAfterResume();
     };
   }
@@ -873,6 +911,7 @@ class FeedSchedulerService {
       void this.handleSystemSleep();
     });
     this.systemPowerUnlistenResume = await listen(SCHEDULER_SYSTEM_RESUME_EVENT, () => {
+      this.needsResumeCatchUp = true;
       void this.catchUpAfterResume();
     });
 
@@ -978,6 +1017,7 @@ class FeedSchedulerService {
           skipFeedIdsForThisCycle,
           onlyFeedIds: scope.onlyFeedIds,
           excludeFeedIds: scope.excludeFeedIds,
+          bypassFailureBackoff: scope.bypassFailureBackoff,
         },
       );
 
@@ -1024,6 +1064,13 @@ class FeedSchedulerService {
         releaseQueuedFeeds?.();
       }
 
+      this.noteCycleFetchOutcome({
+        changedFeeds: cycleStats.changedFeeds,
+        notModifiedFeeds: cycleStats.notModifiedFeeds,
+        failedFeeds: cycleStats.failedFeeds,
+        executedFeedCount: prioritized.length,
+      });
+
       logger.info('Scheduler', 'Background refresh cycle stats', {
         totalFeeds,
         scheduledFeeds: prioritized.length,
@@ -1034,6 +1081,7 @@ class FeedSchedulerService {
       });
     } catch (error) {
       logger.error('Scheduler', 'Background refresh cycle failed', { error });
+      this.needsResumeCatchUp = true;
     } finally {
       const durationMs = this.lastCycleStartedAt === null
         ? null
@@ -1139,17 +1187,29 @@ class FeedSchedulerService {
         });
       }
 
+      const changedFeeds = result.feedResults.filter((feed) => feed.status === 'changed').length;
+      const notModifiedFeeds = result.feedResults.filter((feed) => feed.status === 'not-modified').length;
+      const failedFeeds = result.feedResults.filter((feed) => feed.status === 'failed').length;
+      this.noteCycleFetchOutcome({
+        changedFeeds,
+        notModifiedFeeds,
+        failedFeeds,
+        executedFeedCount: result.feedResults.length,
+      });
+
       logger.info('Scheduler', 'Native background refresh cycle stats', {
         queuedCount: result.feedResults.length,
         executedFeedCount: result.feedResults.length,
-        changedFeeds: result.feedResults.filter((feed) => feed.status === 'changed').length,
-        notModifiedFeeds: result.feedResults.filter((feed) => feed.status === 'not-modified').length,
-        failedFeeds: result.feedResults.filter((feed) => feed.status === 'failed').length,
+        changedFeeds,
+        notModifiedFeeds,
+        failedFeeds,
         insertedArticles: result.insertedArticles,
         activeStationFeedCount: frontloadFeedIds?.size ?? 0,
+        bypassFailureBackoff: scope.bypassFailureBackoff === true,
       });
     } catch (error) {
       logger.error('Scheduler', 'Native background refresh cycle failed', { error });
+      this.needsResumeCatchUp = true;
     }
   }
 
