@@ -83,6 +83,12 @@ export async function deleteFeed(
   return invokeContract<FeedsContract["delete"]>("feeds_delete", request);
 }
 
+export async function deleteMany(
+  request: FeedsContract["deleteMany"]["request"],
+): Promise<FeedsContract["deleteMany"]["response"]> {
+  return invokeContract<FeedsContract["deleteMany"]>("feeds_delete_many", request);
+}
+
 export async function updateUnreadCount(
   request: FeedsContract["updateUnreadCount"]["request"],
 ): Promise<FeedsContract["updateUnreadCount"]["response"]> {

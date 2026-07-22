@@ -16,7 +16,8 @@ pub use articles::{
     sync_feed_article_counts_batch,
 };
 pub use feeds::{
-    feeds_count, feeds_create, feeds_delete, feeds_get, feeds_get_by_url, feeds_list, feeds_update,
+    feeds_count, feeds_create, feeds_delete, feeds_delete_many, feeds_get, feeds_get_by_url,
+    feeds_list, feeds_update,
     feeds_update_article_count, feeds_update_last_fetched, feeds_update_unread_count,
     list_feeds, update_feed, FeedUpdate,
 };

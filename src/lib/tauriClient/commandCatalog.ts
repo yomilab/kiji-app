@@ -57,6 +57,7 @@ export const tauriCommandCatalog: Record<
     { apiMethod: "dbFeedsInsert", ipcChannel: "db-feeds-insert", kind: "invoke", targetCommand: "feeds.create", rustCommand: "feeds_create" },
     { apiMethod: "dbFeedsUpdate", ipcChannel: "db-feeds-update", kind: "invoke", targetCommand: "feeds.update", rustCommand: "feeds_update" },
     { apiMethod: "dbFeedsDelete", ipcChannel: "db-feeds-delete", kind: "invoke", targetCommand: "feeds.delete", rustCommand: "feeds_delete" },
+    { apiMethod: "dbFeedsDeleteMany", ipcChannel: "db-feeds-delete-many", kind: "invoke", targetCommand: "feeds.deleteMany", rustCommand: "feeds_delete_many" },
     { apiMethod: "dbFeedsUpdateUnread", ipcChannel: "db-feeds-update-unread", kind: "invoke", targetCommand: "feeds.updateUnreadCount", rustCommand: "feeds_update_unread_count" },
     { apiMethod: "dbFeedsUpdateArticleCount", ipcChannel: "db-feeds-update-article-count", kind: "invoke", targetCommand: "feeds.updateArticleCount", rustCommand: "feeds_update_article_count" },
     { apiMethod: "dbFeedsUpdateLastFetched", ipcChannel: "db-feeds-update-last-fetched", kind: "invoke", targetCommand: "feeds.updateLastFetched", rustCommand: "feeds_update_last_fetched" },

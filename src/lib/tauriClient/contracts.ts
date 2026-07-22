@@ -70,6 +70,10 @@ export interface FeedDeleteRequest {
   id: string;
 }
 
+export interface FeedDeleteManyRequest {
+  ids: string[];
+}
+
 export interface FeedCountUpdateRequest {
   id: string;
   count: number;
@@ -781,6 +785,10 @@ export interface FeedsContract {
   delete: {
     request: FeedDeleteRequest;
     response: boolean;
+  };
+  deleteMany: {
+    request: FeedDeleteManyRequest;
+    response: number;
   };
   updateUnreadCount: {
     request: FeedCountUpdateRequest;

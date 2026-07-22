@@ -809,41 +809,98 @@ pub fn delete_articles_by_feed(
     connection: &Connection,
     feed_id: &str,
 ) -> Result<Vec<String>, String> {
-    let mut reassign_statement = connection
-        .prepare(
-            r#"
-            SELECT a.hash, MIN(afi.feed_id) AS next_feed_id
-            FROM articles a
-            JOIN article_feed_items afi ON afi.article_hash = a.hash AND afi.feed_id <> ?1
-            WHERE a.feed_id = ?1
-            GROUP BY a.hash
-            "#,
-        )
-        .map_err(|error| format!("Failed to prepare article owner reassignment query: {error}"))?;
-    let reassign_rows = reassign_statement
-        .query_map(params![feed_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })
-        .map_err(|error| format!("Failed to query article owner reassignments: {error}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("Failed to read article owner reassignment: {error}"))?;
+    delete_articles_by_feeds(connection, &[feed_id.to_string()])
+}
 
-    for (hash, next_feed_id) in reassign_rows {
-        connection
-            .execute(
-                "UPDATE articles SET feed_id = ?1 WHERE hash = ?2",
-                params![next_feed_id, hash],
-            )
-            .map_err(|error| format!("Failed to reassign article owner feed: {error}"))?;
+pub fn delete_articles_by_feeds(
+    connection: &Connection,
+    feed_ids: &[String],
+) -> Result<Vec<String>, String> {
+    if feed_ids.is_empty() {
+        return Ok(Vec::new());
     }
 
-    connection
-        .execute(
-            "DELETE FROM article_feed_items WHERE feed_id = ?1",
-            params![feed_id],
-        )
-        .map_err(|error| format!("Failed to delete article/feed mappings: {error}"))?;
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to start feed article delete transaction: {error}"))?;
 
+    reassign_article_owners(&transaction, feed_ids)?;
+    delete_article_feed_mappings(&transaction, feed_ids)?;
+    let deleted_hashes = collect_orphan_unsaved_hashes(&transaction)?;
+    delete_orphan_unsaved_articles(&transaction)?;
+
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit feed article delete transaction: {error}"))?;
+
+    Ok(deleted_hashes)
+}
+
+fn numbered_feed_id_in_list(feed_ids: &[String]) -> String {
+    (1..=feed_ids.len())
+        .map(|index| format!("?{index}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Reassigns canonical article owners away from deleted feeds to any remaining
+/// mapped feed in a single set-based pass (one scan for the whole batch).
+pub(crate) fn reassign_article_owners(
+    connection: &Connection,
+    feed_ids: &[String],
+) -> Result<(), String> {
+    if feed_ids.is_empty() {
+        return Ok(());
+    }
+
+    let in_list = numbered_feed_id_in_list(feed_ids);
+    let sql = format!(
+        r#"
+        UPDATE articles
+        SET feed_id = (
+          SELECT MIN(afi.feed_id)
+          FROM article_feed_items afi
+          WHERE afi.article_hash = articles.hash
+            AND afi.feed_id NOT IN ({in_list})
+        )
+        WHERE feed_id IN ({in_list})
+          AND EXISTS (
+            SELECT 1
+            FROM article_feed_items afi
+            WHERE afi.article_hash = articles.hash
+              AND afi.feed_id NOT IN ({in_list})
+          )
+        "#
+    );
+    connection
+        .execute(&sql, params_from_iter(feed_ids.iter()))
+        .map(|_| ())
+        .map_err(|error| format!("Failed to reassign article owner feeds: {error}"))
+}
+
+pub(crate) fn delete_article_feed_mappings(
+    connection: &Connection,
+    feed_ids: &[String],
+) -> Result<(), String> {
+    if feed_ids.is_empty() {
+        return Ok(());
+    }
+
+    let in_list = numbered_feed_id_in_list(feed_ids);
+    let sql = format!("DELETE FROM article_feed_items WHERE feed_id IN ({in_list})");
+    connection
+        .execute(&sql, params_from_iter(feed_ids.iter()))
+        .map(|_| ())
+        .map_err(|error| format!("Failed to delete article/feed mappings: {error}"))
+}
+
+/// Library-wide orphan GC: only unsaved rows are collected here; rows still
+/// owned by a deleted feed are removed by the `articles.feed_id` cascade when
+/// the feed row is deleted (saved content persists in `saved_articles`).
+/// Runs once per delete batch, not once per feed.
+pub(crate) fn collect_orphan_unsaved_hashes(
+    connection: &Connection,
+) -> Result<Vec<String>, String> {
     let mut orphan_statement = connection
         .prepare(
             r#"
@@ -856,12 +913,14 @@ pub fn delete_articles_by_feed(
             "#,
         )
         .map_err(|error| format!("Failed to prepare orphan article query: {error}"))?;
-    let deleted_hashes = orphan_statement
+    let rows = orphan_statement
         .query_map([], |row| row.get::<_, String>(0))
-        .map_err(|error| format!("Failed to query orphan articles: {error}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("Failed to read orphan article: {error}"))?;
+        .map_err(|error| format!("Failed to query orphan articles: {error}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to read orphan article: {error}"))
+}
 
+pub(crate) fn delete_orphan_unsaved_articles(connection: &Connection) -> Result<(), String> {
     connection
         .execute(
             r#"
@@ -873,9 +932,8 @@ pub fn delete_articles_by_feed(
             "#,
             [],
         )
-        .map_err(|error| format!("Failed to delete orphan articles: {error}"))?;
-
-    Ok(deleted_hashes)
+        .map(|_| ())
+        .map_err(|error| format!("Failed to delete orphan articles: {error}"))
 }
 
 pub fn clean_old_articles(

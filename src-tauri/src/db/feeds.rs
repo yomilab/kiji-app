@@ -1,8 +1,11 @@
-use rusqlite::{params, Connection, OptionalExtension, ToSql};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension, ToSql};
 use serde::Deserialize;
 use tauri::State;
 
 use super::{
+    articles::{
+        delete_article_feed_mappings, delete_orphan_unsaved_articles, reassign_article_owners,
+    },
     models::{bool_to_i64, to_json_string, to_optional_json_string, FeedRecord},
     DbState,
 };
@@ -93,6 +96,50 @@ pub async fn feeds_delete(id: String, state: State<'_, DbState>) -> Result<bool,
             .map_err(|error| format!("Failed to delete feed: {error}"))
     })
     .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn feeds_delete_many(ids: Vec<String>, state: State<'_, DbState>) -> Result<i64, String> {
+    let db = state.inner().clone();
+    db.write(move |connection| delete_feeds_with_articles(connection, &ids))
+        .await
+}
+
+/// Deletes many feeds with their articles in one transaction: one set-based
+/// owner reassignment, one mapping delete, ONE library-wide orphan sweep, then
+/// the feed rows. Replaces the per-feed loop that ran the global orphan GC once
+/// per feed (multi-second sweeps × N feeds froze station deletion).
+pub fn delete_feeds_with_articles(
+    connection: &Connection,
+    feed_ids: &[String],
+) -> Result<i64, String> {
+    if feed_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to start batch feed delete transaction: {error}"))?;
+
+    reassign_article_owners(&transaction, feed_ids)?;
+    delete_article_feed_mappings(&transaction, feed_ids)?;
+    delete_orphan_unsaved_articles(&transaction)?;
+
+    let placeholders = feed_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!("DELETE FROM feeds WHERE id IN ({placeholders})");
+    let deleted = transaction
+        .execute(&sql, params_from_iter(feed_ids.iter()))
+        .map_err(|error| format!("Failed to delete feeds: {error}"))?;
+
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit batch feed delete transaction: {error}"))?;
+
+    Ok(deleted as i64)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -378,5 +425,147 @@ fn map_feed_error(error: rusqlite::Error, context: &str) -> String {
             "This feed URL already exists in your library.".to_string()
         }
         _ => format!("Failed to {context}: {error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::run_migrations;
+
+    fn setup_connection() -> Connection {
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+        connection
+    }
+
+    fn insert_feed(connection: &Connection, id: &str) {
+        connection
+            .execute(
+                "INSERT INTO feeds (id, title, url, created_at) VALUES (?1, ?1, ?1, '2026-01-01T00:00:00Z')",
+                params![id],
+            )
+            .expect("insert feed");
+    }
+
+    fn insert_article(connection: &Connection, hash: &str, feed_id: &str, saved: i64) {
+        connection
+            .execute(
+                "INSERT INTO articles (hash, feed_id, fetched_date, saved) VALUES (?1, ?2, '2026-01-01T00:00:00Z', ?3)",
+                params![hash, feed_id, saved],
+            )
+            .expect("insert article");
+    }
+
+    fn insert_mapping(connection: &Connection, feed_id: &str, hash: &str) {
+        connection
+            .execute(
+                "INSERT INTO article_feed_items (feed_id, article_hash) VALUES (?1, ?2)",
+                params![feed_id, hash],
+            )
+            .expect("insert article/feed mapping");
+    }
+
+    fn article_owner(connection: &Connection, hash: &str) -> Option<String> {
+        connection
+            .query_row(
+                "SELECT feed_id FROM articles WHERE hash = ?1",
+                params![hash],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .expect("read article owner")
+    }
+
+    fn feed_exists(connection: &Connection, id: &str) -> bool {
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM feeds WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count feed")
+            > 0
+    }
+
+    #[test]
+    fn batch_delete_reassigns_cross_feed_articles_and_collects_orphans_once() {
+        let connection = setup_connection();
+        for feed_id in ["f1", "f2", "f3"] {
+            insert_feed(&connection, feed_id);
+        }
+        insert_article(&connection, "shared", "f1", 0);
+        insert_mapping(&connection, "f1", "shared");
+        insert_mapping(&connection, "f2", "shared");
+        insert_article(&connection, "orphan", "f1", 0);
+        insert_mapping(&connection, "f1", "orphan");
+        insert_article(&connection, "kept-saved", "f1", 1);
+        insert_mapping(&connection, "f1", "kept-saved");
+        insert_article(&connection, "untouched", "f3", 0);
+        insert_mapping(&connection, "f3", "untouched");
+
+        let deleted = delete_feeds_with_articles(&connection, &["f1".to_string()])
+            .expect("batch delete feed");
+
+        assert_eq!(deleted, 1);
+        assert!(!feed_exists(&connection, "f1"));
+        assert_eq!(
+            article_owner(&connection, "shared").as_deref(),
+            Some("f2"),
+            "cross-feed article should be reassigned to its remaining feed"
+        );
+        assert_eq!(
+            article_owner(&connection, "orphan"),
+            None,
+            "unsaved orphan article should be garbage collected"
+        );
+        assert_eq!(
+            article_owner(&connection, "kept-saved"),
+            None,
+            "articles still owned by the deleted feed cascade with it (articles.feed_id FK ON DELETE CASCADE)"
+        );
+        assert_eq!(
+            article_owner(&connection, "untouched").as_deref(),
+            Some("f3")
+        );
+    }
+
+    #[test]
+    fn batch_delete_multi_feed_sweeps_articles_mapped_only_inside_the_batch() {
+        let connection = setup_connection();
+        for feed_id in ["f1", "f2"] {
+            insert_feed(&connection, feed_id);
+        }
+        insert_article(&connection, "inside-batch", "f1", 0);
+        insert_mapping(&connection, "f1", "inside-batch");
+        insert_mapping(&connection, "f2", "inside-batch");
+        insert_article(&connection, "saved-inside-batch", "f1", 1);
+        insert_mapping(&connection, "f1", "saved-inside-batch");
+        insert_mapping(&connection, "f2", "saved-inside-batch");
+
+        let deleted = delete_feeds_with_articles(
+            &connection,
+            &["f1".to_string(), "f2".to_string()],
+        )
+        .expect("batch delete feeds");
+
+        assert_eq!(deleted, 2);
+        assert_eq!(
+            article_owner(&connection, "inside-batch"),
+            None,
+            "article mapped only to deleted feeds should be swept as orphan"
+        );
+        assert_eq!(
+            article_owner(&connection, "saved-inside-batch"),
+            None,
+            "article whose whole mapping set was deleted cascades with its owner feed"
+        );
+    }
+
+    #[test]
+    fn batch_delete_with_no_ids_is_a_noop() {
+        let connection = setup_connection();
+        let deleted = delete_feeds_with_articles(&connection, &[]).expect("empty batch delete");
+        assert_eq!(deleted, 0);
     }
 }

@@ -2195,11 +2195,10 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
 
       const deletedFeedIdSet = new Set(feedsToDelete);
 
-      for (const feedId of feedsToDelete) {
-        await articlesManager.deleteArticlesByFeed(feedId);
-        await feedsManager.deleteFeed(feedId);
+      if (feedsToDelete.length > 0) {
+        await feedsManager.deleteFeeds(feedsToDelete);
 
-        if (selectedFeedId === feedId) {
+        if (selectedFeedId && deletedFeedIdSet.has(selectedFeedId)) {
           clearFeedSelection();
         }
       }

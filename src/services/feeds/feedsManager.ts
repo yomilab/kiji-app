@@ -97,6 +97,18 @@ class FeedsManager {
     return deleted;
   }
 
+  async deleteFeeds(ids: string[]): Promise<number> {
+    if (ids.length === 0) {
+      return 0;
+    }
+
+    const deletedCount = await tauriClient.feeds.deleteMany({ ids });
+    for (const id of ids) {
+      removeArticleFeedMetadata(id);
+    }
+    return deletedCount;
+  }
+
   async refreshFeed(
     id: string,
     options: { signal?: AbortSignal; force?: boolean } = {},
