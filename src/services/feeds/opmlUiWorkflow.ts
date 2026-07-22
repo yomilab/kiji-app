@@ -39,12 +39,12 @@ export const formatOpmlImportSummary = (summary: OpmlImportSummary): string => {
 };
 
 export interface OpmlImportNavigationActions {
-  selectTag: (tagName: string) => Promise<void>;
+  selectTag: (tagName: string, options?: { awaitInitialFetch?: boolean }) => Promise<void>;
   selectFeed: (
     feedId: string,
     feedUrl: string,
     feedTitle: string,
-    options?: { forceNetwork?: boolean },
+    options?: { forceNetwork?: boolean; awaitInitialFetch?: boolean },
   ) => Promise<void>;
 }
 
@@ -58,7 +58,7 @@ export const navigateAfterOpmlImport = async (
   }
 
   if (navigationTarget.type === 'station') {
-    await actions.selectTag(navigationTarget.stationName);
+    await actions.selectTag(navigationTarget.stationName, { awaitInitialFetch: true });
     return;
   }
 
@@ -66,7 +66,7 @@ export const navigateAfterOpmlImport = async (
     navigationTarget.feedId,
     navigationTarget.feedUrl,
     navigationTarget.feedTitle,
-    { forceNetwork: true },
+    { forceNetwork: true, awaitInitialFetch: true },
   );
 };
 

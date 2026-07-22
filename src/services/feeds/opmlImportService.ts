@@ -49,6 +49,8 @@ export interface OpmlImportResult {
 
 export type OpmlBackgroundTask = () => Promise<void>;
 
+const OPML_IMPORT_ENTRY_CONCURRENCY = 8;
+
 const getOutlineLabel = (outline: Element): string => {
   const raw = outline.getAttribute('title') || outline.getAttribute('text') || '';
   return raw.trim();
@@ -215,17 +217,12 @@ class OpmlImportService {
       -1,
     );
     const stationSortOrderBase = maxExistingStationSortOrder + 1;
-    const assignedStationSortOrders = new Map<string, number>();
 
     const seenInFileUrls = new Set<string>();
-    let imported = 0;
-    let skippedDuplicate = 0;
     let invalid = 0;
-    let failed = 0;
-    const importedFeeds: OpmlImportedFeedRef[] = [];
-    const importedStations: string[] = [];
-    let firstImportedFeedNavigation: Extract<OpmlImportNavigationTarget, { type: 'feed' }> | null = null;
+    let skippedDuplicate = 0;
     let nextSortOrder = existingFeeds.length;
+    const candidates: Array<{ entry: OpmlImportEntry; sortOrder: number }> = [];
 
     for (const entry of entries) {
       const normalizedUrl = normalizeFeedUrl(entry.url);
@@ -240,31 +237,52 @@ class OpmlImportService {
       }
 
       seenInFileUrls.add(normalizedUrl);
+      candidates.push({ entry, sortOrder: nextSortOrder });
+      nextSortOrder += 1;
+    }
 
+    const assignedStationSortOrders = new Map<string, number>();
+    for (const { entry } of candidates) {
+      if (!entry.station || assignedStationSortOrders.has(entry.station)) {
+        continue;
+      }
+
+      const fileOrder = stationOrderInFile.get(entry.station) ?? assignedStationSortOrders.size;
+      assignedStationSortOrders.set(entry.station, stationSortOrderBase + fileOrder);
+    }
+
+    const stationSortOrderSynced = new Set<string>();
+    const stationEmojiHandled = new Set<string>(
+      existingTags.filter((tag) => tag.emoji).map((tag) => tag.name)
+    );
+
+    type CandidateOutcome =
+      | { ok: true; feed: { id: string; url: string; title: string }; entry: OpmlImportEntry }
+      | { ok: false };
+
+    const outcomes: CandidateOutcome[] = new Array(candidates.length);
+    let cursor = 0;
+
+    const importCandidate = async (index: number): Promise<void> => {
+      const { entry, sortOrder } = candidates[index];
       try {
         const feed = await feedsManager.addFeedWithoutMetadata(entry.url, entry.title);
-        existingNormalizedUrls.add(normalizedUrl);
 
-        await feedStore.update(feed.id, { sortOrder: nextSortOrder });
-        nextSortOrder += 1;
+        await feedStore.update(feed.id, { sortOrder });
 
         if (entry.station) {
           await tagsManager.addTagToFeed(feed.id, entry.station);
-          if (!assignedStationSortOrders.has(entry.station)) {
-            const fileOrder = stationOrderInFile.get(entry.station) ?? assignedStationSortOrders.size;
-            assignedStationSortOrders.set(entry.station, stationSortOrderBase + fileOrder);
+
+          if (!stationSortOrderSynced.has(entry.station)) {
+            stationSortOrderSynced.add(entry.station);
+            await tagsManager.updateTag(entry.station, {
+              sortOrder: assignedStationSortOrders.get(entry.station),
+            });
           }
 
-          await tagsManager.updateTag(entry.station, {
-            sortOrder: assignedStationSortOrders.get(entry.station),
-          });
-
-          if (entry.stationEmoji) {
-            const stationTag = (await tagsManager.getAllTags())
-              .find((tag) => tag.name === entry.station);
-            if (stationTag && !stationTag.emoji) {
-              await tagsManager.updateTag(entry.station, { emoji: entry.stationEmoji });
-            }
+          if (entry.stationEmoji && !stationEmojiHandled.has(entry.station)) {
+            stationEmojiHandled.add(entry.station);
+            await tagsManager.updateTag(entry.station, { emoji: entry.stationEmoji });
           }
         }
 
@@ -272,23 +290,49 @@ class OpmlImportService {
           await feedsManager.updateFeed(feed.id, { emoji: entry.emoji });
         }
 
-        importedFeeds.push({ id: feed.id, url: feed.url });
-        imported += 1;
-
-        if (entry.station && !importedStations.includes(entry.station)) {
-          importedStations.push(entry.station);
-        }
-
-        if (!firstImportedFeedNavigation) {
-          firstImportedFeedNavigation = {
-            type: 'feed',
-            feedId: feed.id,
-            feedUrl: feed.url,
-            feedTitle: feed.title || entry.title || feed.url,
-          };
-        }
+        outcomes[index] = { ok: true, feed, entry };
       } catch {
+        outcomes[index] = { ok: false };
+      }
+    };
+
+    const workerCount = Math.min(OPML_IMPORT_ENTRY_CONCURRENCY, candidates.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (cursor < candidates.length) {
+        const index = cursor;
+        cursor += 1;
+        await importCandidate(index);
+      }
+    });
+    await Promise.all(workers);
+
+    let imported = 0;
+    let failed = 0;
+    const importedFeeds: OpmlImportedFeedRef[] = [];
+    const importedStations: string[] = [];
+    let firstImportedFeedNavigation: Extract<OpmlImportNavigationTarget, { type: 'feed' }> | null = null;
+
+    for (const outcome of outcomes) {
+      if (!outcome?.ok) {
         failed += 1;
+        continue;
+      }
+
+      const { feed, entry } = outcome;
+      imported += 1;
+      importedFeeds.push({ id: feed.id, url: feed.url });
+
+      if (entry.station && !importedStations.includes(entry.station)) {
+        importedStations.push(entry.station);
+      }
+
+      if (!firstImportedFeedNavigation) {
+        firstImportedFeedNavigation = {
+          type: 'feed',
+          feedId: feed.id,
+          feedUrl: feed.url,
+          feedTitle: feed.title || entry.title || feed.url,
+        };
       }
     }
 

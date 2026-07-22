@@ -68,6 +68,7 @@ const SCHEDULER_UI_BATCH_DELAY_MS = 250;
 const BACKGROUND_REFRESH_SCROLL_IDLE_DELAY_MS = 450;
 /** After rapid station hops, retry cold-switch SQLite if skeleton is still up. */
 const DEFERRED_SWITCH_SQLITE_RECOVERY_DELAY_MS = 250;
+const IMPORT_INITIAL_FETCH_SKELETON_TIMEOUT_MS = 30000;
 const DEFAULT_ARTICLE_LIST_SORT: NonNullable<ArticleQuery['sort']> = { field: 'publishedDate', order: 'desc' };
 const LAST_SIDEBAR_SELECTION_KEY = 'last-sidebar-selection';
 const HAS_PERFORMANCE_API = typeof performance !== 'undefined' && typeof performance.mark === 'function';
@@ -153,6 +154,7 @@ type RefreshTriggerOptions = {
   forceNetwork?: boolean;
   /** Station switch bypasses failure backoff but still respects the 60s fetch cooldown. */
   bypassBackoff?: boolean;
+  awaitInitialFetch?: boolean;
 };
 
 type RefreshFeedFromNetworkOptions = {
@@ -177,6 +179,7 @@ type ListSourceSwitchSpec = {
   deferredTaggedFeedCount: number;
   deferredSqliteLimit?: number;
   deferredInteractionExtra?: Record<string, unknown>;
+  awaitInitialFetch?: boolean;
   closeArticleForSwitch: () => void;
   closeTraceMark: 'source-reset' | 'article-close-requested';
   /**
@@ -676,6 +679,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // the Phase A read behind a resumed background cycle (H16 / 2026-07 logs).
   const pendingColdSwitchSqliteTokenRef = useRef<number | null>(null);
   const deferNetworkSchedulerResumeTokenRef = useRef<number | null>(null);
+  const importFirstFetchSkeletonTokenRef = useRef<number | null>(null);
   const interactiveRefreshScopeTokenRef = useRef(0);
   const lastQueryRef = useRef<ArticleQuery | null>(null);
   const hasAttemptedSidebarRestoreRef = useRef(false);
@@ -1041,6 +1045,32 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [clearPendingColdSwitchSqlite, completeSelectionSwitchNetworkPriority]);
 
+  const scheduleImportFirstFetchSkeletonTimeout = useCallback((token: number) => {
+    switchLifecycle.setAttemptTimer('import-first-fetch-skeleton', IMPORT_INITIAL_FETCH_SKELETON_TIMEOUT_MS, () => {
+      if (!isSelectionActive(token)) {
+        return;
+      }
+      if (importFirstFetchSkeletonTokenRef.current !== token) {
+        return;
+      }
+      importFirstFetchSkeletonTokenRef.current = null;
+      clearPendingColdSwitchSqlite(token);
+      if (deferNetworkSchedulerResumeTokenRef.current === token) {
+        deferNetworkSchedulerResumeTokenRef.current = null;
+      }
+      if (currentArticlesRef.current.length === 0) {
+        clearSwitchLoadingInTransition();
+      }
+      completeSelectionSwitchNetworkPriority(token);
+    });
+  }, [
+    clearPendingColdSwitchSqlite,
+    clearSwitchLoadingInTransition,
+    completeSelectionSwitchNetworkPriority,
+    isSelectionActive,
+    switchLifecycle,
+  ]);
+
   /**
    * Phase B `finally` helper: keep the cold-switch skeleton (and scheduler
    * pause) while deferred SQLite still owns an empty list. Otherwise clear
@@ -1048,6 +1078,23 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
    */
   const completeNetworkPhaseSwitchLoading = useCallback((token: number) => {
     if (!isSelectionActive(token)) {
+      return;
+    }
+
+    if (importFirstFetchSkeletonTokenRef.current === token) {
+      if (currentArticlesRef.current.length > 0) {
+        importFirstFetchSkeletonTokenRef.current = null;
+        clearPendingColdSwitchSqlite(token);
+        clearSwitchLoadingInTransition();
+        completeSelectionSwitchNetworkPriority(token);
+        return;
+      }
+
+      clearPendingColdSwitchSqlite(token);
+      if (deferNetworkSchedulerResumeTokenRef.current === token) {
+        deferNetworkSchedulerResumeTokenRef.current = null;
+      }
+      completeSelectionSwitchNetworkPriority(token);
       return;
     }
 
@@ -1093,6 +1140,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     pendingSwitchVisibleReconcileRef.current = null;
     pendingColdSwitchSqliteTokenRef.current = null;
     deferNetworkSchedulerResumeTokenRef.current = null;
+    importFirstFetchSkeletonTokenRef.current = null;
     clearStationUiRefreshTimer();
     cancelSourceSelectionRefreshSchedule();
     if (previousToken > 0) {
@@ -1421,6 +1469,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             trigger: 'background-refresh',
           });
 
+          const clearsImportFirstFetchHold =
+            importFirstFetchSkeletonTokenRef.current !== null
+            && previousArticles.length === 0;
+
           // Keep users anchored after passive inserts: jump to the top only
           // when they are already there, otherwise preserve a nearby row.
           const scrollRequest = articleListAtTopRef.current
@@ -1440,7 +1492,13 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 scrollRequest,
               },
             });
+            if (clearsImportFirstFetchHold) {
+              collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
+            }
           });
+          if (clearsImportFirstFetchHold) {
+            importFirstFetchSkeletonTokenRef.current = null;
+          }
         }
 
         const pendingSourceKey = pendingBackgroundRefreshSourceKeyRef.current;
@@ -1856,6 +1914,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     taggedFeedCount: number;
     limit?: number;
     interactionExtra?: Record<string, unknown>;
+    awaitInitialFetch?: boolean;
   }): Promise<boolean> => {
     const {
       token,
@@ -1864,6 +1923,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       taggedFeedCount,
       limit,
       interactionExtra,
+      awaitInitialFetch,
     } = args;
 
     return await traceSidebarSwitchAsync(
@@ -1895,6 +1955,15 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           : Math.max(stored.length, nonSearchArticlesTotalCountRef.current);
 
         const dispatchStartedAt = performance.now();
+        if (stored.length === 0 && awaitInitialFetch) {
+          importFirstFetchSkeletonTokenRef.current = token;
+          scheduleImportFirstFetchSkeletonTimeout(token);
+          if (deferNetworkSchedulerResumeTokenRef.current === token) {
+            deferNetworkSchedulerResumeTokenRef.current = null;
+            completeSelectionSwitchNetworkPriority(token);
+          }
+          return true;
+        }
         // Rows and skeleton clear must commit in one transition — an urgent
         // loading clear renders before the transition-lane SET_ARTICLES and
         // flashes an empty "0 articles" list on cold switches under load.
@@ -1923,8 +1992,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     );
   }, [
     clearSwitchLoadingInTransition,
+    completeSelectionSwitchNetworkPriority,
     dispatchArticlesTransitionIfChanged,
     isSelectionActive,
+    scheduleImportFirstFetchSkeletonTimeout,
   ]);
 
   const scheduleDeferredSwitchSqliteRecovery = useCallback((args: {
@@ -1934,6 +2005,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     taggedFeedCount: number;
     limit?: number;
     interactionExtra?: Record<string, unknown>;
+    awaitInitialFetch?: boolean;
   }) => {
     // Attempt-scoped: automatically cleared when a newer switch supersedes
     // this token, so a stale recovery can never fire into a fresh selection.
@@ -1965,7 +2037,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             clearSwitchLoadingInTransition();
           }
         } finally {
-          finishColdSwitchSqliteAndResumeIfNeeded(token);
+          if (importFirstFetchSkeletonTokenRef.current !== token) {
+            finishColdSwitchSqliteAndResumeIfNeeded(token);
+          }
         }
       })();
     });
@@ -1985,6 +2059,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     taggedFeedCount: number;
     limit?: number;
     interactionExtra?: Record<string, unknown>;
+    awaitInitialFetch?: boolean;
   }) => {
     const { token, sourceKey } = args;
     pendingColdSwitchSqliteTokenRef.current = token;
@@ -2031,7 +2106,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return;
         }
 
-        finishColdSwitchSqliteAndResumeIfNeeded(token);
+        if (importFirstFetchSkeletonTokenRef.current !== token) {
+          finishColdSwitchSqliteAndResumeIfNeeded(token);
+        }
       }
     })();
   }, [
@@ -2271,7 +2348,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // includeTotal:true (COUNT DISTINCT) and raced the deferred page query —
       // 2026-07-14 Tech switch: sqlite-query-deferred 6071ms while Phase B
       // waited on the same reader pool (H17).
-      const coldDeferredOwnsFirstPage = pendingColdSwitchSqliteTokenRef.current === token;
+      const coldDeferredOwnsFirstPage =
+        pendingColdSwitchSqliteTokenRef.current === token
+        && importFirstFetchSkeletonTokenRef.current !== token;
       if (coldDeferredOwnsFirstPage) {
         // Phase A will publish; background apply picks up any later inserts
         // after the scheduler resumes.
@@ -2400,6 +2479,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           taggedFeedCount: spec.deferredTaggedFeedCount,
           limit: spec.deferredSqliteLimit,
           interactionExtra: spec.deferredInteractionExtra,
+          awaitInitialFetch: spec.awaitInitialFetch,
         });
       }
 
@@ -2480,6 +2560,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       query: feedQuery,
       deferredTaggedFeedCount: 1,
       deferredInteractionExtra: { feedId },
+      awaitInitialFetch: options.awaitInitialFetch === true,
       closeArticleForSwitch: () => setActiveArticle(null),
       closeTraceMark: 'source-reset',
       resolveRefreshPayload: async ({ intent }) => ({
@@ -2517,6 +2598,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       deferredTaggedFeedCount: 0,
       deferredSqliteLimit: SMART_VIEW_ARTICLE_LIMIT,
       deferredInteractionExtra: { tagName },
+      awaitInitialFetch: options.awaitInitialFetch === true,
       closeArticleForSwitch: closeActiveArticleForSourceSwitch,
       closeTraceMark: 'article-close-requested',
       resolveRefreshPayload: async ({ intent, isColdSwitch }) => {

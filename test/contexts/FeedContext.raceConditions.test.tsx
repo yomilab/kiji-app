@@ -1409,6 +1409,167 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     expect(emptyAfterSkeleton).toEqual([]);
   });
 
+  it('holds the import switch skeleton until first fetched rows publish', async () => {
+    // OPML import inserts feed metadata only, so the cold switch into the
+    // imported station commits an empty deferred SQLite page. The skeleton
+    // must stay up (no empty "0 articles" view) until Phase B publishes the
+    // first fetched rows.
+    const stateHistory: Array<{ isLoadingArticles: boolean; articleCount: number }> = [];
+    const reconcileDeferred = createDeferred<{ articles: Article[]; total: number }>();
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    );
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A') {
+        if (query.includeTotal === false) {
+          return Promise.resolve({ articles: [], total: 0 });
+        }
+        return reconcileDeferred.promise;
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    const HistoryProbe: React.FC = () => {
+      latestContext = useFeed();
+      stateHistory.push({
+        isLoadingArticles: latestContext.isLoadingArticles,
+        articleCount: latestContext.articles.length,
+      });
+      return null;
+    };
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <HistoryProbe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A', { awaitInitialFetch: true });
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isLoadingArticles).toBe(true);
+      expect(latestContext!.articles).toEqual([]);
+    });
+
+    // Let Phase A commit the empty page and Phase B reach its reconcile query.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(latestContext!.isLoadingArticles).toBe(true);
+    expect(latestContext!.articles).toEqual([]);
+    const skeletonIndex = stateHistory.findIndex((state) => state.isLoadingArticles);
+    expect(skeletonIndex).toBeGreaterThanOrEqual(0);
+    const emptyWhileWaiting = stateHistory
+      .slice(skeletonIndex + 1)
+      .filter((state) => !state.isLoadingArticles && state.articleCount === 0);
+    expect(emptyWhileWaiting).toEqual([]);
+
+    reconcileDeferred.resolve({
+      articles: [createArticle('hash-a', 'feed-a')],
+      total: 1,
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a']);
+    });
+
+    const emptyAfterSkeleton = stateHistory
+      .slice(skeletonIndex + 1)
+      .filter((state) => !state.isLoadingArticles && state.articleCount === 0);
+    expect(emptyAfterSkeleton).toEqual([]);
+  });
+
+  it('releases the import skeleton hold when another switch supersedes it', async () => {
+    // Switching away mid-hold must supersede the import attempt: the new
+    // source owns the list and the held skeleton timer cannot fire into it.
+    const reconcileDeferred = createDeferred<{ articles: Article[]; total: number }>();
+
+    (tagsManager.getFeedsByTag as Mock).mockImplementation((tagName: string) =>
+      Promise.resolve([`feed-${tagName.toLowerCase()}`])
+    );
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: new Date() }),
+      stationFeed('feed-b', { lastFetched: new Date() }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockImplementation((feedId: string) =>
+      Promise.resolve(stationFeed(feedId, { lastFetched: new Date() }))
+    );
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A') {
+        if (query.includeTotal === false) {
+          return Promise.resolve({ articles: [], total: 0 });
+        }
+        return reconcileDeferred.promise;
+      }
+      if (query.tagName === 'B') {
+        return Promise.resolve({
+          articles: [createArticle('hash-b', 'feed-b')],
+          total: 1,
+        });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A', { awaitInitialFetch: true });
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(latestContext!.selectedTag).toBe('A');
+    expect(latestContext!.isLoadingArticles).toBe(true);
+    expect(latestContext!.articles).toEqual([]);
+
+    await act(async () => {
+      void latestContext!.selectTag('B');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('B');
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-b']);
+    });
+
+    reconcileDeferred.resolve({
+      articles: [createArticle('hash-a', 'feed-a')],
+      total: 1,
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(latestContext!.selectedTag).toBe('B');
+    expect(latestContext!.isLoadingArticles).toBe(false);
+    expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-b']);
+  });
+
   it('skips Phase B reconcile query while cold deferred SQLite owns the skeleton', async () => {
     // Production (2026-07-14 Tech): Phase B reconcile (includeTotal:true) raced
     // the deferred page and stretched sqlite-query-deferred to ~6s. Cold Phase A

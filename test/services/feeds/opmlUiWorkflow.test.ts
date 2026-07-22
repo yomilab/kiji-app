@@ -97,7 +97,7 @@ describe('navigateAfterOpmlImport', () => {
       { selectTag, selectFeed },
     );
 
-    expect(selectTag).toHaveBeenCalledWith('Tech');
+    expect(selectTag).toHaveBeenCalledWith('Tech', { awaitInitialFetch: true });
     expect(selectFeed).not.toHaveBeenCalled();
   });
 
@@ -123,7 +123,7 @@ describe('navigateAfterOpmlImport', () => {
       'feed-1',
       'https://example.com/rss',
       'Example',
-      { forceNetwork: true },
+      { forceNetwork: true, awaitInitialFetch: true },
     );
     expect(selectTag).not.toHaveBeenCalled();
   });
