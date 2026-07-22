@@ -33,6 +33,14 @@ export const theme = {
   },
 };
 
+export const appearance = {
+  set(
+    request: SystemContract["appearanceSet"]["request"],
+  ): Promise<SystemContract["appearanceSet"]["response"]> {
+    return invokeContract<SystemContract["appearanceSet"]>("system_appearance_set", request);
+  },
+};
+
 export const clipboard = {
   readText(): Promise<SystemContract["clipboardReadText"]["response"]> {
     return invokeContract<SystemContract["clipboardReadText"]>("system_clipboard_read_text");

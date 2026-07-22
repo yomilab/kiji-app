@@ -1084,6 +1084,10 @@ export interface SystemContract {
   themeGetAccentColor: {
     response: string | null;
   };
+  appearanceSet: {
+    request: { appearance: "light" | "dark" | "system" };
+    response: void;
+  };
   clipboardReadText: {
     response: string;
   };

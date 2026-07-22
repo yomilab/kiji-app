@@ -60,10 +60,11 @@ use shell::{
     UserInitiatedWindowsState,
 };
 use system::{
-    start_accent_color_watch, start_system_power_watch, system_app_icon_get_state,
-    system_app_icon_pick, system_app_icon_reset, system_app_icon_set_variant, system_app_relaunch,
+    apply_app_appearance, start_accent_color_watch, start_system_power_watch,
+    system_app_icon_get_state, system_app_icon_pick, system_app_icon_reset,
+    system_app_icon_set_variant, system_app_relaunch, system_appearance_set,
     system_clipboard_read_text, system_clipboard_write_text, system_theme_get_accent_color,
-    AppIconState,
+    AppIconState, ResolvedAppearance,
 };
 use tauri::{webview::PageLoadEvent, Manager, RunEvent};
 
@@ -120,6 +121,15 @@ pub fn run() {
             app_icon_state
                 .apply_configured_icon(&app.handle())
                 .map_err(std::io::Error::other)?;
+            let boot_theme = settings_state
+                .snapshot()
+                .map_err(std::io::Error::other)?
+                .theme;
+            apply_app_appearance(
+                &app.handle(),
+                ResolvedAppearance::from_theme(boot_theme),
+            )
+            .map_err(std::io::Error::other)?;
             start_accent_color_watch(&app.handle()).map_err(std::io::Error::other)?;
             start_system_power_watch(&app.handle()).map_err(std::io::Error::other)?;
             e2e::start_e2e_harness(&app.handle());
@@ -238,6 +248,7 @@ pub fn run() {
             system_app_icon_reset,
             system_app_icon_set_variant,
             system_app_relaunch,
+            system_appearance_set,
             system_clipboard_read_text,
             system_clipboard_write_text,
             system_theme_get_accent_color,

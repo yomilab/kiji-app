@@ -134,6 +134,7 @@ export const tauriCommandCatalog: Record<
     { apiMethod: "resetSystemAppIcon", ipcChannel: "system-app-icon:reset", kind: "invoke", targetCommand: "system.appIcon.reset", rustCommand: "system_app_icon_reset" },
     { apiMethod: "relaunchApplication", ipcChannel: "app-relaunch", kind: "invoke", targetCommand: "system.app.relaunch", rustCommand: "system_app_relaunch" },
     { apiMethod: "getSystemAccentColor", ipcChannel: "get-system-accent-color", kind: "invoke", targetCommand: "system.theme.getAccentColor", rustCommand: "system_theme_get_accent_color" },
+    { apiMethod: "setSystemAppearance", ipcChannel: "system-appearance:set", kind: "invoke", targetCommand: "system.appearance.set", rustCommand: "system_appearance_set" },
     { apiMethod: "onSystemAccentColorChanged", ipcChannel: "system-accent-color-changed", kind: "event", targetCommand: "system.theme.onAccentColorChanged" },
     { apiMethod: "readClipboard", ipcChannel: "read-clipboard", kind: "invoke", targetCommand: "system.clipboard.readText", rustCommand: "system_clipboard_read_text" },
     { apiMethod: "writeClipboard", ipcChannel: "write-clipboard", kind: "invoke", targetCommand: "system.clipboard.writeText", rustCommand: "system_clipboard_write_text" },

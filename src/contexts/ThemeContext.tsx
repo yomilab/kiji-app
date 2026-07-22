@@ -3,6 +3,7 @@ import { settingsManager, DEFAULT_SETTINGS } from '@/services/settings';
 import type { Theme, FontFamilySettings, ReadingLayoutSettings } from '@/services/settings';
 import { applyFontFamiliesToRoot, applyReadingLayoutToRoot } from '@/services/settings/styleVariables';
 import { loadFontsFromFamilyString } from '@/utils/googleFonts';
+import { tauriClient } from '@/lib/tauriClient';
 
 interface ThemeContextType {
   theme: Theme;
@@ -81,7 +82,14 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
     document.documentElement.setAttribute('data-theme', effectiveTheme);
     document.documentElement.style.colorScheme = effectiveTheme;
-  }, [effectiveTheme, isInitialized]);
+
+    // Pin the native NSAppearance to the app theme so macOS window vibrancy
+    // (sidebar material, menus, chrome) matches even when the system
+    // appearance differs; "system" hands control back to macOS in auto mode.
+    tauriClient.system.appearance
+      .set({ appearance: theme === 'auto' ? 'system' : effectiveTheme })
+      .catch((error) => console.error('Error applying native appearance:', error));
+  }, [effectiveTheme, theme, isInitialized]);
 
   // Apply font families to CSS variables (load Google Fonts first)
   useEffect(() => {
