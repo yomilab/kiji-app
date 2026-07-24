@@ -68,7 +68,6 @@ const SCHEDULER_UI_BATCH_DELAY_MS = 250;
 const BACKGROUND_REFRESH_SCROLL_IDLE_DELAY_MS = 450;
 /** After rapid station hops, retry cold-switch SQLite if skeleton is still up. */
 const DEFERRED_SWITCH_SQLITE_RECOVERY_DELAY_MS = 250;
-const IMPORT_INITIAL_FETCH_SKELETON_TIMEOUT_MS = 30000;
 const DEFAULT_ARTICLE_LIST_SORT: NonNullable<ArticleQuery['sort']> = { field: 'publishedDate', order: 'desc' };
 const LAST_SIDEBAR_SELECTION_KEY = 'last-sidebar-selection';
 const HAS_PERFORMANCE_API = typeof performance !== 'undefined' && typeof performance.mark === 'function';
@@ -679,7 +678,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // the Phase A read behind a resumed background cycle (H16 / 2026-07 logs).
   const pendingColdSwitchSqliteTokenRef = useRef<number | null>(null);
   const deferNetworkSchedulerResumeTokenRef = useRef<number | null>(null);
-  const importFirstFetchSkeletonTokenRef = useRef<number | null>(null);
+  // Import switches (awaitInitialFetch) record here when the deferred page
+  // commits empty, so Phase B — which awaits the first fetch — owns clearing
+  // the skeleton: rows publish first, or Phase B settles onto the honest
+  // empty view. No timers; superseded by the next beginSelectionRequest.
+  const importEmptyCommitTokenRef = useRef<number | null>(null);
   const interactiveRefreshScopeTokenRef = useRef(0);
   const lastQueryRef = useRef<ArticleQuery | null>(null);
   const hasAttemptedSidebarRestoreRef = useRef(false);
@@ -1045,32 +1048,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [clearPendingColdSwitchSqlite, completeSelectionSwitchNetworkPriority]);
 
-  const scheduleImportFirstFetchSkeletonTimeout = useCallback((token: number) => {
-    switchLifecycle.setAttemptTimer('import-first-fetch-skeleton', IMPORT_INITIAL_FETCH_SKELETON_TIMEOUT_MS, () => {
-      if (!isSelectionActive(token)) {
-        return;
-      }
-      if (importFirstFetchSkeletonTokenRef.current !== token) {
-        return;
-      }
-      importFirstFetchSkeletonTokenRef.current = null;
-      clearPendingColdSwitchSqlite(token);
-      if (deferNetworkSchedulerResumeTokenRef.current === token) {
-        deferNetworkSchedulerResumeTokenRef.current = null;
-      }
-      if (currentArticlesRef.current.length === 0) {
-        clearSwitchLoadingInTransition();
-      }
-      completeSelectionSwitchNetworkPriority(token);
-    });
-  }, [
-    clearPendingColdSwitchSqlite,
-    clearSwitchLoadingInTransition,
-    completeSelectionSwitchNetworkPriority,
-    isSelectionActive,
-    switchLifecycle,
-  ]);
-
   /**
    * Phase B `finally` helper: keep the cold-switch skeleton (and scheduler
    * pause) while deferred SQLite still owns an empty list. Otherwise clear
@@ -1081,29 +1058,13 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return;
     }
 
-    if (importFirstFetchSkeletonTokenRef.current === token) {
-      if (currentArticlesRef.current.length > 0) {
-        importFirstFetchSkeletonTokenRef.current = null;
-        clearPendingColdSwitchSqlite(token);
-        clearSwitchLoadingInTransition();
-        completeSelectionSwitchNetworkPriority(token);
-        return;
-      }
-
-      clearPendingColdSwitchSqlite(token);
-      if (deferNetworkSchedulerResumeTokenRef.current === token) {
-        deferNetworkSchedulerResumeTokenRef.current = null;
-      }
-      completeSelectionSwitchNetworkPriority(token);
-      return;
-    }
-
     if (
       pendingColdSwitchSqliteTokenRef.current === token
       && currentArticlesRef.current.length > 0
     ) {
       // Phase B reconcile (or a racing deferred commit) already published rows.
       clearPendingColdSwitchSqlite(token);
+      importEmptyCommitTokenRef.current = null;
     }
 
     const coldSqliteOwnsSkeleton =
@@ -1111,6 +1072,17 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       && currentArticlesRef.current.length === 0;
 
     if (coldSqliteOwnsSkeleton) {
+      if (importEmptyCommitTokenRef.current === token) {
+        // Import switch: the deferred page already committed empty and Phase B
+        // has now settled after awaiting the first fetch — nothing more will
+        // publish for this attempt, so show the honest empty view.
+        importEmptyCommitTokenRef.current = null;
+        clearPendingColdSwitchSqlite(token);
+        clearSwitchLoadingInTransition();
+        completeSelectionSwitchNetworkPriority(token);
+        return;
+      }
+
       deferNetworkSchedulerResumeTokenRef.current = token;
       return;
     }
@@ -1140,7 +1112,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     pendingSwitchVisibleReconcileRef.current = null;
     pendingColdSwitchSqliteTokenRef.current = null;
     deferNetworkSchedulerResumeTokenRef.current = null;
-    importFirstFetchSkeletonTokenRef.current = null;
+    importEmptyCommitTokenRef.current = null;
     clearStationUiRefreshTimer();
     cancelSourceSelectionRefreshSchedule();
     if (previousToken > 0) {
@@ -1469,10 +1441,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             trigger: 'background-refresh',
           });
 
-          const clearsImportFirstFetchHold =
-            importFirstFetchSkeletonTokenRef.current !== null
-            && previousArticles.length === 0;
-
           // Keep users anchored after passive inserts: jump to the top only
           // when they are already there, otherwise preserve a nearby row.
           const scrollRequest = articleListAtTopRef.current
@@ -1492,13 +1460,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 scrollRequest,
               },
             });
-            if (clearsImportFirstFetchHold) {
-              collectionDispatch({ type: 'SET_LOADING', payload: { isLoadingArticles: false } });
-            }
           });
-          if (clearsImportFirstFetchHold) {
-            importFirstFetchSkeletonTokenRef.current = null;
-          }
         }
 
         const pendingSourceKey = pendingBackgroundRefreshSourceKeyRef.current;
@@ -1631,7 +1593,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return 0;
     }
 
-    if (intent === 'switch' && isNativeFeedIngestionEnabled()) {
+    // Import switches (awaitInitialFetch) must await the first fetch so the
+    // skeleton clears onto fetched rows instead of racing a background cycle;
+    // the native switch path only boosts and returns, which is what stranded
+    // the post-import skeleton onto an empty view.
+    if (intent === 'switch' && isNativeFeedIngestionEnabled() && options.awaitInitialFetch !== true) {
       return runNativeSwitchStationRefresh(feedIds, token);
     }
 
@@ -1956,10 +1922,17 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         const dispatchStartedAt = performance.now();
         if (stored.length === 0 && awaitInitialFetch) {
-          importFirstFetchSkeletonTokenRef.current = token;
-          scheduleImportFirstFetchSkeletonTimeout(token);
+          // Import switch: keep the cold-switch skeleton. Phase B awaits the
+          // first fetch and clears loading when it settles — either after its
+          // reconcile publishes rows, or onto the honest empty view here.
+          importEmptyCommitTokenRef.current = token;
           if (deferNetworkSchedulerResumeTokenRef.current === token) {
+            // Phase B already settled (it beat this page commit) without
+            // publishing rows — nothing more is coming for this attempt.
+            importEmptyCommitTokenRef.current = null;
+            clearPendingColdSwitchSqlite(token);
             deferNetworkSchedulerResumeTokenRef.current = null;
+            clearSwitchLoadingInTransition();
             completeSelectionSwitchNetworkPriority(token);
           }
           return true;
@@ -1991,11 +1964,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       { limit: limit ?? SMART_VIEW_ARTICLE_LIMIT, taggedFeedCount, deferred: true },
     );
   }, [
+    clearPendingColdSwitchSqlite,
     clearSwitchLoadingInTransition,
     completeSelectionSwitchNetworkPriority,
     dispatchArticlesTransitionIfChanged,
     isSelectionActive,
-    scheduleImportFirstFetchSkeletonTimeout,
   ]);
 
   const scheduleDeferredSwitchSqliteRecovery = useCallback((args: {
@@ -2037,7 +2010,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             clearSwitchLoadingInTransition();
           }
         } finally {
-          if (importFirstFetchSkeletonTokenRef.current !== token) {
+          if (importEmptyCommitTokenRef.current !== token) {
             finishColdSwitchSqliteAndResumeIfNeeded(token);
           }
         }
@@ -2106,7 +2079,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return;
         }
 
-        if (importFirstFetchSkeletonTokenRef.current !== token) {
+        if (importEmptyCommitTokenRef.current !== token) {
           finishColdSwitchSqliteAndResumeIfNeeded(token);
         }
       }
@@ -2347,10 +2320,12 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Cold Phase A owns the first DB page. A concurrent reconcile here used
       // includeTotal:true (COUNT DISTINCT) and raced the deferred page query —
       // 2026-07-14 Tech switch: sqlite-query-deferred 6071ms while Phase B
-      // waited on the same reader pool (H17).
+      // waited on the same reader pool (H17). When this phase inserted rows
+      // (awaited import fetch) the reconcile must run: it publishes the first
+      // fetched rows and Phase B's finally clears the skeleton.
       const coldDeferredOwnsFirstPage =
         pendingColdSwitchSqliteTokenRef.current === token
-        && importFirstFetchSkeletonTokenRef.current !== token;
+        && insertedCount === 0;
       if (coldDeferredOwnsFirstPage) {
         // Phase A will publish; background apply picks up any later inserts
         // after the scheduler resumes.

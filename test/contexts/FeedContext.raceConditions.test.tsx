@@ -1411,28 +1411,32 @@ describe('FeedContext Cross-Type Race Conditions', () => {
 
   it('holds the import switch skeleton until first fetched rows publish', async () => {
     // OPML import inserts feed metadata only, so the cold switch into the
-    // imported station commits an empty deferred SQLite page. The skeleton
-    // must stay up (no empty "0 articles" view) until Phase B publishes the
-    // first fetched rows.
+    // imported station commits an empty deferred SQLite page. Phase B awaits
+    // the first fetch for import switches; the skeleton must stay up (no
+    // empty "0 articles" view) until those fetched rows publish.
     const stateHistory: Array<{ isLoadingArticles: boolean; articleCount: number }> = [];
-    const reconcileDeferred = createDeferred<{ articles: Article[]; total: number }>();
+    const fetchDeferred = createDeferred<ReturnType<typeof feedNetworkDataResult>>();
+    const committedRows: Article[] = [];
 
     (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
     (feedStore.getAll as Mock).mockResolvedValue([
-      stationFeed('feed-a', { lastFetched: new Date() }),
+      stationFeed('feed-a', { lastFetched: null }),
     ]);
     (feedsManager.getFeedById as Mock).mockResolvedValue(
-      stationFeed('feed-a', { lastFetched: new Date() }),
+      stationFeed('feed-a', { lastFetched: null }),
     );
     (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
       if (query.tagName === 'A') {
-        if (query.includeTotal === false) {
-          return Promise.resolve({ articles: [], total: 0 });
-        }
-        return reconcileDeferred.promise;
+        return Promise.resolve({ articles: [...committedRows], total: committedRows.length });
       }
       return Promise.resolve({ articles: [], total: 0 });
     });
+    (articleStore.store as Mock).mockImplementation((_feedId: string, articles: Article[]) => {
+      committedRows.push(...articles);
+      return Promise.resolve(articles.length);
+    });
+    (convertFeedItemsToArticles as Mock).mockResolvedValue([createArticle('hash-a', 'feed-a')]);
+    (feedsFetcher.fetchFeedNetworkWithCache as Mock).mockImplementation(() => fetchDeferred.promise);
 
     const HistoryProbe: React.FC = () => {
       latestContext = useFeed();
@@ -1457,19 +1461,15 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       void latestContext!.selectTag('A', { awaitInitialFetch: true });
     });
 
-    await waitForExpectation(() => {
-      expect(latestContext!.selectedTag).toBe('A');
-      expect(latestContext!.isLoadingArticles).toBe(true);
-      expect(latestContext!.articles).toEqual([]);
-    });
-
-    // Let Phase A commit the empty page and Phase B reach its reconcile query.
+    // Let Phase A commit the empty page and Phase B reach the awaited fetch.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 250));
     });
 
+    expect(latestContext!.selectedTag).toBe('A');
     expect(latestContext!.isLoadingArticles).toBe(true);
     expect(latestContext!.articles).toEqual([]);
+    expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
     const skeletonIndex = stateHistory.findIndex((state) => state.isLoadingArticles);
     expect(skeletonIndex).toBeGreaterThanOrEqual(0);
     const emptyWhileWaiting = stateHistory
@@ -1477,9 +1477,9 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       .filter((state) => !state.isLoadingArticles && state.articleCount === 0);
     expect(emptyWhileWaiting).toEqual([]);
 
-    reconcileDeferred.resolve({
-      articles: [createArticle('hash-a', 'feed-a')],
-      total: 1,
+    await act(async () => {
+      fetchDeferred.resolve(feedNetworkDataResult());
+      await Promise.resolve();
     });
 
     await waitForExpectation(() => {
@@ -1493,28 +1493,23 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     expect(emptyAfterSkeleton).toEqual([]);
   });
 
-  it('releases the import skeleton hold when another switch supersedes it', async () => {
-    // Switching away mid-hold must supersede the import attempt: the new
-    // source owns the list and the held skeleton timer cannot fire into it.
-    const reconcileDeferred = createDeferred<{ articles: Article[]; total: number }>();
+  it('lets a newer switch supersede the import switch fetch wait', async () => {
+    // Switching away while the awaited import fetch is still in flight must
+    // supersede the import attempt: the new source owns the list and the late
+    // fetch result cannot clear the new source's rows.
+    const fetchDeferred = createDeferred<ReturnType<typeof feedNetworkDataResult>>();
 
     (tagsManager.getFeedsByTag as Mock).mockImplementation((tagName: string) =>
       Promise.resolve([`feed-${tagName.toLowerCase()}`])
     );
     (feedStore.getAll as Mock).mockResolvedValue([
-      stationFeed('feed-a', { lastFetched: new Date() }),
-      stationFeed('feed-b', { lastFetched: new Date() }),
+      stationFeed('feed-a', { lastFetched: null }),
+      stationFeed('feed-b', { lastFetched: null }),
     ]);
     (feedsManager.getFeedById as Mock).mockImplementation((feedId: string) =>
-      Promise.resolve(stationFeed(feedId, { lastFetched: new Date() }))
+      Promise.resolve(stationFeed(feedId, { lastFetched: null }))
     );
     (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
-      if (query.tagName === 'A') {
-        if (query.includeTotal === false) {
-          return Promise.resolve({ articles: [], total: 0 });
-        }
-        return reconcileDeferred.promise;
-      }
       if (query.tagName === 'B') {
         return Promise.resolve({
           articles: [createArticle('hash-b', 'feed-b')],
@@ -1523,6 +1518,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       }
       return Promise.resolve({ articles: [], total: 0 });
     });
+    (feedsFetcher.fetchFeedNetworkWithCache as Mock).mockImplementation(() => fetchDeferred.promise);
 
     act(() => {
       root.render(
@@ -1556,18 +1552,48 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-b']);
     });
 
-    reconcileDeferred.resolve({
-      articles: [createArticle('hash-a', 'feed-a')],
-      total: 1,
-    });
-
     await act(async () => {
+      fetchDeferred.resolve(feedNetworkDataResult());
+      await Promise.resolve();
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
 
     expect(latestContext!.selectedTag).toBe('B');
     expect(latestContext!.isLoadingArticles).toBe(false);
     expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-b']);
+  });
+
+  it('clears the import skeleton to an honest empty view when the first fetch yields no rows', async () => {
+    // The awaited import fetch can legitimately return nothing (all feeds
+    // failed or empty). The skeleton must then clear onto the honest empty
+    // view once Phase B settles — without any timeout.
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: null }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: null }),
+    );
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A', { awaitInitialFetch: true });
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles).toEqual([]);
+    }, 5000);
   });
 
   it('skips Phase B reconcile query while cold deferred SQLite owns the skeleton', async () => {
@@ -1635,6 +1661,95 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     });
 
     expect(reconcileStyleQueryCount).toBe(0);
+  });
+
+  it('publishes first fetched rows after an import switch and keeps them when switching back', async () => {
+    // Full user flow: OPML import switches into a station whose feeds have no
+    // stored rows; Phase B fetches commit rows which must publish; hopping away
+    // and back must keep the list visible (no flash back to an empty view).
+    const stateHistory: Array<{ isLoadingArticles: boolean; articleCount: number }> = [];
+    const db: Record<string, Article[]> = { 'feed-a': [], 'feed-b': [createArticle('hash-b', 'feed-b')] };
+
+    (tagsManager.getFeedsByTag as Mock).mockImplementation((tagName: string) =>
+      Promise.resolve(tagName === 'A' ? ['feed-a'] : ['feed-b'])
+    );
+    (feedStore.getAll as Mock).mockResolvedValue([stationFeed('feed-a'), stationFeed('feed-b')]);
+    (feedsManager.getFeedById as Mock).mockImplementation((feedId: string) =>
+      Promise.resolve(stationFeed(feedId, { lastFetched: null }))
+    );
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A') {
+        return Promise.resolve({ articles: db['feed-a'], total: db['feed-a'].length });
+      }
+      if (query.tagName === 'B') {
+        return Promise.resolve({ articles: db['feed-b'], total: db['feed-b'].length });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+    (articleStore.store as Mock).mockImplementation((feedId: string, articles: Article[]) => {
+      db[feedId] = articles;
+      return Promise.resolve(articles.length);
+    });
+    (convertFeedItemsToArticles as Mock).mockImplementation((_items: unknown, options: { feedId: string }) =>
+      Promise.resolve([createArticle(`hash-${options.feedId}-1`, options.feedId)])
+    );
+    (feedsFetcher.fetchFeedNetworkWithCache as Mock).mockResolvedValue(feedNetworkDataResult());
+
+    const HistoryProbe: React.FC = () => {
+      latestContext = useFeed();
+      stateHistory.push({
+        isLoadingArticles: latestContext.isLoadingArticles,
+        articleCount: latestContext.articles.length,
+      });
+      return null;
+    };
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <HistoryProbe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A', { awaitInitialFetch: true });
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-feed-a-1']);
+    }, 5000);
+
+    await act(async () => {
+      void latestContext!.selectTag('B');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-b']);
+    });
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-feed-a-1']);
+    });
+
+    // The list must never fall back to an empty view once rows are visible.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+
+    expect(latestContext!.selectedTag).toBe('A');
+    expect(latestContext!.isLoadingArticles).toBe(false);
+    expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-feed-a-1']);
   });
 
   it('shows skeleton on a cold smart view switch and clears it once the query lands', async () => {
