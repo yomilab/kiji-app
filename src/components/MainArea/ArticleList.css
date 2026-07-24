@@ -502,6 +502,13 @@
   word-break: break-word;
   letter-spacing: -0.01em;
   font-family: var(--font-family-article-title);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  box-orient: vertical;
 }
 
 /* Unread indicator */
