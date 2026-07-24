@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- OPML import: the switch into the imported station/feed now awaits the first fetch (bounded to the switch's foreground cap; the rest refreshes in the background) and holds the skeleton until it settles — showing fetched rows immediately, or an honest empty view — instead of racing a 30s hold timer against background cycles, which could clear onto an empty view with rows already committed or blank rows right after switching back (`FeedContext.tsx`).
+- Refresh reliability: background refresh cycles superseded by station switching (the native IPC has no cancellation channel, so Rust still commits fetched articles) now publish their committed inserts and count syncs instead of being discarded, so the visible list no longer stays stale until the next switch (`feedSchedulerService.ts`, `nativeFeedRefresh.ts`).
+
 ### Added
 
 - `website-sync-on-release.yml`: on GitHub Release publish, generate `release.json`, attach to the release, and dispatch `kiji-website` sync (`scripts/generate-release-manifest.mjs`).
