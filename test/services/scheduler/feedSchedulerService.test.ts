@@ -992,6 +992,64 @@ describe("feedSchedulerService", () => {
       }
     });
 
+    it("publishes committed inserts when a station pause supersedes an in-flight native cycle", async () => {
+      let releaseCycle!: (value: unknown) => void;
+      previewNativeCycle.mockImplementation(() => new Promise((resolve) => {
+        releaseCycle = resolve;
+      }));
+
+      const events: Array<{ type: string; updates?: ReadonlyArray<{ feedId: string; newArticleCount: number }> }> = [];
+      const unsubscribe = feedScheduler.on((event) => {
+        events.push(event as (typeof events)[number]);
+      });
+
+      try {
+        await feedScheduler.start();
+        getSchedulerEventHandler("scheduler:cycle-tick")?.();
+        await vi.waitFor(() => {
+          expect(previewNativeCycle).toHaveBeenCalledTimes(1);
+        });
+
+        // The station switch aborts the renderer wait and supersedes the
+        // cycle, but the native IPC still runs to completion and commits
+        // inserts + ETags in Rust — those results must still publish.
+        feedScheduler.pauseForStationSelection();
+        releaseCycle({
+          plan: { prioritized: [{ feedId: "feed-1", score: 1 }], skippedBackoffCount: 0, skippedSuppressedCount: 0 },
+          queuedCount: 1,
+          executedFeedCount: 1,
+          changedFeeds: 1,
+          notModifiedFeeds: 0,
+          failedFeeds: 0,
+          insertedArticles: 2,
+          feedResults: [{ feedId: "feed-1", status: "changed", insertedCount: 2 }],
+        });
+
+        await vi.waitFor(() => {
+          expect(events.some((event) => event.type === "feeds-batch-updated")).toBe(true);
+        });
+
+        const batchEvent = events.find((event) => event.type === "feeds-batch-updated");
+        expect(batchEvent?.updates).toEqual([{ feedId: "feed-1", newArticleCount: 2 }]);
+        expect(syncFeedCountsBatch).toHaveBeenCalledWith(["feed-1"]);
+        expect(events.some((event) => event.type === "cycle-complete")).toBe(false);
+
+        previewNativeCycle.mockResolvedValue({
+          plan: { prioritized: [], skippedBackoffCount: 0, skippedSuppressedCount: 0 },
+          queuedCount: 0,
+          executedFeedCount: 0,
+          changedFeeds: 0,
+          notModifiedFeeds: 0,
+          failedFeeds: 0,
+          insertedArticles: 0,
+          feedResults: [],
+        });
+        feedScheduler.resumeAfterStationSelection();
+      } finally {
+        unsubscribe();
+      }
+    });
+
     it("does not emit feeds-batch-updated when the native cycle inserts nothing", async () => {
       previewNativeCycle.mockResolvedValue({
         plan: { prioritized: [], skippedBackoffCount: 0, skippedSuppressedCount: 0 },

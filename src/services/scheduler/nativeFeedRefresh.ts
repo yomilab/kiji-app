@@ -180,7 +180,13 @@ export async function runNativeFeedRefresh(
         }),
       );
 
-      throwIfAborted(request.signal);
+      // The native IPC has no cancellation channel: once it resolves, Rust
+      // has already committed per-feed inserts + ETags. Foreground turns
+      // discard aborted results; background (scheduler) turns return them so
+      // the caller can still publish committed inserts from superseded cycles.
+      if (activityKind !== "background") {
+        throwIfAborted(request.signal);
+      }
 
       if (feedRefreshActivity.getSnapshot().interactiveRefreshScopeTotal > 0) {
         for (const feedResult of result.feedResults) {

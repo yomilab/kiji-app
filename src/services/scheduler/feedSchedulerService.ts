@@ -19,7 +19,7 @@ import {
   collectFeedIdsNeedingCountSync,
   isNativeFeedIngestionEnabled,
 } from './nativeSchedulerCycle';
-import { runNativeFeedRefresh } from './nativeFeedRefresh';
+import { runNativeFeedRefresh, type NativeFeedRefreshResult } from './nativeFeedRefresh';
 import {
   mergePendingCycleReason,
   overdueCycleMs,
@@ -1155,37 +1155,28 @@ class FeedSchedulerService {
         },
       });
 
-      if (signal.aborted || !this.isCurrentLifecycle(lifecycleId) || cycleId !== this.activeCycleId) {
+      if (!this.isCurrentLifecycle(lifecycleId)) {
         return;
       }
 
-      const feedIdsToSync = collectFeedIdsNeedingCountSync(result.feedResults);
-      if (feedIdsToSync.length > 0) {
-        const syncedCounts = await articleStore.syncFeedCountsBatch(feedIdsToSync);
-        if (syncedCounts.length > 0) {
-          feedLibraryMutationBus.publishFeedsCountsUpdated(
-            syncedCounts.map((counts) => ({
-              feedId: counts.feedId,
-              unreadCount: counts.unreadCount,
-              articleCount: counts.articleCount,
-            })),
-          );
-        }
+      // The native IPC has no cancellation channel, so a superseded cycle
+      // still ran to completion in Rust and committed per-feed inserts and
+      // ETags. Publish those committed results instead of dropping them —
+      // otherwise the next cycle sees all-304, emits nothing, and the visible
+      // list stays stale even though rows already exist in SQLite (observed
+      // as the post-import skeleton timing out onto an empty list).
+      if (signal.aborted || cycleId !== this.activeCycleId) {
+        await this.publishCommittedCycleResults(result);
+        logger.info('Scheduler', 'Published committed results from superseded native refresh cycle', {
+          cycleId,
+          activeCycleId: this.activeCycleId,
+          insertedFeedCount: result.insertedByFeedId.size,
+          insertedArticles: result.insertedArticles,
+        });
+        return;
       }
 
-      // Native cycles bypass the per-feed `feed-updated` emit in the legacy
-      // path; without this batch event the article list is never re-queried
-      // after a background cycle inserts articles (list stays stale until the
-      // next cold switch).
-      if (result.insertedByFeedId.size > 0) {
-        this.emit({
-          type: 'feeds-batch-updated',
-          updates: Array.from(result.insertedByFeedId, ([feedId, newArticleCount]) => ({
-            feedId,
-            newArticleCount,
-          })),
-        });
-      }
+      await this.publishCommittedCycleResults(result);
 
       const changedFeeds = result.feedResults.filter((feed) => feed.status === 'changed').length;
       const notModifiedFeeds = result.feedResults.filter((feed) => feed.status === 'not-modified').length;
@@ -1210,6 +1201,36 @@ class FeedSchedulerService {
     } catch (error) {
       logger.error('Scheduler', 'Native background refresh cycle failed', { error });
       this.needsResumeCatchUp = true;
+    }
+  }
+
+  private async publishCommittedCycleResults(result: NativeFeedRefreshResult): Promise<void> {
+    const feedIdsToSync = collectFeedIdsNeedingCountSync(result.feedResults);
+    if (feedIdsToSync.length > 0) {
+      const syncedCounts = await articleStore.syncFeedCountsBatch(feedIdsToSync);
+      if (syncedCounts.length > 0) {
+        feedLibraryMutationBus.publishFeedsCountsUpdated(
+          syncedCounts.map((counts) => ({
+            feedId: counts.feedId,
+            unreadCount: counts.unreadCount,
+            articleCount: counts.articleCount,
+          })),
+        );
+      }
+    }
+
+    // Native cycles bypass the per-feed `feed-updated` emit in the legacy
+    // path; without this batch event the article list is never re-queried
+    // after a background cycle inserts articles (list stays stale until the
+    // next cold switch).
+    if (result.insertedByFeedId.size > 0) {
+      this.emit({
+        type: 'feeds-batch-updated',
+        updates: Array.from(result.insertedByFeedId, ([feedId, newArticleCount]) => ({
+          feedId,
+          newArticleCount,
+        })),
+      });
     }
   }
 
