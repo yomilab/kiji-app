@@ -7,7 +7,6 @@ const ALLOWED_IFRAME_HOSTS = new Set([
   'youtube.com',
   'www.youtube-nocookie.com',
   'youtube-nocookie.com',
-  'player.vimeo.com',
 ]);
 
 const YOUTUBE_SOURCE_HOSTS = new Set([
@@ -121,22 +120,6 @@ function toYouTubeEmbedUrl(url: URL): URL | null {
 
   embedUrl.searchParams.set('autoplay', '0');
   return embedUrl;
-}
-
-export function sanitizeIframeAllowValue(allowValue: string | null): string | null {
-  if (!allowValue) return null;
-
-  const tokens = allowValue
-    .split(';')
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  if (tokens.length === 0) {
-    return null;
-  }
-
-  const deduped = Array.from(new Set(tokens));
-  return deduped.join('; ');
 }
 
 export function normalizeIframeEmbedSrc(rawSrc: string, baseUrl: string): NormalizedIframeResult {
@@ -269,7 +252,7 @@ function createIframeFallbackLink(url: string): HTMLElement {
   const wrapper = document.createElement('p');
   const link = document.createElement('a');
   link.href = resolveYouTubeWatchUrl(url) ?? url;
-  link.textContent = 'Open video in browser';
+  link.textContent = 'Open embedded content in browser';
   link.setAttribute('target', '_blank');
   link.setAttribute('rel', 'noopener noreferrer');
   wrapper.appendChild(link);
@@ -280,31 +263,22 @@ export function convertYouTubeIframesInContainer(container: Element, baseUrl: st
   let converted = false;
 
   Array.from(container.querySelectorAll('iframe')).forEach((iframeElement) => {
-    const currentSrc = iframeElement.getAttribute('src');
+    const currentSrc = iframeElement.getAttribute('src') ?? iframeElement.getAttribute('data-pending-src');
+    iframeElement.removeAttribute('data-pending-src');
+
     if (!currentSrc) {
+      if (iframeElement.hasAttribute('srcdoc')) {
+        iframeElement.remove();
+        converted = true;
+      }
       return;
     }
-
-    const allowAttr = iframeElement.getAttribute('allow');
-    const sanitizedAllow = sanitizeIframeAllowValue(allowAttr);
-    if (sanitizedAllow) {
-      iframeElement.setAttribute('allow', sanitizedAllow);
-    } else {
-      iframeElement.removeAttribute('allow');
-    }
-
-    iframeElement.setAttribute('loading', 'lazy');
-    iframeElement.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
-    iframeElement.tabIndex = -1;
 
     const normalized = normalizeIframeEmbedSrc(currentSrc, baseUrl);
-    if (!normalized.normalizedSrc) {
-      iframeElement.replaceWith(createIframeFallbackLink(normalized.fallbackUrl ?? currentSrc));
-      converted = true;
-      return;
-    }
+    const ytEmbedInfo = normalized.normalizedSrc
+      ? getYouTubeEmbedInfo(normalized.normalizedSrc, baseUrl)
+      : null;
 
-    const ytEmbedInfo = getYouTubeEmbedInfo(normalized.normalizedSrc, baseUrl);
     if (ytEmbedInfo) {
       iframeElement.replaceWith(createLiteYoutubeElementFromIframe(
         ytEmbedInfo.videoId,
@@ -315,7 +289,8 @@ export function convertYouTubeIframesInContainer(container: Element, baseUrl: st
       return;
     }
 
-    iframeElement.setAttribute('src', normalized.normalizedSrc);
+    iframeElement.replaceWith(createIframeFallbackLink(normalized.fallbackUrl ?? currentSrc));
+    converted = true;
   });
 
   return converted;

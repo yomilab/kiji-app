@@ -84,6 +84,22 @@ export const sanitizeArticleHtmlStyles = (html: string): string => {
 
     doc.querySelectorAll('style').forEach((styleTag) => styleTag.remove());
 
+    doc.querySelectorAll('meta[http-equiv]').forEach((element) => {
+      const directive = element.getAttribute('http-equiv')?.trim().toLowerCase();
+      if (directive === 'refresh') {
+        element.remove();
+      }
+    });
+
+    doc.querySelectorAll('iframe, frame').forEach((element) => {
+      const src = element.getAttribute('src');
+      if (src) {
+        element.setAttribute('data-pending-src', src);
+        element.removeAttribute('src');
+      }
+      element.removeAttribute('srcdoc');
+    });
+
     doc.querySelectorAll<HTMLElement>('*[style]').forEach((element) => {
       const sanitizedStyle = sanitizeInlineStyle(element.getAttribute('style') || undefined);
       if (!sanitizedStyle) {

@@ -31,7 +31,6 @@ import {
   getYouTubeEmbedInfo,
   normalizeIframeEmbedSrc,
   promoteYouTubeMediaAnchors,
-  sanitizeIframeAllowValue,
 } from '@/components/common/ArticleContent/mediaEmbedUtils';
 import { staticResourceService } from '@/services/system/staticResourceService';
 import { sanitizeArticleStylesWithCheerio } from '@/services/articles/articleStyleSanitizer';
@@ -105,6 +104,13 @@ export const preprocessArticleViewHtml = (
   // Phase 2: re-apply style sanitization in preprocess output so the async
   // enhancement pass cannot reintroduce theme-breaking feed styles.
   sanitizeArticleStylesWithCheerio($);
+
+  $('meta[http-equiv]').each((_, element) => {
+    const node = $(element);
+    if ((node.attr('http-equiv') || '').trim().toLowerCase() === 'refresh') {
+      node.remove();
+    }
+  });
 
   $('img[src]').each((_, element) => {
     const image = $(element);
@@ -219,27 +225,18 @@ export const preprocessArticleViewHtml = (
   $('iframe').each((_, element) => {
     const iframe = $(element);
     const currentSrc = iframe.attr('src');
-    if (!currentSrc) return;
-
-    const sanitizedAllow = sanitizeIframeAllowValue(iframe.attr('allow') || null);
-    if (sanitizedAllow) {
-      iframe.attr('allow', sanitizedAllow);
-    } else {
-      iframe.removeAttr('allow');
-    }
-
-    iframe.attr('loading', 'lazy');
-    iframe.attr('referrerpolicy', 'strict-origin-when-cross-origin');
-
-    const normalized = normalizeIframeEmbedSrc(currentSrc, baseUrl || 'https://localhost');
-    if (!normalized.normalizedSrc) {
-      const fallbackLink = $('<p><a target="_blank" rel="noopener noreferrer">Open video in browser</a></p>');
-      fallbackLink.find('a').attr('href', resolveYouTubeWatchUrl(normalized.fallbackUrl || currentSrc) || normalized.fallbackUrl || currentSrc);
-      iframe.replaceWith(fallbackLink);
+    if (!currentSrc) {
+      if (iframe.attr('srcdoc') !== undefined) {
+        iframe.remove();
+      }
       return;
     }
 
-    const ytEmbedInfo = getYouTubeEmbedInfo(normalized.normalizedSrc, baseUrl || 'https://localhost');
+    const normalized = normalizeIframeEmbedSrc(currentSrc, baseUrl || 'https://localhost');
+    const ytEmbedInfo = normalized.normalizedSrc
+      ? getYouTubeEmbedInfo(normalized.normalizedSrc, baseUrl || 'https://localhost')
+      : null;
+
     if (ytEmbedInfo) {
       const liteYoutube = $('<lite-youtube playlabel="Play YouTube video"></lite-youtube>');
       liteYoutube.attr('videoid', ytEmbedInfo.videoId);
@@ -260,7 +257,9 @@ export const preprocessArticleViewHtml = (
       return;
     }
 
-    iframe.attr('src', normalized.normalizedSrc);
+    const fallbackLink = $('<p><a target="_blank" rel="noopener noreferrer">Open embedded content in browser</a></p>');
+    fallbackLink.find('a').attr('href', resolveYouTubeWatchUrl(normalized.fallbackUrl || currentSrc) || normalized.fallbackUrl || currentSrc);
+    iframe.replaceWith(fallbackLink);
   });
 
   $('figure').each((_, element) => {

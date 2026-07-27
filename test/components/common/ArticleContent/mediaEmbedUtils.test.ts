@@ -28,6 +28,43 @@ describe('convertYouTubeIframesInContainer', () => {
     expect(document.querySelector('iframe')).toBeNull();
     expect(document.querySelector('lite-youtube')?.getAttribute('videoid')).toBe('_6wmFnY9NZ4');
   });
+
+  it('converts first-paint deferred youtube iframes via data-pending-src', () => {
+    document.body.innerHTML = '<iframe data-pending-src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>';
+
+    const converted = convertYouTubeIframesInContainer(document.body, CHIPS_BASE_URL);
+
+    expect(converted).toBe(true);
+    expect(document.querySelector('iframe')).toBeNull();
+    expect(document.querySelector('lite-youtube')?.getAttribute('videoid')).toBe('dQw4w9WgXcQ');
+  });
+
+  it('replaces non-youtube iframes with a manual fallback link', () => {
+    document.body.innerHTML = '<iframe src="https://datawrapper.dwcdn.net/wxXLO/1/"></iframe><iframe src="https://player.vimeo.com/video/12345"></iframe>';
+
+    const converted = convertYouTubeIframesInContainer(document.body, CHIPS_BASE_URL);
+
+    expect(converted).toBe(true);
+    expect(document.querySelector('iframe')).toBeNull();
+    const links = Array.from(document.querySelectorAll('a'));
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      'https://datawrapper.dwcdn.net/wxXLO/1/',
+      'https://player.vimeo.com/video/12345',
+    ]);
+    links.forEach((link) => {
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    });
+  });
+
+  it('removes srcdoc-only iframes', () => {
+    document.body.innerHTML = '<iframe srcdoc="<p>injected</p>"></iframe>';
+
+    const converted = convertYouTubeIframesInContainer(document.body, CHIPS_BASE_URL);
+
+    expect(converted).toBe(true);
+    expect(document.querySelector('iframe')).toBeNull();
+  });
 });
 
 describe('promoteYouTubeMediaAnchors', () => {
@@ -91,5 +128,28 @@ describe('preprocessArticleViewHtml YouTube media anchors', () => {
     expect(doc.querySelector('a')).toBeNull();
     expect(doc.querySelector('lite-youtube')?.getAttribute('videoid')).toBe('dQw4w9WgXcQ');
     expect(doc.querySelector('img')).toBeNull();
+  });
+
+  it('replaces non-youtube iframes with a manual fallback link', () => {
+    const result = preprocessArticleViewHtml({
+      html: '<iframe src="https://datawrapper.dwcdn.net/wxXLO/1/"></iframe><iframe src="https://player.vimeo.com/video/12345"></iframe>',
+    });
+    const doc = parseHtml(result.html);
+
+    expect(doc.querySelector('iframe')).toBeNull();
+    const links = Array.from(doc.querySelectorAll('a'));
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      'https://datawrapper.dwcdn.net/wxXLO/1/',
+      'https://player.vimeo.com/video/12345',
+    ]);
+  });
+
+  it('removes srcdoc-only iframes', () => {
+    const result = preprocessArticleViewHtml({
+      html: '<iframe srcdoc="<p>injected</p>"></iframe>',
+    });
+    const doc = parseHtml(result.html);
+
+    expect(doc.querySelector('iframe')).toBeNull();
   });
 });
