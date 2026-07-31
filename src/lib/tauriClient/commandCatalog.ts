@@ -86,6 +86,7 @@ export const tauriCommandCatalog: Record<
     { apiMethod: "dbArticlesToggleStarred", ipcChannel: "db-articles-toggle-starred", kind: "invoke", targetCommand: "articles.toggleStarred", rustCommand: "articles_toggle_starred" },
     { apiMethod: "dbArticlesUpdateSaved", ipcChannel: "db-articles-update-saved", kind: "invoke", targetCommand: "articles.updateSavedState", rustCommand: "articles_update_saved_state" },
     { apiMethod: "dbArticlesDeleteByFeed", ipcChannel: "db-articles-delete-by-feed", kind: "invoke", targetCommand: "articles.deleteByFeed", rustCommand: "articles_delete_by_feed" },
+    { apiMethod: "dbArticlesDeleteByFeeds", ipcChannel: "db-articles-delete-by-feeds", kind: "invoke", targetCommand: "articles.deleteByFeeds", rustCommand: "articles_delete_by_feeds" },
     { apiMethod: "dbArticlesCleanOld", ipcChannel: "db-articles-clean-old", kind: "invoke", targetCommand: "articles.cleanOldByFeed", rustCommand: "articles_clean_old_by_feed" },
     { apiMethod: "dbArticlesCleanOldAcrossFeeds", ipcChannel: "db-articles-clean-old-across-feeds", kind: "invoke", targetCommand: "articles.cleanOldAcrossFeeds", rustCommand: "articles_clean_old_across_feeds" },
     { apiMethod: "dbArticlesUnreadCount", ipcChannel: "db-articles-unread-count", kind: "invoke", targetCommand: "articles.countUnreadByFeed", rustCommand: "articles_count_unread_by_feed" },

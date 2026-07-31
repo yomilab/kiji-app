@@ -50,6 +50,13 @@ const SLEEP_GAP_DETECT_MS = 120_000;
 const STATION_SELECTION_PAUSE_MAX_MS = 10 * 60 * 1_000;
 const STARTUP_CYCLE_IDLE_FALLBACK_MS = 30_000;
 const BOOST_TTL_MS = 5 * 60_000;
+// Long native cycles (post-import boosts over hundreds of feeds) commit
+// inserts per feed in Rust but only report them in one batch at cycle end —
+// the visible station and sidebar counts would stay empty for the whole
+// cycle (a 557-feed import cycle measured ~3 minutes). Re-publish committed
+// inserts in bounded windows so the list fills progressively; the cycle-end
+// publish stays as the idempotent final flush.
+const NATIVE_CYCLE_PROGRESS_PUBLISH_INTERVAL_MS = 2_000;
 
 const MODE_INTERVAL_MS: Record<Exclude<BackgroundUpdateMode, 'on-launch' | 'never'>, number> = {
   'every-5m': 5 * 60_000,
@@ -1129,6 +1136,7 @@ class FeedSchedulerService {
     const skipFeedIdsForThisCycle = this.consumeSkipOnceFeedIds();
     const now = Date.now();
     this.pruneExpiredBoosts(now);
+    const progressPublisher = this.createNativeCycleProgressPublisher();
 
     try {
       if (signal.aborted || !this.isCurrentLifecycle(lifecycleId) || cycleId !== this.activeCycleId) {
@@ -1144,6 +1152,7 @@ class FeedSchedulerService {
         activityKind: 'background',
         onFeedComplete: (payload) => {
           if (!payload.error) {
+            progressPublisher.noteFeedInserted(payload.feedId, payload.insertedCount);
             return;
           }
 
@@ -1201,7 +1210,85 @@ class FeedSchedulerService {
     } catch (error) {
       logger.error('Scheduler', 'Native background refresh cycle failed', { error });
       this.needsResumeCatchUp = true;
+    } finally {
+      progressPublisher.dispose();
     }
+  }
+
+  /**
+   * Progressive mid-cycle publishing for long native cycles. Per-feed insert
+   * results accumulate and re-publish (count sync + `feeds-batch-updated`) at
+   * most once per NATIVE_CYCLE_PROGRESS_PUBLISH_INTERVAL_MS. Emissions are
+   * idempotent against the cycle-end publish: FeedContext merges pending
+   * updates with Math.max and the count sync is a pure recompute.
+   */
+  private createNativeCycleProgressPublisher(): {
+    noteFeedInserted: (feedId: string, insertedCount?: number | null) => void;
+    dispose: () => void;
+  } {
+    const pendingInsertedByFeedId = new Map<string, number>();
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    let flushInFlight = false;
+
+    const flush = async (): Promise<void> => {
+      if (flushInFlight || pendingInsertedByFeedId.size === 0) {
+        return;
+      }
+      flushInFlight = true;
+      const batch = new Map(pendingInsertedByFeedId);
+      pendingInsertedByFeedId.clear();
+
+      try {
+        const syncedCounts = await articleStore.syncFeedCountsBatch(Array.from(batch.keys()));
+        if (syncedCounts.length > 0) {
+          feedLibraryMutationBus.publishFeedsCountsUpdated(
+            syncedCounts.map((counts) => ({
+              feedId: counts.feedId,
+              unreadCount: counts.unreadCount,
+              articleCount: counts.articleCount,
+            })),
+          );
+        }
+
+        this.emit({
+          type: 'feeds-batch-updated',
+          updates: Array.from(batch, ([feedId, newArticleCount]) => ({
+            feedId,
+            newArticleCount,
+          })),
+        });
+      } catch (error) {
+        logger.warn('Scheduler', 'Failed to publish native cycle insert progress', { error });
+      } finally {
+        flushInFlight = false;
+      }
+    };
+
+    return {
+      noteFeedInserted: (feedId, insertedCount) => {
+        if (!insertedCount || insertedCount <= 0) {
+          return;
+        }
+        pendingInsertedByFeedId.set(
+          feedId,
+          Math.max(pendingInsertedByFeedId.get(feedId) ?? 0, insertedCount),
+        );
+        if (flushTimer !== null) {
+          return;
+        }
+        flushTimer = setTimeout(() => {
+          flushTimer = null;
+          void flush();
+        }, NATIVE_CYCLE_PROGRESS_PUBLISH_INTERVAL_MS);
+      },
+      dispose: () => {
+        if (flushTimer !== null) {
+          clearTimeout(flushTimer);
+          flushTimer = null;
+        }
+        pendingInsertedByFeedId.clear();
+      },
+    };
   }
 
   private async publishCommittedCycleResults(result: NativeFeedRefreshResult): Promise<void> {

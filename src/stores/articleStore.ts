@@ -157,6 +157,10 @@ export async function deleteByFeed(feedId: string): Promise<string[]> {
   return tauriClient.articles.deleteByFeed({ feedId });
 }
 
+export async function deleteByFeeds(feedIds: string[]): Promise<string[]> {
+  return tauriClient.articles.deleteByFeeds({ feedIds });
+}
+
 export async function cleanOld(feedId: string, daysToKeep: number): Promise<number> {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);

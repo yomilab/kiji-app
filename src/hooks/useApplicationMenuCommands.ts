@@ -3,6 +3,10 @@ import type { SmartViewId } from '@/constants';
 import type { Theme } from '@/services/settings';
 import type { ArticleListUpdatePayload } from '@/contexts/FeedContext';
 import { articlesManager } from '@/services/articles/articlesManager';
+import {
+  clearAllArticlesAcrossFeeds,
+  countClearableArticles,
+} from '@/services/articles/clearArticlesWorkflow';
 import { savedArticlesManager } from '@/services/articles/savedArticlesManager';
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { opmlExportService } from '@/services/feeds/opmlExportService';
@@ -113,17 +117,14 @@ export const useApplicationMenuCommands = ({
 
     try {
       const tags = await tagsManager.getAllTags();
-      await runWithSidebarBatchProgress('clearing', feeds.length, async (reportProgress) => {
-        for (let index = 0; index < feeds.length; index += 1) {
-          const feed = feeds[index];
-          await articlesManager.deleteArticlesByFeed(feed.id);
-          await feedsManager.deleteFeed(feed.id);
-          feedLibraryMutationBus.publishFeedDeleted(feed.id);
-          reportProgress(index + 1);
-        }
-      }, { subject: 'feeds' });
-
+      const feedIds = feeds.map((feed) => feed.id);
       sidebarIndicatorService.show(sidebarIndicatorOngoing('clearing', undefined, { subject: 'feeds' }));
+
+      await feedsManager.deleteFeeds(feedIds);
+      for (const feedId of feedIds) {
+        feedLibraryMutationBus.publishFeedDeleted(feedId);
+      }
+
       for (const tag of tags) {
         await tagsManager.deleteTag(tag.name);
       }
@@ -223,6 +224,12 @@ export const useApplicationMenuCommands = ({
       return;
     }
 
+    const clearableCount = await countClearableArticles();
+    if (clearableCount === 0) {
+      sidebarIndicatorService.show('No articles', { durationMs: 4000 });
+      return;
+    }
+
     const confirmed = await confirmDialog({
       title: 'Clear all articles',
       message: 'Clear all feed articles?\n\nThis deletes non-saved articles from every subscription. Your feeds and saved articles stay in place.',
@@ -234,30 +241,18 @@ export const useApplicationMenuCommands = ({
     closeActiveArticleIfNeeded();
 
     try {
-      let deletedArticleCount = 0;
-      await runWithSidebarBatchProgress('clearing', feeds.length, async (reportProgress) => {
-        for (let index = 0; index < feeds.length; index += 1) {
-          const feed = feeds[index];
-          const deletedHashes = await articlesManager.deleteArticlesByFeed(feed.id);
-          deletedArticleCount += deletedHashes.length;
-          const [unreadCount, articleCount] = await Promise.all([
-            articleStore.getUnreadCount(feed.id),
-            articleStore.getArticleCount(feed.id),
-          ]);
-          await feedsManager.updateFeed(feed.id, {
-            unreadCount,
-            articleCount,
-          });
-          reportProgress(index + 1);
-        }
-      }, { subject: 'articles' });
+      sidebarIndicatorService.show(
+        sidebarIndicatorOngoing('clearing', { count: clearableCount }, { subject: 'articles' }),
+      );
+
+      const deletedCount = await clearAllArticlesAcrossFeeds(feeds.map((feed) => feed.id));
 
       await reloadCurrentSourceFromStore();
       notifyFeedLibraryChanged();
       sidebarIndicatorService.show(
         sidebarIndicatorDone(
           'clearing',
-          deletedArticleCount > 0 ? deletedArticleCount : undefined,
+          deletedCount > 0 ? deletedCount : undefined,
           { subject: 'articles' },
         ),
         { durationMs: 5000 },

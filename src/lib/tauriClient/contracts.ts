@@ -886,6 +886,10 @@ export interface ArticlesContract {
     request: { feedId: string };
     response: string[];
   };
+  deleteByFeeds: {
+    request: { feedIds: string[] };
+    response: string[];
+  };
   cleanOldByFeed: {
     request: ArticleCleanOldRequest;
     response: number;

@@ -100,6 +100,17 @@ class ArticlesManager {
   async deleteArticlesByFeed(feedId: string): Promise<string[]> {
     return articleStore.deleteByFeed(feedId);
   }
+
+  /**
+   * Delete all articles for many feeds in one batched native call, except
+   * saved ones. One transaction + one library-wide orphan sweep — never loop
+   * deleteArticlesByFeed per feed from the renderer (the orphan GC is global
+   * and would re-run once per feed).
+   * Returns list of deleted article hashes.
+   */
+  async deleteArticlesByFeeds(feedIds: string[]): Promise<string[]> {
+    return articleStore.deleteByFeeds(feedIds);
+  }
 }
 
 export const articlesManager = new ArticlesManager();

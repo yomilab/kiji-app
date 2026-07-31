@@ -2326,7 +2326,25 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const coldDeferredOwnsFirstPage =
         pendingColdSwitchSqliteTokenRef.current === token
         && insertedCount === 0;
-      if (coldDeferredOwnsFirstPage) {
+      if (coldDeferredOwnsFirstPage && importEmptyCommitTokenRef.current === token) {
+        // Import switch whose awaited first fetch inserted nothing: a
+        // concurrent background cycle can win the insert dedup race (its
+        // commits are already in SQLite while this phase reports 0), and the
+        // deferred import tail keeps inserting after this phase settles.
+        // Reconcile once so the honest empty view only shows when SQLite
+        // truly has no rows for this source.
+        if (isArticleViewTransitioning()) {
+          pendingBackgroundRefreshSourceKeyRef.current = sourceKey;
+        } else {
+          await reconcileSwitchVisiblePage({
+            token,
+            sourceKey,
+            tagQuery,
+          });
+          freshArticleCount = currentArticlesRef.current.length;
+          freshArticleTotal = nonSearchArticlesTotalCountRef.current;
+        }
+      } else if (coldDeferredOwnsFirstPage) {
         // Phase A will publish; background apply picks up any later inserts
         // after the scheduler resumes.
       } else if (isArticleViewTransitioning()) {
@@ -3284,7 +3302,8 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      // Native cycles report all inserts in one batch at cycle end; the
+      // Native cycles publish committed inserts in bounded mid-cycle windows
+      // (long import-boost cycles) plus one batch at cycle end; the
       // cycle-complete flush right after consumes these pending updates and
       // re-queries the visible list when the active source is affected.
       if (event.type === 'feeds-batch-updated') {

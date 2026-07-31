@@ -61,6 +61,12 @@ export async function deleteByFeed(
   return invokeContract<ArticlesContract["deleteByFeed"]>("articles_delete_by_feed", request);
 }
 
+export async function deleteByFeeds(
+  request: ArticlesContract["deleteByFeeds"]["request"],
+): Promise<ArticlesContract["deleteByFeeds"]["response"]> {
+  return invokeContract<ArticlesContract["deleteByFeeds"]>("articles_delete_by_feeds", request);
+}
+
 export async function cleanOldByFeed(
   request: ArticlesContract["cleanOldByFeed"]["request"],
 ): Promise<ArticlesContract["cleanOldByFeed"]["response"]> {

@@ -195,6 +195,37 @@ pub async fn articles_delete_by_feed(
 }
 
 #[tauri::command(rename_all = "camelCase")]
+pub async fn articles_delete_by_feeds(
+    feed_ids: Vec<String>,
+    state: State<'_, DbState>,
+) -> Result<Vec<String>, String> {
+    let db = state.inner().clone();
+    let deleted = db
+        .write(move |connection| delete_articles_by_feeds(connection, &feed_ids))
+        .await?;
+
+    if !deleted.is_empty() {
+        // Same rationale as articles_clean_old_across_feeds: deleting rows only
+        // marks pages free; VACUUM is required to shrink the file. Run it in
+        // the background so the clear result returns immediately; writes queue
+        // behind the writer lock until it finishes.
+        let db = state.inner().clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let result = db.with_writer(|connection| {
+                connection
+                    .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
+                    .map_err(|error| format!("Failed to vacuum database after clearing articles: {error}"))
+            });
+            if let Err(error) = result {
+                eprintln!("[KiJi] {error}");
+            }
+        });
+    }
+
+    Ok(deleted)
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub async fn articles_clean_old_by_feed(
     feed_id: String,
     cutoff_date: String,
@@ -1076,5 +1107,121 @@ fn where_clause(conditions: &[String]) -> String {
         String::new()
     } else {
         format!("WHERE {}", conditions.join(" AND "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::run_migrations;
+
+    fn setup_connection() -> Connection {
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+        connection
+    }
+
+    fn insert_feed(connection: &Connection, id: &str) {
+        connection
+            .execute(
+                "INSERT INTO feeds (id, title, url, created_at) VALUES (?1, ?1, ?1, '2026-01-01T00:00:00Z')",
+                params![id],
+            )
+            .expect("insert feed");
+    }
+
+    fn insert_article(connection: &Connection, hash: &str, feed_id: &str, saved: i64) {
+        connection
+            .execute(
+                "INSERT INTO articles (hash, feed_id, fetched_date, saved) VALUES (?1, ?2, '2026-01-01T00:00:00Z', ?3)",
+                params![hash, feed_id, saved],
+            )
+            .expect("insert article");
+    }
+
+    fn insert_mapping(connection: &Connection, feed_id: &str, hash: &str) {
+        connection
+            .execute(
+                "INSERT INTO article_feed_items (feed_id, article_hash) VALUES (?1, ?2)",
+                params![feed_id, hash],
+            )
+            .expect("insert article/feed mapping");
+    }
+
+    fn article_exists(connection: &Connection, hash: &str) -> bool {
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM articles WHERE hash = ?1",
+                params![hash],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count article")
+            > 0
+    }
+
+    fn mapping_count(connection: &Connection) -> i64 {
+        connection
+            .query_row("SELECT COUNT(*) FROM article_feed_items", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count mappings")
+    }
+
+    fn feed_exists(connection: &Connection, id: &str) -> bool {
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM feeds WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count feed")
+            > 0
+    }
+
+    #[test]
+    fn clear_all_articles_one_batch_sweeps_unsaved_keeps_saved_and_feeds() {
+        let connection = setup_connection();
+        for feed_id in ["f1", "f2"] {
+            insert_feed(&connection, feed_id);
+        }
+        insert_article(&connection, "shared-unsaved", "f1", 0);
+        insert_mapping(&connection, "f1", "shared-unsaved");
+        insert_mapping(&connection, "f2", "shared-unsaved");
+        insert_article(&connection, "plain-unsaved", "f2", 0);
+        insert_mapping(&connection, "f2", "plain-unsaved");
+        insert_article(&connection, "kept-saved", "f1", 1);
+        insert_mapping(&connection, "f1", "kept-saved");
+
+        let mut deleted = delete_articles_by_feeds(
+            &connection,
+            &["f1".to_string(), "f2".to_string()],
+        )
+        .expect("batched clear all articles");
+        deleted.sort();
+
+        assert_eq!(
+            deleted,
+            vec!["plain-unsaved".to_string(), "shared-unsaved".to_string()],
+            "one batch call should collect every unsaved orphan exactly once"
+        );
+        assert!(!article_exists(&connection, "shared-unsaved"));
+        assert!(!article_exists(&connection, "plain-unsaved"));
+        assert!(
+            article_exists(&connection, "kept-saved"),
+            "saved articles survive a clear-all"
+        );
+        assert_eq!(
+            mapping_count(&connection),
+            0,
+            "all feed mappings are removed, including saved articles'"
+        );
+        assert!(feed_exists(&connection, "f1") && feed_exists(&connection, "f2"));
+    }
+
+    #[test]
+    fn delete_articles_by_feeds_with_no_ids_is_a_noop() {
+        let connection = setup_connection();
+        let deleted = delete_articles_by_feeds(&connection, &[]).expect("empty batch");
+        assert!(deleted.is_empty());
     }
 }

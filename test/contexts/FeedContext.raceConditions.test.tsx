@@ -1596,6 +1596,53 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     }, 5000);
   });
 
+  it('reconciles concurrent-cycle commits when the awaited import fetch inserts nothing', async () => {
+    // Dedup race (production 2026-07-29): the awaited Phase B fetch reported
+    // 0 inserts because a concurrent import-boost background cycle committed
+    // the same rows first (insert dedup by hash). The settle must reconcile
+    // SQLite and publish those rows instead of the honest empty view.
+    let rowsCommitted = false;
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: null }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: null }),
+    );
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A' && rowsCommitted) {
+        return Promise.resolve({ articles: [createArticle('hash-a', 'feed-a')], total: 1 });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+    (articleStore.store as Mock).mockImplementation(() => {
+      rowsCommitted = true;
+      return Promise.resolve(0);
+    });
+    (convertFeedItemsToArticles as Mock).mockResolvedValue([createArticle('hash-a', 'feed-a')]);
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A', { awaitInitialFetch: true });
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-a']);
+    }, 5000);
+  });
+
   it('skips Phase B reconcile query while cold deferred SQLite owns the skeleton', async () => {
     // Production (2026-07-14 Tech): Phase B reconcile (includeTotal:true) raced
     // the deferred page and stretched sqlite-query-deferred to ~6s. Cold Phase A

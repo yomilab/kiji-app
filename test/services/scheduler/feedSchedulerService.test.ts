@@ -1050,6 +1050,78 @@ describe("feedSchedulerService", () => {
       }
     });
 
+    it("publishes committed inserts progressively during a long native cycle", async () => {
+      let releaseCycle!: (value: unknown) => void;
+      previewNativeCycle.mockImplementation(() => new Promise((resolve) => {
+        releaseCycle = resolve;
+      }));
+
+      const events: Array<{ type: string; updates?: ReadonlyArray<{ feedId: string; newArticleCount: number }> }> = [];
+      const unsubscribe = feedScheduler.on((event) => {
+        events.push(event as (typeof events)[number]);
+      });
+
+      try {
+        await feedScheduler.start();
+        getSchedulerEventHandler("scheduler:cycle-tick")?.();
+        await vi.waitFor(() => {
+          expect(previewNativeCycle).toHaveBeenCalledTimes(1);
+        });
+
+        // A long import-boost cycle commits inserts per feed in Rust while
+        // the renderer still waits on the IPC: per-feed events must publish
+        // mid-cycle so the visible station and counts fill progressively
+        // (production 2026-07-29: 557-feed cycle ran ~3 minutes with the
+        // list stuck on the empty view).
+        const feedEventHandler = eventHandlers.get("scheduler:native-cycle-feed") as
+          | ((event: { payload: { feedId: string; insertedCount?: number; error?: string } }) => void)
+          | undefined;
+        expect(feedEventHandler).toBeDefined();
+        feedEventHandler?.({ payload: { feedId: "feed-1", insertedCount: 2 } });
+        feedEventHandler?.({ payload: { feedId: "feed-2", insertedCount: 3 } });
+
+        await vi.waitFor(() => {
+          expect(events.some((event) => event.type === "feeds-batch-updated")).toBe(true);
+        }, { timeout: 5000 });
+
+        const progressEvent = events.find((event) => event.type === "feeds-batch-updated");
+        expect(progressEvent?.updates).toEqual([
+          { feedId: "feed-1", newArticleCount: 2 },
+          { feedId: "feed-2", newArticleCount: 3 },
+        ]);
+        expect(syncFeedCountsBatch).toHaveBeenCalledWith(["feed-1", "feed-2"]);
+        expect(events.some((event) => event.type === "cycle-complete")).toBe(false);
+
+        releaseCycle({
+          plan: { prioritized: [], skippedBackoffCount: 0, skippedSuppressedCount: 0 },
+          queuedCount: 2,
+          executedFeedCount: 2,
+          changedFeeds: 2,
+          notModifiedFeeds: 0,
+          failedFeeds: 0,
+          insertedArticles: 5,
+          feedResults: [
+            { feedId: "feed-1", status: "changed", insertedCount: 2 },
+            { feedId: "feed-2", status: "changed", insertedCount: 3 },
+          ],
+        });
+
+        await vi.waitFor(() => {
+          expect(events.some((event) => event.type === "cycle-complete")).toBe(true);
+        });
+
+        // The cycle-end publish stays as the idempotent final flush.
+        const batchEvents = events.filter((event) => event.type === "feeds-batch-updated");
+        expect(batchEvents).toHaveLength(2);
+        expect(batchEvents[1]?.updates).toEqual([
+          { feedId: "feed-1", newArticleCount: 2 },
+          { feedId: "feed-2", newArticleCount: 3 },
+        ]);
+      } finally {
+        unsubscribe();
+      }
+    });
+
     it("does not emit feeds-batch-updated when the native cycle inserts nothing", async () => {
       previewNativeCycle.mockResolvedValue({
         plan: { prioritized: [], skippedBackoffCount: 0, skippedSuppressedCount: 0 },
