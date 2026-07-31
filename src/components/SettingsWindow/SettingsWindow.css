@@ -1,16 +1,16 @@
 /* Settings Window Container — light tokens default; dark under [data-theme="dark"] */
 .settings-window {
-  --settings-main-bg: #f7f6f4;
+  --settings-main-bg: #faf9f7;
   --settings-card-bg: #ffffff;
-  --settings-control-bg: #ececec;
+  --settings-control-bg: #f0efed;
   --settings-card-border: rgba(0, 0, 0, 0.08);
   --settings-row-border: rgba(0, 0, 0, 0.06);
   --settings-control-border: rgba(0, 0, 0, 0.08);
   --settings-control-border-hover: rgba(0, 0, 0, 0.14);
   --settings-control-border-focus: rgba(0, 0, 0, 0.22);
-  --settings-text-primary: #363636;
-  --settings-text-secondary: #7a7a7a;
-  --settings-key-text: rgba(54, 54, 54, 0.88);
+  --settings-text-primary: #2a2a2c;
+  --settings-text-secondary: #7d7d85;
+  --settings-key-text: rgba(42, 42, 44, 0.88);
   --settings-switch-off: #d1d1d6;
   --settings-switch-on: #63c23f;
   --settings-switch-track-inset: rgba(0, 0, 0, 0.06);
