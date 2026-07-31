@@ -79,7 +79,7 @@ describe("UI layout parity (21b)", () => {
     expect(themeCss).toContain("--font-family-ui");
     expect(themeCss).toContain('html[data-os="windows"]');
     expect(themeCss).toContain("rgba(250, 250, 249, 0.88)");
-    expect(themeCss).toContain("rgba(30, 30, 32, 0.88)");
+    expect(themeCss).toContain("rgba(27, 27, 29, 0.9)");
   });
 
   it("settings content pane tokens follow data-theme light and dark", () => {
@@ -90,7 +90,7 @@ describe("UI layout parity (21b)", () => {
 
     expect(settingsCss).toContain("--settings-main-bg: #faf9f7");
     expect(settingsCss).toContain('[data-theme="dark"] .settings-window');
-    expect(settingsCss).toContain("--settings-main-bg: #1f1f20");
+    expect(settingsCss).toContain("--settings-main-bg: #1b1b1d");
     expect(settingsCss).toContain("--settings-row-border");
     expect(settingsCss).toContain("--settings-select-chevron");
   });

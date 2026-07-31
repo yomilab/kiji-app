@@ -104,48 +104,48 @@ html[data-os="other"] {
   --theme-bg-primary: transparent;
   --theme-bg-secondary: transparent;
   --theme-bg-tertiary: transparent;
-  --theme-sidebar-bg: rgba(28, 28, 30, 0.35);
-  --theme-article-bg: #1E1E1E;
-  --theme-primary-color: #ffffff;
-  --theme-article-content-color: #ddd;
+  --theme-sidebar-bg: rgba(26, 26, 29, 0.45);
+  --theme-article-bg: #1B1B1D;
+  --theme-primary-color: #F2F2F5;
+  --theme-article-content-color: #E2E2E6;
   --article-content-text-color: var(--theme-article-content-color);
   --article-content-accent-color: var(--system-accent-color);
-  --theme-text-subdued: #808080;
-  --theme-timestamp-color: #808080;
+  --theme-text-subdued: #86868E;
+  --theme-timestamp-color: #7C7C85;
 
-  --theme-text-primary: #ddd;
-  --theme-text-secondary: #b0b0b0;
-  --theme-text-tertiary: #808080;
-  --theme-text-muted: #606060;
+  --theme-text-primary: #EAEAEF;
+  --theme-text-secondary: #A9A9B1;
+  --theme-text-tertiary: #84848C;
+  --theme-text-muted: #62626A;
   --article-content-text-primary: var(--theme-text-primary);
   --article-content-text-secondary: var(--theme-text-secondary);
-  --article-content-code-bg-inline: rgba(255, 255, 255, 0.12);
+  --article-content-code-bg-inline: rgba(255, 255, 255, 0.1);
   --article-content-code-bg-strong: #11161c;
   --article-content-code-fg-strong: #e8edf2;
 
-  --theme-border: rgba(64, 64, 64, 0.5);
-  --theme-border-light: rgba(48, 48, 48, 0.5);
+  --theme-border: rgba(255, 255, 255, 0.09);
+  --theme-border-light: rgba(255, 255, 255, 0.05);
   --theme-border-active: var(--system-accent-color);
 
   --theme-primary: var(--system-accent-color);
   --theme-primary-hover: color-mix(in srgb, var(--system-accent-color) 80%, white);
   --theme-primary-light: color-mix(in srgb, var(--system-accent-color) 15%, rgba(26, 26, 26, 0.7));
 
-  --theme-hover-overlay: rgba(255, 255, 255, 0.05);
+  --theme-hover-overlay: rgba(255, 255, 255, 0.06);
   --theme-hover-overlay-dark: rgba(255, 255, 255, 0.1);
 
-  --theme-shadow: rgba(0, 0, 0, 0.3);
+  --theme-shadow: rgba(0, 0, 0, 0.45);
 
   /* Widget button styles for dark theme */
-  --widget-button-hover-bg: rgba(255, 255, 255, 0.08);
+  --widget-button-hover-bg: rgba(255, 255, 255, 0.09);
 
   /* Scrollbar styles for dark theme */
-  --scrollbar-thumb-color: rgba(255, 255, 255, 0.2);
-  --scrollbar-thumb-hover-color: rgba(255, 255, 255, 0.3);
+  --scrollbar-thumb-color: rgba(255, 255, 255, 0.24);
+  --scrollbar-thumb-hover-color: rgba(255, 255, 255, 0.34);
 }
 
 html[data-os="windows"][data-theme="dark"],
 html[data-os="linux"][data-theme="dark"],
 html[data-os="other"][data-theme="dark"] {
-  --theme-sidebar-bg: rgba(30, 30, 32, 0.88);
+  --theme-sidebar-bg: rgba(27, 27, 29, 0.9);
 }

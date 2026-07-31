@@ -30,22 +30,22 @@
 }
 
 [data-theme="dark"] .settings-window {
-  --settings-main-bg: #1f1f20;
-  --settings-card-bg: #2a2a2c;
-  --settings-control-bg: #303033;
+  --settings-main-bg: #1b1b1d;
+  --settings-card-bg: #262628;
+  --settings-control-bg: #323235;
   --settings-card-border: rgba(255, 255, 255, 0.08);
   --settings-row-border: rgba(255, 255, 255, 0.06);
   --settings-control-border: rgba(255, 255, 255, 0.05);
   --settings-control-border-hover: rgba(255, 255, 255, 0.1);
   --settings-control-border-focus: rgba(255, 255, 255, 0.18);
   --settings-text-primary: #f1f1f3;
-  --settings-text-secondary: #a6a6ab;
+  --settings-text-secondary: #a9a9b1;
   --settings-key-text: rgba(255, 255, 255, 0.88);
   --settings-switch-off: #3b3b3d;
   --settings-switch-track-inset: rgba(255, 255, 255, 0.06);
   --settings-range-track: rgba(255, 255, 255, 0.12);
   --settings-icon-hover-bg: rgba(255, 255, 255, 0.04);
-  --settings-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%23A6A6AB' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --settings-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%23A9A9B1' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 /* Ensure full coverage */
