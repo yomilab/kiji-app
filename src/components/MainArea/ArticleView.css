@@ -11,6 +11,8 @@
   flex-direction: column;
   overflow: hidden;
   background-color: var(--theme-article-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-radius: var(--app-window-radius, 14px);
   z-index: 1000;
   -webkit-app-region: no-drag;
@@ -28,6 +30,8 @@ html[data-os="other"] .article-view {
   height: auto;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
 }
 
 [data-theme="dark"] .article-view {
