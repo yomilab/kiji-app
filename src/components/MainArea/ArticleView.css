@@ -19,7 +19,7 @@
   will-change: transform, opacity;
   backface-visibility: hidden;
   transform: translateZ(0);
-  contain: layout paint style;
+  contain: layout style;
 }
 
 /* Keep the Windows/Linux in-app menu bar reachable while reading */

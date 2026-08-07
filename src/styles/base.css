@@ -183,6 +183,8 @@ button svg {
   min-height: 100vh;
   padding: 48px;
   background: var(--theme-article-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   color: var(--theme-text-primary);
   font-family: var(--font-family-ui);
   border-radius: var(--app-window-radius);

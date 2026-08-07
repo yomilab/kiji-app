@@ -142,9 +142,9 @@ html[data-os="other"] .article-list {
 .article-list-title-section-scrolled {
   position: sticky;
   padding-top: 20px;
-  background-color: color-mix(in srgb, var(--article-list-bg) 92%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background-color: color-mix(in srgb, var(--article-list-bg) 55%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
 
 .article-list-title-section-scrolled::after {

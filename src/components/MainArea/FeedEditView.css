@@ -45,9 +45,9 @@
   min-width: 0;
   max-width: 100%;
   padding: 16px 0 8px;
-  background: color-mix(in srgb, var(--article-list-bg) 94%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: color-mix(in srgb, var(--article-list-bg) 55%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
 
 .feed-edit-group-header .article-list-title-content {
@@ -130,7 +130,9 @@
   width: 100%;
   min-width: 0;
   overflow: hidden;
-  background: var(--article-list-bg);
+  background: color-mix(in srgb, var(--article-list-bg) 55%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
 
 .feed-edit-table-header-track {
@@ -155,7 +157,7 @@
 }
 
 .feed-edit-group-table thead th {
-  background: var(--article-list-bg);
+  background: transparent;
   text-align: left;
   padding: 6px var(--feed-edit-table-cell-padding-x);
   font-size: 11px;
