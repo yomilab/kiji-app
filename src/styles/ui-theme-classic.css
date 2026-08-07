@@ -1,0 +1,58 @@
+/* Classic UI theme variant — restores the original solid (pre-glass) surfaces.
+   Loaded last so these overrides win over the Modern (default) glass rules.
+   Everything here is visual-only; Classic also re-applies the original
+   compositing hints and removes every backdrop-filter added by Modern, so
+   its rendering cost matches the original theme. */
+
+html[data-ui-theme="classic"][data-theme="dark"] {
+  --theme-article-bg: #1B1B1D;
+  --theme-article-view-bg: #1B1B1D;
+}
+
+html[data-ui-theme="classic"][data-theme="dark"][data-os="windows"],
+html[data-ui-theme="classic"][data-theme="dark"][data-os="linux"],
+html[data-ui-theme="classic"][data-theme="dark"][data-os="other"] {
+  --theme-article-bg: #1B1B1D;
+  --theme-article-view-bg: #1B1B1D;
+}
+
+html[data-ui-theme="classic"] .article-list-items,
+html[data-ui-theme="classic"] .article-list-title-section {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-ui-theme="classic"] .article-view {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  contain: layout paint style;
+}
+
+html[data-ui-theme="classic"] .app-layer {
+  will-change: transform, opacity;
+}
+
+html[data-ui-theme="classic"] .feed-edit-group-header {
+  background: color-mix(in srgb, var(--article-list-bg) 94%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+html[data-ui-theme="classic"] .feed-edit-table-header-shell {
+  background: var(--article-list-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-ui-theme="classic"] .feed-edit-group-table thead th {
+  background: var(--article-list-bg);
+}
+
+html[data-ui-theme="classic"] .emoji-submenu,
+html[data-ui-theme="classic"] .tauri-window-placeholder {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}

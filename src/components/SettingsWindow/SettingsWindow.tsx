@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { subscribeToWindowFocus } from '@/services/tauri/tauriEventSubscription';
-import { settingsManager, DEFAULT_SETTINGS } from '@/services/settings';
-import type { ContentParser } from '@/services/settings';
+import { settingsManager, DEFAULT_SETTINGS, UI_THEME_VARIANT_OPTIONS } from '@/services/settings';
+import type { ContentParser, UiThemeVariant } from '@/services/settings';
 import type { BackgroundUpdateMode } from '@/services/scheduler/types';
 import { CJK_FONT_OPTIONS, COMMON_FONT_OPTIONS } from '@/services/settings/fontFamilies';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -121,6 +121,7 @@ export const SettingsWindow: React.FC = () => {
     DEFAULT_SETTINGS.backgroundUpdate,
   );
   const [contentParser, setContentParser] = useState<ContentParser>(DEFAULT_SETTINGS.contentParser);
+  const [uiThemeVariant, setUiThemeVariant] = useState<UiThemeVariant>(DEFAULT_SETTINGS.uiThemeVariant);
   const [savedArticlesSyncFolder, setSavedArticlesSyncFolder] = useState<string | null>(null);
   const isSavedArticlesSyncEnabled = savedArticlesSyncFolder !== null;
   const { fontFamilies, updateFontFamilies, readingLayout, updateReadingLayout } = useTheme();
@@ -168,6 +169,7 @@ export const SettingsWindow: React.FC = () => {
 
         setBackgroundUpdate(settings.backgroundUpdate ?? DEFAULT_SETTINGS.backgroundUpdate);
         setContentParser(settings.contentParser ?? DEFAULT_SETTINGS.contentParser);
+        setUiThemeVariant(settings.uiThemeVariant ?? DEFAULT_SETTINGS.uiThemeVariant);
         setSavedArticlesSyncFolder(settings.savedArticlesSyncFolder ?? null);
 
         if (window.kijiAPI?.getSystemAppIconState) {
@@ -503,6 +505,22 @@ export const SettingsWindow: React.FC = () => {
       notifySettingsChanged();
     } catch (error) {
       console.error('Error saving content parser:', error);
+    }
+  };
+
+  const handleUiThemeVariantChange = async (variant: UiThemeVariant) => {
+    const previousVariant = uiThemeVariant;
+    try {
+      // Apply immediately so every window's surface style flips without waiting
+      // for the settings-changed round-trip; ThemeContext re-applies on reload.
+      setUiThemeVariant(variant);
+      document.documentElement.setAttribute('data-ui-theme', variant);
+      await settingsManager.setUiThemeVariant(variant);
+      notifySettingsChanged();
+    } catch (error) {
+      console.error('Error saving UI theme variant:', error);
+      setUiThemeVariant(previousVariant);
+      document.documentElement.setAttribute('data-ui-theme', previousVariant);
     }
   };
 
@@ -921,6 +939,33 @@ export const SettingsWindow: React.FC = () => {
                         onChange={(e) => handleFontChange('uiFont', e.target.value)}
                       >
                         {COMMON_FONT_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="settings-group">
+                <h3 className="settings-group-title">Theme</h3>
+                <div className="settings-group-body">
+                  <div className="settings-item">
+                    <div className="settings-item-info">
+                      <label className="settings-item-label">Interface style</label>
+                      <p className="settings-item-description">
+                        Modern uses translucent glass surfaces; Classic uses the original solid surfaces
+                      </p>
+                    </div>
+                    <div className="settings-item-control">
+                      <select
+                        className="settings-select"
+                        value={uiThemeVariant}
+                        onChange={(e) => void handleUiThemeVariantChange(e.target.value as UiThemeVariant)}
+                      >
+                        {UI_THEME_VARIANT_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
                           </option>

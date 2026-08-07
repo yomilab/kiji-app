@@ -30,7 +30,9 @@ describe("settings storage model", () => {
     expect(renderer.readingLayout).toEqual(DEFAULT_SETTINGS.readingLayout);
     expect(renderer.sidebarLibrary).toEqual(DEFAULT_SETTINGS.sidebarLibrary);
     expect(renderer.smartViews).toEqual(DEFAULT_SETTINGS.smartViews);
+    expect(renderer.uiThemeVariant).toBe(DEFAULT_SETTINGS.uiThemeVariant);
     expect(Object.keys(toNativeAppSettings(DEFAULT_SETTINGS))).not.toContain("fontFamilies");
+    expect(Object.keys(toNativeAppSettings(DEFAULT_SETTINGS))).not.toContain("uiThemeVariant");
   });
 
   it("merges native settings with renderer preferences for UI consumption", () => {
@@ -39,6 +41,7 @@ describe("settings storage model", () => {
     expect(merged.theme).toBe(DEFAULT_NATIVE_SETTINGS.theme);
     expect(merged.fontFamilies).toEqual(DEFAULT_SETTINGS.fontFamilies);
     expect(merged.savedArticlesSyncFolder).toBe(DEFAULT_NATIVE_SETTINGS.savedArticlesSyncFolder);
+    expect(merged.uiThemeVariant).toBe(DEFAULT_SETTINGS.uiThemeVariant);
   });
 
   it("stores window position in native settings and falls back to legacy renderer windowPosition", () => {
