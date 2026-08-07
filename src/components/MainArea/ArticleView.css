@@ -10,7 +10,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--theme-article-bg);
+  background-color: var(--theme-article-view-bg);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-radius: var(--app-window-radius, 14px);
@@ -19,7 +19,6 @@
   will-change: transform, opacity;
   backface-visibility: hidden;
   transform: translateZ(0);
-  contain: layout style;
 }
 
 /* Keep the Windows/Linux in-app menu bar reachable while reading */
@@ -32,11 +31,6 @@ html[data-os="other"] .article-view {
   border-top-right-radius: 0;
   backdrop-filter: blur(28px) saturate(160%);
   -webkit-backdrop-filter: blur(28px) saturate(160%);
-}
-
-[data-theme="dark"] .article-view {
-  /* Keep list/view backgrounds in sync via shared theme token */
-  background-color: var(--theme-article-bg);
 }
 
 .article-view.article-view-embedded {

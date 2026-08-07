@@ -45,7 +45,7 @@
   min-width: 0;
   max-width: 100%;
   padding: 16px 0 8px;
-  background: color-mix(in srgb, var(--article-list-bg) 55%, transparent);
+  background: transparent;
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
@@ -130,7 +130,7 @@
   width: 100%;
   min-width: 0;
   overflow: hidden;
-  background: color-mix(in srgb, var(--article-list-bg) 55%, transparent);
+  background: transparent;
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
