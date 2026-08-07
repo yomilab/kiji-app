@@ -97,20 +97,23 @@ body {
   overflow: hidden;
   overscroll-behavior: none;
   transform-origin: left center;
-  will-change: transform, opacity;
 }
 
 .app-layer-sidebar {
   flex-shrink: 0;
   z-index: 1;
+  will-change: transform;
 }
 
 .app-layer-main {
   flex: 1;
   min-width: 0;
   z-index: 2;
+  will-change: transform;
 }
 
+/* No will-change/transform here at rest: a backdrop-root ancestor with an
+   empty subtree makes WKWebView ignore the article view's backdrop-filter. */
 .app-layer-article {
   position: absolute;
   inset: 0;
