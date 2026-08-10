@@ -24,21 +24,32 @@
   position: relative;
 }
 
-/* Glass lives on the content surfaces (one layer per region) so the sticky
-   header and the scroll body composite identically. */
-.article-list-items,
-.article-list-title-section {
+/* Glass lives on a static underlay element: the scroll container and sticky
+   header stay unfiltered, so mounting animated content (skeleton shimmer, row
+   swaps) never forces a backdrop re-snapshot (which WKWebView renders as a
+   black frame). Must be a real element — WebKit mis-composites backdrop-filter
+   on pseudo-elements (persistent black layer). */
+.article-list-glass {
+  position: absolute;
+  inset: 0;
   background-color: var(--article-list-bg);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
+  /* Repaint the column separator above the underlay (positioned children
+     cover the parent's own border); inherits none in 2-column mode. */
+  border-right: inherit;
+  box-sizing: border-box;
+  pointer-events: none;
 }
 
-html[data-os="windows"] .article-list-items,
-html[data-os="windows"] .article-list-title-section,
-html[data-os="linux"] .article-list-items,
-html[data-os="linux"] .article-list-title-section,
-html[data-os="other"] .article-list-items,
-html[data-os="other"] .article-list-title-section {
+.article-list-items,
+.article-list-error {
+  position: relative;
+}
+
+html[data-os="windows"] .article-list-glass,
+html[data-os="linux"] .article-list-glass,
+html[data-os="other"] .article-list-glass {
   backdrop-filter: blur(28px) saturate(160%);
   -webkit-backdrop-filter: blur(28px) saturate(160%);
 }

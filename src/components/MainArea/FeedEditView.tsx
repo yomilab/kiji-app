@@ -2399,6 +2399,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       className="article-list feed-edit-view"
       onMouseDown={handleFeedEditPointerDown}
     >
+      <div className="article-list-glass" aria-hidden="true" />
       <FeedEditWidgets
         onToggleSearch={handleToggleSearch}
         isSearchOpen={isSearchOpen}
