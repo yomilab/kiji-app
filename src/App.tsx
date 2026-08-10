@@ -269,7 +269,7 @@ export const App: React.FC = () => {
     // Pointer-event suppression for the library panes is keyed off overlay
     // phase, not a raw closing boolean, so shortcut-driven closes cannot leave
     // the app stuck in a permanently non-interactive state.
-    <div className={`app-container ${articleViewOverlayPhase !== 'closed' ? 'article-view-active' : ''}`} data-section="app-root">
+    <div className={`app-container ${articleViewOverlayPhase !== 'closed' ? 'article-view-active' : ''} ${articleViewOverlayPhase === 'opening' || articleViewOverlayPhase === 'closing' ? 'article-view-transitioning' : ''}`} data-section="app-root">
       <div
         className={`app-deck-root ${isOpmlDragActive ? 'opml-drop-active' : ''}`}
         onDragEnter={handleDragEnter}

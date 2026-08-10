@@ -14,6 +14,14 @@ import {
 
 export type Theme = 'auto' | 'light' | 'dark';
 export type LayoutType = '2-column' | '3-column';
+
+/* Surface style variant: Modern = translucent glass surfaces, Classic = original solid surfaces. */
+export type UiThemeVariant = 'modern' | 'classic';
+
+export const UI_THEME_VARIANT_OPTIONS: { value: UiThemeVariant; label: string }[] = [
+  { value: 'modern', label: 'Modern' },
+  { value: 'classic', label: 'Classic' },
+];
 export type { ContentParser } from '@/services/articles/extractors/types';
 export { DEFAULT_CONTENT_PARSER, isContentParser } from '@/services/articles/extractors/types';
 
@@ -66,6 +74,7 @@ export interface UserSettings {
   savedArticlesSyncFolder: string | null; // Optional folder that mirrors saved articles as markdown files
   sidebarLibrary: SidebarLibrarySettings;
   smartViews: SmartViewSettings[];
+  uiThemeVariant: UiThemeVariant;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -105,4 +114,5 @@ export const DEFAULT_SETTINGS: UserSettings = {
     visible: true,
     sortOrder: index,
   })),
+  uiThemeVariant: 'modern',
 };

@@ -3,6 +3,7 @@ import { StorageFactory } from '../storage/storageFactory';
 import {
   UserSettings,
   Theme,
+  UiThemeVariant,
   LayoutType,
   WindowSize,
   DEFAULT_SETTINGS,
@@ -32,6 +33,10 @@ const normalizeSmartViews = (smartViews: UserSettings['smartViews'] | undefined)
   }).sort((a, b) => a.sortOrder - b.sortOrder);
 };
 
+const normalizeUiThemeVariant = (variant: unknown): UiThemeVariant => (
+  variant === 'classic' || variant === 'modern' ? variant : DEFAULT_SETTINGS.uiThemeVariant
+);
+
 const normalizeRendererPreferences = (preferences: Partial<RendererPreferences>): RendererPreferences => ({
   fontFamilies: {
     ...DEFAULT_SETTINGS.fontFamilies,
@@ -46,6 +51,7 @@ const normalizeRendererPreferences = (preferences: Partial<RendererPreferences>)
     ...preferences.sidebarLibrary,
   },
   smartViews: normalizeSmartViews(preferences.smartViews),
+  uiThemeVariant: normalizeUiThemeVariant(preferences.uiThemeVariant),
   windowPosition: preferences.windowPosition,
 });
 
@@ -76,6 +82,7 @@ const normalizeSettings = (settings: Partial<UserSettings>): UserSettings => ({
     ...settings.sidebarLibrary,
   },
   smartViews: normalizeSmartViews(settings.smartViews),
+  uiThemeVariant: normalizeUiThemeVariant(settings.uiThemeVariant),
 });
 
 /**
@@ -317,6 +324,15 @@ class SettingsManager {
         ? folderPath.trim()
         : null,
     });
+  }
+
+  async getUiThemeVariant(): Promise<UiThemeVariant> {
+    const settings = await this.getSettings();
+    return settings.uiThemeVariant;
+  }
+
+  async setUiThemeVariant(variant: UiThemeVariant): Promise<void> {
+    await this.updateRendererPreferences({ uiThemeVariant: normalizeUiThemeVariant(variant) });
   }
 
   async getSidebarLibrary(): Promise<UserSettings['sidebarLibrary']> {

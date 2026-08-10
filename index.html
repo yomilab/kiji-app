@@ -30,6 +30,21 @@
         root.setAttribute("data-theme", resolvedTheme);
         root.style.colorScheme = resolvedTheme;
 
+        // Surface style variant (renderer-only store): modern glass vs classic solid.
+        let uiThemeVariant = "modern";
+        try {
+          const uiSettingsJson = localStorage.getItem("user-settings-ui");
+          if (uiSettingsJson) {
+            const uiSettings = JSON.parse(uiSettingsJson);
+            if (uiSettings && (uiSettings.uiThemeVariant === "classic" || uiSettings.uiThemeVariant === "modern")) {
+              uiThemeVariant = uiSettings.uiThemeVariant;
+            }
+          }
+        } catch (error) {
+          console.error("Error reading startup UI theme variant:", error);
+        }
+        root.setAttribute("data-ui-theme", uiThemeVariant);
+
         // Platform chrome: macOS uses native sidebar vibrancy; Windows/Linux need CSS glass.
         const ua = navigator.userAgent.toLowerCase();
         const platform = navigator.platform ? navigator.platform.toLowerCase() : "";

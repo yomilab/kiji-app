@@ -30,6 +30,7 @@ import "./styles/theme.css";
 import "./styles/framework/index.css";
 import "./styles/base.css";
 import "./styles/view.css";
+import "./styles/ui-theme-classic.css";
 
 function initializeVisualSettings(): void {
   try {

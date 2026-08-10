@@ -22,7 +22,25 @@
   min-height: 100%;
   border-right: 1px solid var(--theme-border-color, var(--theme-text-primary));
   position: relative;
+}
+
+/* Glass lives on the content surfaces (one layer per region) so the sticky
+   header and the scroll body composite identically. */
+.article-list-items,
+.article-list-title-section {
   background-color: var(--article-list-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+html[data-os="windows"] .article-list-items,
+html[data-os="windows"] .article-list-title-section,
+html[data-os="linux"] .article-list-items,
+html[data-os="linux"] .article-list-title-section,
+html[data-os="other"] .article-list-items,
+html[data-os="other"] .article-list-title-section {
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
 }
 
 /* In 3-column mode, Article List has a fixed width and border-right */
@@ -52,7 +70,6 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  background-color: var(--article-list-bg);
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb-color) var(--scrollbar-track-color);
@@ -118,7 +135,6 @@
   padding: 32px 0 10px 0;
   position: sticky;
   top: 0;
-  background-color: var(--article-list-bg);
   z-index: 10;
   width: 100%;
   /* Keep header widgets visible above scrolled backdrop layers (Tauri WebView). */
@@ -133,9 +149,6 @@
 .article-list-title-section-scrolled {
   position: sticky;
   padding-top: 20px;
-  background-color: color-mix(in srgb, var(--article-list-bg) 92%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
 .article-list-title-section-scrolled::after {

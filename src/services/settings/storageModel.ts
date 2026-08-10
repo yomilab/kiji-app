@@ -4,6 +4,7 @@ import type {
   ReadingLayoutSettings,
   SidebarLibrarySettings,
   SmartViewSettings,
+  UiThemeVariant,
   UserSettings,
   WindowSize,
 } from './types';
@@ -38,6 +39,7 @@ export interface RendererPreferences {
   readingLayout: ReadingLayoutSettings;
   sidebarLibrary: SidebarLibrarySettings;
   smartViews: SmartViewSettings[];
+  uiThemeVariant: UiThemeVariant;
   windowPosition?: Pick<WindowSize, 'x' | 'y'>;
 }
 
@@ -73,6 +75,7 @@ export function toRendererPreferences(settings: UserSettings): RendererPreferenc
     readingLayout: settings.readingLayout,
     sidebarLibrary: settings.sidebarLibrary,
     smartViews: settings.smartViews,
+    uiThemeVariant: settings.uiThemeVariant,
     windowPosition: x !== undefined || y !== undefined ? { x, y } : undefined,
   };
 }
@@ -105,6 +108,7 @@ export function mergeUserSettings(
     readingLayout: renderer.readingLayout,
     sidebarLibrary: renderer.sidebarLibrary,
     smartViews: renderer.smartViews,
+    uiThemeVariant: renderer.uiThemeVariant,
   };
 }
 

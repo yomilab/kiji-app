@@ -18,5 +18,5 @@ export {
   toRendererPreferences,
   type RendererPreferences,
 } from './storageModel';
-export type { UserSettings, Theme, WindowSize, FontFamilySettings, ReadingLayoutSettings, ContentParser } from './types';
-export { DEFAULT_SETTINGS, DEFAULT_CONTENT_PARSER } from './types';
+export type { UserSettings, Theme, UiThemeVariant, WindowSize, FontFamilySettings, ReadingLayoutSettings, ContentParser } from './types';
+export { DEFAULT_SETTINGS, DEFAULT_CONTENT_PARSER, UI_THEME_VARIANT_OPTIONS } from './types';

@@ -53,6 +53,7 @@ vi.mock("@/services/logger", () => ({
 vi.mock("@/services/settings", () => ({
   DEFAULT_SETTINGS: {
     contentParser: "defuddle",
+    uiThemeVariant: "modern",
     readingLayout: {
       enabled: false,
       fontSize: 18,
@@ -64,17 +65,23 @@ vi.mock("@/services/settings", () => ({
       justifyText: false,
     },
   },
+  UI_THEME_VARIANT_OPTIONS: [
+    { value: "modern", label: "Modern" },
+    { value: "classic", label: "Classic" },
+  ],
   settingsManager: {
     getSettings: vi.fn().mockResolvedValue({
       readTrackingAlgorithm: "on-open",
       backgroundUpdate: "every-15m",
       savedArticlesSyncFolder: null,
       contentParser: "defuddle",
+      uiThemeVariant: "modern",
     }),
     setReadTrackingAlgorithm: vi.fn().mockResolvedValue(undefined),
     setSavedArticlesSyncFolder: vi.fn().mockResolvedValue(undefined),
     setBackgroundUpdate: vi.fn().mockResolvedValue(undefined),
     setContentParser: vi.fn().mockResolvedValue(undefined),
+    setUiThemeVariant: vi.fn().mockResolvedValue(undefined),
     saveSettings: vi.fn().mockResolvedValue(undefined),
   },
 }));

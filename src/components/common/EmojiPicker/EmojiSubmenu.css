@@ -1,5 +1,7 @@
 .emoji-submenu {
   background: var(--theme-article-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid var(--theme-border);
   border-radius: 10px;
   box-shadow: 0 12px 28px var(--theme-shadow);

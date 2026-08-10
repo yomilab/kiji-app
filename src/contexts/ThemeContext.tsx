@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from 'react';
 import { settingsManager, DEFAULT_SETTINGS } from '@/services/settings';
-import type { Theme, FontFamilySettings, ReadingLayoutSettings } from '@/services/settings';
+import type { Theme, UiThemeVariant, FontFamilySettings, ReadingLayoutSettings } from '@/services/settings';
 import { applyFontFamiliesToRoot, applyReadingLayoutToRoot } from '@/services/settings/styleVariables';
 import { loadFontsFromFamilyString } from '@/utils/googleFonts';
 import { tauriClient } from '@/lib/tauriClient';
@@ -33,6 +33,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const [readingLayout, setReadingLayout] = useState<ReadingLayoutSettings>(
     DEFAULT_SETTINGS.readingLayout
   );
+  const [uiThemeVariant, setUiThemeVariant] = useState<UiThemeVariant>(DEFAULT_SETTINGS.uiThemeVariant);
   const skipInitialThemePersistRef = useRef(true);
 
   const getSystemTheme = (): 'light' | 'dark' => (
@@ -57,6 +58,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         setEffectiveTheme(resolveTheme(settings.theme));
         setFontFamilies(settings.fontFamilies);
         setReadingLayout(settings.readingLayout);
+        setUiThemeVariant(settings.uiThemeVariant);
       } catch (error) {
         console.error('Error loading settings:', error);
         // Fallback to auto mode following system preference
@@ -90,6 +92,13 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       .set({ appearance: theme === 'auto' ? 'system' : effectiveTheme })
       .catch((error) => console.error('Error applying native appearance:', error));
   }, [effectiveTheme, theme, isInitialized]);
+
+  // Apply the surface style variant (modern glass vs classic solid) to the root.
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    document.documentElement.setAttribute('data-ui-theme', uiThemeVariant);
+  }, [uiThemeVariant, isInitialized]);
 
   // Apply font families to CSS variables (load Google Fonts first)
   useEffect(() => {
@@ -198,6 +207,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         setEffectiveTheme(resolveTheme(settings.theme));
         setFontFamilies(settings.fontFamilies);
         setReadingLayout(settings.readingLayout);
+        setUiThemeVariant(settings.uiThemeVariant);
       } catch (error) {
         console.error('[ThemeContext] Error reloading appearance settings after settings change:', error);
       }
