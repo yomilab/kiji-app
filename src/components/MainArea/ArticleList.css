@@ -22,34 +22,14 @@
   min-height: 100%;
   border-right: 1px solid var(--theme-border-color, var(--theme-text-primary));
   position: relative;
-}
-
-/* Glass lives on a static underlay element: the scroll container and sticky
-   header stay unfiltered, so mounting animated content (skeleton shimmer, row
-   swaps) never forces a backdrop re-snapshot (which WKWebView renders as a
-   black frame). Must be a real element — WebKit mis-composites backdrop-filter
-   on pseudo-elements (persistent black layer). */
-.article-list-glass {
-  position: absolute;
-  inset: 0;
   background-color: var(--article-list-bg);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  /* Repaint the column separator above the underlay (positioned children
-     cover the parent's own border); inherits none in 2-column mode. */
-  border-right: inherit;
-  box-sizing: border-box;
-  pointer-events: none;
 }
 
-.article-list-items,
-.article-list-error {
-  position: relative;
-}
-
-html[data-os="windows"] .article-list-glass,
-html[data-os="linux"] .article-list-glass,
-html[data-os="other"] .article-list-glass {
+html[data-os="windows"] .article-list,
+html[data-os="linux"] .article-list,
+html[data-os="other"] .article-list {
   backdrop-filter: blur(28px) saturate(160%);
   -webkit-backdrop-filter: blur(28px) saturate(160%);
 }
@@ -146,6 +126,9 @@ html[data-os="other"] .article-list-glass {
   padding: 32px 0 10px 0;
   position: sticky;
   top: 0;
+  /* No fill/filter here: a nested backdrop-filter inside the glass container
+     mis-composites in WKWebView (ghost layer offset by the blur radius). The
+     container's glass shows through, keeping the header perfectly uniform. */
   z-index: 10;
   width: 100%;
   /* Keep header widgets visible above scrolled backdrop layers (Tauri WebView). */

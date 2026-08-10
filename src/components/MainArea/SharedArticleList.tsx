@@ -60,7 +60,6 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
   if (showBlockingError) {
     return (
       <div ref={articleListRef} className="article-list" style={widthStyle}>
-        <div className="article-list-glass" aria-hidden="true" />
         {showResizeHandle && (
           <div className={`article-list-resize-handle ${isDragging ? 'is-dragging' : ''}`} onMouseDown={handleBorderMouseDown} />
         )}
@@ -89,7 +88,6 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
   return (
     <ArticleListScrollOffsetProvider>
       <div ref={articleListRef} className="article-list" style={widthStyle}>
-        <div className="article-list-glass" aria-hidden="true" />
         {showResizeHandle && (
           <div className={`article-list-resize-handle ${isDragging ? 'is-dragging' : ''}`} onMouseDown={handleBorderMouseDown} />
         )}

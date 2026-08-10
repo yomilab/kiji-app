@@ -46,8 +46,6 @@
   max-width: 100%;
   padding: 16px 0 8px;
   background: transparent;
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
 
 .feed-edit-group-header .article-list-title-content {
@@ -131,8 +129,6 @@
   min-width: 0;
   overflow: hidden;
   background: transparent;
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
 
 .feed-edit-table-header-track {
