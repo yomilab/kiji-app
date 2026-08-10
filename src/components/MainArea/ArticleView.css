@@ -16,6 +16,7 @@
   border-radius: var(--app-window-radius, 14px);
   z-index: 1000;
   -webkit-app-region: no-drag;
+  transition: background-color 0.15s ease-out;
 }
 
 /* Keep the Windows/Linux in-app menu bar reachable while reading */

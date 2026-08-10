@@ -127,6 +127,21 @@ body {
   pointer-events: auto;
 }
 
+/* While the deck slides, the sidebar/main layers move under the reader every
+   frame — running the reader's backdrop blur then would resample a full-screen
+   blur per frame, and the layer's in-flight transform empties the backdrop
+   anyway. So: opaque solid surface + no backdrop-filter during opening/closing,
+   GPU hint scoped to the transition; the glass applies once settled (open). */
+.app-container.article-view-transitioning .app-layer-article {
+  will-change: transform;
+}
+
+.app-container.article-view-transitioning .article-view {
+  background-color: var(--theme-article-view-solid-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 /* Keep sidebar visible but disable pointer events when article view is active */
 .app-container.article-view-active .sidebar {
   pointer-events: none !important;
