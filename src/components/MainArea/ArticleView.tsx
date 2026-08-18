@@ -410,7 +410,7 @@ function useEmbeddedArticleOpenBootstrap(params: {
     setArticleBodyProcessing(false);
 
     if (window.kijiAPI) {
-      window.kijiAPI.hideTrafficLights();
+      void window.kijiAPI.hideTrafficLights();
     }
   }, [
     standalone,
@@ -504,7 +504,7 @@ function useEmbeddedArticleCloseFlow(params: {
       setProcessedArticleBodyKey(null);
       setArticleBodyProcessing(false);
       if (window.kijiAPI) {
-        window.kijiAPI.showTrafficLights();
+        void window.kijiAPI.showTrafficLights();
       }
       completeArticleClose();
     }, ARTICLE_VIEW_CLOSE_ANIMATION_MS);

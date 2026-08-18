@@ -983,6 +983,10 @@ export interface ShellContract {
   openSettings: {
     response: void;
   };
+  setTrafficLightsVisible: {
+    request: { visible: boolean };
+    response: void;
+  };
   updateMenuState: {
     request: Partial<AppMenuState>;
     response: void;

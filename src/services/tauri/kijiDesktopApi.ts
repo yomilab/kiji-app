@@ -27,6 +27,7 @@ import { isContentParser } from '@/services/settings/types';
 import type { KijiDesktopAPI } from '@/types/kijiDesktopApi';
 import type { AppMenuCommand } from '@/types/appMenu';
 import { trafficLightVisibilityBus } from '@/services/ui/trafficLightVisibilityBus';
+import { readDocumentOs } from '@/services/ui/appMenuModel';
 import {
   publishAppMenuCommand,
   subscribeAppMenuCommand,
@@ -108,9 +109,17 @@ function installKijiDesktopApi(): void {
     },
     async hideTrafficLights() {
       trafficLightVisibilityBus.setVisible(false);
+      if (readDocumentOs() !== 'macos') {
+        return;
+      }
+      await tauriClient.shell.setTrafficLightsVisible(false);
     },
     async showTrafficLights() {
       trafficLightVisibilityBus.setVisible(true);
+      if (readDocumentOs() !== 'macos') {
+        return;
+      }
+      await tauriClient.shell.setTrafficLightsVisible(true);
     },
     async openSettings() {
       await tauriClient.shell.openSettings();

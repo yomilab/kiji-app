@@ -14,6 +14,8 @@ use std::{
     },
     time::Duration,
 };
+#[cfg(target_os = "macos")]
+use std::sync::atomic::AtomicU64;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
@@ -157,6 +159,162 @@ pub fn open_settings_window(app: &AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn shell_settings_window_open(app: AppHandle) -> Result<(), String> {
     open_settings_window(&app)
+}
+
+/// Hide/show native Overlay traffic lights (close / miniaturize / zoom).
+///
+/// This is AppKit `NSView::setHidden` on the three standard window buttons —
+/// the same interaction as Electron `setWindowButtonVisibility`. It must not
+/// toggle decorations, `titleBarStyle`, or window size: those relayout the
+/// WKWebView and can flash Modern-theme glass.
+///
+/// macOS resets Overlay button frames on hide/show, so the configured
+/// `trafficLightPosition` is re-applied immediately and again after a short
+/// delay (Electron `enforceWindowButtonPosition` parity).
+#[tauri::command(rename_all = "camelCase")]
+pub fn shell_window_set_traffic_lights_visible(
+    window: WebviewWindow,
+    visible: bool,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let window_for_thread = window.clone();
+        window
+            .app_handle()
+            .run_on_main_thread(move || {
+                set_macos_traffic_lights_visible(&window_for_thread, visible);
+            })
+            .map_err(|error| format!("Failed to schedule traffic-light visibility: {error}"))?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, visible);
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+static TRAFFIC_LIGHT_INSET_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+fn overlay_traffic_light_inset_for_label(label: &str) -> (f64, f64) {
+    match label {
+        "settings" | "update" => (16.0, 20.0),
+        _ => (16.0, 22.0),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn overlay_traffic_light_inset(window: &WebviewWindow) -> (f64, f64) {
+    window
+        .app_handle()
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|candidate| candidate.label == window.label())
+        .and_then(|candidate| {
+            candidate
+                .traffic_light_position
+                .as_ref()
+                .map(|position| (position.x, position.y))
+        })
+        .unwrap_or_else(|| overlay_traffic_light_inset_for_label(window.label()))
+}
+
+#[cfg(target_os = "macos")]
+fn set_macos_traffic_lights_visible(window: &WebviewWindow, visible: bool) {
+    use objc2_app_kit::{NSWindow, NSWindowButton};
+
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
+    if ptr.is_null() {
+        return;
+    }
+
+    unsafe {
+        let ns_window = &*ptr.cast::<NSWindow>();
+        for button in [
+            NSWindowButton::CloseButton,
+            NSWindowButton::MiniaturizeButton,
+            NSWindowButton::ZoomButton,
+        ] {
+            if let Some(view) = ns_window.standardWindowButton(button) {
+                view.setHidden(!visible);
+            }
+        }
+        inset_macos_traffic_lights(ns_window, overlay_traffic_light_inset(window));
+    }
+
+    schedule_macos_traffic_light_inset(window.clone());
+}
+
+#[cfg(target_os = "macos")]
+fn schedule_macos_traffic_light_inset(window: WebviewWindow) {
+    let generation = TRAFFIC_LIGHT_INSET_GENERATION.fetch_add(1, Ordering::Relaxed) + 1;
+    let app = window.app_handle().clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(80));
+        if TRAFFIC_LIGHT_INSET_GENERATION.load(Ordering::Relaxed) != generation {
+            return;
+        }
+        let _ = app.run_on_main_thread(move || {
+            if TRAFFIC_LIGHT_INSET_GENERATION.load(Ordering::Relaxed) != generation {
+                return;
+            }
+            let Ok(ptr) = window.ns_window() else {
+                return;
+            };
+            if ptr.is_null() {
+                return;
+            }
+            unsafe {
+                let ns_window = &*ptr.cast::<objc2_app_kit::NSWindow>();
+                inset_macos_traffic_lights(ns_window, overlay_traffic_light_inset(&window));
+            }
+        });
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn inset_macos_traffic_lights(ns_window: &objc2_app_kit::NSWindow, inset: (f64, f64)) {
+    use objc2_app_kit::NSWindowButton;
+
+    let (x, y) = inset;
+    unsafe {
+        let Some(close) = ns_window.standardWindowButton(NSWindowButton::CloseButton) else {
+            return;
+        };
+        let Some(miniaturize) = ns_window.standardWindowButton(NSWindowButton::MiniaturizeButton)
+        else {
+            return;
+        };
+        let Some(zoom) = ns_window.standardWindowButton(NSWindowButton::ZoomButton) else {
+            return;
+        };
+        let Some(button_superview) = close.superview() else {
+            return;
+        };
+        let Some(title_bar_container) = button_superview.superview() else {
+            return;
+        };
+
+        let close_rect = close.frame();
+        let title_bar_frame_height = close_rect.size.height + y;
+        let mut title_bar_rect = title_bar_container.frame();
+        title_bar_rect.size.height = title_bar_frame_height;
+        title_bar_rect.origin.y = ns_window.frame().size.height - title_bar_frame_height;
+        title_bar_container.setFrame(title_bar_rect);
+
+        let space_between = miniaturize.frame().origin.x - close_rect.origin.x;
+        for (index, button) in [close, miniaturize, zoom].into_iter().enumerate() {
+            let mut rect = button.frame();
+            rect.origin.x = x + (index as f64 * space_between);
+            button.setFrameOrigin(rect.origin);
+        }
+    }
 }
 
 pub fn open_article_window(app: &AppHandle) -> Result<(), String> {
@@ -461,5 +619,13 @@ mod tests {
 
         state.set_payload(second.clone()).expect("second payload should store");
         assert_eq!(state.clone_payload().unwrap(), second);
+    }
+
+    #[test]
+    fn overlay_traffic_light_insets_match_macos_window_config() {
+        assert_eq!(overlay_traffic_light_inset_for_label("main"), (16.0, 22.0));
+        assert_eq!(overlay_traffic_light_inset_for_label("article"), (16.0, 22.0));
+        assert_eq!(overlay_traffic_light_inset_for_label("settings"), (16.0, 20.0));
+        assert_eq!(overlay_traffic_light_inset_for_label("update"), (16.0, 20.0));
     }
 }

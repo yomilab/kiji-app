@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
+import { getCurrentWindow, Window } from '@tauri-apps/api/window';
 import {
   useFeedCollection,
   useFeedNavigation,
@@ -21,6 +23,33 @@ import { logger } from '@/services/logger';
 import * as articleStore from '@/stores/articleStore';
 
 const COMMAND_POLL_MS = 150;
+
+async function applyWindowFrame(payload: Record<string, unknown>): Promise<void> {
+  const label = typeof payload.label === 'string' ? payload.label : 'main';
+  const width = Number(payload.width);
+  const height = Number(payload.height);
+  const x = Number(payload.x);
+  const y = Number(payload.y);
+  const visible = payload.visible !== false;
+
+  const current = getCurrentWindow();
+  const target =
+    current.label === label ? current : ((await Window.getByLabel(label)) ?? current);
+
+  if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+    await target.setSize(new LogicalSize(width, height));
+  }
+  if (Number.isFinite(x) && Number.isFinite(y)) {
+    await target.setPosition(new LogicalPosition(x, y));
+  }
+  if (visible) {
+    await target.show();
+    await target.setFocus();
+  } else {
+    await target.hide();
+  }
+  await writeE2eEvent('window-frame-set', { label, x, y, width, height, visible });
+}
 
 function scrollArticleListElement(options: { toEnd?: boolean; delta?: number }): void {
   const listElement = document.querySelector<HTMLElement>('[data-section="article-list-items"]');
@@ -274,6 +303,10 @@ export const useE2eCommandHandler = (): void => {
         }
         case 'export-opml': {
           await runExportOpml();
+          return;
+        }
+        case 'set-window-frame': {
+          await applyWindowFrame(command.payload);
           return;
         }
         default:

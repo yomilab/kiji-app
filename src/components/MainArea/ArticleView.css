@@ -46,11 +46,6 @@ html[data-os="other"] .article-view {
   -webkit-backdrop-filter: blur(40px);
 }
 
-/* Article View Window - for independent windows */
-.article-view-window .article-view-header-bar {
-  padding-left: 80px; /* Space for macOS traffic lights */
-}
-
 .article-view-window .article-view-actions {
   margin-left: auto; /* Push actions to right side */
 }

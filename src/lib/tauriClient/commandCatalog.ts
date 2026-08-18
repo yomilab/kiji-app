@@ -27,8 +27,8 @@ export const tauriCommandCatalog: Record<
   readonly TauriCommandCatalogEntry[]
 > = {
   shell: [
-    { apiMethod: "hideTrafficLights", ipcChannel: "hide-traffic-lights", kind: "renderer", targetCommand: "shell.window.hideTrafficLights" },
-    { apiMethod: "showTrafficLights", ipcChannel: "show-traffic-lights", kind: "renderer", targetCommand: "shell.window.showTrafficLights" },
+    { apiMethod: "hideTrafficLights", ipcChannel: "hide-traffic-lights", kind: "invoke", targetCommand: "shell.window.hideTrafficLights", rustCommand: "shell_window_set_traffic_lights_visible" },
+    { apiMethod: "showTrafficLights", ipcChannel: "show-traffic-lights", kind: "invoke", targetCommand: "shell.window.showTrafficLights", rustCommand: "shell_window_set_traffic_lights_visible" },
     { apiMethod: "openSettings", ipcChannel: "open-settings", kind: "invoke", targetCommand: "shell.window.openSettings", rustCommand: "shell_settings_window_open" },
     { apiMethod: "confirmDialog", ipcChannel: "dialog-confirm", kind: "invoke", targetCommand: "shell.dialog.confirm", rustCommand: "shell_dialog_confirm" },
     { apiMethod: "updateAppMenuState", ipcChannel: "app-menu:update-state", kind: "invoke", targetCommand: "shell.menu.updateState", rustCommand: "shell_menu_update_state" },

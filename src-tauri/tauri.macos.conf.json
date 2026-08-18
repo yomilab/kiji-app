@@ -1,0 +1,106 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "KiJi",
+        "width": 800,
+        "height": 600,
+        "minWidth": 600,
+        "minHeight": 400,
+        "backgroundThrottling": "disabled",
+        "decorations": true,
+        "transparent": true,
+        "shadow": true,
+        "hiddenTitle": true,
+        "titleBarStyle": "Overlay",
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 22
+        },
+        "dragDropEnabled": false,
+        "windowEffects": {
+          "effects": ["mica", "acrylic", "sidebar"],
+          "state": "active",
+          "radius": 14
+        }
+      },
+      {
+        "label": "settings",
+        "create": false,
+        "title": "KiJi Settings",
+        "url": "index.html?window=settings",
+        "width": 700,
+        "height": 660,
+        "visible": false,
+        "resizable": true,
+        "decorations": true,
+        "transparent": true,
+        "shadow": true,
+        "hiddenTitle": true,
+        "titleBarStyle": "Overlay",
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 20
+        },
+        "dragDropEnabled": false,
+        "windowEffects": {
+          "effects": ["mica", "acrylic", "sidebar"],
+          "state": "active",
+          "radius": 14
+        }
+      },
+      {
+        "label": "article",
+        "create": false,
+        "title": "KiJi Article",
+        "url": "index.html?window=article",
+        "width": 1000,
+        "height": 720,
+        "visible": false,
+        "minWidth": 720,
+        "minHeight": 480,
+        "decorations": true,
+        "transparent": true,
+        "shadow": true,
+        "hiddenTitle": true,
+        "titleBarStyle": "Overlay",
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 22
+        },
+        "dragDropEnabled": false,
+        "windowEffects": {
+          "effects": ["acrylic", "underWindowBackground"],
+          "state": "active",
+          "radius": 14
+        }
+      },
+      {
+        "label": "update",
+        "create": false,
+        "title": "KiJi Update",
+        "url": "index.html?window=update",
+        "width": 420,
+        "height": 300,
+        "visible": false,
+        "resizable": false,
+        "decorations": true,
+        "transparent": true,
+        "shadow": true,
+        "hiddenTitle": true,
+        "titleBarStyle": "Overlay",
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 20
+        },
+        "dragDropEnabled": false,
+        "windowEffects": {
+          "effects": ["mica", "acrylic", "sidebar"],
+          "state": "active",
+          "radius": 14
+        }
+      }
+    ]
+  }
+}

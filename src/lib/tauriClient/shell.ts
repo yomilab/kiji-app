@@ -5,6 +5,15 @@ export async function openSettings(): Promise<ShellContract["openSettings"]["res
   return invokeContract<ShellContract["openSettings"]>("shell_settings_window_open");
 }
 
+export async function setTrafficLightsVisible(
+  visible: ShellContract["setTrafficLightsVisible"]["request"]["visible"],
+): Promise<ShellContract["setTrafficLightsVisible"]["response"]> {
+  return invokeCommand<ShellContract["setTrafficLightsVisible"]["response"]>(
+    "shell_window_set_traffic_lights_visible",
+    { visible },
+  );
+}
+
 export async function updateMenuState(
   request: ShellContract["updateMenuState"]["request"],
 ): Promise<ShellContract["updateMenuState"]["response"]> {
