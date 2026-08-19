@@ -35,7 +35,7 @@ pub enum SystemAppIconVariant {
 
 impl Default for SystemAppIconVariant {
     fn default() -> Self {
-        Self::Cosmos
+        Self::Light
     }
 }
 
@@ -492,6 +492,11 @@ fn path_to_string(path: &Path) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::{deserialize_stored_icon_variant, StoredAppIconState, SystemAppIconVariant};
+
+    #[test]
+    fn default_icon_variant_is_light() {
+        assert_eq!(SystemAppIconVariant::default(), SystemAppIconVariant::Light);
+    }
 
     #[test]
     fn stored_icon_state_parses_known_variants() {

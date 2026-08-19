@@ -23,6 +23,7 @@
 - "Clean Old Articles" now runs `PRAGMA wal_checkpoint(TRUNCATE); VACUUM;` on a background writer task after deleting rows so the database file actually shrinks; the deleted count still returns immediately (`db/articles.rs`).
 - Removed the renderer's duplicate `shell_main_window_apply_saved_bounds` IPC on bootstrap (native `setup()` already applies saved bounds before the webview loads); dropped the now-unused command and `MainWindowBoundsSaveGuard` managed state (`renderer.tsx`, `shell/window.rs`).
 - `ThemeProvider` loads settings once via `settingsManager.getSettings()` instead of three per-field getters (3 native IPC round-trips) at mount and on cross-window settings changes (`ThemeContext.tsx`).
+- Packaged and first-run app icon is the Light family (`src-tauri/icons`, white tile + four bars) instead of Cosmos; Settings still offers the other built-in variants.
 
 ## [1.0.1] - 2026-07-08
 

@@ -81,7 +81,7 @@ type SystemAppIconVariant =
   | 'cosmos-dark'
   | 'particle'
   | 'particle-dark';
-const DEFAULT_SYSTEM_APP_ICON_VARIANT: SystemAppIconVariant = 'cosmos';
+const DEFAULT_SYSTEM_APP_ICON_VARIANT: SystemAppIconVariant = 'light';
 
 const APP_ICON_VARIANT_OPTIONS: ReadonlyArray<{
   value: SystemAppIconVariant;
@@ -983,7 +983,7 @@ export const SettingsWindow: React.FC = () => {
                     <div className="settings-item-info">
                       <label className="settings-item-label">Default app icon</label>
                       <p className="settings-item-description">
-                        Choose the built-in app icon used when no custom icon is selected. Cosmos is the default; picking one clears any custom icon.
+                        Choose the built-in app icon used when no custom icon is selected. Light is the default; picking one clears any custom icon.
                       </p>
                     </div>
                     <div className="settings-app-icon-variant-options" role="group" aria-label="Default app icon">
