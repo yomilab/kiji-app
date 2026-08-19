@@ -18,6 +18,7 @@ const COSMOS_ICON_RESOURCE_DIR: &str = "icons-cosmos";
 const COSMOS_DARK_ICON_RESOURCE_DIR: &str = "icons-cosmos-dark";
 const PARTICLE_ICON_RESOURCE_DIR: &str = "icons-particle";
 const PARTICLE_DARK_ICON_RESOURCE_DIR: &str = "icons-particle-dark";
+const WAVE_ICON_RESOURCE_DIR: &str = "icons-wave";
 const RUNTIME_ICON_FILE_NAME: &str = "icon.png";
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -31,6 +32,7 @@ pub enum SystemAppIconVariant {
     CosmosDark,
     Particle,
     ParticleDark,
+    Wave,
 }
 
 impl Default for SystemAppIconVariant {
@@ -368,6 +370,7 @@ fn built_in_icon_folder(variant: SystemAppIconVariant) -> &'static str {
         SystemAppIconVariant::CosmosDark => COSMOS_DARK_ICON_RESOURCE_DIR,
         SystemAppIconVariant::Particle => PARTICLE_ICON_RESOURCE_DIR,
         SystemAppIconVariant::ParticleDark => PARTICLE_DARK_ICON_RESOURCE_DIR,
+        SystemAppIconVariant::Wave => WAVE_ICON_RESOURCE_DIR,
     }
 }
 
@@ -531,5 +534,13 @@ mod tests {
         let variant = deserialize_stored_icon_variant(&mut deserializer)
             .expect("sunset-dark should deserialize");
         assert_eq!(variant, SystemAppIconVariant::SunsetDark);
+    }
+
+    #[test]
+    fn deserialize_stored_icon_variant_accepts_wave() {
+        let mut deserializer = serde_json::Deserializer::from_str(r#""wave""#);
+        let variant = deserialize_stored_icon_variant(&mut deserializer)
+            .expect("wave should deserialize");
+        assert_eq!(variant, SystemAppIconVariant::Wave);
     }
 }

@@ -9,6 +9,7 @@
 
 ### Added
 
+- Settings **Wave** app icon: Light plate + three bowed bars (`kiji-logo-wave.png`, `src-tauri/icons-wave`). Light stays the packaged default.
 - `website-sync-on-release.yml`: on GitHub Release publish, generate `release.json`, attach to the release, and dispatch `kiji-website` sync (`scripts/generate-release-manifest.mjs`).
 
 ### Fixed

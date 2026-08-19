@@ -517,6 +517,7 @@ export type SystemAppIconVariant =
   | "cosmos-dark"
   | "particle"
   | "particle-dark"
+  | "wave"
   | "custom";
 
 export interface SystemAppIconState {
@@ -1068,7 +1069,8 @@ export interface SystemContract {
         | "cosmos"
         | "cosmos-dark"
         | "particle"
-        | "particle-dark";
+        | "particle-dark"
+        | "wave";
     };
   };
   appIconSetVariant: {
@@ -1081,7 +1083,8 @@ export interface SystemContract {
         | "cosmos"
         | "cosmos-dark"
         | "particle"
-        | "particle-dark";
+        | "particle-dark"
+        | "wave";
     };
     response: SystemContract["appIconGetState"]["response"];
   };

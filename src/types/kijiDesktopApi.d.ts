@@ -25,7 +25,8 @@ type SystemAppIconVariant =
   | 'cosmos'
   | 'cosmos-dark'
   | 'particle'
-  | 'particle-dark';
+  | 'particle-dark'
+  | 'wave';
 
 export interface KijiDesktopAPI {
   fetchFeed: (url: string, options?: { requestId?: string }) => Promise<string>;

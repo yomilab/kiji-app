@@ -36,6 +36,7 @@ import cosmosAppIconPreview from '@/assets/images/kiji-logo-cosmos.png';
 import cosmosDarkAppIconPreview from '@/assets/images/kiji-logo-cosmos-dark.png';
 import particleAppIconPreview from '@/assets/images/kiji-logo-particle.png';
 import particleDarkAppIconPreview from '@/assets/images/kiji-logo-particle-dark.png';
+import waveAppIconPreview from '@/assets/images/kiji-logo-wave.png';
 import './SettingsWindow.css';
 
 type ConfigCategory = 'general' | 'appearance' | 'reading' | 'shortcuts' | 'contact';
@@ -80,7 +81,8 @@ type SystemAppIconVariant =
   | 'cosmos'
   | 'cosmos-dark'
   | 'particle'
-  | 'particle-dark';
+  | 'particle-dark'
+  | 'wave';
 const DEFAULT_SYSTEM_APP_ICON_VARIANT: SystemAppIconVariant = 'light';
 
 const APP_ICON_VARIANT_OPTIONS: ReadonlyArray<{
@@ -96,6 +98,7 @@ const APP_ICON_VARIANT_OPTIONS: ReadonlyArray<{
   { value: 'cosmos-dark', label: 'Cosmos Dark', source: cosmosDarkAppIconPreview },
   { value: 'particle', label: 'Particle', source: particleAppIconPreview },
   { value: 'particle-dark', label: 'Particle Dark', source: particleDarkAppIconPreview },
+  { value: 'wave', label: 'Wave', source: waveAppIconPreview },
 ];
 
 const getDefaultAppIconPreview = (variant: SystemAppIconVariant): string => (

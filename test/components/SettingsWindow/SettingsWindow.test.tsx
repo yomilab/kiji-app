@@ -224,6 +224,7 @@ describe("SettingsWindow", () => {
 
     const iconGroup = await screen.findByRole("group", { name: "Default app icon" });
     expect(within(iconGroup).getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(iconGroup).getByRole("button", { name: "Wave" })).toBeInTheDocument();
     expect(within(iconGroup).getByRole("button", { name: "Cosmos" })).toBeInTheDocument();
     expect(within(iconGroup).getByRole("button", { name: "Cosmos Dark" })).toBeInTheDocument();
     expect(within(iconGroup).getByRole("button", { name: "Sunset" })).toBeInTheDocument();

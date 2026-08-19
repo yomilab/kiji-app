@@ -104,7 +104,8 @@
       "icons-cosmos/": "icons-cosmos",
       "icons-cosmos-dark/": "icons-cosmos-dark",
       "icons-particle/": "icons-particle",
-      "icons-particle-dark/": "icons-particle-dark"
+      "icons-particle-dark/": "icons-particle-dark",
+      "icons-wave/": "icons-wave"
     },
     "icon": [
       "icons/32x32.png",
