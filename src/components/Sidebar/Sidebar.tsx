@@ -5,6 +5,7 @@ import { TagManager } from './TagManager';
 import { SmartViews } from './SmartViews';
 import { SidebarWidgets } from './SidebarWidgets';
 import { BottomWidget } from './BottomWidget';
+import { SyncIndicator } from './SyncIndicator';
 import { SectionTitle } from './SectionTitle';
 import { settingsManager } from '@/services/settings';
 import { useFeedNavigation, useFeedUI, useFeedCollection } from '@/contexts/FeedContext';
@@ -15,6 +16,7 @@ import { isInteractiveStationRefreshInProgress } from '@/services/feeds/feedRefr
 import { useUserMessageChannel } from '@/hooks/useUserMessageChannel';
 import { SIDEBAR_INDICATOR_CHANNEL } from '@/services/ui/sidebarIndicatorService';
 import { sidebarIndicatorOngoing } from '@/services/ui/sidebarIndicatorText';
+import { beginLayoutColumnResize, endLayoutColumnResize } from '@/services/ui/layoutColumnResize';
 import './Sidebar.css';
 
 const MIN_SIDEBAR_WIDTH = 250;
@@ -207,6 +209,7 @@ export const Sidebar: React.FC = () => {
     if (!isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
+      e.preventDefault();
       if (!sidebarRef.current) return;
 
       const sidebarRect = sidebarRef.current.getBoundingClientRect();
@@ -219,6 +222,7 @@ export const Sidebar: React.FC = () => {
 
     const handleMouseUp = async () => {
       setIsDragging(false);
+      endLayoutColumnResize('sidebar');
       // Save width to settings when drag ends
       try {
         await settingsManager.setSidebarWidth(sidebarWidth);
@@ -244,7 +248,16 @@ export const Sidebar: React.FC = () => {
     setShowAddModal(false);
   };
 
-  const handleBorderMouseDown = () => {
+  useEffect(() => {
+    return () => {
+      endLayoutColumnResize('sidebar');
+    };
+  }, []);
+
+  const handleBorderMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!beginLayoutColumnResize(event, 'sidebar')) {
+      return;
+    }
     setIsDragging(true);
   };
 
@@ -358,26 +371,13 @@ export const Sidebar: React.FC = () => {
           onMouseDown={handleWindowDragMouseDown}
           data-component="sidebar-top-chrome"
         >
-          {/* Widgets aligned with traffic lights */}
+          {/* Widgets aligned with traffic lights. The Feeds title was removed so
+              this chrome is only the overlay drag region + refresh/add actions. */}
           <div
             className="sidebar-widgets-container"
             data-component="sidebar-top-widgets"
           >
             <SidebarWidgets onAddFeed={handleOpenAddModal} />
-          </div>
-
-          {/* Feeds title section */}
-          <div
-            className="sidebar-title-container"
-            data-component="sidebar-title-section"
-          >
-            <h1 className="title m-0 theme-text-primary" data-section="app-title" data-component="app-title">Feeds</h1>
-            <p
-              className={`sync-indicator ${showSyncing && !sidebarIndicatorText && !exportProgressText && !isAnyFeedRefreshing ? 'is-syncing' : ''}`}
-              data-component="sync-indicator"
-            >
-              {syncText}
-            </p>
           </div>
         </div>
 
@@ -401,8 +401,18 @@ export const Sidebar: React.FC = () => {
           )}
         </div>
 
-        {/* Bottom widget fixed at bottom */}
-        <BottomWidget data-component="sidebar-bottom-widgets" />
+        {/* Settings stack + independent SyncIndicator share this bottom row. */}
+        <BottomWidget>
+          <SyncIndicator
+            text={syncText}
+            syncing={
+              showSyncing
+              && !sidebarIndicatorText
+              && !exportProgressText
+              && !isAnyFeedRefreshing
+            }
+          />
+        </BottomWidget>
       </div>
     </aside>
   );

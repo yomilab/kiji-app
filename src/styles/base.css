@@ -37,6 +37,12 @@ body {
   transition: color 0.2s ease;
 }
 
+body.layout-col-resizing {
+  cursor: col-resize;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 #root {
   height: 100vh;
   width: 100vw;

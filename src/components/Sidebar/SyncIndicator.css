@@ -1,0 +1,41 @@
+/* Right-aligned status. As a flex sibling of the Settings stack, this item
+   shrinks when the stack expands; overflow clips the start of the string.
+   Higher-z buttons can also paint over leftover glyphs during width/motion lag. */
+.sync-indicator {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--theme-primary-color);
+  opacity: 0.7;
+  letter-spacing: -0.01em;
+  text-align: right;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+  position: relative;
+  z-index: 1;
+  mask-image: linear-gradient(to right, transparent 0, #000 10px);
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px);
+}
+
+.sync-indicator.is-syncing::after {
+  content: '';
+  animation: syncDots 1.5s steps(4, end) infinite;
+}
+
+@keyframes syncDots {
+  0%, 25% {
+    content: '.';
+  }
+  26%, 50% {
+    content: '..';
+  }
+  51%, 75% {
+    content: '...';
+  }
+  76%, 100% {
+    content: '';
+  }
+}
