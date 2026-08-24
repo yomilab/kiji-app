@@ -1,4 +1,4 @@
-/* Section title component - matches Feeds title left offset */
+/* Section title — same 20px left inset as sidebar widgets / bottom indicator */
 .section-title-container {
   padding: 12px 20px 0 20px;
   margin-bottom: 12px;

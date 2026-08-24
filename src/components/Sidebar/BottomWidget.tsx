@@ -14,7 +14,12 @@ import './BottomWidget.css';
 
 const THEME_SEQUENCE: Theme[] = ['auto', 'light', 'dark'];
 
-export const BottomWidget: React.FC = () => {
+export interface BottomWidgetProps {
+  /** Trailing chrome on the Settings row (typically `SyncIndicator`). */
+  children?: React.ReactNode;
+}
+
+export const BottomWidget: React.FC<BottomWidgetProps> = ({ children }) => {
   const { theme, setTheme } = useTheme();
   const { openFeedEditView } = useFeedNavigation();
   const themeIconMap = {
@@ -65,16 +70,20 @@ export const BottomWidget: React.FC = () => {
   ];
 
   return (
-    <div className="bottom-widget has-no-drag">
-      <ButtonStack
-        buttons={actionButtons}
-        direction="right"
-        layoutMode="push"
-        coverIcon={SettingsIcon}
-        coverLabel={settingsTooltip}
-        onCoverClick={handleSettings}
-        className="bottom-widget-button-stack"
-      />
+    <div className="bottom-widget has-no-drag" data-component="sidebar-bottom-widgets">
+      <div className="bottom-widget-toolbar">
+        {/* Push-mode stack grows on hover; trailing children (SyncIndicator) flex-shrink. */}
+        <ButtonStack
+          buttons={actionButtons}
+          direction="right"
+          layoutMode="push"
+          coverIcon={SettingsIcon}
+          coverLabel={settingsTooltip}
+          onCoverClick={handleSettings}
+          className="bottom-widget-button-stack"
+        />
+        {children}
+      </div>
     </div>
   );
 };

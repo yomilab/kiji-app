@@ -1,6 +1,7 @@
-import { useEffect, useState, type CSSProperties, type RefObject } from 'react';
+import { useEffect, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type RefObject } from 'react';
 import { settingsManager } from '@/services/settings';
 import { LayoutType } from '@/services/settings/types';
+import { beginLayoutColumnResize, endLayoutColumnResize } from '@/services/ui/layoutColumnResize';
 
 const MIN_ARTICLE_LIST_WIDTH = 250;
 const MAX_ARTICLE_LIST_WIDTH = 600;
@@ -34,6 +35,7 @@ export const useArticleListLayoutResize = ({
     if (!isDragging || layout === '2-column') return;
 
     const handleMouseMove = (event: MouseEvent) => {
+      event.preventDefault();
       if (!articleListRef.current) return;
 
       const articleListRect = articleListRef.current.getBoundingClientRect();
@@ -44,6 +46,7 @@ export const useArticleListLayoutResize = ({
 
     const handleMouseUp = async () => {
       setIsDragging(false);
+      endLayoutColumnResize('article-list');
       try {
         await settingsManager.setArticleListWidth(articleListWidth);
       } catch (error) {
@@ -60,10 +63,20 @@ export const useArticleListLayoutResize = ({
     };
   }, [isDragging, layout, articleListWidth, articleListRef]);
 
-  const handleBorderMouseDown = () => {
-    if (layout === '3-column') {
-      setIsDragging(true);
+  useEffect(() => {
+    return () => {
+      endLayoutColumnResize('article-list');
+    };
+  }, []);
+
+  const handleBorderMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (layout !== '3-column') {
+      return;
     }
+    if (!beginLayoutColumnResize(event, 'article-list')) {
+      return;
+    }
+    setIsDragging(true);
   };
 
   const widthStyle: CSSProperties | undefined = layout === '3-column' ? { width: `${articleListWidth}px` } : undefined;
