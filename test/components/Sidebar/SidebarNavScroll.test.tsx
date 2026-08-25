@@ -60,7 +60,9 @@ vi.mock('@/services/settings', () => ({
   settingsManager: {
     getSidebarWidth: async () => 300,
     getSidebarLibrary: async () => ({ title: 'Library', visible: true }),
+    getSidebarSectionFold: async () => ({ libraryExpanded: true, stationsExpanded: true }),
     setSidebarWidth: vi.fn(),
+    setSidebarSectionFold: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -226,5 +228,34 @@ describe('Sidebar nav scroll ownership', () => {
     expect(container.querySelector('.sidebar-scroll-region')).toBe(
       container.querySelector('[data-component="sidebar-nav-body"]'),
     );
+  });
+
+  it('persists Library and Stations section fold to renderer settings', async () => {
+    const { settingsManager } = await import('@/services/settings');
+    const setFold = vi.mocked(settingsManager.setSidebarSectionFold);
+
+    const { container } = render(<Sidebar />);
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-component="sidebar-nav-body"]')).not.toBeNull();
+    });
+
+    const libraryToggle = container.querySelector(
+      '[data-component="section-title"][data-section="library"] [data-action="toggle-section"]',
+    );
+    fireEvent.click(libraryToggle as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(setFold).toHaveBeenCalledWith({ libraryExpanded: false });
+    });
+
+    const stationsToggle = container.querySelector(
+      '[data-component="section-title"][data-section="stations"] [data-action="toggle-section"]',
+    );
+    fireEvent.click(stationsToggle as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(setFold).toHaveBeenCalledWith({ stationsExpanded: false });
+    });
   });
 });

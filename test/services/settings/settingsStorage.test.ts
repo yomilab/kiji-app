@@ -29,10 +29,12 @@ describe("settings storage model", () => {
     expect(renderer.fontFamilies).toEqual(DEFAULT_SETTINGS.fontFamilies);
     expect(renderer.readingLayout).toEqual(DEFAULT_SETTINGS.readingLayout);
     expect(renderer.sidebarLibrary).toEqual(DEFAULT_SETTINGS.sidebarLibrary);
+    expect(renderer.sidebarSectionFold).toEqual(DEFAULT_SETTINGS.sidebarSectionFold);
     expect(renderer.smartViews).toEqual(DEFAULT_SETTINGS.smartViews);
     expect(renderer.uiThemeVariant).toBe(DEFAULT_SETTINGS.uiThemeVariant);
     expect(Object.keys(toNativeAppSettings(DEFAULT_SETTINGS))).not.toContain("fontFamilies");
     expect(Object.keys(toNativeAppSettings(DEFAULT_SETTINGS))).not.toContain("uiThemeVariant");
+    expect(Object.keys(toNativeAppSettings(DEFAULT_SETTINGS))).not.toContain("sidebarSectionFold");
   });
 
   it("merges native settings with renderer preferences for UI consumption", () => {

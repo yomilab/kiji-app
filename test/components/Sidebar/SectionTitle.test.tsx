@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { createEvent, fireEvent, render } from '@testing-library/react';
 import { SectionTitle } from '@/components/Sidebar/SectionTitle';
 
@@ -82,10 +82,12 @@ describe('SectionTitle', () => {
   });
 
   it('does not define a separate :active pressed fill', () => {
-    const cssPath = fileURLToPath(
-      new URL('../../../src/components/Sidebar/SectionTitle.css', import.meta.url),
-    );
+    // Resolve from cwd — import.meta.url is not always a file: URL under Vitest CI pools.
+    const cssPath = join(process.cwd(), 'src/components/Sidebar/SectionTitle.css');
     const css = readFileSync(cssPath, 'utf8');
-    expect(css).not.toMatch(/section-title-toggle:active/);
+    // Transparent :active reset is allowed; a hover-bg pressed fill is not.
+    expect(css).not.toMatch(
+      /section-title-toggle:active[^{]*\{[^}]*widget-button-hover-bg/,
+    );
   });
 });

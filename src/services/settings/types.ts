@@ -55,6 +55,12 @@ export interface SidebarLibrarySettings {
   visible: boolean;
 }
 
+/** Library / Stations section fold (chevron) — renderer preference, not FeedContext. */
+export interface SidebarSectionFoldSettings {
+  libraryExpanded: boolean;
+  stationsExpanded: boolean;
+}
+
 export interface SmartViewSettings {
   id: SmartViewId;
   visible: boolean;
@@ -73,6 +79,7 @@ export interface UserSettings {
   contentParser: ContentParser; // Engine used to extract article content from a page URL
   savedArticlesSyncFolder: string | null; // Optional folder that mirrors saved articles as markdown files
   sidebarLibrary: SidebarLibrarySettings;
+  sidebarSectionFold: SidebarSectionFoldSettings;
   smartViews: SmartViewSettings[];
   uiThemeVariant: UiThemeVariant;
 }
@@ -108,6 +115,10 @@ export const DEFAULT_SETTINGS: UserSettings = {
   sidebarLibrary: {
     title: 'Library',
     visible: true,
+  },
+  sidebarSectionFold: {
+    libraryExpanded: true,
+    stationsExpanded: true,
   },
   smartViews: DEFAULT_SMART_VIEW_DEFINITIONS.map((view, index) => ({
     id: view.id,

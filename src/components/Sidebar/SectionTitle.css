@@ -37,17 +37,21 @@
   padding: 0;
   border: var(--widget-button-border);
   border-radius: var(--widget-button-border-radius);
-  background: none;
+  background: transparent;
+  background-color: transparent;
   color: var(--theme-primary-color);
   cursor: pointer;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
   outline: none;
   box-shadow: none;
   appearance: none;
   -webkit-appearance: none;
   -webkit-tap-highlight-color: transparent;
-  transition: opacity 0.15s ease, background-color 0.2s ease, color 0.2s ease;
+  /* Opacity only — never transition background so a hover/active fill cannot
+     linger as a ghost while the chevron fades out after click-and-leave. */
+  transition: opacity 0.15s ease, visibility 0.15s ease, color 0.15s ease;
 }
 
 .section-title-toggle:focus {
@@ -55,8 +59,15 @@
   box-shadow: none;
 }
 
+.section-title-toggle:hover,
+.section-title-toggle:active {
+  background: transparent;
+  background-color: transparent;
+}
+
 .section-title-toggle:focus-visible {
   opacity: 0.7;
+  visibility: visible;
   pointer-events: auto;
   outline: 2px solid var(--theme-text-tertiary);
   outline-offset: 2px;
@@ -65,6 +76,7 @@
 /* Pointer presence is hit-tested on the section title, not the whole section. */
 .sidebar-section.is-pointer-inside .section-title-toggle {
   opacity: 0.7;
+  visibility: visible;
   pointer-events: auto;
 }
 
@@ -72,6 +84,17 @@
   opacity: 1;
   background-color: var(--widget-button-hover-bg);
   color: var(--theme-text-primary);
+}
+
+/* When the pointer leaves the title, drop any fill immediately (including
+   WebKit sticky :active) so a pressed chip cannot remain while opacity → 0. */
+.sidebar-section:not(.is-pointer-inside) .section-title-toggle:not(:focus-visible) {
+  background: transparent;
+  background-color: transparent;
+  color: var(--theme-primary-color);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .section-title-toggle-icon {

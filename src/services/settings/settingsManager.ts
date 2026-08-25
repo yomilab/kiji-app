@@ -37,6 +37,13 @@ const normalizeUiThemeVariant = (variant: unknown): UiThemeVariant => (
   variant === 'classic' || variant === 'modern' ? variant : DEFAULT_SETTINGS.uiThemeVariant
 );
 
+const normalizeSidebarSectionFold = (
+  fold: Partial<UserSettings['sidebarSectionFold']> | undefined,
+): UserSettings['sidebarSectionFold'] => ({
+  libraryExpanded: fold?.libraryExpanded ?? DEFAULT_SETTINGS.sidebarSectionFold.libraryExpanded,
+  stationsExpanded: fold?.stationsExpanded ?? DEFAULT_SETTINGS.sidebarSectionFold.stationsExpanded,
+});
+
 const normalizeRendererPreferences = (preferences: Partial<RendererPreferences>): RendererPreferences => ({
   fontFamilies: {
     ...DEFAULT_SETTINGS.fontFamilies,
@@ -50,6 +57,7 @@ const normalizeRendererPreferences = (preferences: Partial<RendererPreferences>)
     ...DEFAULT_SETTINGS.sidebarLibrary,
     ...preferences.sidebarLibrary,
   },
+  sidebarSectionFold: normalizeSidebarSectionFold(preferences.sidebarSectionFold),
   smartViews: normalizeSmartViews(preferences.smartViews),
   uiThemeVariant: normalizeUiThemeVariant(preferences.uiThemeVariant),
   windowPosition: preferences.windowPosition,
@@ -81,6 +89,7 @@ const normalizeSettings = (settings: Partial<UserSettings>): UserSettings => ({
     ...DEFAULT_SETTINGS.sidebarLibrary,
     ...settings.sidebarLibrary,
   },
+  sidebarSectionFold: normalizeSidebarSectionFold(settings.sidebarSectionFold),
   smartViews: normalizeSmartViews(settings.smartViews),
   uiThemeVariant: normalizeUiThemeVariant(settings.uiThemeVariant),
 });
@@ -246,6 +255,9 @@ class SettingsManager {
       sidebarLibrary: patch.sidebarLibrary
         ? { ...current.sidebarLibrary, ...patch.sidebarLibrary }
         : current.sidebarLibrary,
+      sidebarSectionFold: patch.sidebarSectionFold
+        ? normalizeSidebarSectionFold({ ...current.sidebarSectionFold, ...patch.sidebarSectionFold })
+        : current.sidebarSectionFold,
       smartViews: patch.smartViews ?? current.smartViews,
       windowPosition: patch.windowPosition ?? current.windowPosition,
     });
@@ -346,6 +358,23 @@ class SettingsManager {
       sidebarLibrary: {
         ...current.sidebarLibrary,
         ...sidebarLibrary,
+      },
+    });
+  }
+
+  async getSidebarSectionFold(): Promise<UserSettings['sidebarSectionFold']> {
+    const settings = await this.getSettings();
+    return settings.sidebarSectionFold;
+  }
+
+  async setSidebarSectionFold(
+    fold: Partial<UserSettings['sidebarSectionFold']>,
+  ): Promise<void> {
+    const current = await this.loadRendererPreferences();
+    await this.updateRendererPreferences({
+      sidebarSectionFold: {
+        ...current.sidebarSectionFold,
+        ...fold,
       },
     });
   }

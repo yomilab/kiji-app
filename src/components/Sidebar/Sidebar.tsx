@@ -209,16 +209,19 @@ export const Sidebar: React.FC = () => {
     });
   }, []);
 
-  // Load sidebar width from settings on mount
+  // Load sidebar width / library / section fold from settings on mount
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const [width, library] = await Promise.all([
+        const [width, library, sectionFold] = await Promise.all([
           settingsManager.getSidebarWidth(),
           settingsManager.getSidebarLibrary(),
+          settingsManager.getSidebarSectionFold(),
         ]);
         setSidebarWidth(width);
         setSidebarLibrary(library);
+        setLibraryExpanded(sectionFold.libraryExpanded);
+        setStationsExpanded(sectionFold.stationsExpanded);
       } catch (error) {
         console.error('Error loading sidebar width from settings:', error);
       }
@@ -351,13 +354,25 @@ export const Sidebar: React.FC = () => {
 
   const handleToggleLibrary = (point: { x: number; y: number }) => {
     lastPointerRef.current = point;
-    setLibraryExpanded((current) => !current);
+    setLibraryExpanded((current) => {
+      const next = !current;
+      void settingsManager.setSidebarSectionFold({ libraryExpanded: next }).catch((error) => {
+        console.error('Error saving library section fold:', error);
+      });
+      return next;
+    });
     scheduleHoveredSectionSync();
   };
 
   const handleToggleStations = (point: { x: number; y: number }) => {
     lastPointerRef.current = point;
-    setStationsExpanded((current) => !current);
+    setStationsExpanded((current) => {
+      const next = !current;
+      void settingsManager.setSidebarSectionFold({ stationsExpanded: next }).catch((error) => {
+        console.error('Error saving stations section fold:', error);
+      });
+      return next;
+    });
     scheduleHoveredSectionSync();
   };
 

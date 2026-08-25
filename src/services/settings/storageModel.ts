@@ -3,6 +3,7 @@ import type {
   FontFamilySettings,
   ReadingLayoutSettings,
   SidebarLibrarySettings,
+  SidebarSectionFoldSettings,
   SmartViewSettings,
   UiThemeVariant,
   UserSettings,
@@ -38,6 +39,7 @@ export interface RendererPreferences {
   fontFamilies: FontFamilySettings;
   readingLayout: ReadingLayoutSettings;
   sidebarLibrary: SidebarLibrarySettings;
+  sidebarSectionFold: SidebarSectionFoldSettings;
   smartViews: SmartViewSettings[];
   uiThemeVariant: UiThemeVariant;
   windowPosition?: Pick<WindowSize, 'x' | 'y'>;
@@ -74,6 +76,7 @@ export function toRendererPreferences(settings: UserSettings): RendererPreferenc
     fontFamilies: settings.fontFamilies,
     readingLayout: settings.readingLayout,
     sidebarLibrary: settings.sidebarLibrary,
+    sidebarSectionFold: settings.sidebarSectionFold,
     smartViews: settings.smartViews,
     uiThemeVariant: settings.uiThemeVariant,
     windowPosition: x !== undefined || y !== undefined ? { x, y } : undefined,
@@ -107,6 +110,7 @@ export function mergeUserSettings(
     fontFamilies: renderer.fontFamilies,
     readingLayout: renderer.readingLayout,
     sidebarLibrary: renderer.sidebarLibrary,
+    sidebarSectionFold: renderer.sidebarSectionFold,
     smartViews: renderer.smartViews,
     uiThemeVariant: renderer.uiThemeVariant,
   };
