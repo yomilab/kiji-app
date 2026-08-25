@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { FeedList } from './FeedList';
 import { TagManager } from './TagManager';
@@ -6,7 +6,7 @@ import { SmartViews } from './SmartViews';
 import { SidebarWidgets } from './SidebarWidgets';
 import { BottomWidget } from './BottomWidget';
 import { SyncIndicator } from './SyncIndicator';
-import { SectionTitle } from './SectionTitle';
+import { SectionTitle, type SidebarSectionId } from './SectionTitle';
 import { settingsManager } from '@/services/settings';
 import { useFeedNavigation, useFeedUI, useFeedCollection } from '@/contexts/FeedContext';
 import { feedsManager } from '@/services/feeds/feedsManager';
@@ -17,10 +17,29 @@ import { useUserMessageChannel } from '@/hooks/useUserMessageChannel';
 import { SIDEBAR_INDICATOR_CHANNEL } from '@/services/ui/sidebarIndicatorService';
 import { sidebarIndicatorOngoing } from '@/services/ui/sidebarIndicatorText';
 import { beginLayoutColumnResize, endLayoutColumnResize } from '@/services/ui/layoutColumnResize';
+import { resolveHoveredSidebarSection } from './sidebarSectionHover';
 import './Sidebar.css';
 
 const MIN_SIDEBAR_WIDTH = 250;
 const MAX_SIDEBAR_WIDTH = 600;
+
+const SidebarSection: React.FC<{
+  sectionId: SidebarSectionId;
+  expanded: boolean;
+  pointerInside: boolean;
+  children: React.ReactNode;
+}> = ({ sectionId, expanded, pointerInside, children }) => {
+  return (
+    <div
+      className={`sidebar-section${expanded ? ' is-expanded' : ''}${pointerInside ? ' is-pointer-inside' : ''}`}
+      data-component="sidebar-section"
+      data-section={sectionId}
+      data-pointer-inside={pointerInside ? 'true' : 'false'}
+    >
+      {children}
+    </div>
+  );
+};
 
 export interface FeedRefreshStatusInput {
   displayFeedCount: number;
@@ -63,10 +82,14 @@ export const Sidebar: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [sidebarLibrary, setSidebarLibrary] = useState({ title: 'Library', visible: true });
+  const [libraryExpanded, setLibraryExpanded] = useState(true);
+  const [stationsExpanded, setStationsExpanded] = useState(true);
+  const [hoveredSection, setHoveredSection] = useState<SidebarSectionId | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [showSyncing, setShowSyncing] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
+  const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
   const syncStartTimeRef = useRef<number | null>(null);
   const syncTimeoutRef = useRef<number | null>(null);
   const { articles } = useFeedCollection();
@@ -282,6 +305,62 @@ export const Sidebar: React.FC = () => {
     void (event.detail === 2 ? currentWindow.toggleMaximize() : currentWindow.startDragging());
   };
 
+  const syncHoveredSection = useCallback((clientX: number, clientY: number) => {
+    lastPointerRef.current = { x: clientX, y: clientY };
+    const next = resolveHoveredSidebarSection(clientX, clientY);
+    setHoveredSection((current) => (current === next ? current : next));
+  }, []);
+
+  const scheduleHoveredSectionSync = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const point = lastPointerRef.current;
+        if (!point) {
+          setHoveredSection(null);
+          return;
+        }
+        syncHoveredSection(point.x, point.y);
+      });
+    });
+  }, [syncHoveredSection]);
+
+  const handleNavPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    syncHoveredSection(event.clientX, event.clientY);
+  };
+
+  const handleNavPointerLeave = (event: React.PointerEvent<HTMLDivElement>) => {
+    const related = event.relatedTarget;
+    if (related instanceof Node && event.currentTarget.contains(related)) {
+      return;
+    }
+    lastPointerRef.current = null;
+    setHoveredSection(null);
+  };
+
+  const handleNavTransitionEnd = (event: React.TransitionEvent<HTMLDivElement>) => {
+    if (event.propertyName !== 'grid-template-rows' && event.propertyName !== 'flex-grow') {
+      return;
+    }
+    const point = lastPointerRef.current;
+    if (!point) {
+      setHoveredSection(null);
+      return;
+    }
+    syncHoveredSection(point.x, point.y);
+  };
+
+  const handleToggleLibrary = (point: { x: number; y: number }) => {
+    lastPointerRef.current = point;
+    setLibraryExpanded((current) => !current);
+    scheduleHoveredSectionSync();
+  };
+
+  const handleToggleStations = (point: { x: number; y: number }) => {
+    lastPointerRef.current = point;
+    setStationsExpanded((current) => !current);
+    scheduleHoveredSectionSync();
+  };
+
   const formatSyncTime = (date: Date | null): string => {
     if (!date) return '';
 
@@ -383,28 +462,70 @@ export const Sidebar: React.FC = () => {
 
         {/* Library chrome stays put. Stations, nested station feeds, and
             unstationed feeds share one scroller down to Settings. */}
-        <div className="sidebar-content" data-component="sidebar-nav">
+        <div
+          className="sidebar-content"
+          data-component="sidebar-nav"
+          onPointerMove={handleNavPointerMove}
+          onPointerLeave={handleNavPointerLeave}
+          onTransitionEnd={handleNavTransitionEnd}
+        >
           {sidebarLibrary.visible && (
-            <>
-              <SectionTitle title={sidebarLibrary.title} />
-              <SmartViews />
-            </>
+            <SidebarSection
+              sectionId="library"
+              expanded={libraryExpanded}
+              pointerInside={hoveredSection === 'library'}
+            >
+              <SectionTitle
+                title={sidebarLibrary.title}
+                sectionId="library"
+                expanded={libraryExpanded}
+                onToggle={handleToggleLibrary}
+              />
+              <div
+                className={`sidebar-section-body${libraryExpanded ? ' is-expanded' : ''}`}
+                data-component="sidebar-section-body"
+                data-section="library"
+              >
+                <div className="sidebar-section-body-clip">
+                  <SmartViews />
+                </div>
+              </div>
+            </SidebarSection>
           )}
 
-          <SectionTitle title="Stations" />
-          <div
-            className="sidebar-nav-body sidebar-scroll-region"
-            data-component="sidebar-nav-body"
+          <SidebarSection
+            sectionId="stations"
+            expanded={stationsExpanded}
+            pointerInside={hoveredSection === 'stations'}
           >
-            <TagManager />
+            <SectionTitle
+              title="Stations"
+              sectionId="stations"
+              expanded={stationsExpanded}
+              onToggle={handleToggleStations}
+            />
+            <div
+              className={`sidebar-section-body${stationsExpanded ? ' is-expanded' : ''}`}
+              data-component="sidebar-section-body"
+              data-section="stations"
+            >
+              <div className="sidebar-section-body-clip">
+                <div
+                  className="sidebar-nav-body sidebar-scroll-region"
+                  data-component="sidebar-nav-body"
+                >
+                  <TagManager />
 
-            {sidebarLibrary.visible && (
-              <FeedList
-                showAddModal={showAddModal}
-                onCloseAddModal={handleCloseAddModal}
-              />
-            )}
-          </div>
+                  {sidebarLibrary.visible && (
+                    <FeedList
+                      showAddModal={showAddModal}
+                      onCloseAddModal={handleCloseAddModal}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          </SidebarSection>
         </div>
 
         {/* Settings stack + independent SyncIndicator share this bottom row. */}

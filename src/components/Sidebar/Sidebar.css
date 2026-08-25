@@ -79,10 +79,71 @@ html[data-os="other"] .sidebar {
   flex-shrink: 0;
 }
 
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sidebar-content .sidebar-section[data-section="library"] {
+  flex: 0 0 auto;
+}
+
+.sidebar-content .sidebar-section[data-section="stations"] {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.sidebar-content .sidebar-section[data-section="stations"].is-expanded {
+  flex: 1 1 auto;
+}
+
+.sidebar-section-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  min-width: 0;
+  transition: grid-template-rows 0.2s ease-in-out;
+}
+
+.sidebar-section-body.is-expanded {
+  grid-template-rows: 1fr;
+}
+
+.sidebar-section-body-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebar-section[data-section="library"] .sidebar-section-body {
+  flex: 0 0 auto;
+}
+
+.sidebar-section[data-section="stations"] .sidebar-section-body {
+  flex: 0 0 auto;
+  min-height: 0;
+  min-width: 0;
+  transition: grid-template-rows 0.2s ease-in-out;
+}
+
+.sidebar-section[data-section="stations"].is-expanded .sidebar-section-body {
+  flex: 1 1 auto;
+}
+
+.sidebar-section[data-section="stations"].is-expanded .sidebar-section-body-clip {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .sidebar-content .sidebar-nav-body {
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
+}
+
+.sidebar-section[data-section="stations"] .sidebar-nav-body {
+  height: 100%;
 }
 
 /* Hidden scrollbar for the stations + feeds stack. */

@@ -1,10 +1,15 @@
 /* Section title — same 20px left inset as sidebar widgets / bottom indicator */
 .section-title-container {
-  padding: 12px 20px 0 20px;
-  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px 4px 20px;
+  margin-bottom: 8px;
 }
 
 .section-title-text {
+  flex: 1;
+  min-width: 0;
   margin: 0;
   font-size: 11px;
   font-weight: 700;
@@ -12,8 +17,77 @@
   opacity: 0.7;
   padding: 0;
   letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 [data-theme="dark"] .section-title-text {
   color: var(--theme-primary-color);
+}
+
+.section-title-toggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border: var(--widget-button-border);
+  border-radius: var(--widget-button-border-radius);
+  background: none;
+  color: var(--theme-primary-color);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  outline: none;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+.section-title-toggle:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.section-title-toggle:focus-visible {
+  opacity: 0.7;
+  pointer-events: auto;
+  outline: 2px solid var(--theme-text-tertiary);
+  outline-offset: 2px;
+}
+
+/* Pointer presence is hit-tested on the section title, not the whole section. */
+.sidebar-section.is-pointer-inside .section-title-toggle {
+  opacity: 0.7;
+  pointer-events: auto;
+}
+
+.sidebar-section.is-pointer-inside .section-title-toggle:hover {
+  opacity: 1;
+  background-color: var(--widget-button-hover-bg);
+  color: var(--theme-text-primary);
+}
+
+.section-title-toggle-icon {
+  display: flex;
+  width: 16px;
+  height: 16px;
+  line-height: 0;
+  transition: transform 0.2s ease;
+}
+
+.section-title-container[data-expanded="false"] .section-title-toggle-icon {
+  transform: rotate(-90deg);
+}
+
+.section-title-toggle-icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
 }
