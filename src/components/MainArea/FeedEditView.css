@@ -454,11 +454,20 @@ body.feed-edit-col-resizing {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
+  border: none;
   border-radius: 0;
+  background: transparent;
+  background-color: transparent;
+}
+
+.feed-edit-favicon-cell .favicon-container.has-transparent-pixels {
+  background: transparent;
+  background-color: transparent;
 }
 
 .feed-edit-favicon-placeholder {
-  border-color: var(--theme-border-light);
+  border: none;
+  background: transparent;
 }
 
 .feed-edit-emoji-cell-button {
