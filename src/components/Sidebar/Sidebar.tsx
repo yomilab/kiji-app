@@ -365,7 +365,7 @@ export const Sidebar: React.FC = () => {
         data-action="resize-sidebar"
       />
 
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div className="sidebar-body">
         <div
           className="sidebar-top-chrome"
           onMouseDown={handleWindowDragMouseDown}
@@ -381,8 +381,9 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
 
-        {/* Scrollable content area */}
-        <div className="sidebar-content-scrollable" data-component="sidebar-nav">
+        {/* Library chrome stays put. Stations, nested station feeds, and
+            unstationed feeds share one scroller down to Settings. */}
+        <div className="sidebar-content" data-component="sidebar-nav">
           {sidebarLibrary.visible && (
             <>
               <SectionTitle title={sidebarLibrary.title} />
@@ -391,14 +392,19 @@ export const Sidebar: React.FC = () => {
           )}
 
           <SectionTitle title="Stations" />
-          <TagManager />
+          <div
+            className="sidebar-nav-body sidebar-scroll-region"
+            data-component="sidebar-nav-body"
+          >
+            <TagManager />
 
-          {sidebarLibrary.visible && (
-            <FeedList
-              showAddModal={showAddModal}
-              onCloseAddModal={handleCloseAddModal}
-            />
-          )}
+            {sidebarLibrary.visible && (
+              <FeedList
+                showAddModal={showAddModal}
+                onCloseAddModal={handleCloseAddModal}
+              />
+            )}
+          </div>
         </div>
 
         {/* Settings stack + independent SyncIndicator share this bottom row. */}

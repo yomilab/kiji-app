@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import UnfoldMoreOutlined from '@mui/icons-material/UnfoldMoreOutlined';
 import UnfoldLessOutlined from '@mui/icons-material/UnfoldLessOutlined';
@@ -132,7 +131,7 @@ const StationListItem = React.memo<StationListItemProps>(({
   ], [isExpanded, tag.name, onToggleStation, onOpenFeedEditView]);
 
   return (
-    <li className="tag-item-wrapper">
+    <li className={`tag-item-wrapper${isExpanded ? ' is-expanded' : ''}`}>
       <div
         className={`tag-item ${isSelected ? 'is-selected' : ''}`}
         onClick={() => onTagClick(tag.name)}
@@ -159,17 +158,13 @@ const StationListItem = React.memo<StationListItemProps>(({
           className="tag-item-buttons"
         />
       </div>
-      <AnimatePresence>
-        {isExpanded && stationFeeds.length > 0 && (
-          <motion.ul
+      <div className="station-feeds-slot">
+        <div className="station-feeds-slot-clip">
+          <ul
             className="station-feeds-list"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            style={{ overflow: 'hidden' }}
-            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            data-component="station-feeds"
           >
-            {stationFeeds.map((feed) => (
+            {isExpanded && stationFeeds.map((feed) => (
               <StationFeedItem
                 key={feed.id}
                 feed={feed}
@@ -178,9 +173,9 @@ const StationListItem = React.memo<StationListItemProps>(({
                 onOpenFeedEditView={onOpenFeedEditView}
               />
             ))}
-          </motion.ul>
-        )}
-      </AnimatePresence>
+          </ul>
+        </div>
+      </div>
     </li>
   );
 });

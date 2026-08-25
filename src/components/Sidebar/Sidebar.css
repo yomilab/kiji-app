@@ -20,9 +20,18 @@ html[data-os="other"] .sidebar {
   box-shadow: inset -1px 0 0 color-mix(in srgb, var(--theme-border) 70%, transparent);
 }
 
+.sidebar-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .sidebar-top-chrome {
   position: relative;
   z-index: 3;
+  flex-shrink: 0;
   min-height: 0;
   cursor: default;
 }
@@ -56,32 +65,37 @@ html[data-os="other"] .sidebar {
   transition: none;
 }
 
-/* Scrollable content area */
-.sidebar-content-scrollable {
+/* Library + Stations title stay put. Overflow lives on `.sidebar-nav-body`
+   (stations, nested station feeds, and unstationed feeds). */
+.sidebar-content {
   flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-content > * {
+  flex-shrink: 0;
+}
+
+.sidebar-content .sidebar-nav-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Hidden scrollbar for the stations + feeds stack. */
+.sidebar-scroll-region {
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
-  /* Keep sidebar scrolling available without showing a persistent visual scrollbar. */
+  overscroll-behavior-y: contain;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-.sidebar-content-scrollable::-webkit-scrollbar {
+.sidebar-scroll-region::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
-}
-
-.sidebar-content-scrollable::-webkit-scrollbar-track {
-  background-color: transparent;
-}
-
-.sidebar-content-scrollable::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 0;
-}
-
-.sidebar-content-scrollable::-webkit-scrollbar-thumb:hover {
-  background-color: transparent;
 }
