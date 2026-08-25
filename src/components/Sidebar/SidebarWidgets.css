@@ -1,5 +1,6 @@
-/* Spinning animation for refresh icon */
-@keyframes spin {
+/* Refresh spinner: rotate a square the same size as the glyph so the
+   origin is the icon center — not the smaller 1.2em `.icon` box. */
+@keyframes sidebar-refresh-spin {
   from {
     transform: rotate(0deg);
   }
@@ -8,11 +9,25 @@
   }
 }
 
-.icon.is-spinning {
-  animation: spin 0.8s linear infinite;
-  transform-origin: center;
-  display: inline-flex;
-  will-change: transform;
+.sidebar-widgets-container [data-widget="refresh"] .icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--widget-button-icon-size);
+  height: var(--widget-button-icon-size);
+  line-height: 0;
+  flex-shrink: 0;
+}
+
+.sidebar-widgets-container [data-widget="refresh"] .icon svg {
+  display: block;
+  width: var(--widget-button-icon-size);
+  height: var(--widget-button-icon-size);
+}
+
+.sidebar-widgets-container [data-widget="refresh"] .icon.is-spinning {
+  animation: sidebar-refresh-spin 0.8s linear infinite;
+  transform-origin: 50% 50%;
 }
 
 /* Make icons bolder */
