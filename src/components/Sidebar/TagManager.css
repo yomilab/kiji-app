@@ -1,5 +1,7 @@
 .tag-manager {
   padding: 0 20px 0 20px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .tag-manager-header {
@@ -23,6 +25,8 @@
   display: flex;
   flex-direction: column;
   gap: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .tag-item {
@@ -40,6 +44,8 @@
   font-family: var(--font-family-ui);
   min-height: var(--sidebar-item-min-height);
   flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .tag-item.is-selected {
@@ -131,7 +137,10 @@
   flex: 0 0 auto;
   height: auto;
   max-height: none;
-  overflow: visible;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 
 .station-feeds-slot {
@@ -139,7 +148,10 @@
   grid-template-rows: 0fr;
   flex: 0 0 auto;
   height: auto;
-  overflow: visible;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: visible;
   transition: grid-template-rows 0.2s ease-in-out;
 }
 
@@ -148,14 +160,16 @@
 }
 
 /* Clip only while collapsed so the 0fr row can hide leftover content.
-   When expanded, overflow is visible so wheel events stay on the nav body. */
+   When expanded, overflow-x stays hidden so long titles ellipsize;
+   overflow-y stays visible so wheel events stay on the nav body. */
 .station-feeds-slot-clip {
   min-height: 0;
   overflow: hidden;
 }
 
 .tag-item-wrapper.is-expanded .station-feeds-slot-clip {
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: visible;
   min-height: auto;
 }
 
@@ -164,7 +178,10 @@
   padding: 0;
   margin: 0;
   height: auto;
-  overflow: visible;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 
 .station-feed-item {
@@ -178,6 +195,8 @@
   gap: 8px;
   position: relative;
   color: var(--theme-primary-color);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .station-feed-item-selected {

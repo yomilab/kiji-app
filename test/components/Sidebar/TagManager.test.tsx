@@ -58,7 +58,7 @@ const feedA: Feed = {
 
 const feedB: Feed = {
   id: 'feed-b',
-  title: 'Beta',
+  title: 'A very long feed title that should ellipsize instead of being hard-clipped by the sidebar scroller',
   url: 'https://beta.example/feed',
   tags: ['Daily'],
 };
@@ -97,7 +97,7 @@ describe('TagManager nested station feeds', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Alpha')).toBeTruthy();
-      expect(screen.getByText('Beta')).toBeTruthy();
+      expect(screen.getByText(feedB.title)).toBeTruthy();
     });
 
     expect(dailyWrapper?.classList.contains('is-expanded')).toBe(true);
@@ -108,6 +108,11 @@ describe('TagManager nested station feeds', () => {
     expect(dailyWrapper?.querySelector('.sidebar-scroll-region')).toBeNull();
     expect(feedsList?.querySelector('[data-entity-id="feed-a"]')).not.toBeNull();
     expect(feedsList?.querySelector('[data-entity-id="feed-b"]')).not.toBeNull();
+
+    const longTitle = feedsList?.querySelector('[data-entity-id="feed-b"] .station-feed-item-title-text');
+    expect(longTitle).not.toBeNull();
+    expect(longTitle?.className).toBe('station-feed-item-title-text');
+    expect(feedsList?.querySelector('[data-entity-id="feed-b"]')?.classList.contains('station-feed-item')).toBe(true);
 
     const techWrapper = container.querySelector('[data-station-name="Tech"]')
       ?.closest('.tag-item-wrapper');

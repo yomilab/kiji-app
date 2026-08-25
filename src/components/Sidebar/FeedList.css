@@ -3,6 +3,8 @@
   display: flex;
   flex-direction: column;
   padding: 0 20px 1em 20px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Empty State */
@@ -23,6 +25,8 @@
   padding: 0;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Feed List Item */
@@ -36,6 +40,8 @@
   gap: 8px;
   position: relative;
   color: var(--theme-primary-color);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .feed-list-item-content {
