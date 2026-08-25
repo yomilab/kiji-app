@@ -145,13 +145,13 @@ describe("SettingsWindow", () => {
         iconPath: null,
         previewDataUrl: null,
         hasCustomIcon: false,
-        iconVariant: "cosmos",
+        iconVariant: "light",
       }),
       setSystemAppIconVariant: vi.fn().mockResolvedValue({
         iconPath: null,
         previewDataUrl: null,
         hasCustomIcon: false,
-        iconVariant: "cosmos",
+        iconVariant: "light",
       }),
       windowClose: vi.fn().mockResolvedValue(undefined),
     } as unknown as typeof window.kijiAPI;
@@ -217,13 +217,14 @@ describe("SettingsWindow", () => {
     });
   });
 
-  it("shows Cosmos and Cosmos Dark as default app icon choices", async () => {
+  it("shows Light as the selected default app icon and keeps Cosmos as a choice", async () => {
     render(<SettingsWindow />);
 
     clickSidebarCategory("Appearance");
 
     const iconGroup = await screen.findByRole("group", { name: "Default app icon" });
-    expect(within(iconGroup).getByRole("button", { name: "Cosmos" })).toBeInTheDocument();
+    expect(within(iconGroup).getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(iconGroup).getByRole("button", { name: "Cosmos" })).toHaveAttribute("aria-pressed", "false");
     expect(within(iconGroup).getByRole("button", { name: "Cosmos Dark" })).toBeInTheDocument();
     expect(within(iconGroup).getByRole("button", { name: "Sunset" })).toBeInTheDocument();
 

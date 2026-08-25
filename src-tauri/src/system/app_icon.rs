@@ -35,7 +35,7 @@ pub enum SystemAppIconVariant {
 
 impl Default for SystemAppIconVariant {
     fn default() -> Self {
-        Self::Cosmos
+        Self::Light
     }
 }
 
@@ -501,6 +501,11 @@ mod tests {
         .expect("known variant should parse");
         assert_eq!(stored.icon_variant, SystemAppIconVariant::Cosmos);
         assert!(stored.icon_path.is_none());
+    }
+
+    #[test]
+    fn default_icon_variant_is_light() {
+        assert_eq!(SystemAppIconVariant::default(), SystemAppIconVariant::Light);
     }
 
     #[test]

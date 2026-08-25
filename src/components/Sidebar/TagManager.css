@@ -39,7 +39,7 @@
   user-select: none;
   font-family: var(--font-family-ui);
   min-height: var(--sidebar-item-min-height);
-  color: var(--theme-primary-color);
+  flex-shrink: 0;
 }
 
 .tag-item.is-selected {
@@ -122,16 +122,49 @@
   opacity: 1;
 }
 
-/* Station fold/unfold: wrapper li */
+/* Station fold/unfold: wrapper li. Nested feeds stay in flow under the
+   station row. Only `.sidebar-nav-body` may scroll — never this subtree. */
 .tag-item-wrapper {
   list-style: none;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  height: auto;
+  max-height: none;
+  overflow: visible;
 }
 
-/* Nested feed list */
+.station-feeds-slot {
+  display: grid;
+  grid-template-rows: 0fr;
+  flex: 0 0 auto;
+  height: auto;
+  overflow: visible;
+  transition: grid-template-rows 0.2s ease-in-out;
+}
+
+.tag-item-wrapper.is-expanded .station-feeds-slot {
+  grid-template-rows: 1fr;
+}
+
+/* Clip only while collapsed so the 0fr row can hide leftover content.
+   When expanded, overflow is visible so wheel events stay on the nav body. */
+.station-feeds-slot-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tag-item-wrapper.is-expanded .station-feeds-slot-clip {
+  overflow: visible;
+  min-height: auto;
+}
+
 .station-feeds-list {
   list-style: none;
   padding: 0;
   margin: 0;
+  height: auto;
+  overflow: visible;
 }
 
 .station-feed-item {
