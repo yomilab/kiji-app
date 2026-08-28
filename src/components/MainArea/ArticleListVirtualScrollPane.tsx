@@ -34,6 +34,7 @@ import {
   shouldTriggerArticleListLoadMoreFromScroll,
   type ArticleListScrollVelocitySample,
 } from './articleListLoadMore';
+import { articleListHasMore } from '@/services/articles/articleListTotal';
 
 const measureArticleRowHeight = (
   element: Element,
@@ -50,6 +51,8 @@ export interface ArticleListVirtualScrollPaneProps {
   variant: 'common' | 'saved';
   filteredArticles: Article[];
   articlesTotalCount: number;
+  articlesTotalKnown: boolean;
+  pageWasFull: boolean;
   activeArticleHash: string | null;
   articleViewOverlayPhase: ArticleViewOverlayPhase;
   isInitialLoading: boolean;
@@ -80,6 +83,8 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   variant,
   filteredArticles,
   articlesTotalCount,
+  articlesTotalKnown,
+  pageWasFull,
   activeArticleHash,
   articleViewOverlayPhase,
   isInitialLoading,
@@ -103,7 +108,12 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   const scrollVelocitySampleRef = useRef<ArticleListScrollVelocitySample | null>(null);
   const scrollVelocityPxPerMsRef = useRef(0);
 
-  const hasMoreArticles = filteredArticles.length < articlesTotalCount;
+  const hasMoreArticles = articleListHasMore({
+    loadedCount: filteredArticles.length,
+    totalCount: articlesTotalCount,
+    totalKnown: articlesTotalKnown ?? true,
+    pageWasFull: pageWasFull ?? false,
+  });
   const virtualRowCount = filteredArticles.length;
 
   const newArticleAnimationOrderMap = useMemo(() => {
@@ -246,7 +256,11 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
       filteredArticles.length,
       articlesTotalCount,
       lastVisibleIndex,
-      { scrollVelocityPxPerMs },
+      {
+        scrollVelocityPxPerMs,
+        totalKnown: articlesTotalKnown ?? true,
+        pageWasFull: pageWasFull ?? false,
+      },
     )) {
       return;
     }
@@ -255,7 +269,7 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
       showLoadingIndicator: false,
       priority: getArticleListLoadMorePriority(filteredArticles.length, lastVisibleIndex),
     });
-  }, [articlesTotalCount, filteredArticles.length, loadMoreArticles]);
+  }, [articlesTotalCount, articlesTotalKnown, filteredArticles.length, loadMoreArticles, pageWasFull]);
 
   useEffect(() => {
     if (isSearchDebouncePending || lastVirtualIndex < 0 || !hasMoreArticles) {
@@ -301,12 +315,15 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
         filteredArticles.length,
         articlesTotalCount,
         velocityPxPerMs,
+        { totalKnown: articlesTotalKnown ?? true, pageWasFull: pageWasFull ?? false },
       )
     ) {
       requestLoadMoreArticles(lastVirtualIndex, velocityPxPerMs);
     }
   }, [
     articlesTotalCount,
+    articlesTotalKnown,
+    pageWasFull,
     filteredArticles.length,
     isSearchDebouncePending,
     lastVirtualIndex,
@@ -446,6 +463,8 @@ function areArticleListVirtualScrollPanePropsEqual(
     && previous.sourceLabel === next.sourceLabel
     && previous.variant === next.variant
     && previous.articlesTotalCount === next.articlesTotalCount
+    && previous.articlesTotalKnown === next.articlesTotalKnown
+    && previous.pageWasFull === next.pageWasFull
     && previous.activeArticleHash === next.activeArticleHash
     && previous.articleViewOverlayPhase === next.articleViewOverlayPhase
     && previous.isInitialLoading === next.isInitialLoading

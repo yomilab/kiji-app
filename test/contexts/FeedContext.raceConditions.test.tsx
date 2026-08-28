@@ -137,6 +137,7 @@ type MockArticleQuery = {
     hash: string;
   };
   includeTotal?: boolean;
+  limit?: number;
 };
 
 const waitForExpectation = async (
@@ -527,7 +528,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     });
 
     await waitForExpectation(() => {
-      expect(techQueryCount).toBeGreaterThanOrEqual(2);
+      expect(techQueryCount).toBeGreaterThanOrEqual(1);
       expect(latestContext!.selectedTag).toBe('Tech');
       expect(latestContext!.isLoadingArticles).toBe(false);
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['tech-1', 'tech-2']);
@@ -1710,6 +1711,70 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     expect(reconcileStyleQueryCount).toBe(0);
   });
 
+  it('COUNTs after a full cold first page without killing load-more', async () => {
+    const coldDeferred = createDeferred<{ articles: Article[]; total: number }>();
+    let reconcileStyleQueryCount = 0;
+    const firstPage = Array.from({ length: 100 }, (_, index) => (
+      createArticle(`hash-full-${index}`, 'feed-a')
+    ));
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    );
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A') {
+        if (query.includeTotal === false) {
+          return coldDeferred.promise;
+        }
+        reconcileStyleQueryCount += 1;
+        return Promise.resolve({ articles: firstPage.slice(0, 1), total: 500 });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isLoadingArticles).toBe(true);
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(reconcileStyleQueryCount).toBe(0);
+
+    coldDeferred.resolve({
+      articles: firstPage,
+      total: 0,
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles).toHaveLength(100);
+      expect(latestContext!.articlesTotalKnown).toBe(true);
+      expect(latestContext!.articlesTotalCount).toBe(500);
+      expect(reconcileStyleQueryCount).toBeGreaterThanOrEqual(1);
+    }, 5000);
+  });
+
   it('publishes first fetched rows after an import switch and keeps them when switching back', async () => {
     // Full user flow: OPML import switches into a station whose feeds have no
     // stored rows; Phase B fetches commit rows which must publish; hopping away
@@ -1900,6 +1965,147 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     await waitForExpectation(() => {
       expect(latestContext!.isLoadingArticles).toBe(false);
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-unread']);
+    });
+  });
+
+  it('does not stamp a station COUNT onto an in-flight search list', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => (
+      createArticle(`hash-full-${index}`, 'feed-a')
+    ));
+    const searchArticles = [createArticle('needle-1', 'feed-a')];
+    const countDeferred = createDeferred<{ articles: Article[]; total: number }>();
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    );
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.searchText === 'needle') {
+        return Promise.resolve({ articles: searchArticles, total: 1 });
+      }
+      if (query.tagName === 'A') {
+        if (query.includeTotal === false) {
+          return Promise.resolve({ articles: firstPage, total: 0 });
+        }
+        if (query.includeTotal === true) {
+          return countDeferred.promise;
+        }
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles).toHaveLength(100);
+      expect(latestContext!.articlesTotalKnown).toBe(false);
+    });
+
+    await waitForExpectation(() => {
+      expect(articleStore.query).toHaveBeenCalledWith(expect.objectContaining({
+        includeTotal: true,
+        limit: 1,
+        tagName: 'A',
+      }));
+    });
+
+    await act(async () => {
+      await latestContext!.searchCurrentSource('needle');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['needle-1']);
+      expect(latestContext!.articlesTotalCount).toBe(1);
+    });
+
+    countDeferred.resolve({ articles: firstPage.slice(0, 1), total: 500 });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(latestContext!.articles.map((article) => article.hash)).toEqual(['needle-1']);
+    expect(latestContext!.articlesTotalCount).toBe(1);
+  });
+
+  it('reissues a total-only COUNT on Cmd+R even if Phase B fails', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => (
+      createArticle(`hash-full-${index}`, 'feed-a')
+    ));
+    const countDeferreds: Array<ReturnType<typeof createDeferred<{ articles: Article[]; total: number }>>> = [];
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    );
+    (feedsFetcher.fetchFeedNetworkWithCache as Mock).mockRejectedValue(new Error('network down'));
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A') {
+        if (query.includeTotal === false) {
+          return Promise.resolve({ articles: firstPage, total: 0 });
+        }
+        if (query.includeTotal === true) {
+          const deferred = createDeferred<{ articles: Article[]; total: number }>();
+          countDeferreds.push(deferred);
+          return deferred.promise;
+        }
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles).toHaveLength(100);
+      expect(latestContext!.articlesTotalKnown).toBe(false);
+      expect(countDeferreds.length).toBeGreaterThanOrEqual(1);
+    });
+
+    await act(async () => {
+      await latestContext!.refreshFeed();
+    });
+
+    await waitForExpectation(() => {
+      expect(countDeferreds.length).toBeGreaterThanOrEqual(2);
+    });
+
+    countDeferreds.forEach((deferred) => {
+      deferred.resolve({ articles: firstPage.slice(0, 1), total: 500 });
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articlesTotalKnown).toBe(true);
+      expect(latestContext!.articlesTotalCount).toBe(500);
     });
   });
 });

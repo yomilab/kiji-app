@@ -11,6 +11,7 @@ export interface ArticleListHeaderSectionProps {
   showSourceTitle: boolean;
   selectedFeedTitle: string | null;
   subtitleText: string;
+  hideSubtitle?: boolean;
   isSavedView: boolean;
   isSearchOpen: boolean;
   searchQuery: string;
@@ -26,6 +27,7 @@ export const ArticleListHeaderSection = memo(function ArticleListHeaderSection({
   showSourceTitle,
   selectedFeedTitle,
   subtitleText,
+  hideSubtitle = false,
   isSavedView,
   isSearchOpen,
   searchQuery,
@@ -55,7 +57,9 @@ export const ArticleListHeaderSection = memo(function ArticleListHeaderSection({
           showSourceTitle && (
             <>
               <h2 className="article-list-title">{selectedFeedTitle}</h2>
-              <p className="article-list-subtitle">{subtitleText}</p>
+              {!hideSubtitle && (
+                <p className="article-list-subtitle">{subtitleText}</p>
+              )}
             </>
           )
         )}

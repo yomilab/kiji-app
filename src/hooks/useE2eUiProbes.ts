@@ -14,7 +14,7 @@ import {
 import { getRendererWindowType, isMainRendererWindow } from '@/utils/rendererWindow';
 
 export const useE2eUiProbes = (): void => {
-  const { articles, articlesTotalCount } = useFeedCollection();
+  const { articles, articlesTotalCount, articlesTotalKnown, pageWasFull } = useFeedCollection();
   const { selectedFeedId, selectedTag, navigationNonce } = useFeedNavigation();
   const {
     articleViewOverlayPhase,
@@ -72,12 +72,14 @@ export const useE2eUiProbes = (): void => {
     void writeE2eEvent('article-list-snapshot', {
       articleCount: articles.length,
       articlesTotalCount,
+      articlesTotalKnown,
+      pageWasFull,
       feedId: selectedFeedId,
       selectedFeedId,
       selectedTag,
       navigationNonce,
     });
-  }, [articles.length, articlesTotalCount, e2eConfig, navigationNonce, selectedFeedId, selectedTag]);
+  }, [articles.length, articlesTotalCount, articlesTotalKnown, pageWasFull, e2eConfig, navigationNonce, selectedFeedId, selectedTag]);
 
   useEffect(() => {
     if (!e2eConfig) {

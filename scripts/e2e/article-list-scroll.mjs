@@ -63,7 +63,8 @@ export async function runArticleListScrollE2e() {
     const listSnapshot = await waitForEvent(
       e2eDir,
       "article-list-snapshot",
-      (event) => (event.payload?.articlesTotalCount ?? 0) >= 120,
+      (event) => (event.payload?.articleCount ?? 0) >= 100
+        || (event.payload?.articlesTotalKnown === true && (event.payload?.articlesTotalCount ?? 0) >= 120),
       90_000,
     );
     const initialLoaded = listSnapshot.payload?.articleCount ?? 0;

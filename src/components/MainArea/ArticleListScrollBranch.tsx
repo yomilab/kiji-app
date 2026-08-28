@@ -36,6 +36,8 @@ export const ArticleListScrollBranch = memo(function ArticleListScrollBranch({
   const {
     articles,
     articlesTotalCount,
+    articlesTotalKnown,
+    pageWasFull,
     newArticleHashes: contextNewArticleHashes,
     articleListScrollRequest,
   } = useFeedCollectionArticles();
@@ -84,6 +86,8 @@ export const ArticleListScrollBranch = memo(function ArticleListScrollBranch({
       variant={variant}
       filteredArticles={articles}
       articlesTotalCount={articlesTotalCount}
+      articlesTotalKnown={articlesTotalKnown}
+      pageWasFull={pageWasFull}
       activeArticleHash={activeArticleHash}
       articleViewOverlayPhase={articleViewOverlayPhase}
       isInitialLoading={isInitialLoading}
