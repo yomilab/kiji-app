@@ -15,7 +15,7 @@ import './BottomWidget.css';
 const THEME_SEQUENCE: Theme[] = ['auto', 'light', 'dark'];
 
 export interface BottomWidgetProps {
-  /** Trailing chrome on the Settings row (typically `SyncIndicator`). */
+  /** Leading chrome on the Settings row (typically `SyncIndicator`). */
   children?: React.ReactNode;
 }
 
@@ -72,17 +72,17 @@ export const BottomWidget: React.FC<BottomWidgetProps> = ({ children }) => {
   return (
     <div className="bottom-widget has-no-drag" data-component="sidebar-bottom-widgets">
       <div className="bottom-widget-toolbar">
-        {/* Push-mode stack grows on hover; trailing children (SyncIndicator) flex-shrink. */}
+        {children}
+        {/* Push-mode stack grows left on hover; leading children (SyncIndicator) flex-shrink. */}
         <ButtonStack
           buttons={actionButtons}
-          direction="right"
+          direction="left"
           layoutMode="push"
           coverIcon={SettingsIcon}
           coverLabel={settingsTooltip}
           onCoverClick={handleSettings}
           className="bottom-widget-button-stack"
         />
-        {children}
       </div>
     </div>
   );

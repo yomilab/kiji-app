@@ -24,4 +24,18 @@
   position: relative;
   z-index: 2;
   flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/*
+ * Shared left-push snaps `left` to the expanded slot while width is still
+ * collapsing/growing, which throws the always-visible Settings cover past the
+ * sidebar edge. Pin cover + actions to the current trailing edge instead.
+ */
+.bottom-widget .bottom-widget-button-stack[data-layout-mode="push"][data-direction="left"] .button-stack-cover,
+.bottom-widget .bottom-widget-button-stack[data-layout-mode="push"][data-direction="left"] .button-stack-button,
+.bottom-widget .bottom-widget-button-stack[data-layout-mode="push"][data-direction="left"][data-expanded="true"] .button-stack-cover,
+.bottom-widget .bottom-widget-button-stack[data-layout-mode="push"][data-direction="left"][data-expanded="true"] .button-stack-button {
+  left: auto;
+  right: 0;
 }

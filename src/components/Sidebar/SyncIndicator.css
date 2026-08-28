@@ -1,5 +1,5 @@
-/* Right-aligned status. As a flex sibling of the Settings stack, this item
-   shrinks when the stack expands; overflow clips the start of the string.
+/* Left-aligned status. As a flex sibling of the Settings stack, this item
+   shrinks when the stack expands left; overflow ellipsizes the end of the string.
    Higher-z buttons can also paint over leftover glyphs during width/motion lag. */
 .sync-indicator {
   flex: 1 1 auto;
@@ -10,18 +10,24 @@
   color: var(--theme-primary-color);
   opacity: 0.7;
   letter-spacing: -0.01em;
-  text-align: right;
+  text-align: left;
   overflow: hidden;
   white-space: nowrap;
-  text-overflow: clip;
+  text-overflow: ellipsis;
   position: relative;
   z-index: 1;
-  mask-image: linear-gradient(to right, transparent 0, #000 10px);
-  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px);
+}
+
+.sync-indicator.is-syncing {
+  padding-inline-end: 1.25em;
 }
 
 .sync-indicator.is-syncing::after {
   content: '';
+  position: absolute;
+  inset-inline-end: 0;
+  top: 0;
+  width: 1.25em;
   animation: syncDots 1.5s steps(4, end) infinite;
 }
 

@@ -1,7 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
 import { SyncIndicator } from '@/components/Sidebar/SyncIndicator';
+
+const syncIndicatorCss = () =>
+  readFileSync(join(process.cwd(), 'src/components/Sidebar/SyncIndicator.css'), 'utf8');
 
 describe('SyncIndicator', () => {
   afterEach(() => {
@@ -31,5 +36,19 @@ describe('SyncIndicator', () => {
     const indicator = screen.getByText('Today 16:52');
     expect(indicator.className).toContain('sync-indicator');
     expect(indicator.className).toContain('extra-slot');
+  });
+
+  it('ellipsizes left-aligned overflow instead of start-clipping with a mask', () => {
+    const css = syncIndicatorCss();
+    expect(css).toMatch(/text-align:\s*left/);
+    expect(css).toMatch(/text-overflow:\s*ellipsis/);
+    expect(css).not.toMatch(/text-overflow:\s*clip/);
+    expect(css).not.toMatch(/mask-image/);
+  });
+
+  it('reserves end padding and absolutely positions syncing dots so ellipsis cannot clip them', () => {
+    const css = syncIndicatorCss();
+    expect(css).toMatch(/\.sync-indicator\.is-syncing\s*\{[^}]*padding-inline-end:\s*1\.25em/);
+    expect(css).toMatch(/\.sync-indicator\.is-syncing::after\s*\{[^}]*position:\s*absolute/);
   });
 });

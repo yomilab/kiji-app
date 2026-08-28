@@ -10,8 +10,8 @@ export interface SyncIndicatorProps {
 }
 
 /**
- * Right-aligned sidebar status. Intended as a flex sibling of the Settings
- * stack: it shrinks (`min-width: 0`) and clips as the stack expands.
+ * Left-aligned sidebar status. Intended as a flex sibling of the Settings
+ * stack: it shrinks (`min-width: 0`) and ellipsizes as the stack expands left.
  */
 export const SyncIndicator: React.FC<SyncIndicatorProps> = ({
   text,

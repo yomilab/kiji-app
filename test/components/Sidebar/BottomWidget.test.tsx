@@ -1,4 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { BottomWidget } from '@/components/Sidebar/BottomWidget';
@@ -45,7 +47,7 @@ describe('BottomWidget', () => {
     expect(screen.getByLabelText(/settings/i)).toBeTruthy();
   });
 
-  it('keeps the indicator after the settings stack so flex can squeeze it on expand', () => {
+  it('keeps the indicator before the settings stack so left-push can squeeze it', () => {
     const { container } = render(
       <BottomWidget>
         <SyncIndicator text="Today 16:52" />
@@ -58,7 +60,8 @@ describe('BottomWidget', () => {
     const indicator = toolbar?.querySelector('[data-component="sync-indicator"]');
     expect(stack).not.toBeNull();
     expect(indicator).not.toBeNull();
-    expect(stack?.compareDocumentPosition(indicator as Node) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(stack?.getAttribute('data-direction')).toBe('left');
+    expect(indicator?.compareDocumentPosition(stack as Node) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy();
   });
 
@@ -72,9 +75,19 @@ describe('BottomWidget', () => {
     const stack = container.querySelector('.button-stack');
     expect(stack).not.toBeNull();
     expect(stack?.getAttribute('data-expanded')).toBe('false');
+    expect(stack?.getAttribute('data-direction')).toBe('left');
 
     fireEvent.mouseEnter(stack as HTMLElement);
     expect(stack?.getAttribute('data-expanded')).toBe('true');
     expect(stack?.getAttribute('data-layout-mode')).toBe('push');
+  });
+
+  it('pins the left-push cover to the trailing edge so Settings does not jump right', () => {
+    const css = readFileSync(
+      join(process.cwd(), 'src/components/Sidebar/BottomWidget.css'),
+      'utf8',
+    );
+    expect(css).toMatch(/bottom-widget-button-stack[\s\S]*left:\s*auto/);
+    expect(css).toMatch(/bottom-widget-button-stack[\s\S]*right:\s*0/);
   });
 });
