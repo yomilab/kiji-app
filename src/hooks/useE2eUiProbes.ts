@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  useFeedCollection,
+  useFeedCollectionArticles,
   useFeedNavigation,
   useFeedOverlay,
 } from '@/contexts/FeedContext';
@@ -14,7 +14,7 @@ import {
 import { getRendererWindowType, isMainRendererWindow } from '@/utils/rendererWindow';
 
 export const useE2eUiProbes = (): void => {
-  const { articles, articlesTotalCount, articlesTotalKnown, pageWasFull } = useFeedCollection();
+  const { articles, articlesTotalCount, articlesTotalKnown, pageWasFull } = useFeedCollectionArticles();
   const { selectedFeedId, selectedTag, navigationNonce } = useFeedNavigation();
   const {
     articleViewOverlayPhase,

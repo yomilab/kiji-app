@@ -1,7 +1,7 @@
 import React from 'react';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AddIcon from '@mui/icons-material/Add';
-import { useFeedCollection, useFeedNavigation } from '@/contexts/FeedContext';
+import { useFeedCollectionActions, useFeedNavigation } from '@/contexts/FeedContext';
 import { TOOLTIPS } from '@/config/tooltips';
 import { useFeedRefreshActivity } from '@/hooks/useFeedRefreshActivity';
 import { isInteractiveStationRefreshInProgress } from '@/services/feeds/feedRefreshActivity';
@@ -14,7 +14,7 @@ interface SidebarWidgetsProps {
 }
 
 export const SidebarWidgets: React.FC<SidebarWidgetsProps> = ({ onAddFeed }) => {
-  const { refreshFeed } = useFeedCollection();
+  const { refreshFeed } = useFeedCollectionActions();
   const {
     selectedFeedId,
     selectedTag,

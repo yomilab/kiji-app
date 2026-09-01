@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { App } from "./App";
+import { FeedE2eCollectionHost } from "./hooks/FeedE2eCollectionHost";
 import { ArticleWindow } from "./components/ArticleWindow/ArticleWindow";
 import { UpdateWindow } from "./components/UpdateWindow/UpdateWindow";
 import { SettingsWindow } from "./components/SettingsWindow/SettingsWindow";
@@ -179,6 +180,7 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
     <React.StrictMode>
       <ThemeProvider>
         <FeedProvider>
+          <FeedE2eCollectionHost />
           <div className={`app-window-shell ${showInAppMenuBar ? "has-app-menu-bar" : ""}`}>
             {showInAppMenuBar ? <AppMenuBar /> : null}
             <div className="app-window-body">

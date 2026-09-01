@@ -72,6 +72,8 @@ const SCHEDULER_UI_BATCH_DELAY_MS = 250;
 const BACKGROUND_REFRESH_SCROLL_IDLE_DELAY_MS = 450;
 /** After rapid station hops, retry cold-switch SQLite if skeleton is still up. */
 const DEFERRED_SWITCH_SQLITE_RECOVERY_DELAY_MS = 250;
+/** Post-clear list reload follows the live source; hop during the query retries this many times. */
+const POST_CLEAR_SOURCE_RELOAD_MAX_ATTEMPTS = 4;
 const DEFAULT_ARTICLE_LIST_SORT: NonNullable<ArticleQuery['sort']> = { field: 'publishedDate', order: 'desc' };
 const LAST_SIDEBAR_SELECTION_KEY = 'last-sidebar-selection';
 const HAS_PERFORMANCE_API = typeof performance !== 'undefined' && typeof performance.mark === 'function';
@@ -106,6 +108,15 @@ type SourceArticleListSnapshot = {
   totalKnown: boolean;
   pageWasFull: boolean;
   query: ArticleQuery | null;
+};
+
+type LoadMorePagingSnapshot = {
+  length: number;
+  lastArticle: Article | undefined;
+  articlesTotalCount: number;
+  articlesTotalKnown: boolean;
+  pageWasFull: boolean;
+  isLoadingMoreArticles: boolean;
 };
 
 const getArticlePaginationCursor = (article: Article | undefined): ArticleQuery['cursor'] | undefined => {
@@ -737,6 +748,36 @@ const getRefreshSourceDescriptor = (navigationState: NavigationState): RefreshSo
   return null;
 };
 
+const getRefreshSourceDescriptorFromPrevNav = (
+  nav: { id: string | null; tag: string | null; smart: string | null },
+): RefreshSourceDescriptor | null => {
+  if (nav.id) {
+    return {
+      type: 'feed',
+      key: `feed:${nav.id}`,
+      feedId: nav.id,
+    };
+  }
+
+  if (nav.tag) {
+    return {
+      type: 'tag',
+      key: `tag:${nav.tag}`,
+      tagName: nav.tag,
+    };
+  }
+
+  if (nav.smart) {
+    return {
+      type: 'smart',
+      key: `smart:${nav.smart}`,
+      viewType: nav.smart as SmartViewType,
+    };
+  }
+
+  return null;
+};
+
 export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [navigationState, navigationDispatch] = useReducer(navigationReducer, {
     selectedFeedId: null,
@@ -793,10 +834,20 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const importEmptyCommitTokenRef = useRef<number | null>(null);
   const interactiveRefreshScopeTokenRef = useRef(0);
   const lastQueryRef = useRef<ArticleQuery | null>(null);
+  const lastQuerySourceKeyRef = useRef<string | null>(null);
+  const listReloadEpochRef = useRef(0);
   const hasAttemptedSidebarRestoreRef = useRef(false);
   const backgroundScrollRequestRevisionRef = useRef(0);
   const activeSourceRef = useRef<RefreshSourceDescriptor | null>(null);
   const currentArticlesRef = useRef<Article[]>([]);
+  const loadMorePagingSnapshotRef = useRef<LoadMorePagingSnapshot>({
+    length: 0,
+    lastArticle: undefined,
+    articlesTotalCount: 0,
+    articlesTotalKnown: false,
+    pageWasFull: false,
+    isLoadingMoreArticles: false,
+  });
   const nonSearchArticlesRef = useRef<Article[]>([]);
   const nonSearchArticlesTotalCountRef = useRef(0);
   const nonSearchArticlesTotalKnownRef = useRef(false);
@@ -1126,6 +1177,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     nonSearchArticlesTotalKnownRef.current = snapshot.totalKnown;
     nonSearchArticlesPageWasFullRef.current = snapshot.pageWasFull;
     lastQueryRef.current = snapshot.query;
+    lastQuerySourceKeyRef.current = sourceKey;
     collectionDispatch({
       type: 'RESTORE_SOURCE_SNAPSHOT',
       payload: {
@@ -1487,12 +1539,13 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (nonSearchArticlesTotalKnownRef.current && articleListSearchQueryRef.current === null) {
         return;
       }
+      const reloadEpoch = listReloadEpochRef.current;
       const { total: freshTotal } = await articleStore.query({
         ...tagQuery,
         limit: 1,
         includeTotal: true,
       });
-      if (!isSelectionActive(token)) {
+      if (!isSelectionActive(token) || reloadEpoch !== listReloadEpochRef.current) {
         return;
       }
 
@@ -1508,12 +1561,13 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     const visibleCount = Math.max(currentArticlesRef.current.length, SMART_VIEW_ARTICLE_LIMIT);
+    const reloadEpoch = listReloadEpochRef.current;
     const { articles: fresh, total: freshTotal } = await articleStore.query({
       ...tagQuery,
       limit: visibleCount,
       includeTotal: true,
     });
-    if (!isSelectionActive(token)) {
+    if (!isSelectionActive(token) || reloadEpoch !== listReloadEpochRef.current) {
       return;
     }
 
@@ -2726,6 +2780,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     try {
       lastQueryRef.current = query;
+      lastQuerySourceKeyRef.current = sourceKey;
       const isColdSwitch = shouldReset && restoredSnapshot === null;
 
       if (restoredSnapshot && !restoredSnapshot.totalKnown && restoredSnapshot.query) {
@@ -2953,6 +3008,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           payload: { isLoadingArticles: false, isSavedListLoading: false, },
         });
         lastQueryRef.current = null;
+        lastQuerySourceKeyRef.current = null;
       }
       setActiveArticle(null);
     }
@@ -2961,6 +3017,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     if (type === 'saved') {
       lastQueryRef.current = null;
+      lastQuerySourceKeyRef.current = null;
       collectionDispatch({
         type: 'SET_LOADING',
         payload: { isLoadingArticles: false, isSavedListLoading: true, },
@@ -3008,6 +3065,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           ? createArticleListQuery({ tagName: 'pinned' })
           : createArticleListQuery({});
       lastQueryRef.current = query;
+      lastQuerySourceKeyRef.current = `smart:${type}`;
 
       const { articles: list, total } = await articleStore.query(query);
       if (!isSelectionActive(token)) return;
@@ -3269,9 +3327,108 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [beginSelectionRequest, handleFeedSelection, handleSmartViewSelection, handleTagSelection, navigationState]);
 
   const reloadCurrentSourceFromStore = useCallback(async () => {
-    const source = getRefreshSourceDescriptor(navigationState);
-    if (!source) {
-      collectionDispatch({ type: 'RESET_ARTICLES' });
+    // Article-clear completion: drop cached pages that still contain deleted rows,
+    // and freeze render-time remember until a matched post-delete write.
+    sourceArticleSnapshotCacheRef.current.clear();
+    lastQuerySourceKeyRef.current = null;
+    listReloadEpochRef.current += 1;
+
+    const writeUnfilteredNonSearch = (
+      source: RefreshSourceDescriptor,
+      list: Article[],
+      total: number,
+      query: ArticleQuery | null,
+      visibleCount: number,
+    ): void => {
+      nonSearchArticlesRef.current = list;
+      nonSearchArticlesTotalCountRef.current = total;
+      nonSearchArticlesTotalKnownRef.current = true;
+      nonSearchArticlesPageWasFullRef.current = list.length >= visibleCount;
+      lastQueryRef.current = query;
+      lastQuerySourceKeyRef.current = source.key;
+      rememberSourceArticleSnapshot(
+        source.key,
+        list,
+        total,
+        query,
+        true,
+        list.length >= visibleCount,
+      );
+    };
+
+    for (let attempt = 0; attempt < POST_CLEAR_SOURCE_RELOAD_MAX_ATTEMPTS; attempt += 1) {
+      const source = getRefreshSourceDescriptorFromPrevNav(prevNavRef.current);
+      if (!source) {
+        collectionDispatch({ type: 'RESET_ARTICLES' });
+        collectionDispatch({
+          type: 'SET_LOADING',
+          payload: {
+            isLoadingArticles: false,
+            isSavedListLoading: false,
+            isLoadingMoreArticles: false,
+            isLoadMoreInFlight: false,
+          },
+        });
+        logger.info('FeedContext', 'Post-clear source reload skipped', {
+          reason: 'no-source',
+          attempt,
+        });
+        return;
+      }
+
+      const token = switchLifecycle.currentToken;
+      const searchRevision = articleListSearchRevisionRef.current;
+      const searchText = articleListSearchQueryRef.current;
+      const visibleCount = Math.max(currentArticlesRef.current.length, SMART_VIEW_ARTICLE_LIMIT);
+      const { articles: list, total, query } = await queryArticleListSource(
+        source,
+        visibleCount,
+        searchText,
+      );
+
+      const liveSource = getRefreshSourceDescriptorFromPrevNav(prevNavRef.current);
+      const tokenChanged = token !== switchLifecycle.currentToken;
+      const sourceChanged = liveSource?.key !== source.key;
+      const searchChanged = articleListSearchRevisionRef.current !== searchRevision
+        || articleListSearchQueryRef.current !== searchText;
+
+      if (searchChanged) {
+        logger.info('FeedContext', 'Post-clear source reload skipped', {
+          reason: 'search-revision',
+          sourceKey: source.key,
+          token,
+          attempt,
+        });
+        return;
+      }
+
+      if (tokenChanged || sourceChanged) {
+        logger.info('FeedContext', 'Post-clear source reload retry', {
+          reason: tokenChanged ? 'token' : 'source',
+          queriedKey: source.key,
+          liveKey: liveSource?.key ?? null,
+          token,
+          currentToken: switchLifecycle.currentToken,
+          attempt,
+        });
+        continue;
+      }
+
+      listReloadEpochRef.current += 1;
+      loadMoreInFlightRef.current = false;
+      currentArticlesRef.current = list;
+      if (searchText === null) {
+        writeUnfilteredNonSearch(source, list, total, query, visibleCount);
+      }
+      collectionDispatch({
+        type: 'SET_ARTICLES',
+        payload: {
+          list,
+          total,
+          totalKnown: true,
+          pageWasFull: list.length >= visibleCount,
+        },
+      });
       collectionDispatch({
         type: 'SET_LOADING',
         payload: {
@@ -3281,37 +3438,67 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           isLoadMoreInFlight: false,
         },
       });
+      logger.info('FeedContext', 'Post-clear source reload published', {
+        sourceKey: source.key,
+        token,
+        total,
+        loaded: list.length,
+        attempt,
+        searchActive: searchText !== null,
+      });
+
+      if (searchText === null) {
+        return;
+      }
+
+      const unfilteredVisibleCount = Math.max(
+        nonSearchArticlesRef.current.length,
+        SMART_VIEW_ARTICLE_LIMIT,
+      );
+      const unfiltered = await queryArticleListSource(source, unfilteredVisibleCount);
+      const stillLive = getRefreshSourceDescriptorFromPrevNav(prevNavRef.current);
+      if (
+        token !== switchLifecycle.currentToken
+        || stillLive?.key !== source.key
+      ) {
+        logger.info('FeedContext', 'Post-clear source reload retry', {
+          reason: token !== switchLifecycle.currentToken ? 'token' : 'source',
+          queriedKey: source.key,
+          liveKey: stillLive?.key ?? null,
+          token,
+          currentToken: switchLifecycle.currentToken,
+          attempt,
+          stage: 'unfiltered-follow-up',
+        });
+        continue;
+      }
+
+      writeUnfilteredNonSearch(
+        source,
+        unfiltered.articles,
+        unfiltered.total,
+        unfiltered.query,
+        unfilteredVisibleCount,
+      );
+      if (articleListSearchQueryRef.current === null) {
+        currentArticlesRef.current = unfiltered.articles;
+        collectionDispatch({
+          type: 'SET_ARTICLES',
+          payload: {
+            list: unfiltered.articles,
+            total: unfiltered.total,
+            totalKnown: true,
+            pageWasFull: unfiltered.articles.length >= unfilteredVisibleCount,
+          },
+        });
+      }
       return;
     }
 
-    const visibleCount = Math.max(currentArticlesRef.current.length, SMART_VIEW_ARTICLE_LIMIT);
-    const { articles: list, total, query } = await queryArticleListSource(source, visibleCount);
-
-    currentArticlesRef.current = list;
-    nonSearchArticlesRef.current = list;
-    nonSearchArticlesTotalCountRef.current = total;
-    nonSearchArticlesTotalKnownRef.current = true;
-    nonSearchArticlesPageWasFullRef.current = list.length >= visibleCount;
-    lastQueryRef.current = query;
-    collectionDispatch({
-      type: 'SET_ARTICLES',
-      payload: {
-        list,
-        total,
-        totalKnown: true,
-        pageWasFull: list.length >= visibleCount,
-      },
+    logger.info('FeedContext', 'Post-clear source reload skipped', {
+      reason: 'max-attempts',
     });
-    collectionDispatch({
-      type: 'SET_LOADING',
-      payload: {
-        isLoadingArticles: false,
-        isSavedListLoading: false,
-        isLoadingMoreArticles: false,
-        isLoadMoreInFlight: false,
-      },
-    });
-  }, [navigationState, queryArticleListSource]);
+  }, [queryArticleListSource, rememberSourceArticleSnapshot]);
 
   const searchCurrentSource = useCallback(async (rawQuery: string) => {
     const searchText = rawQuery.trim();
@@ -3387,6 +3574,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     lastQueryRef.current = query;
+    lastQuerySourceKeyRef.current = source.key;
     dispatchArticlesTransitionIfChanged(list, total, {
       totalKnown: true,
       pageWasFull: list.length >= visibleCount,
@@ -3403,20 +3591,22 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const showLoadingIndicator = options.showLoadingIndicator ?? true;
     const priority = options.priority ?? (showLoadingIndicator ? 'urgent' : 'prefetch');
     const isUrgentLoadMore = priority === 'urgent';
-    if (collectionState.isLoadingMoreArticles || loadMoreInFlightRef.current) return;
+    const paging = loadMorePagingSnapshotRef.current;
+    if (paging.isLoadingMoreArticles || loadMoreInFlightRef.current) return;
     if (!articleListHasMore({
-      loadedCount: collectionState.articles.length,
-      totalCount: collectionState.articlesTotalCount,
-      totalKnown: collectionState.articlesTotalKnown,
-      pageWasFull: collectionState.pageWasFull,
+      loadedCount: paging.length,
+      totalCount: paging.articlesTotalCount,
+      totalKnown: paging.articlesTotalKnown,
+      pageWasFull: paging.pageWasFull,
     })) {
       return;
     }
 
     loadMoreInFlightRef.current = true;
     const token = switchLifecycle.currentToken;
+    const reloadEpoch = listReloadEpochRef.current;
     const activeSearchText = articleListSearchQueryRef.current;
-    const offset = collectionState.articles.length;
+    const offset = paging.length;
     const requestedLimit = ARTICLE_LIST_LOAD_MORE_LIMIT;
     const sourceKey = activeSourceRef.current?.key ?? null;
     collectionDispatch({
@@ -3429,16 +3619,20 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       if (!isUrgentLoadMore && !showLoadingIndicator) {
         await yieldToArticleListPrefetchFrame();
-        if (token !== switchLifecycle.currentToken || activeSearchText !== articleListSearchQueryRef.current) {
+        if (
+          token !== switchLifecycle.currentToken
+          || activeSearchText !== articleListSearchQueryRef.current
+          || reloadEpoch !== listReloadEpochRef.current
+        ) {
           return;
         }
       }
 
       let more: { articles: Article[] };
-      const cursor = getArticlePaginationCursor(collectionState.articles[collectionState.articles.length - 1]);
+      const cursor = getArticlePaginationCursor(paging.lastArticle);
       const queryStartedAtMs = getPerformanceTimeMs();
+      const source = activeSourceRef.current;
       if (activeSearchText) {
-        const source = activeSourceRef.current;
         if (!source) {
           return;
         }
@@ -3449,7 +3643,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const searchQuery = createArticleQueryForSource(source, SMART_VIEW_ARTICLE_LIMIT, activeSearchText);
           more = await articleStore.query({ ...searchQuery, limit: requestedLimit, cursor, includeTotal: false });
         }
-      } else if (navigationState.selectedSmartView === 'saved') {
+      } else if (source?.type === 'smart' && source.viewType === 'saved') {
         more = await savedArticlesService.querySavedViewArticles(requestedLimit, offset);
       } else if (lastQueryRef.current) {
         more = await articleStore.query({ ...lastQueryRef.current, limit: requestedLimit, cursor, includeTotal: false });
@@ -3458,7 +3652,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       const queryDurationMs = getPerformanceTimeMs() - queryStartedAtMs;
 
-      if (token !== switchLifecycle.currentToken || activeSearchText !== articleListSearchQueryRef.current) {
+      if (
+        token !== switchLifecycle.currentToken
+        || activeSearchText !== articleListSearchQueryRef.current
+        || reloadEpoch !== listReloadEpochRef.current
+      ) {
         return;
       }
       const metric: LoadMoreQueryMetric = {
@@ -3507,15 +3705,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [
     applyBackgroundRefreshForSource,
-    collectionState.articles.length,
-    collectionState.articlesTotalCount,
-    collectionState.articlesTotalKnown,
-    collectionState.pageWasFull,
-    collectionState.isLoadingMoreArticles,
     createArticleQueryForSource,
     flushPendingSwitchVisibleReconcileIfIdle,
     queueLoadMoreCommitMetric,
-    navigationState.selectedSmartView
   ]);
 
   const updateArticleInList = useCallback((hash: string, updates: ArticleListUpdatePayload = { read: true }) => {
@@ -3584,12 +3776,24 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const activeSourceSnapshot = getRefreshSourceDescriptor(navigationState);
   currentArticlesRef.current = collectionState.articles;
+  loadMorePagingSnapshotRef.current = {
+    length: collectionState.articles.length,
+    lastArticle: collectionState.articles[collectionState.articles.length - 1],
+    articlesTotalCount: collectionState.articlesTotalCount,
+    articlesTotalKnown: collectionState.articlesTotalKnown,
+    pageWasFull: collectionState.pageWasFull,
+    isLoadingMoreArticles: collectionState.isLoadingMoreArticles,
+  };
   if (articleListSearchQueryRef.current === null) {
     nonSearchArticlesRef.current = collectionState.articles;
     nonSearchArticlesTotalCountRef.current = collectionState.articlesTotalCount;
     nonSearchArticlesTotalKnownRef.current = collectionState.articlesTotalKnown;
     nonSearchArticlesPageWasFullRef.current = collectionState.pageWasFull;
-    if (activeSourceSnapshot && lastQueryRef.current !== null) {
+    if (
+      activeSourceSnapshot
+      && lastQueryRef.current !== null
+      && lastQuerySourceKeyRef.current === activeSourceSnapshot.key
+    ) {
       rememberSourceArticleSnapshot(
         activeSourceSnapshot.key,
         collectionState.articles,

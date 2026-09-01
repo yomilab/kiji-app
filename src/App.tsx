@@ -20,14 +20,11 @@ import {
   useStartupMigration,
 } from './hooks/useAppEffects';
 import { useE2eHarness } from './hooks/useE2eHarness';
-import { useE2eCommandHandler } from './hooks/useE2eCommandHandler';
-import { useE2eUiProbes } from './hooks/useE2eUiProbes';
 import { useMountEffect } from './hooks/useLifecycleEffects';
 import {
   useFeedNavigation,
-  useFeedCollection,
+  useFeedCollectionActions,
   useFeedOverlay,
-  useFeedUI,
   useFeedUIActions,
 } from '@/contexts/FeedContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -106,15 +103,9 @@ export const App: React.FC = () => {
   } = useFeedNavigation();
 
   useE2eHarness();
-  useE2eUiProbes();
-  useE2eCommandHandler();
 
-  const { refreshFeed, updateArticleInList, reloadCurrentSourceFromStore } = useFeedCollection();
-
-  const {
-    refreshTotalFeeds,
-  } = useFeedUI();
-  const { notifyFeedLibraryChanged } = useFeedUIActions();
+  const { refreshFeed, updateArticleInList, reloadCurrentSourceFromStore } = useFeedCollectionActions();
+  const { refreshTotalFeeds, notifyFeedLibraryChanged } = useFeedUIActions();
 
   const sidebarLayerRef = useRef<HTMLDivElement>(null);
   const sidebarLayerWidth = useElementWidth(sidebarLayerRef);

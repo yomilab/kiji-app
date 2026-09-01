@@ -1,23 +1,22 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { FeedList } from './FeedList';
 import { TagManager } from './TagManager';
 import { SmartViews } from './SmartViews';
 import { SidebarWidgets } from './SidebarWidgets';
 import { BottomWidget } from './BottomWidget';
-import { SyncIndicator } from './SyncIndicator';
 import { SectionTitle, type SidebarSectionId } from './SectionTitle';
 import { settingsManager } from '@/services/settings';
-import { useFeedNavigation, useFeedUI, useFeedCollection } from '@/contexts/FeedContext';
+import { useFeedUI } from '@/contexts/FeedContext';
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { isOpenAddFeedShortcut, keybindingService } from '@/services/shortcuts/shortcutService';
 import { useFeedRefreshActivity } from '@/hooks/useFeedRefreshActivity';
 import { isInteractiveStationRefreshInProgress } from '@/services/feeds/feedRefreshActivity';
 import { useUserMessageChannel } from '@/hooks/useUserMessageChannel';
 import { SIDEBAR_INDICATOR_CHANNEL } from '@/services/ui/sidebarIndicatorService';
-import { sidebarIndicatorOngoing } from '@/services/ui/sidebarIndicatorText';
 import { beginLayoutColumnResize, endLayoutColumnResize } from '@/services/ui/layoutColumnResize';
 import { resolveHoveredSidebarSection } from './sidebarSectionHover';
+import { SidebarSyncIndicator } from './SidebarSyncIndicator';
 import './Sidebar.css';
 
 const MIN_SIDEBAR_WIDTH = 250;
@@ -41,42 +40,7 @@ const SidebarSection: React.FC<{
   );
 };
 
-export interface FeedRefreshStatusInput {
-  displayFeedCount: number;
-  isBackgroundFeedRefreshing: boolean;
-  interactiveRefreshScopeTotal: number;
-  interactiveRefreshCompleted: number;
-}
-
-export const formatFeedRefreshStatus = (input: FeedRefreshStatusInput): string => {
-  // User-visible progress always uses the station scope (x/N). Never format
-  // queue depth (`displayFeedCount`) — it mirrors the internal foreground cap.
-  const stationScopeProgress = input.interactiveRefreshScopeTotal > 1
-    ? {
-        completed: input.interactiveRefreshCompleted,
-        total: input.interactiveRefreshScopeTotal,
-      }
-    : undefined;
-
-  if (input.isBackgroundFeedRefreshing) {
-    if (stationScopeProgress) {
-      if (stationScopeProgress.completed === 0) {
-        return sidebarIndicatorOngoing('syncing', undefined, { subject: 'feeds' });
-      }
-      return sidebarIndicatorOngoing('syncing', stationScopeProgress);
-    }
-    return sidebarIndicatorOngoing('syncing', undefined, { subject: 'all' });
-  }
-
-  if (stationScopeProgress) {
-    if (stationScopeProgress.completed === 0) {
-      return sidebarIndicatorOngoing('syncing', undefined, { subject: 'feeds' });
-    }
-    return sidebarIndicatorOngoing('refreshing', stationScopeProgress);
-  }
-
-  return sidebarIndicatorOngoing('refreshing', undefined, { subject: 'feeds' });
-};
+export { formatFeedRefreshStatus, type FeedRefreshStatusInput } from './SidebarSyncIndicator';
 
 export const Sidebar: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
@@ -92,8 +56,6 @@ export const Sidebar: React.FC = () => {
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
   const syncStartTimeRef = useRef<number | null>(null);
   const syncTimeoutRef = useRef<number | null>(null);
-  const { articles } = useFeedCollection();
-  const { selectedSmartView } = useFeedNavigation();
   const { totalFeeds, feedLibraryVersion } = useFeedUI();
   const refreshActivity = useFeedRefreshActivity();
   const {
@@ -376,74 +338,6 @@ export const Sidebar: React.FC = () => {
     scheduleHoveredSectionSync();
   };
 
-  const formatSyncTime = (date: Date | null): string => {
-    if (!date) return '';
-
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const dateAtMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-    // Check if the date is today
-    if (dateAtMidnight.getTime() === today.getTime()) {
-      return `Today ${date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
-    }
-
-    // Otherwise return the date
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
-  // Memoize the sync text to prevent flickering when switching feeds
-  const syncText = useMemo(() => {
-    if (sidebarIndicatorText) {
-      return sidebarIndicatorText;
-    }
-
-    if (exportProgressText) {
-      return exportProgressText;
-    }
-
-    if (isAnyFeedRefreshing || stationRefreshInProgress) {
-      return formatFeedRefreshStatus({
-        displayFeedCount,
-        isBackgroundFeedRefreshing,
-        interactiveRefreshScopeTotal,
-        interactiveRefreshCompleted,
-      });
-    }
-
-    // Show "syncing" if currently syncing
-    if (showSyncing) {
-      return sidebarIndicatorOngoing('syncing');
-    }
-
-    // No feeds at all
-    if (totalFeeds === 0) {
-      return 'No feeds';
-    }
-
-    // Show "No articles" only for Saved view when empty
-    if (selectedSmartView === 'saved' && articles.length === 0) {
-      return 'No articles';
-    }
-
-    // Default: show sync time
-    return formatSyncTime(lastSyncTime);
-  }, [
-    articles.length,
-    exportProgressText,
-    displayFeedCount,
-    isBackgroundFeedRefreshing,
-    isAnyFeedRefreshing,
-    interactiveRefreshCompleted,
-    interactiveRefreshScopeTotal,
-    lastSyncTime,
-    selectedSmartView,
-    showSyncing,
-    sidebarIndicatorText,
-    stationRefreshInProgress,
-    totalFeeds,
-  ]);
-
   return (
     <aside
       ref={sidebarRef}
@@ -545,14 +439,18 @@ export const Sidebar: React.FC = () => {
 
         {/* Settings stack + independent SyncIndicator share this bottom row. */}
         <BottomWidget>
-          <SyncIndicator
-            text={syncText}
-            syncing={
-              showSyncing
-              && !sidebarIndicatorText
-              && !exportProgressText
-              && !isAnyFeedRefreshing
-            }
+          <SidebarSyncIndicator
+            sidebarIndicatorText={sidebarIndicatorText}
+            exportProgressText={exportProgressText}
+            displayFeedCount={displayFeedCount}
+            isBackgroundFeedRefreshing={isBackgroundFeedRefreshing}
+            interactiveRefreshScopeTotal={interactiveRefreshScopeTotal}
+            interactiveRefreshCompleted={interactiveRefreshCompleted}
+            isAnyFeedRefreshing={isAnyFeedRefreshing}
+            stationRefreshInProgress={stationRefreshInProgress}
+            showSyncing={showSyncing}
+            totalFeeds={totalFeeds}
+            lastSyncTime={lastSyncTime}
           />
         </BottomWidget>
       </div>

@@ -4,7 +4,7 @@ import { cleanup, render } from '@testing-library/react';
 import { SidebarWidgets } from '@/components/Sidebar/SidebarWidgets';
 
 vi.mock('@/contexts/FeedContext', () => ({
-  useFeedCollection: () => ({ refreshFeed: vi.fn() }),
+  useFeedCollectionActions: () => ({ refreshFeed: vi.fn() }),
   useFeedNavigation: () => ({
     selectedFeedId: 'feed-1',
     selectedTag: null,
