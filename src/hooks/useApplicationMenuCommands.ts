@@ -200,6 +200,7 @@ export const useApplicationMenuCommands = ({
         }
       }, { subject: 'saved' });
 
+      logger.info('AppMenu', 'Clear saved articles completed', { count: savedArticles.length });
       await reloadCurrentSourceFromStore();
       notifyFeedLibraryChanged();
       sidebarIndicatorService.show(
@@ -247,6 +248,7 @@ export const useApplicationMenuCommands = ({
 
       const deletedCount = await clearAllArticlesAcrossFeeds(feeds.map((feed) => feed.id));
 
+      logger.info('AppMenu', 'Clear all articles completed', { deletedCount });
       await reloadCurrentSourceFromStore();
       notifyFeedLibraryChanged();
       sidebarIndicatorService.show(
@@ -281,6 +283,7 @@ export const useApplicationMenuCommands = ({
     try {
       sidebarIndicatorService.show(sidebarIndicatorOngoing('clearing', undefined, { subject: 'articles' }));
       const deletedArticleCount = await articlesManager.cleanOldArticlesAcrossFeeds(months);
+      logger.info('AppMenu', 'Clear articles older than completed', { months, deletedArticleCount });
       await reloadCurrentSourceFromStore();
       notifyFeedLibraryChanged();
       sidebarIndicatorService.show(

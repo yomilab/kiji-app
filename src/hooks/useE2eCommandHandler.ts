@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import { getCurrentWindow, Window } from '@tauri-apps/api/window';
 import {
-  useFeedCollection,
+  useFeedCollectionActions,
+  useFeedCollectionArticles,
   useFeedNavigation,
   useFeedOverlay,
   useFeedUIActions,
@@ -71,17 +72,18 @@ function scrollArticleListElement(options: { toEnd?: boolean; delta?: number }):
 
 export const useE2eCommandHandler = (): void => {
   const navigation = useFeedNavigation();
-  const collection = useFeedCollection();
+  const collectionArticles = useFeedCollectionArticles();
+  const collectionActions = useFeedCollectionActions();
   const overlay = useFeedOverlay();
   const uiActions = useFeedUIActions();
 
   const navigationRef = useRef(navigation);
-  const collectionRef = useRef(collection);
+  const collectionRef = useRef({ ...collectionArticles, ...collectionActions });
   const overlayRef = useRef(overlay);
   const uiActionsRef = useRef(uiActions);
 
   navigationRef.current = navigation;
-  collectionRef.current = collection;
+  collectionRef.current = { ...collectionArticles, ...collectionActions };
   overlayRef.current = overlay;
   uiActionsRef.current = uiActions;
 

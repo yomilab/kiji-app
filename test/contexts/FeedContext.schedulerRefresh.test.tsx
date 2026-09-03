@@ -703,4 +703,77 @@ describe('FeedContext scheduler refresh', () => {
     expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-b1']);
     expect(latestContext!.newArticleHashes.size).toBe(0);
   });
+
+  it('resumes a deferred background apply after load-more finishes', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => createArticle(`hash-a${index}`, 'feed-1'));
+    const pageTwo = [createArticle('hash-more', 'feed-1')];
+    const refreshed = [createArticle('hash-new', 'feed-1'), ...firstPage, ...pageTwo];
+    const loadMoreDeferred = createDeferred<{ articles: Article[]; total: number }>();
+
+    (articleStore.query as vi.Mock).mockImplementation((query: {
+      feedIds?: string[];
+      includeTotal?: boolean;
+      cursor?: { hash: string };
+      limit?: number;
+    }) => {
+      if (!query.feedIds?.includes('feed-1')) {
+        return Promise.resolve({ articles: [], total: 0 });
+      }
+      if (query.cursor) {
+        return loadMoreDeferred.promise;
+      }
+      if (query.includeTotal === false) {
+        return Promise.resolve({ articles: firstPage, total: 0 });
+      }
+      if (query.includeTotal === true && query.limit === 1) {
+        return Promise.resolve({ articles: firstPage.slice(0, 1), total: 500 });
+      }
+      const limit = query.limit ?? refreshed.length;
+      return Promise.resolve({ articles: refreshed.slice(0, limit), total: 501 });
+    });
+
+    await renderProvider();
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+    await act(async () => {
+      await latestContext!.selectFeed('feed-1', 'https://feed-1.example.com/rss.xml', 'Feed 1');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles).toHaveLength(100);
+    });
+
+    await act(async () => {
+      void latestContext!.loadMoreArticles();
+    });
+
+    await waitForExpectation(() => {
+      expect(articleStore.query).toHaveBeenCalledWith(expect.objectContaining({
+        cursor: expect.objectContaining({ hash: 'hash-a99' }),
+      }));
+    });
+
+    await act(async () => {
+      __emitSchedulerEvent({
+        type: 'feed-updated',
+        feedId: 'feed-1',
+        newArticleCount: 1,
+      });
+      __emitSchedulerEvent({ type: 'cycle-complete' });
+      await Promise.resolve();
+    });
+
+    expect(latestContext!.articles.map((article) => article.hash)).not.toContain('hash-new');
+
+    await act(async () => {
+      loadMoreDeferred.resolve({ articles: pageTwo, total: 101 });
+      await Promise.resolve();
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toContain('hash-new');
+      expect(latestContext!.articles.map((article) => article.hash)).toContain('hash-more');
+      expect(Array.from(latestContext!.newArticleHashes)).toContain('hash-new');
+    });
+  });
 });

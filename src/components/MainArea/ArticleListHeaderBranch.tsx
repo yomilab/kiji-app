@@ -34,7 +34,7 @@ export const ArticleListHeaderBranch = memo(function ArticleListHeaderBranch({
     selectedTag,
     selectedSmartView,
   } = useFeedNavigation();
-  const { articles, articlesTotalCount } = useFeedCollectionArticles();
+  const { articles, articlesTotalCount, articlesTotalKnown } = useFeedCollectionArticles();
   const { isLoadingArticles, isSavedListLoading } = useFeedCollectionLoading();
   const { hasListScrollOffset } = useArticleListScrollOffset();
 
@@ -51,6 +51,7 @@ export const ArticleListHeaderBranch = memo(function ArticleListHeaderBranch({
       showSourceTitle={!!(selectedFeedId || selectedTag || selectedSmartView)}
       selectedFeedTitle={selectedFeedTitle}
       subtitleText={`${articlesTotalCount} Items`}
+      hideSubtitle={articlesTotalKnown === false}
       isSavedView={isSavedView}
       isSearchOpen={isSearchOpen}
       searchQuery={searchQuery}

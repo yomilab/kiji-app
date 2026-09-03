@@ -4,8 +4,6 @@ import './SyncIndicator.css';
 export interface SyncIndicatorProps {
   /** Status string (last sync, refresh progress, import/export). Empty still occupies the row. */
   text: string;
-  /** True when the idle "syncing…" dots animation should run. */
-  syncing?: boolean;
   className?: string;
 }
 
@@ -15,14 +13,9 @@ export interface SyncIndicatorProps {
  */
 export const SyncIndicator: React.FC<SyncIndicatorProps> = ({
   text,
-  syncing = false,
   className = '',
 }) => {
-  const classNames = [
-    'sync-indicator',
-    syncing ? 'is-syncing' : '',
-    className,
-  ].filter(Boolean).join(' ');
+  const classNames = ['sync-indicator', className].filter(Boolean).join(' ');
 
   return (
     <p
@@ -30,7 +23,7 @@ export const SyncIndicator: React.FC<SyncIndicatorProps> = ({
       data-component="sync-indicator"
       title={text}
     >
-      {text}
+      <span className="sync-indicator-text">{text}</span>
     </p>
   );
 };

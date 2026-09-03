@@ -37,7 +37,7 @@ vi.mock('@/components/Sidebar/SyncIndicator', () => ({
 }));
 
 vi.mock('@/contexts/FeedContext', () => ({
-  useFeedCollection: () => ({ articles: [] }),
+  useFeedCollectionArticles: () => ({ articles: [] }),
   useFeedNavigation: () => ({ selectedSmartView: null }),
   useFeedUI: () => ({ totalFeeds: 0, feedLibraryVersion: 0 }),
 }));

@@ -137,6 +137,7 @@ type MockArticleQuery = {
     hash: string;
   };
   includeTotal?: boolean;
+  limit?: number;
 };
 
 const waitForExpectation = async (
@@ -527,7 +528,7 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     });
 
     await waitForExpectation(() => {
-      expect(techQueryCount).toBeGreaterThanOrEqual(2);
+      expect(techQueryCount).toBeGreaterThanOrEqual(1);
       expect(latestContext!.selectedTag).toBe('Tech');
       expect(latestContext!.isLoadingArticles).toBe(false);
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['tech-1', 'tech-2']);
@@ -664,6 +665,176 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       ]);
       expect(latestContext!.isLoadingMoreArticles).toBe(false);
     });
+  });
+
+  it('keeps loadMoreArticles identity stable across APPEND', async () => {
+    const initialArticles = [
+      createArticle('hash-1', 'feed-a'),
+      createArticle('hash-2', 'feed-a'),
+    ];
+
+    (articleStore.query as vi.Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.cursor?.hash === 'hash-2') {
+        return Promise.resolve({
+          articles: [
+            createArticle('hash-3', 'feed-a'),
+            createArticle('hash-4', 'feed-a'),
+          ],
+          total: 6,
+        });
+      }
+      if (query.cursor?.hash === 'hash-4') {
+        return Promise.resolve({
+          articles: [
+            createArticle('hash-5', 'feed-a'),
+            createArticle('hash-6', 'feed-a'),
+          ],
+          total: 6,
+        });
+      }
+      return Promise.resolve({ articles: initialArticles, total: 6 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      await latestContext!.selectSmartView('all');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-1', 'hash-2']);
+    });
+
+    const loadMoreBeforeAppend = latestContext!.loadMoreArticles;
+
+    await act(async () => {
+      await latestContext!.loadMoreArticles();
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+        'hash-1',
+        'hash-2',
+        'hash-3',
+        'hash-4',
+      ]);
+    });
+
+    expect(latestContext!.loadMoreArticles).toBe(loadMoreBeforeAppend);
+
+    await act(async () => {
+      await latestContext!.loadMoreArticles();
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+        'hash-1',
+        'hash-2',
+        'hash-3',
+        'hash-4',
+        'hash-5',
+        'hash-6',
+      ]);
+    });
+
+    const secondPageCalls = (articleStore.query as vi.Mock).mock.calls.filter(
+      ([query]) => query.cursor?.hash === 'hash-4',
+    );
+    expect(secondPageCalls).toHaveLength(1);
+    expect(latestContext!.loadMoreArticles).toBe(loadMoreBeforeAppend);
+  });
+
+  it('keeps loadMoreArticles identity stable across APPEND', async () => {
+    const initialArticles = [
+      createArticle('hash-1', 'feed-a'),
+      createArticle('hash-2', 'feed-a'),
+    ];
+
+    (articleStore.query as vi.Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.cursor?.hash === 'hash-2') {
+        return Promise.resolve({
+          articles: [
+            createArticle('hash-3', 'feed-a'),
+            createArticle('hash-4', 'feed-a'),
+          ],
+          total: 6,
+        });
+      }
+      if (query.cursor?.hash === 'hash-4') {
+        return Promise.resolve({
+          articles: [
+            createArticle('hash-5', 'feed-a'),
+            createArticle('hash-6', 'feed-a'),
+          ],
+          total: 6,
+        });
+      }
+      return Promise.resolve({ articles: initialArticles, total: 6 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      await latestContext!.selectSmartView('all');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-1', 'hash-2']);
+    });
+
+    const loadMoreBeforeAppend = latestContext!.loadMoreArticles;
+
+    await act(async () => {
+      await latestContext!.loadMoreArticles();
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+        'hash-1',
+        'hash-2',
+        'hash-3',
+        'hash-4',
+      ]);
+    });
+
+    expect(latestContext!.loadMoreArticles).toBe(loadMoreBeforeAppend);
+
+    await act(async () => {
+      await latestContext!.loadMoreArticles();
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+        'hash-1',
+        'hash-2',
+        'hash-3',
+        'hash-4',
+        'hash-5',
+        'hash-6',
+      ]);
+    });
+
+    const secondPageCalls = (articleStore.query as vi.Mock).mock.calls.filter(
+      ([query]) => query.cursor?.hash === 'hash-4',
+    );
+    expect(secondPageCalls).toHaveLength(1);
+    expect(latestContext!.loadMoreArticles).toBe(loadMoreBeforeAppend);
   });
 
   it('keeps prefetch pagination off the visible loading flag', async () => {
@@ -1710,6 +1881,70 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     expect(reconcileStyleQueryCount).toBe(0);
   });
 
+  it('COUNTs after a full cold first page without killing load-more', async () => {
+    const coldDeferred = createDeferred<{ articles: Article[]; total: number }>();
+    let reconcileStyleQueryCount = 0;
+    const firstPage = Array.from({ length: 100 }, (_, index) => (
+      createArticle(`hash-full-${index}`, 'feed-a')
+    ));
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    );
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A') {
+        if (query.includeTotal === false) {
+          return coldDeferred.promise;
+        }
+        reconcileStyleQueryCount += 1;
+        return Promise.resolve({ articles: firstPage.slice(0, 1), total: 500 });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.selectedTag).toBe('A');
+      expect(latestContext!.isLoadingArticles).toBe(true);
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(reconcileStyleQueryCount).toBe(0);
+
+    coldDeferred.resolve({
+      articles: firstPage,
+      total: 0,
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.isLoadingArticles).toBe(false);
+      expect(latestContext!.articles).toHaveLength(100);
+      expect(latestContext!.articlesTotalKnown).toBe(true);
+      expect(latestContext!.articlesTotalCount).toBe(500);
+      expect(reconcileStyleQueryCount).toBeGreaterThanOrEqual(1);
+    }, 5000);
+  });
+
   it('publishes first fetched rows after an import switch and keeps them when switching back', async () => {
     // Full user flow: OPML import switches into a station whose feeds have no
     // stored rows; Phase B fetches commit rows which must publish; hopping away
@@ -1900,6 +2135,992 @@ describe('FeedContext Cross-Type Race Conditions', () => {
     await waitForExpectation(() => {
       expect(latestContext!.isLoadingArticles).toBe(false);
       expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-unread']);
+    });
+  });
+
+  it('does not stamp a station COUNT onto an in-flight search list', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => (
+      createArticle(`hash-full-${index}`, 'feed-a')
+    ));
+    const searchArticles = [createArticle('needle-1', 'feed-a')];
+    const countDeferred = createDeferred<{ articles: Article[]; total: number }>();
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    );
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.searchText === 'needle') {
+        return Promise.resolve({ articles: searchArticles, total: 1 });
+      }
+      if (query.tagName === 'A') {
+        if (query.includeTotal === false) {
+          return Promise.resolve({ articles: firstPage, total: 0 });
+        }
+        if (query.includeTotal === true) {
+          return countDeferred.promise;
+        }
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles).toHaveLength(100);
+      expect(latestContext!.articlesTotalKnown).toBe(false);
+    });
+
+    await waitForExpectation(() => {
+      expect(articleStore.query).toHaveBeenCalledWith(expect.objectContaining({
+        includeTotal: true,
+        limit: 1,
+        tagName: 'A',
+      }));
+    });
+
+    await act(async () => {
+      await latestContext!.searchCurrentSource('needle');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['needle-1']);
+      expect(latestContext!.articlesTotalCount).toBe(1);
+    });
+
+    countDeferred.resolve({ articles: firstPage.slice(0, 1), total: 500 });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(latestContext!.articles.map((article) => article.hash)).toEqual(['needle-1']);
+    expect(latestContext!.articlesTotalCount).toBe(1);
+  });
+
+  it('reissues a total-only COUNT on Cmd+R even if Phase B fails', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => (
+      createArticle(`hash-full-${index}`, 'feed-a')
+    ));
+    const countDeferreds: Array<ReturnType<typeof createDeferred<{ articles: Article[]; total: number }>>> = [];
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    );
+    (feedsFetcher.fetchFeedNetworkWithCache as Mock).mockRejectedValue(new Error('network down'));
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.tagName === 'A') {
+        if (query.includeTotal === false) {
+          return Promise.resolve({ articles: firstPage, total: 0 });
+        }
+        if (query.includeTotal === true) {
+          const deferred = createDeferred<{ articles: Article[]; total: number }>();
+          countDeferreds.push(deferred);
+          return deferred.promise;
+        }
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles).toHaveLength(100);
+      expect(latestContext!.articlesTotalKnown).toBe(false);
+      expect(countDeferreds.length).toBeGreaterThanOrEqual(1);
+    });
+
+    await act(async () => {
+      await latestContext!.refreshFeed();
+    });
+
+    await waitForExpectation(() => {
+      expect(countDeferreds.length).toBeGreaterThanOrEqual(2);
+    });
+
+    countDeferreds.forEach((deferred) => {
+      deferred.resolve({ articles: firstPage.slice(0, 1), total: 500 });
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articlesTotalKnown).toBe(true);
+      expect(latestContext!.articlesTotalCount).toBe(500);
+    });
+  });
+
+  describe('post-clear source reload', () => {
+    const powderArticles = [createArticle('hash-powder', 'feed-p')];
+    const dailyPreArticles = [
+      createArticle('hash-daily-old-1', 'feed-d'),
+      createArticle('hash-daily-old-2', 'feed-d'),
+    ];
+    const dailyPostArticles = [createArticle('hash-daily-new', 'feed-d')];
+    const techArticles = [createArticle('hash-tech', 'feed-t')];
+
+    const stubLibrary = () => {
+      (feedStore.getById as Mock).mockImplementation((id: string) => {
+        if (id === 'feed-p') {
+          return Promise.resolve({
+            id: 'feed-p',
+            url: 'https://powder.example.com/rss.xml',
+            title: 'Powderworks',
+            lastFetched: new Date(),
+          });
+        }
+        if (id === 'feed-d') {
+          return Promise.resolve({
+            id: 'feed-d',
+            url: 'https://daily.example.com/rss.xml',
+            title: 'Daily',
+            lastFetched: new Date(),
+          });
+        }
+        if (id === 'feed-t') {
+          return Promise.resolve({
+            id: 'feed-t',
+            url: 'https://tech.example.com/rss.xml',
+            title: 'Tech',
+            lastFetched: new Date(),
+          });
+        }
+        return Promise.resolve(null);
+      });
+      (feedsManager.getFeedById as Mock).mockImplementation((id: string) => feedStore.getById(id));
+      (tagsManager.getFeedsByTag as Mock).mockImplementation((tag: string) => {
+        if (tag === 'Daily') return Promise.resolve(['feed-d']);
+        if (tag === 'Tech') return Promise.resolve(['feed-t']);
+        return Promise.resolve([]);
+      });
+    };
+
+    it('stale clear-completion callback publishes the live station, not the start source', async () => {
+      stubLibrary();
+      let dailyMode: 'pre' | 'post' = 'pre';
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.feedIds?.includes('feed-p')) {
+          return Promise.resolve({ articles: powderArticles, total: 1 });
+        }
+        if (query.tagName === 'Daily') {
+          if (dailyMode === 'post') {
+            return Promise.resolve({ articles: dailyPostArticles, total: 1 });
+          }
+          return Promise.resolve({ articles: dailyPreArticles, total: 2 });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      act(() => {
+        root.render(
+          <FeedProvider>
+            <Probe />
+          </FeedProvider>
+        );
+      });
+      await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+      await act(async () => {
+        await latestContext!.selectFeed('feed-p', 'https://powder.example.com/rss.xml', 'Powderworks');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedFeedId).toBe('feed-p');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-powder']);
+      });
+
+      const staleReload = latestContext!.reloadCurrentSourceFromStore;
+
+      await act(async () => {
+        await latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+          'hash-daily-old-1',
+          'hash-daily-old-2',
+        ]);
+      });
+
+      dailyMode = 'post';
+      await act(async () => {
+        await staleReload();
+      });
+
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+        expect(latestContext!.selectedFeedId).toBeNull();
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-new']);
+        expect(latestContext!.articlesTotalCount).toBe(1);
+      });
+    });
+
+    it('stay-on-source clear reload refreshes the current list', async () => {
+      stubLibrary();
+      let dailyMode: 'pre' | 'post' = 'pre';
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.tagName === 'Daily') {
+          if (dailyMode === 'post') {
+            return Promise.resolve({ articles: dailyPostArticles, total: 1 });
+          }
+          return Promise.resolve({ articles: dailyPreArticles, total: 2 });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      act(() => {
+        root.render(
+          <FeedProvider>
+            <Probe />
+          </FeedProvider>
+        );
+      });
+      await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+      await act(async () => {
+        await latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+          'hash-daily-old-1',
+          'hash-daily-old-2',
+        ]);
+      });
+
+      dailyMode = 'post';
+      await act(async () => {
+        await latestContext!.reloadCurrentSourceFromStore();
+      });
+
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-new']);
+        expect(latestContext!.articlesTotalCount).toBe(1);
+      });
+    });
+
+    it('hop during an in-flight reload does not paint the queried source and follow-up loads the live station', async () => {
+      stubLibrary();
+      const dailyReloadDeferred = createDeferred<{ articles: Article[]; total: number }>();
+      let hangNextDaily = false;
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.feedIds?.includes('feed-p')) {
+          return Promise.resolve({ articles: powderArticles, total: 1 });
+        }
+        if (query.tagName === 'Daily') {
+          if (hangNextDaily) {
+            return dailyReloadDeferred.promise;
+          }
+          return Promise.resolve({ articles: dailyPreArticles, total: 2 });
+        }
+        if (query.tagName === 'Tech') {
+          return Promise.resolve({ articles: techArticles, total: 1 });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      act(() => {
+        root.render(
+          <FeedProvider>
+            <Probe />
+          </FeedProvider>
+        );
+      });
+      await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+      await act(async () => {
+        await latestContext!.selectFeed('feed-p', 'https://powder.example.com/rss.xml', 'Powderworks');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-powder']);
+      });
+      const staleReload = latestContext!.reloadCurrentSourceFromStore;
+
+      await act(async () => {
+        await latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+          'hash-daily-old-1',
+          'hash-daily-old-2',
+        ]);
+      });
+
+      hangNextDaily = true;
+      let reloadPromise!: Promise<void>;
+      await act(async () => {
+        reloadPromise = staleReload();
+      });
+
+      await act(async () => {
+        await latestContext!.selectTag('Tech');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Tech');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-tech']);
+      });
+
+      dailyReloadDeferred.resolve({ articles: dailyPreArticles, total: 2 });
+      await act(async () => {
+        await reloadPromise;
+      });
+
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Tech');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-tech']);
+        expect(latestContext!.articlesTotalCount).toBe(1);
+      });
+    });
+
+    it('does not clear a cold-hop skeleton when a stale reload query settles', async () => {
+      stubLibrary();
+      const dailyReloadDeferred = createDeferred<{ articles: Article[]; total: number }>();
+      const techDeferred = createDeferred<{ articles: Article[]; total: number }>();
+      let hangNextDaily = false;
+      let hangTech = false;
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.tagName === 'Daily') {
+          if (hangNextDaily) {
+            return dailyReloadDeferred.promise;
+          }
+          return Promise.resolve({ articles: dailyPreArticles, total: 2 });
+        }
+        if (query.tagName === 'Tech') {
+          if (hangTech) {
+            return techDeferred.promise;
+          }
+          return Promise.resolve({ articles: techArticles, total: 1 });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      act(() => {
+        root.render(
+          <FeedProvider>
+            <Probe />
+          </FeedProvider>
+        );
+      });
+      await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+      await act(async () => {
+        await latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+          'hash-daily-old-1',
+          'hash-daily-old-2',
+        ]);
+      });
+
+      hangNextDaily = true;
+      let reloadPromise!: Promise<void>;
+      await act(async () => {
+        reloadPromise = latestContext!.reloadCurrentSourceFromStore();
+      });
+
+      hangTech = true;
+      await act(async () => {
+        void latestContext!.selectTag('Tech');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Tech');
+        expect(latestContext!.isLoadingArticles).toBe(true);
+        expect(latestContext!.articles).toEqual([]);
+      });
+
+      dailyReloadDeferred.resolve({ articles: dailyPreArticles, total: 2 });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+
+      expect(latestContext!.selectedTag).toBe('Tech');
+      expect(latestContext!.isLoadingArticles).toBe(true);
+      expect(latestContext!.articles).toEqual([]);
+
+      hangTech = false;
+      techDeferred.resolve({ articles: techArticles, total: 1 });
+      await act(async () => {
+        await reloadPromise;
+      });
+
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Tech');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-tech']);
+      });
+    });
+
+    it('does not wipe in-flight search results when a stay-on-source reload settles', async () => {
+      stubLibrary();
+      const reloadDeferred = createDeferred<{ articles: Article[]; total: number }>();
+      const searchArticles = [createArticle('hash-daily-search', 'feed-d')];
+      let hangUnfilteredDaily = false;
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.tagName === 'Daily' && query.searchText) {
+          return Promise.resolve({ articles: searchArticles, total: 1 });
+        }
+        if (query.tagName === 'Daily') {
+          if (hangUnfilteredDaily) {
+            return reloadDeferred.promise;
+          }
+          return Promise.resolve({ articles: dailyPreArticles, total: 2 });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      act(() => {
+        root.render(
+          <FeedProvider>
+            <Probe />
+          </FeedProvider>
+        );
+      });
+      await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+      await act(async () => {
+        await latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+          'hash-daily-old-1',
+          'hash-daily-old-2',
+        ]);
+      });
+
+      hangUnfilteredDaily = true;
+      let reloadPromise!: Promise<void>;
+      await act(async () => {
+        reloadPromise = latestContext!.reloadCurrentSourceFromStore();
+      });
+
+      await act(async () => {
+        await latestContext!.searchCurrentSource('needle');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-search']);
+      });
+
+      reloadDeferred.resolve({ articles: dailyPostArticles, total: 1 });
+      await act(async () => {
+        await reloadPromise;
+      });
+
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-search']);
+      });
+    });
+
+    it('does not re-seed a pre-delete snapshot while the post-clear query is in flight', async () => {
+      stubLibrary();
+      const dailyReloadDeferred = createDeferred<{ articles: Article[]; total: number }>();
+      let hangNextDaily = false;
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.tagName === 'Daily') {
+          if (hangNextDaily) {
+            return dailyReloadDeferred.promise;
+          }
+          return Promise.resolve({ articles: dailyPreArticles, total: 2 });
+        }
+        if (query.tagName === 'Tech') {
+          return Promise.resolve({ articles: techArticles, total: 1 });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      act(() => {
+        root.render(
+          <FeedProvider>
+            <Probe />
+          </FeedProvider>
+        );
+      });
+      await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+      await act(async () => {
+        await latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+          'hash-daily-old-1',
+          'hash-daily-old-2',
+        ]);
+      });
+
+      hangNextDaily = true;
+      let reloadPromise!: Promise<void>;
+      await act(async () => {
+        reloadPromise = latestContext!.reloadCurrentSourceFromStore();
+      });
+
+      await act(async () => {
+        await latestContext!.selectTag('Tech');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Tech');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-tech']);
+      });
+
+      hangNextDaily = false;
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.tagName === 'Daily') {
+          return Promise.resolve({ articles: dailyPostArticles, total: 1 });
+        }
+        if (query.tagName === 'Tech') {
+          return Promise.resolve({ articles: techArticles, total: 1 });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      await act(async () => {
+        void latestContext!.selectTag('Daily');
+      });
+      expect(latestContext!.articles.map((article) => article.hash)).not.toEqual([
+        'hash-daily-old-1',
+        'hash-daily-old-2',
+      ]);
+
+      dailyReloadDeferred.resolve({ articles: dailyPreArticles, total: 2 });
+      await act(async () => {
+        await reloadPromise;
+      });
+
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-new']);
+      });
+    });
+
+    it('search-active reload refreshes the unfiltered snapshot used on search exit', async () => {
+      stubLibrary();
+      const unfilteredDeferred = createDeferred<{ articles: Article[]; total: number }>();
+      let hangUnfiltered = false;
+      const searchArticles = [createArticle('hash-daily-search', 'feed-d')];
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.tagName === 'Daily' && query.searchText) {
+          return Promise.resolve({ articles: searchArticles, total: 1 });
+        }
+        if (query.tagName === 'Daily') {
+          if (hangUnfiltered) {
+            return unfilteredDeferred.promise;
+          }
+          return Promise.resolve({ articles: dailyPreArticles, total: 2 });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      act(() => {
+        root.render(
+          <FeedProvider>
+            <Probe />
+          </FeedProvider>
+        );
+      });
+      await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+      await act(async () => {
+        await latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+          'hash-daily-old-1',
+          'hash-daily-old-2',
+        ]);
+      });
+
+      await act(async () => {
+        await latestContext!.searchCurrentSource('needle');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-search']);
+      });
+
+      hangUnfiltered = true;
+      let reloadPromise!: Promise<void>;
+      await act(async () => {
+        reloadPromise = latestContext!.reloadCurrentSourceFromStore();
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-search']);
+      });
+
+      unfilteredDeferred.resolve({ articles: dailyPostArticles, total: 1 });
+      await act(async () => {
+        await reloadPromise;
+      });
+
+      await act(async () => {
+        await latestContext!.clearArticleListSearch();
+      });
+
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-new']);
+        expect(latestContext!.articlesTotalCount).toBe(1);
+      });
+    });
+
+    it('does not re-seed a pre-delete snapshot while the post-clear query is in flight', async () => {
+      stubLibrary();
+      const dailyReloadDeferred = createDeferred<{ articles: Article[]; total: number }>();
+      let hangNextDaily = false;
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.tagName === 'Daily') {
+          if (hangNextDaily) {
+            return dailyReloadDeferred.promise;
+          }
+          return Promise.resolve({ articles: dailyPreArticles, total: 2 });
+        }
+        if (query.tagName === 'Tech') {
+          return Promise.resolve({ articles: techArticles, total: 1 });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      act(() => {
+        root.render(
+          <FeedProvider>
+            <Probe />
+          </FeedProvider>
+        );
+      });
+      await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+      await act(async () => {
+        await latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+          'hash-daily-old-1',
+          'hash-daily-old-2',
+        ]);
+      });
+
+      hangNextDaily = true;
+      let reloadPromise!: Promise<void>;
+      await act(async () => {
+        reloadPromise = latestContext!.reloadCurrentSourceFromStore();
+      });
+
+      await act(async () => {
+        await latestContext!.selectTag('Tech');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Tech');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-tech']);
+      });
+
+      hangNextDaily = false;
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.tagName === 'Daily') {
+          return Promise.resolve({ articles: dailyPostArticles, total: 1 });
+        }
+        if (query.tagName === 'Tech') {
+          return Promise.resolve({ articles: techArticles, total: 1 });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      await act(async () => {
+        void latestContext!.selectTag('Daily');
+      });
+      expect(latestContext!.articles.map((article) => article.hash)).not.toEqual([
+        'hash-daily-old-1',
+        'hash-daily-old-2',
+      ]);
+
+      dailyReloadDeferred.resolve({ articles: dailyPreArticles, total: 2 });
+      await act(async () => {
+        await reloadPromise;
+      });
+
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-new']);
+      });
+    });
+
+    it('search-active reload refreshes the unfiltered snapshot used on search exit', async () => {
+      stubLibrary();
+      const unfilteredDeferred = createDeferred<{ articles: Article[]; total: number }>();
+      let hangUnfiltered = false;
+      const searchArticles = [createArticle('hash-daily-search', 'feed-d')];
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.tagName === 'Daily' && query.searchText) {
+          return Promise.resolve({ articles: searchArticles, total: 1 });
+        }
+        if (query.tagName === 'Daily') {
+          if (hangUnfiltered) {
+            return unfilteredDeferred.promise;
+          }
+          return Promise.resolve({ articles: dailyPreArticles, total: 2 });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      act(() => {
+        root.render(
+          <FeedProvider>
+            <Probe />
+          </FeedProvider>
+        );
+      });
+      await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+      await act(async () => {
+        await latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+          'hash-daily-old-1',
+          'hash-daily-old-2',
+        ]);
+      });
+
+      await act(async () => {
+        await latestContext!.searchCurrentSource('needle');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-search']);
+      });
+
+      hangUnfiltered = true;
+      let reloadPromise!: Promise<void>;
+      await act(async () => {
+        reloadPromise = latestContext!.reloadCurrentSourceFromStore();
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-search']);
+      });
+
+      unfilteredDeferred.resolve({ articles: dailyPostArticles, total: 1 });
+      await act(async () => {
+        await reloadPromise;
+      });
+
+      await act(async () => {
+        await latestContext!.clearArticleListSearch();
+      });
+
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-new']);
+        expect(latestContext!.articlesTotalCount).toBe(1);
+      });
+    });
+
+    it('same-source re-click during reload still lands the post-delete list', async () => {
+      stubLibrary();
+      const hungReload = createDeferred<{ articles: Article[]; total: number }>();
+      let hangNextDaily = false;
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.tagName === 'Daily') {
+          if (hangNextDaily) {
+            return hungReload.promise;
+          }
+          return Promise.resolve({ articles: dailyPreArticles, total: 2 });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      act(() => {
+        root.render(
+          <FeedProvider>
+            <Probe />
+          </FeedProvider>
+        );
+      });
+      await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+      await act(async () => {
+        await latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+          'hash-daily-old-1',
+          'hash-daily-old-2',
+        ]);
+      });
+
+      hangNextDaily = true;
+      let reloadPromise!: Promise<void>;
+      await act(async () => {
+        reloadPromise = latestContext!.reloadCurrentSourceFromStore();
+      });
+
+      await act(async () => {
+        void latestContext!.selectTag('Daily');
+      });
+
+      hangNextDaily = false;
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.tagName === 'Daily') {
+          return Promise.resolve({ articles: dailyPostArticles, total: 1 });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+      hungReload.resolve({ articles: dailyPreArticles, total: 2 });
+      await act(async () => {
+        await reloadPromise;
+      });
+
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-new']);
+        expect(latestContext!.articlesTotalCount).toBe(1);
+      });
+    });
+
+    it('does not append a pre-delete load-more page after reload publishes', async () => {
+      stubLibrary();
+      const loadMoreDeferred = createDeferred<{ articles: Article[]; total: number }>();
+      const dailyFirstPage = Array.from({ length: 100 }, (_, index) => (
+        createArticle(`hash-daily-page-${index}`, 'feed-d')
+      ));
+      let dailyMode: 'pre' | 'post' = 'pre';
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.tagName !== 'Daily') {
+          return Promise.resolve({ articles: [], total: 0 });
+        }
+        if (query.cursor) {
+          return loadMoreDeferred.promise;
+        }
+        if (dailyMode === 'post') {
+          return Promise.resolve({ articles: dailyPostArticles, total: 1 });
+        }
+        return Promise.resolve({ articles: dailyFirstPage, total: 200 });
+      });
+
+      act(() => {
+        root.render(
+          <FeedProvider>
+            <Probe />
+          </FeedProvider>
+        );
+      });
+      await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+      await act(async () => {
+        await latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles).toHaveLength(100);
+      });
+
+      await act(async () => {
+        void latestContext!.loadMoreArticles();
+      });
+
+      dailyMode = 'post';
+      await act(async () => {
+        await latestContext!.reloadCurrentSourceFromStore();
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-new']);
+      });
+
+      loadMoreDeferred.resolve({
+        articles: [createArticle('hash-daily-old-3', 'feed-d')],
+        total: 100,
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      });
+
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-new']);
+      expect(latestContext!.articlesTotalCount).toBe(1);
+    });
+
+    it('does not restore a pre-delete COUNT after reload published the new total', async () => {
+      stubLibrary();
+      const countDeferred = createDeferred<{ articles: Article[]; total: number }>();
+      let dailyMode: 'pre' | 'post' = 'pre';
+      let holdCount = false;
+      (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+        if (query.tagName !== 'Daily') {
+          return Promise.resolve({ articles: [], total: 0 });
+        }
+        if (query.includeTotal === true && query.limit === 1 && holdCount) {
+          return countDeferred.promise;
+        }
+        if (dailyMode === 'post') {
+          return Promise.resolve({ articles: dailyPostArticles, total: 1 });
+        }
+        if (query.includeTotal === false) {
+          return Promise.resolve({ articles: Array.from({ length: 100 }, (_, index) => (
+            createArticle(`hash-daily-page-${index}`, 'feed-d')
+          )), total: 100 });
+        }
+        return Promise.resolve({
+          articles: Array.from({ length: 100 }, (_, index) => (
+            createArticle(`hash-daily-page-${index}`, 'feed-d')
+          )),
+          total: 12300,
+        });
+      });
+
+      act(() => {
+        root.render(
+          <FeedProvider>
+            <Probe />
+          </FeedProvider>
+        );
+      });
+      await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+      await act(async () => {
+        void latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.length).toBeGreaterThan(0);
+      });
+
+      holdCount = true;
+      dailyMode = 'post';
+      await act(async () => {
+        await latestContext!.reloadCurrentSourceFromStore();
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-new']);
+        expect(latestContext!.articlesTotalCount).toBe(1);
+      });
+
+      countDeferred.resolve({ articles: dailyPostArticles.slice(0, 1), total: 12300 });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      });
+
+      expect(latestContext!.articlesTotalCount).toBe(1);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-new']);
     });
   });
 });

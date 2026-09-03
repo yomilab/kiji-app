@@ -34,6 +34,8 @@ const mockNavigationState = {
 const mockCollectionState = {
   articles: [] as Article[],
   articlesTotalCount: 0,
+  articlesTotalKnown: true,
+  pageWasFull: false,
   savedArticles: [] as Article[],
   isLoadingArticles: true,
   isLoadingMoreArticles: false,
@@ -65,6 +67,8 @@ vi.mock('@/contexts/FeedContext', () => ({
   useFeedCollectionArticles: () => ({
     articles: mockCollectionState.articles,
     articlesTotalCount: mockCollectionState.articlesTotalCount,
+    articlesTotalKnown: mockCollectionState.articlesTotalKnown,
+    pageWasFull: mockCollectionState.pageWasFull,
     newArticleCount: 0,
     newArticleHashes: mockCollectionState.newArticleHashes,
     articleListScrollRequest: mockCollectionState.articleListScrollRequest,
@@ -145,6 +149,8 @@ describe('SharedArticleList header skeleton', () => {
     mockNavigationState.selectedSmartView = null;
     mockCollectionState.articles = [];
     mockCollectionState.articlesTotalCount = 0;
+    mockCollectionState.articlesTotalKnown = true;
+    mockCollectionState.pageWasFull = false;
     mockCollectionState.isLoadingArticles = true;
     mockCollectionState.isSavedListLoading = false;
   });
@@ -182,6 +188,19 @@ describe('SharedArticleList header skeleton', () => {
     expect(screen.queryByTestId('header-skeleton')).not.toBeInTheDocument();
     expect(screen.getByText('Empty Feed')).toBeInTheDocument();
     expect(screen.getByText('0 Items')).toBeInTheDocument();
+  });
+
+  it('hides the item count while the station total is still unknown', () => {
+    mockCollectionState.isLoadingArticles = false;
+    mockCollectionState.articles = [makeArticle()];
+    mockCollectionState.articlesTotalCount = 100;
+    mockCollectionState.articlesTotalKnown = false;
+    mockCollectionState.pageWasFull = true;
+
+    render(<SharedArticleList variant="common" />);
+
+    expect(screen.getByText('Test Feed')).toBeInTheDocument();
+    expect(screen.queryByText('100 Items')).not.toBeInTheDocument();
   });
 
   it('uses saved-list loading state for the saved article list', () => {

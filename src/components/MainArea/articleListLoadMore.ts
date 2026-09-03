@@ -1,3 +1,5 @@
+import { articleListHasMore } from '@/services/articles/articleListTotal';
+
 export const ARTICLE_LIST_ESTIMATED_ROW_HEIGHT = 112;
 export const ARTICLE_LIST_BOTTOM_SPACER_HEIGHT = 50;
 export const ARTICLE_LIST_PREFETCH_MAX_REMAINING_ROWS = 80;
@@ -29,6 +31,8 @@ export type ArticleListScrollVelocitySample = {
 
 export type ArticleListLoadMoreTriggerOptions = {
   scrollVelocityPxPerMs?: number;
+  totalKnown?: boolean;
+  pageWasFull?: boolean;
 };
 
 /**
@@ -155,7 +159,12 @@ export const shouldTriggerArticleListLoadMore = (
   lastVisibleIndex: number,
   options: ArticleListLoadMoreTriggerOptions = {},
 ): boolean => {
-  if (loadedRowCount >= totalRowCount) {
+  if (!articleListHasMore({
+    loadedCount: loadedRowCount,
+    totalCount: totalRowCount,
+    totalKnown: options.totalKnown ?? true,
+    pageWasFull: options.pageWasFull ?? false,
+  })) {
     return false;
   }
 
@@ -181,8 +190,14 @@ export const shouldTriggerArticleListLoadMoreFromScroll = (
   loadedRowCount: number,
   totalRowCount: number,
   scrollVelocityPxPerMs = 0,
+  totalState?: { totalKnown?: boolean; pageWasFull?: boolean },
 ): boolean => {
-  if (loadedRowCount >= totalRowCount) {
+  if (!articleListHasMore({
+    loadedCount: loadedRowCount,
+    totalCount: totalRowCount,
+    totalKnown: totalState?.totalKnown ?? true,
+    pageWasFull: totalState?.pageWasFull ?? false,
+  })) {
     return false;
   }
 

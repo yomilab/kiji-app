@@ -47,6 +47,14 @@ describe('articleListLoadMore', () => {
       scrollTop: 200,
     } as HTMLElement, 100, 200)).toBe(false);
     expect(shouldTriggerArticleListLoadMoreFromScroll(scrollElement, 200, 200)).toBe(false);
+    expect(shouldTriggerArticleListLoadMore(100, 100, 91, {
+      totalKnown: false,
+      pageWasFull: true,
+    })).toBe(true);
+    expect(shouldTriggerArticleListLoadMoreFromScroll(scrollElement, 100, 100, 0, {
+      totalKnown: false,
+      pageWasFull: true,
+    })).toBe(true);
   });
 
   it('scales scroll trigger distance with viewport height and caps on tall windows', () => {

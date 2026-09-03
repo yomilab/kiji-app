@@ -7,7 +7,7 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import ArticleIcon from '@mui/icons-material/Article';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import { motion, AnimatePresence } from 'motion/react';
-import { useFeedNavigation, useFeedCollection, useFeedOverlay, type ArticleListUpdatePayload } from '@/contexts/FeedContext';
+import { useFeedNavigation, useFeedCollectionArticles, useFeedCollectionActions, useFeedOverlay, type ArticleListUpdatePayload } from '@/contexts/FeedContext';
 import * as articleStore from '@/stores/articleStore';
 import { articlesManager } from '@/services/articles/articlesManager';
 import { articleContentProcessingService } from '@/services/articles/articleContentProcessingService';
@@ -1046,12 +1046,13 @@ function useArticleViewCleanup(
 
 export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, standalone = false, deckOpen = false }) => {
   const nav = standalone ? null : useFeedNavigation();
-  const coll = standalone ? null : useFeedCollection();
+  const articlesState = standalone ? null : useFeedCollectionArticles();
+  const collectionActions = standalone ? null : useFeedCollectionActions();
   const overlay = standalone ? null : useFeedOverlay();
 
   const selectedSmartView = nav?.selectedSmartView ?? null;
-  const articles = coll?.articles ?? [];
-  const updateArticleInList = coll?.updateArticleInList ?? (() => {});
+  const articles = articlesState?.articles ?? [];
+  const updateArticleInList = collectionActions?.updateArticleInList ?? (() => {});
   
   const activeArticleHash = overlay?.activeArticleHash ?? null;
   const articleOpenTrigger = overlay?.articleOpenTrigger ?? 0;
