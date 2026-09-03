@@ -131,15 +131,5 @@ export const SidebarSyncIndicator: React.FC<SidebarSyncIndicatorProps> = ({
     totalFeeds,
   ]);
 
-  return (
-    <SyncIndicator
-      text={syncText}
-      syncing={
-        showSyncing
-        && !sidebarIndicatorText
-        && !exportProgressText
-        && !isAnyFeedRefreshing
-      }
-    />
-  );
+  return <SyncIndicator text={syncText} />;
 };

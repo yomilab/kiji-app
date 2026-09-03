@@ -1,47 +1,28 @@
 /* Left-aligned status. As a flex sibling of the Settings stack, this item
    shrinks when the stack expands left; overflow ellipsizes the end of the string.
-   Higher-z buttons can also paint over leftover glyphs during width/motion lag. */
+   Higher-z buttons can also paint over leftover glyphs during width/motion lag.
+   Host stays `display: flex` so the inner text span is a flex item and can
+   ellipsize (an inline span would not). */
 .sync-indicator {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
+  display: flex;
+  align-items: center;
   font-size: 12px;
   font-weight: 600;
   color: var(--theme-primary-color);
   opacity: 0.7;
   letter-spacing: -0.01em;
   text-align: left;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
   position: relative;
   z-index: 1;
 }
 
-.sync-indicator.is-syncing {
-  padding-inline-end: 1.25em;
-}
-
-.sync-indicator.is-syncing::after {
-  content: '';
-  position: absolute;
-  inset-inline-end: 0;
-  top: 0;
-  width: 1.25em;
-  animation: syncDots 1.5s steps(4, end) infinite;
-}
-
-@keyframes syncDots {
-  0%, 25% {
-    content: '.';
-  }
-  26%, 50% {
-    content: '..';
-  }
-  51%, 75% {
-    content: '...';
-  }
-  76%, 100% {
-    content: '';
-  }
+.sync-indicator-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
