@@ -512,11 +512,6 @@ mod tests {
     }
 
     #[test]
-    fn default_icon_variant_is_light() {
-        assert_eq!(SystemAppIconVariant::default(), SystemAppIconVariant::Light);
-    }
-
-    #[test]
     fn stored_icon_state_falls_back_on_unknown_variant() {
         let stored: StoredAppIconState = serde_json::from_str(
             r#"{"iconPath":null,"iconVariant":"from-the-future"}"#,

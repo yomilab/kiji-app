@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi, type Mock } from 'vitest';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
@@ -7,6 +7,10 @@ import type { Article } from '@/types/article';
 import { tagsManager } from '@/services/tags/tagsManager';
 import * as articleStore from '@/stores/articleStore';
 import * as feedStore from '@/stores/feedStore';
+import {
+  cancelSourceSelectionRefreshSchedule,
+  SOURCE_SELECTION_MIN_REFRESH_DELAY_MS,
+} from '@/services/feeds/sourceSelectionPaintGate';
 
 vi.mock('@/stores/articleStore', () => ({
   query: vi.fn(),
@@ -216,10 +220,19 @@ describe('FeedContext scheduler refresh', () => {
   });
 
   afterEach(() => {
+    cancelSourceSelectionRefreshSchedule();
     act(() => {
       root.unmount();
     });
     container.remove();
+  });
+
+  // In-flight paint-gate awaits still call window.setTimeout after cancel.
+  // Drain them before Vitest tears down jsdom (CI: ReferenceError: window is not defined).
+  afterAll(async () => {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, SOURCE_SELECTION_MIN_REFRESH_DELAY_MS + 80);
+    });
   });
 
   it('refreshes the active feed when the scheduler inserts new articles', async () => {
