@@ -4,7 +4,6 @@ import UnfoldMoreOutlined from '@mui/icons-material/UnfoldMoreOutlined';
 import UnfoldLessOutlined from '@mui/icons-material/UnfoldLessOutlined';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { feedsManager, type Feed } from '@/services/feeds/feedsManager';
-import { seedArticleFeedMetadataFromFeed } from '@/services/articles/articleListMemory';
 import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import {
   useFeedDeletedMutation,
@@ -28,6 +27,11 @@ import { abortSidebarListDrag, mergePartialReorder } from './sidebarListDrag';
 import { persistNestedMembershipOrder, persistStationOrder } from '@/services/feeds/libraryOrderPersist';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 import { useSidebarReorder } from './useSidebarReorder';
+import {
+  collectPinnedFeedIds,
+  rememberFeedsInCache,
+  trimTagManagerFeedCache,
+} from './tagManagerFeedCache';
 import './TagManager.css';
 
 interface StationFeedItemProps {
@@ -239,51 +243,6 @@ const StationListItem = React.memo<StationListItemProps>(({
   );
 });
 
-const TAG_MANAGER_FEED_CACHE_MAX_ENTRIES = 200;
-
-const collectPinnedFeedIds = (
-  tags: Tag[],
-  expanded: ReadonlySet<string>,
-  extra: Iterable<string> = [],
-): Set<string> => {
-  const pinned = new Set<string>(extra);
-  for (const stationName of expanded) {
-    const tag = tags.find((entry) => entry.name === stationName);
-    for (const feedId of tag?.feedIds ?? []) {
-      pinned.add(feedId);
-    }
-  }
-  return pinned;
-};
-
-const rememberFeedInCache = (
-  prev: Map<string, Feed>,
-  feed: Feed,
-  pinnedIds: ReadonlySet<string>,
-): Map<string, Feed> => {
-  const next = new Map(prev);
-  next.delete(feed.id);
-  next.set(feed.id, feed);
-  seedArticleFeedMetadataFromFeed(feed);
-
-  while (next.size > TAG_MANAGER_FEED_CACHE_MAX_ENTRIES) {
-    let evicted = false;
-    for (const oldestKey of next.keys()) {
-      if (pinnedIds.has(oldestKey)) {
-        continue;
-      }
-      next.delete(oldestKey);
-      evicted = true;
-      break;
-    }
-    if (!evicted) {
-      break;
-    }
-  }
-
-  return next;
-};
-
 export const TagManager: React.FC = () => {
   const [tags, setTags] = useState<Tag[]>([]);
   const [expandedStations, setExpandedStations] = useState<Set<string>>(new Set());
@@ -292,6 +251,8 @@ export const TagManager: React.FC = () => {
   const lastAppliedHydrateRevision = useRef(0);
   const expandedStationsRef = useRef(expandedStations);
   expandedStationsRef.current = expandedStations;
+  const tagsRef = useRef(tags);
+  tagsRef.current = tags;
   const { selectedTag, selectTag, selectedFeedId, selectFeed, openFeedEditView, clearFeedSelection } = useFeedNavigation();
   const feedFaviconRefreshed = useFeedFaviconRefreshed();
   const patchedFeed = useFeedPatchedMutation();
@@ -307,25 +268,38 @@ export const TagManager: React.FC = () => {
     feedCacheRef.current = feedCache;
   }, [feedCache]);
 
+  // Collapse / membership shrink must drop non-pinned rows so the Map cannot grow without bound.
+  useEffect(() => {
+    const pinnedIds = collectPinnedFeedIds(tags, expandedStations);
+    setFeedCache((prev) => {
+      const trimmed = trimTagManagerFeedCache(prev, pinnedIds);
+      if (trimmed === prev) {
+        return prev;
+      }
+      feedCacheRef.current = trimmed;
+      return trimmed;
+    });
+  }, [expandedStations, tags]);
+
   const ensureFeedsCached = useCallback(async (feedIds: string[]) => {
     const missing = feedIds.filter(id => !feedCacheRef.current.has(id));
     if (missing.length > 0) {
       const fetched = await Promise.all(missing.map(id => feedsManager.getFeedById(id)));
-      const pinnedIds = collectPinnedFeedIds(tags, expandedStationsRef.current, feedIds);
+      const feeds = fetched.filter((feed): feed is Feed => Boolean(feed));
+      const pinnedIds = collectPinnedFeedIds(
+        tagsRef.current,
+        expandedStationsRef.current,
+        feedIds,
+      );
       setFeedCache((prev) => {
-        let next = prev;
-        for (const feed of fetched) {
-          if (feed) {
-            next = rememberFeedInCache(next, feed, pinnedIds);
-          }
-        }
+        const next = rememberFeedsInCache(prev, feeds, pinnedIds);
         feedCacheRef.current = next;
         return next;
       });
     }
 
     opmlWorkflowService.scheduleMissingFaviconsAfterStationSelection(feedIds);
-  }, [tags]);
+  }, []);
 
   const toggleStation = useCallback((tagName: string) => {
     abortSidebarListDrag();
@@ -335,12 +309,12 @@ export const TagManager: React.FC = () => {
         next.delete(tagName);
       } else {
         next.add(tagName);
-        const tag = tags.find(t => t.name === tagName);
+        const tag = tagsRef.current.find(t => t.name === tagName);
         if (tag) void ensureFeedsCached(tag.feedIds);
       }
       return next;
     });
-  }, [ensureFeedsCached, tags]);
+  }, [ensureFeedsCached]);
 
   const handleStationFeedClick = useCallback(async (feed: Feed) => {
     await selectFeed(feed.id, feed.url, feed.title);
@@ -409,14 +383,14 @@ export const TagManager: React.FC = () => {
       if (!updated) return;
       setFeedCache((prev) => {
         if (!prev.has(feedId)) return prev;
-        return rememberFeedInCache(
+        return rememberFeedsInCache(
           prev,
-          updated,
-          collectPinnedFeedIds(tags, expandedStationsRef.current),
+          [updated],
+          collectPinnedFeedIds(tagsRef.current, expandedStationsRef.current),
         );
       });
     });
-  }, [feedFaviconRefreshed, tags]);
+  }, [feedFaviconRefreshed]);
 
   useEffect(() => {
     if (!patchedFeed) return;
@@ -426,16 +400,16 @@ export const TagManager: React.FC = () => {
         return prev;
       }
 
-      return rememberFeedInCache(
+      return rememberFeedsInCache(
         prev,
-        {
+        [{
           ...current,
           ...patchedFeed.changes,
-        },
-        collectPinnedFeedIds(tags, expandedStationsRef.current),
+        }],
+        collectPinnedFeedIds(tagsRef.current, expandedStationsRef.current),
       );
     });
-  }, [patchedFeed, tags]);
+  }, [patchedFeed]);
 
   useEffect(() => {
     if (!feedsCountsUpdated) return;
