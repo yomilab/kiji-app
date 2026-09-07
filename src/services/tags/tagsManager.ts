@@ -76,6 +76,14 @@ class TagsManager {
   async renameTag(currentName: string, nextName: string): Promise<void> {
     await feedStore.tags.rename({ currentName, nextName });
   }
+
+  async reorderStations(names: string[]): Promise<void> {
+    await feedStore.tags.reorder({ names });
+  }
+
+  async reorderMembership(tagName: string, feedIds: string[]): Promise<void> {
+    await feedStore.tags.reorderMembership({ tagName, feedIds });
+  }
 }
 
 export const tagsManager = new TagsManager();

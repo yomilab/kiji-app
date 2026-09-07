@@ -1,5 +1,6 @@
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension, ToSql};
 use serde::Deserialize;
+use std::collections::HashSet;
 use tauri::State;
 
 use super::{
@@ -208,6 +209,55 @@ pub async fn feeds_count(state: State<'_, DbState>) -> Result<i64, String> {
             .map_err(|error| format!("Failed to count feeds: {error}"))
     })
     .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn feeds_reorder_unstationed(
+    feed_ids: Vec<String>,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    db.write(move |connection| reorder_unstationed_feeds(connection, &feed_ids))
+        .await
+}
+
+pub fn reorder_unstationed_feeds(
+    connection: &Connection,
+    feed_ids: &[String],
+) -> Result<(), String> {
+    let current: HashSet<String> = unstationed_feed_ids(connection)?.into_iter().collect();
+    let next: HashSet<String> = feed_ids.iter().cloned().collect();
+    if current != next || feed_ids.len() != current.len() {
+        return Err("Unstationed reorder list must match current untagged feeds.".to_string());
+    }
+
+    for (index, feed_id) in feed_ids.iter().enumerate() {
+        connection
+            .execute(
+                "UPDATE feeds SET sort_order = ?1 WHERE id = ?2",
+                params![index as i64, feed_id],
+            )
+            .map_err(|error| format!("Failed to reorder unstationed feed {feed_id}: {error}"))?;
+    }
+
+    Ok(())
+}
+
+fn unstationed_feed_ids(connection: &Connection) -> Result<Vec<String>, String> {
+    let mut statement = connection
+        .prepare(
+            r#"
+            SELECT id FROM feeds
+            WHERE id NOT IN (SELECT DISTINCT feed_id FROM feed_tags)
+            "#,
+        )
+        .map_err(|error| format!("Failed to prepare unstationed feed query: {error}"))?;
+    let rows = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| format!("Failed to query unstationed feeds: {error}"))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to read unstationed feed id: {error}"))
 }
 
 pub fn list_feeds(connection: &Connection) -> Result<Vec<FeedRecord>, String> {

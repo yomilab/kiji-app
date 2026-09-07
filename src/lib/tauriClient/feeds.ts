@@ -158,4 +158,23 @@ export const tags = {
   ): Promise<FeedsContract["tagsListByFeed"]["response"]> {
     return invokeContract<FeedsContract["tagsListByFeed"]>("feeds_tags_list_by_feed", request);
   },
+  reorder(
+    request: FeedsContract["tagsReorder"]["request"],
+  ): Promise<FeedsContract["tagsReorder"]["response"]> {
+    return invokeContract<FeedsContract["tagsReorder"]>("feeds_tags_reorder", request);
+  },
+  reorderMembership(
+    request: FeedsContract["tagsReorderMembership"]["request"],
+  ): Promise<FeedsContract["tagsReorderMembership"]["response"]> {
+    return invokeContract<FeedsContract["tagsReorderMembership"]>(
+      "feeds_tags_reorder_membership",
+      request,
+    );
+  },
 };
+
+export async function reorderUnstationed(
+  request: FeedsContract["reorderUnstationed"]["request"],
+): Promise<FeedsContract["reorderUnstationed"]["response"]> {
+  return invokeContract<FeedsContract["reorderUnstationed"]>("feeds_reorder_unstationed", request);
+}

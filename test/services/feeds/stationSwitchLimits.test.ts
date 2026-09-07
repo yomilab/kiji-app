@@ -4,6 +4,7 @@ import {
   STATION_SWITCH_FOREGROUND_REFRESH_CAP,
   STATION_SWITCH_SQLITE_RECONCILE_LIMIT,
   scheduleStationSwitchIdleWork,
+  sortStationSwitchRefreshIds,
 } from '@/services/feeds/stationSwitchLimits';
 
 describe('stationSwitchLimits', () => {
@@ -24,5 +25,21 @@ describe('stationSwitchLimits', () => {
 
     expect(work).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it('caps switch refresh by feed_id, not nested display order', () => {
+    const displayOrder = ['zeta', 'alpha', 'mu', 'beta', 'gamma', 'delta', 'epsilon'];
+    const refreshOrder = sortStationSwitchRefreshIds(displayOrder);
+    expect(refreshOrder.slice(0, STATION_SWITCH_FOREGROUND_REFRESH_CAP)).toEqual([
+      'alpha',
+      'beta',
+      'delta',
+      'epsilon',
+      'gamma',
+      'mu',
+    ]);
+    expect(refreshOrder.slice(0, STATION_SWITCH_FOREGROUND_REFRESH_CAP)).not.toEqual(
+      displayOrder.slice(0, STATION_SWITCH_FOREGROUND_REFRESH_CAP),
+    );
   });
 });

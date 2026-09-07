@@ -27,7 +27,7 @@ export interface FeedLibraryFeedsAdded {
 export interface FeedLibraryStationPatched {
   revision: number;
   previousName: string;
-  station: Pick<Tag, 'name' | 'emoji' | 'feedIds' | 'createdAt' | 'sortOrder'>;
+  station: Pick<Tag, 'name' | 'emoji' | 'createdAt' | 'sortOrder'> & Partial<Pick<Tag, 'feedIds'>>;
 }
 
 export interface FeedLibrarySmartViewsPatched {
@@ -56,6 +56,22 @@ export interface FeedLibraryStationsHydrated {
   stations: Tag[];
 }
 
+export interface FeedLibraryUnstationedReordered {
+  revision: number;
+  feeds: Array<Pick<Feed, 'id' | 'sortOrder'>>;
+}
+
+export interface FeedLibraryStationMembershipReordered {
+  revision: number;
+  stationName: string;
+  feedIds: string[];
+}
+
+export interface FeedLibraryUnstationedHydrated {
+  revision: number;
+  feeds: Feed[];
+}
+
 class FeedLibraryMutationBus {
   private readonly listeners = new Set<Listener>();
 
@@ -78,6 +94,12 @@ class FeedLibraryMutationBus {
   private stationsHydrated: FeedLibraryStationsHydrated | null = null;
 
   private feedsCountsUpdated: FeedLibraryFeedsCountsUpdated | null = null;
+
+  private unstationedReordered: FeedLibraryUnstationedReordered | null = null;
+
+  private stationMembershipReordered: FeedLibraryStationMembershipReordered | null = null;
+
+  private unstationedHydrated: FeedLibraryUnstationedHydrated | null = null;
 
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
@@ -103,6 +125,65 @@ class FeedLibraryMutationBus {
   getStationsHydrated = (): FeedLibraryStationsHydrated | null => this.stationsHydrated;
 
   getFeedsCountsUpdated = (): FeedLibraryFeedsCountsUpdated | null => this.feedsCountsUpdated;
+
+  getUnstationedReordered = (): FeedLibraryUnstationedReordered | null => this.unstationedReordered;
+
+  getStationMembershipReordered = (): FeedLibraryStationMembershipReordered | null =>
+    this.stationMembershipReordered;
+
+  getUnstationedHydrated = (): FeedLibraryUnstationedHydrated | null => this.unstationedHydrated;
+
+  isStationsHydrateFresh = (
+    hydrate: FeedLibraryStationsHydrated | null = this.stationsHydrated,
+  ): boolean => {
+    if (!hydrate) {
+      return false;
+    }
+
+    const later = [
+      this.stationsReordered?.revision,
+      this.stationMembershipReordered?.revision,
+      this.stationDeleted?.revision,
+      this.stationPatched?.revision,
+      this.feedDeleted?.revision,
+      this.feedsAdded?.revision,
+    ].filter((revision): revision is number => typeof revision === 'number');
+    return later.every((revision) => revision <= hydrate.revision);
+  };
+
+  isUnstationedHydrateFresh = (
+    hydrate: FeedLibraryUnstationedHydrated | null = this.unstationedHydrated,
+  ): boolean => {
+    if (!hydrate) {
+      return false;
+    }
+
+    const later = [
+      this.unstationedReordered?.revision,
+      this.stationMembershipReordered?.revision,
+      this.stationPatched?.revision,
+      this.stationDeleted?.revision,
+      this.feedDeleted?.revision,
+      this.feedsAdded?.revision,
+    ].filter((revision): revision is number => typeof revision === 'number');
+    return later.every((revision) => revision <= hydrate.revision);
+  };
+
+  isStationMembershipLeftoverFresh = (
+    membership: FeedLibraryStationMembershipReordered | null = this.stationMembershipReordered,
+  ): boolean => {
+    if (!membership) {
+      return false;
+    }
+
+    const later = [
+      this.stationsHydrated?.revision,
+      this.stationPatched?.revision,
+      this.stationDeleted?.revision,
+      this.feedDeleted?.revision,
+    ].filter((revision): revision is number => typeof revision === 'number');
+    return later.every((revision) => revision <= membership.revision);
+  };
 
   publishFeedPatched(feedId: string, changes: FeedLibraryFeedPatchChanges): void {
     this.revision += 1;
@@ -199,6 +280,65 @@ class FeedLibraryMutationBus {
     this.stationsHydrated = {
       revision: this.revision,
       stations,
+    };
+    this.emit();
+  }
+
+  publishUnstationedReordered(feeds: FeedLibraryUnstationedReordered['feeds']): void {
+    this.revision += 1;
+    this.unstationedReordered = {
+      revision: this.revision,
+      feeds,
+    };
+    this.emit();
+  }
+
+  publishStationMembershipReordered(
+    payload: Omit<FeedLibraryStationMembershipReordered, 'revision'>,
+  ): void {
+    this.revision += 1;
+    this.stationMembershipReordered = {
+      revision: this.revision,
+      ...payload,
+    };
+    this.emit();
+  }
+
+  publishUnstationedHydrated(feeds: Feed[]): void {
+    this.revision += 1;
+    this.unstationedHydrated = {
+      revision: this.revision,
+      feeds,
+    };
+    this.emit();
+  }
+
+  resetForTests(): void {
+    this.revision = 0;
+    this.feedPatched = null;
+    this.stationPatched = null;
+    this.feedDeleted = null;
+    this.feedsAdded = null;
+    this.smartViewsPatched = null;
+    this.stationsReordered = null;
+    this.stationDeleted = null;
+    this.stationsHydrated = null;
+    this.feedsCountsUpdated = null;
+    this.unstationedReordered = null;
+    this.stationMembershipReordered = null;
+    this.unstationedHydrated = null;
+    this.emit();
+  }
+
+  publishLibraryHydrated(payload: { stations: Tag[]; unstationed: Feed[] }): void {
+    this.revision += 1;
+    this.stationsHydrated = {
+      revision: this.revision,
+      stations: payload.stations,
+    };
+    this.unstationedHydrated = {
+      revision: this.revision,
+      feeds: payload.unstationed,
     };
     this.emit();
   }

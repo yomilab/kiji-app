@@ -54,6 +54,20 @@ describe('applyStationLibraryPatchToTags', () => {
     expect(nextTags[0]?.feedIds).toEqual(['feed-1', 'feed-2']);
   });
 
+  it('keeps sidebar membership when the patch omits feedIds', () => {
+    const nextTags = applyStationLibraryPatchToTags([communityStation], {
+      previousName: 'Community',
+      station: {
+        name: 'Entrepreneur',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        sortOrder: 0,
+      },
+    });
+
+    expect(nextTags[0]?.feedIds).toEqual(['feed-1']);
+    expect(nextTags[0]?.name).toBe('Entrepreneur');
+  });
+
   it('appends a genuinely new station when no row matches', () => {
     const nextTags = applyStationLibraryPatchToTags([], {
       previousName: 'New Station',

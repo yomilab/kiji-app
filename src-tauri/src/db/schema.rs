@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 16;
+pub const SCHEMA_VERSION: i64 = 17;
 
 pub const CREATE_TABLES: &str = r#"
   CREATE TABLE IF NOT EXISTS feeds (
@@ -76,6 +76,7 @@ pub const CREATE_TABLES: &str = r#"
   CREATE TABLE IF NOT EXISTS feed_tags (
     feed_id  TEXT NOT NULL,
     tag_name TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (feed_id, tag_name),
     FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE,
     FOREIGN KEY (tag_name) REFERENCES tags(name) ON DELETE CASCADE
@@ -114,6 +115,7 @@ pub const CREATE_INDEXES: &str = r#"
   CREATE INDEX IF NOT EXISTS idx_articles_feed_date      ON articles(feed_id, COALESCE(published_date, fetched_date) DESC);
   CREATE INDEX IF NOT EXISTS idx_articles_saved          ON articles(saved);
   CREATE INDEX IF NOT EXISTS idx_feed_tags_tag_feed      ON feed_tags(tag_name, feed_id);
+  CREATE INDEX IF NOT EXISTS idx_feed_tags_tag_sort      ON feed_tags(tag_name, sort_order, feed_id);
   CREATE INDEX IF NOT EXISTS idx_article_feed_items_hash ON article_feed_items(article_hash);
   CREATE INDEX IF NOT EXISTS idx_article_feed_items_feed_date ON article_feed_items(feed_id, COALESCE(published_date, fetched_date) DESC, article_hash);
   CREATE INDEX IF NOT EXISTS idx_saved_articles_hash     ON saved_articles(article_hash);

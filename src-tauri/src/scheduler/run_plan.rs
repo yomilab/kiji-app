@@ -384,4 +384,42 @@ mod tests {
         assert_eq!(plan.skipped_backoff_count, 0);
         assert_eq!(plan.prioritized.len(), 1);
     }
+
+    #[test]
+    fn sidebar_sort_order_does_not_change_who_is_fetched_first() {
+        let first = SchedulerFeedEntry {
+            sort_order: 0,
+            update_frequency_score: 0.5,
+            ..base_entry("first")
+        };
+        let last = SchedulerFeedEntry {
+            sort_order: 99,
+            update_frequency_score: 0.5,
+            ..base_entry("last")
+        };
+
+        let plan = create_scheduler_run_plan(
+            &[last.clone(), first.clone()],
+            2,
+            &HashMap::new(),
+            current_time_ms(),
+            &SchedulerRunPlanOptions::default(),
+        );
+        let first_score = plan
+            .prioritized
+            .iter()
+            .find(|entry| entry.entry.feed_id == "first")
+            .expect("first feed")
+            .score;
+        let last_score = plan
+            .prioritized
+            .iter()
+            .find(|entry| entry.entry.feed_id == "last")
+            .expect("last feed")
+            .score;
+        assert_eq!(
+            first_score, last_score,
+            "feeds.sort_order must not change scheduler priority"
+        );
+    }
 }

@@ -53,6 +53,9 @@ class FeedsManager {
       ? {}
       : await this.extractFeedMetadata(normalizedUrl);
     const now = new Date();
+    const untaggedSortOrder = existingFeeds
+      .filter((feed) => !feed.tags || feed.tags.length === 0)
+      .reduce((max, feed) => Math.max(max, feed.sortOrder ?? 0), -1) + 1;
     const feed: Feed = {
       id: options.id ?? this.generateId(),
       url: normalizedUrl,
@@ -62,7 +65,7 @@ class FeedsManager {
       unreadCount: 0,
       articleCount: 0,
       tags: [],
-      sortOrder: existingFeeds.length,
+      sortOrder: untaggedSortOrder,
       image: metadata.image,
       categories: metadata.categories,
       language: metadata.language,
@@ -87,6 +90,10 @@ class FeedsManager {
   async updateFeed(id: string, updates: Partial<Feed>): Promise<Feed | null> {
     await feedStore.update(id, updates);
     return feedStore.getById(id);
+  }
+
+  async reorderUnstationed(feedIds: string[]): Promise<void> {
+    await tauriClient.feeds.reorderUnstationed({ feedIds });
   }
 
   async deleteFeed(id: string): Promise<boolean> {

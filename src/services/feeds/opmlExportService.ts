@@ -98,11 +98,9 @@ class OpmlExportService {
     const bodyLines: string[] = [];
 
     for (const tag of orderedTags) {
-      const memberFeeds = sortFeedsByManualOrder(
-        tag.feedIds
-          .map((feedId) => feedById.get(feedId))
-          .filter((feed): feed is Feed => Boolean(feed))
-      );
+    const memberFeeds = tag.feedIds
+      .map((feedId) => feedById.get(feedId))
+      .filter((feed): feed is Feed => Boolean(feed));
 
       if (memberFeeds.length === 0) continue;
 

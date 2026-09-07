@@ -3,7 +3,9 @@ import { assertValidOpmlText } from '@/services/feeds/opmlDocument';
 import type { OpmlImportResult, OpmlImportSummary, ParseOpmlEntriesOptions } from '@/services/feeds/opmlImportService';
 import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import { httpClient } from '@/services/http/httpClientFactory';
-import { tagsManager } from '@/services/tags/tagsManager';
+import { abortSidebarListDrag } from '@/components/Sidebar/sidebarListDrag';
+import { hydrateLibraryAfterImport } from '@/services/feeds/libraryOrderPersist';
+import { withNonLibraryImportLock } from '@/services/feeds/libraryReorderQueue';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 
 const pluralizeFeeds = (count: number): string => `${count} feed${count === 1 ? '' : 's'}`;
@@ -52,6 +54,7 @@ export const navigateAfterOpmlImport = async (
   importResult: OpmlImportResult,
   actions: OpmlImportNavigationActions,
 ): Promise<void> => {
+  abortSidebarListDrag();
   const { navigationTarget } = importResult;
   if (!navigationTarget) {
     return;
@@ -84,33 +87,15 @@ export const applyOpmlImportResultToLibrary = async (
     notifyFeedLibraryChanged,
   }: ApplyOpmlImportResultOptions
 ): Promise<void> => {
-  // Rehydrate the sidebar from the imported feeds and affected stations so
-  // file-picker imports follow the same UI update path as drag-and-drop.
-  const importedFeedIds = new Set(importResult.importedFeeds.map(({ id }) => id));
-  const [importedFeeds, allTags] = await Promise.all([
-    Promise.all(importResult.importedFeeds.map(({ id }) => feedsManager.getFeedById(id))),
-    tagsManager.getAllTags(),
-  ]);
+  const importedFeeds = (
+    await Promise.all(importResult.importedFeeds.map(({ id }) => feedsManager.getFeedById(id)))
+  ).filter((feed): feed is Feed => feed !== null);
 
-  feedLibraryMutationBus.publishFeedsAdded(
-    importedFeeds.filter((feed): feed is Feed => feed !== null)
-  );
-  feedLibraryMutationBus.publishStationsHydrated(allTags);
-
-  for (const tag of allTags) {
-    if (!tag.feedIds.some((feedId) => importedFeedIds.has(feedId))) {
-      continue;
-    }
-
-    feedLibraryMutationBus.publishStationPatched(tag.name, {
-      name: tag.name,
-      emoji: tag.emoji,
-      feedIds: tag.feedIds,
-      createdAt: tag.createdAt,
-      sortOrder: tag.sortOrder,
-    });
+  if (importedFeeds.length > 0) {
+    feedLibraryMutationBus.publishFeedsAdded(importedFeeds);
   }
 
+  await hydrateLibraryAfterImport();
   await refreshTotalFeeds();
   notifyFeedLibraryChanged?.();
 };
@@ -120,16 +105,18 @@ export const importOpmlTextIntoLibrary = async (
   options: OpmlImportIntoLibraryOptions,
 ): Promise<OpmlImportResult> => {
   const { refreshTotalFeeds, notifyFeedLibraryChanged, defaultStationName, fileName, url } = options;
-  const importResult = await opmlWorkflowService.importFromOpmlText(opmlText, {
-    defaultStationName,
-    fileName,
-    url,
+  return withNonLibraryImportLock(async () => {
+    const importResult = await opmlWorkflowService.importFromOpmlText(opmlText, {
+      defaultStationName,
+      fileName,
+      url,
+    });
+    await applyOpmlImportResultToLibrary(importResult, {
+      refreshTotalFeeds,
+      notifyFeedLibraryChanged,
+    });
+    return importResult;
   });
-  await applyOpmlImportResultToLibrary(importResult, {
-    refreshTotalFeeds,
-    notifyFeedLibraryChanged,
-  });
-  return importResult;
 };
 
 export const importOpmlFromUrlIntoLibrary = async (

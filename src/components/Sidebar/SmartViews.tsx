@@ -10,6 +10,8 @@ import { useSmartViewsPatchedMutation } from '@/hooks/useFeedLibraryMutation';
 import { settingsManager } from '@/services/settings';
 import { storage } from '@/services/storage/storageFactory';
 import type { SmartViewSettings } from '@/services/settings/types';
+import { persistSmartViewOrder } from '@/services/feeds/libraryOrderPersist';
+import { useSidebarReorder } from './useSidebarReorder';
 import './SmartViews.css';
 
 interface SmartView {
@@ -56,6 +58,11 @@ interface SmartViewItemProps {
   isSelected: boolean;
   onSelectView: (viewId: SmartViewId) => void;
   onOpenFeedEditView: (viewId: SmartViewId) => void;
+  setRowRef: (id: string, node: HTMLElement | null) => void;
+  onDragStart: (id: string, event: React.DragEvent) => void;
+  onDragOver: (id: string, event: React.DragEvent) => void;
+  onDrop: (id: string, event: React.DragEvent) => void;
+  onDragEnd: () => void;
 }
 
 const SmartViewItem = React.memo<SmartViewItemProps>(({
@@ -63,6 +70,11 @@ const SmartViewItem = React.memo<SmartViewItemProps>(({
   isSelected,
   onSelectView,
   onOpenFeedEditView,
+  setRowRef,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }) => {
   const Icon = view.icon;
   const buttons = useMemo<ButtonConfig[]>(() => [
@@ -79,8 +91,14 @@ const SmartViewItem = React.memo<SmartViewItemProps>(({
 
   return (
     <li
+      ref={(node) => setRowRef(view.id, node)}
       className={`smart-view-item ${isSelected ? 'is-selected' : ''}`}
+      draggable
       onClick={() => onSelectView(view.id)}
+      onDragStart={(event) => onDragStart(view.id, event)}
+      onDragOver={(event) => onDragOver(view.id, event)}
+      onDrop={(event) => { void onDrop(view.id, event); }}
+      onDragEnd={onDragEnd}
       data-section="smart-view-item"
       data-component="smart-view-item"
       data-action="select-smart-view"
@@ -158,6 +176,32 @@ export const SmartViews: React.FC = () => {
     openFeedEditView({ kind: 'smart-view', id: viewId });
   }, [openFeedEditView]);
 
+  const reloadSmartViews = useCallback(async () => {
+    const [smartViewSettings, stored] = await Promise.all([
+      settingsManager.getSmartViews(),
+      storage.get('smart-views-emojis'),
+    ]);
+    const emojis: Record<string, string> = stored ? JSON.parse(stored) : {};
+    emojisRef.current = emojis;
+    setSmartViews((current) => buildSmartViews(smartViewSettings, emojis, current));
+  }, []);
+
+  const {
+    setRowRef,
+    onDragStart,
+    onDragOver,
+    onDrop,
+    onDragEnd,
+  } = useSidebarReorder({
+    group: 'library',
+    listKey: 'library',
+    items: smartViews,
+    getId: (view) => view.id,
+    persist: persistSmartViewOrder,
+    onReorder: setSmartViews,
+    onRollback: () => { void reloadSmartViews(); },
+  });
+
   return (
     <div className="smart-views" data-section="smart-views">
       <ul className="smart-views-list" data-section="smart-views-group">
@@ -168,6 +212,11 @@ export const SmartViews: React.FC = () => {
             isSelected={selectedSmartView === view.id}
             onSelectView={handleSmartViewClick}
             onOpenFeedEditView={handleOpenFeedEditView}
+            setRowRef={setRowRef}
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            onDragEnd={onDragEnd}
           />
         ))}
       </ul>

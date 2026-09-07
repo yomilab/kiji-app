@@ -28,6 +28,7 @@ import { logger } from '@/services/logger';
 import { debugOnly } from '@/services/system/env';
 import { getE2eConfig, writeE2eEvent } from '@/services/e2e/e2eHarness';
 import { storage } from '@/services/storage/storageFactory';
+import { abortSidebarListDrag } from '@/components/Sidebar/sidebarListDrag';
 import { useDependencyEffect, useMountEffect } from '@/hooks/useLifecycleEffects';
 import type { SmartViewId } from '@/constants';
 import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
@@ -54,6 +55,7 @@ import {
   LARGE_STATION_FEED_THRESHOLD,
   STATION_SWITCH_FOREGROUND_REFRESH_CAP,
   STATION_SWITCH_SQLITE_RECONCILE_LIMIT,
+  sortStationSwitchRefreshIds,
 } from '@/services/feeds/stationSwitchLimits';
 import { SourceSwitchLifecycle } from '@/services/feeds/sourceSwitchLifecycle';
 import type {
@@ -1783,8 +1785,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const allFeeds = await getAllFeedMetadataCached();
     const feedById = new Map(allFeeds.map((feed) => [feed.id, feed]));
     const eligibleFeedIds: string[] = [];
+    const refreshOrderIds = sortStationSwitchRefreshIds(feedIds);
 
-    for (const id of feedIds) {
+    for (const id of refreshOrderIds) {
       if (!isSelectionActive(token)) {
         break;
       }
@@ -3261,6 +3264,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
 
   const openFeedEditView = useCallback((target?: FeedEditTarget) => {
+    abortSidebarListDrag();
     feedScheduler.clearActiveStationFocus();
     clearArticleListScrollIdleState();
     switchLifecycle.invalidate();

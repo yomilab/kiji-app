@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { TagManager } from '@/components/Sidebar/TagManager';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { feedsManager } from '@/services/feeds/feedsManager';
+import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 import type { Feed } from '@/services/feeds/feedsManager';
 import type { Tag } from '@/types/tag';
 
@@ -66,6 +67,7 @@ const feedB: Feed = {
 describe('TagManager nested station feeds', () => {
   afterEach(() => {
     cleanup();
+    feedLibraryMutationBus.resetForTests();
     vi.clearAllMocks();
   });
 
@@ -117,5 +119,68 @@ describe('TagManager nested station feeds', () => {
     const techWrapper = container.querySelector('[data-station-name="Tech"]')
       ?.closest('.tag-item-wrapper');
     expect(techWrapper?.classList.contains('is-expanded')).toBe(false);
+  });
+
+  it('paints nested feeds in Tag.feedIds order, not Feed.sortOrder', async () => {
+    const reversedDaily: Tag = {
+      ...daily,
+      feedIds: ['feed-b', 'feed-a'],
+    };
+    vi.mocked(tagsManager.getAllTags).mockResolvedValue([reversedDaily, tech]);
+    vi.mocked(feedsManager.getFeedById).mockImplementation(async (id: string) => {
+      if (id === 'feed-a') return { ...feedA, sortOrder: 0 };
+      if (id === 'feed-b') return { ...feedB, sortOrder: 50 };
+      return null;
+    });
+
+    const { container } = render(<TagManager />);
+    await waitFor(() => {
+      expect(screen.getByText('Daily')).toBeTruthy();
+    });
+
+    const expandButton = container.querySelector('[data-station-name="Daily"] [aria-label="Expand station"]');
+    fireEvent.click(expandButton as HTMLElement);
+
+    await waitFor(() => {
+      expect(screen.getByText('Alpha')).toBeTruthy();
+    });
+
+    const ids = [...container.querySelectorAll('[data-component="station-feeds"] [data-entity-id]')]
+      .map((node) => node.getAttribute('data-entity-id'));
+    expect(ids).toEqual(['feed-b', 'feed-a']);
+  });
+
+  it('does not re-apply leftover import hydrate when expanding after a later membership reorder', async () => {
+    vi.mocked(tagsManager.getAllTags).mockResolvedValue([daily, tech]);
+    vi.mocked(feedsManager.getFeedById).mockImplementation(async (id: string) => {
+      if (id === 'feed-a') return feedA;
+      if (id === 'feed-b') return feedB;
+      return null;
+    });
+
+    const { container } = render(<TagManager />);
+    await waitFor(() => {
+      expect(screen.getByText('Daily')).toBeTruthy();
+    });
+
+    feedLibraryMutationBus.publishLibraryHydrated({
+      stations: [daily, tech],
+      unstationed: [],
+    });
+    feedLibraryMutationBus.publishStationMembershipReordered({
+      stationName: 'Daily',
+      feedIds: ['feed-b', 'feed-a'],
+    });
+
+    const expandButton = container.querySelector('[data-station-name="Daily"] [aria-label="Expand station"]');
+    fireEvent.click(expandButton as HTMLElement);
+
+    await waitFor(() => {
+      expect(screen.getByText('Alpha')).toBeTruthy();
+    });
+
+    const ids = [...container.querySelectorAll('[data-component="station-feeds"] [data-entity-id]')]
+      .map((node) => node.getAttribute('data-entity-id'));
+    expect(ids).toEqual(['feed-b', 'feed-a']);
   });
 });
