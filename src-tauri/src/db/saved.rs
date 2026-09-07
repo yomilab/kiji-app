@@ -14,6 +14,7 @@ pub struct SavedArticleQueryRequest {
     pub limit: Option<i64>,
     pub offset: Option<i64>,
     pub search_text: Option<String>,
+    pub include_total: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -198,8 +199,12 @@ pub fn query_saved_articles(
         .filter(|text| !text.is_empty());
 
     if let Some(search_text) = normalized_search_text {
-        let search_query = create_fts_prefix_query(search_text)
-            .ok_or_else(|| "Search text did not contain searchable tokens.".to_string())?;
+        let Some(search_query) = create_fts_prefix_query(search_text) else {
+            return Ok(SavedArticleQueryResponse {
+                articles: Vec::new(),
+                total: 0,
+            });
+        };
         conditions.push("saved_articles_search MATCH ?".to_string());
         bindings.push(Value::Text(search_query));
     }
@@ -215,13 +220,17 @@ pub fn query_saved_articles(
         format!("WHERE {}", conditions.join(" AND "))
     };
 
-    let total = connection
-        .query_row(
-            &format!("SELECT COUNT(*) FROM {from_sql} {where_sql}"),
-            params_from_iter(bindings.iter()),
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|error| format!("Failed to count saved articles: {error}"))?;
+    let total = if request.include_total == Some(false) {
+        0
+    } else {
+        connection
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {from_sql} {where_sql}"),
+                params_from_iter(bindings.iter()),
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| format!("Failed to count saved articles: {error}"))?
+    };
 
     let mut data_bindings = bindings;
     let mut data_sql = format!(
@@ -425,4 +434,64 @@ fn get_saved_article_by_column(
         .query_row(&sql, params![value], SavedArticleRecord::from_row)
         .optional()
         .map_err(|error| format!("Failed to read saved article: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::run_migrations;
+    use crate::db::models::SavedArticleRecord;
+
+    fn setup_connection() -> Connection {
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+        connection
+    }
+
+    fn sample_saved_article() -> SavedArticleRecord {
+        SavedArticleRecord {
+            id: "saved-punct-1".to_string(),
+            article_hash: "hash-punct".to_string(),
+            title: Some("Saved title".to_string()),
+            description: Some("Saved description".to_string()),
+            content: None,
+            link: Some("https://example.com/saved".to_string()),
+            author: None,
+            published_date: None,
+            saved_date: "2026-09-07T00:00:00.000Z".to_string(),
+            last_read_at: None,
+            feed_id: None,
+            feed_url: None,
+            feed_title: None,
+            feed_favicon: None,
+            feed_favicon_has_transparency: None,
+            feed_favicon_bg_light: None,
+            feed_favicon_bg_dark: None,
+            feed_image: None,
+            preview_image: None,
+            metadata: None,
+            highlights: vec![],
+            notes: None,
+        }
+    }
+
+    #[test]
+    fn punctuation_only_saved_search_returns_empty_page() {
+        let connection = setup_connection();
+        insert_saved_article(&connection, &sample_saved_article()).expect("insert saved");
+
+        let page = query_saved_articles(
+            &connection,
+            SavedArticleQueryRequest {
+                limit: Some(100),
+                offset: None,
+                search_text: Some("???".to_string()),
+                include_total: Some(false),
+            },
+        )
+        .expect("punctuation-only saved search should not error");
+
+        assert!(page.articles.is_empty());
+        assert_eq!(page.total, 0);
+    }
 }

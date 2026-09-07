@@ -99,8 +99,8 @@ class SavedArticlesManager {
     return (await tauriClient.saved.listAll()).map(toSavedArticle);
   }
 
-  async querySavedArticles(limit?: number, offset?: number, searchText?: string) {
-    const result = await tauriClient.saved.query({ limit, offset, searchText });
+  async querySavedArticles(limit?: number, offset?: number, searchText?: string, includeTotal?: boolean) {
+    const result = await tauriClient.saved.query({ limit, offset, searchText, includeTotal });
     return {
       articles: result.articles.map(toSavedArticle),
       total: result.total,

@@ -459,8 +459,13 @@ pub fn query_articles(
         .map(str::trim)
         .filter(|text| !text.is_empty());
     if let Some(search_text) = normalized_search_text {
-        let search_query = create_fts_prefix_query(search_text)
-            .ok_or_else(|| "Search text did not contain searchable tokens.".to_string())?;
+        let Some(search_query) = create_fts_prefix_query(search_text) else {
+            return Ok(ArticleQueryResponse {
+                articles: Vec::new(),
+                total: 0,
+                has_more: false,
+            });
+        };
         conditions.push("articles_search MATCH ?".to_string());
         bindings.push(Value::Text(search_query));
     }
@@ -1223,5 +1228,40 @@ mod tests {
         let connection = setup_connection();
         let deleted = delete_articles_by_feeds(&connection, &[]).expect("empty batch");
         assert!(deleted.is_empty());
+    }
+
+    #[test]
+    fn punctuation_only_search_returns_empty_page() {
+        let connection = setup_connection();
+        insert_feed(&connection, "feed-a");
+        insert_article(&connection, "hash-a", "feed-a", 0);
+        insert_mapping(&connection, "feed-a", "hash-a");
+
+        let page = query_articles(
+            &connection,
+            ArticleQueryRequest {
+                feed_id: None,
+                feed_ids: Some(vec!["feed-a".to_string()]),
+                tag_name: None,
+                unread_only: None,
+                saved_only: None,
+                read: None,
+                starred: None,
+                saved: None,
+                sort_field: None,
+                sort_order: None,
+                search_text: Some("???".to_string()),
+                limit: Some(100),
+                offset: None,
+                cursor_date: None,
+                cursor_hash: None,
+                include_total: Some(false),
+            },
+        )
+        .expect("punctuation-only search should not error");
+
+        assert!(page.articles.is_empty());
+        assert_eq!(page.total, 0);
+        assert!(!page.has_more);
     }
 }

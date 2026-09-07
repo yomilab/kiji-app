@@ -88,6 +88,7 @@ vi.mock('@/contexts/FeedContext', () => ({
     refreshFeed: vi.fn(),
     reloadCurrentSourceFromStore: vi.fn(),
   }),
+  useFeedSearchResyncEpoch: () => 0,
   useFeedCollection: () => mockCollectionState,
   useFeedOverlay: () => mockOverlayState,
   useFeedUI: () => mockUIState,

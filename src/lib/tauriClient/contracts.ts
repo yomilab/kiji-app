@@ -256,6 +256,7 @@ export interface SavedArticleQueryRequest {
   limit?: number;
   offset?: number;
   searchText?: string;
+  includeTotal?: boolean;
 }
 
 export interface SavedArticleQueryResponse {

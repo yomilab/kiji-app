@@ -5,6 +5,7 @@ import {
   useFeedCollectionArticles,
   useFeedCollectionLoading,
   useFeedNavigation,
+  useFeedSearchResyncEpoch,
 } from '@/contexts/FeedContext';
 import { ArticleListHeaderSection } from './ArticleListHeaderSection';
 import { useArticleListScrollOffset } from './hooks/articleListScrollOffsetContext';
@@ -72,6 +73,7 @@ export function ArticleListSearchSync({
   debouncedSearchQuery: string;
 }) {
   const { searchCurrentSource, clearArticleListSearch } = useFeedCollectionActions();
+  const searchResyncEpoch = useFeedSearchResyncEpoch();
 
   useEffect(() => {
     const query = debouncedSearchQuery.trim();
@@ -81,7 +83,7 @@ export function ArticleListSearchSync({
     }
 
     void searchCurrentSource(query);
-  }, [clearArticleListSearch, debouncedSearchQuery, isSearchOpen, searchCurrentSource, sourceKey]);
+  }, [clearArticleListSearch, debouncedSearchQuery, isSearchOpen, searchCurrentSource, searchResyncEpoch, sourceKey]);
 
   return null;
 }

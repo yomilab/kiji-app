@@ -469,6 +469,7 @@ mod tests {
                 limit: Some(10),
                 offset: None,
                 search_text: Some("Saved".to_string()),
+                include_total: None,
             },
         )
         .expect("query saved");
