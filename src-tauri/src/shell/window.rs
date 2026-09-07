@@ -5,12 +5,13 @@ use crate::{
         MAIN_WINDOW_MIN_HEIGHT, MAIN_WINDOW_MIN_WIDTH,
     },
 };
+use futures_util::lock::Mutex as AsyncMutex;
 use serde_json::Value as JsonValue;
 use std::{
     collections::HashSet,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
     time::Duration,
 };
@@ -126,39 +127,90 @@ pub fn restore_main_window_bounds(
     Ok(())
 }
 
-pub fn open_settings_window(app: &AppHandle) -> Result<(), String> {
-    app.state::<UserInitiatedWindowsState>()
-        .allow(SETTINGS_WINDOW_LABEL);
-    let settings_window = match app.get_webview_window(SETTINGS_WINDOW_LABEL) {
-        Some(window) => window,
-        None => {
-            let settings_config = app
-                .config()
-                .app
-                .windows
-                .iter()
-                .find(|window| window.label == SETTINGS_WINDOW_LABEL)
-                .ok_or_else(|| "Settings window config was not found.".to_string())?;
+pub(crate) fn is_window_label_already_exists(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase().replace([' ', '`', '(', ')'], "");
+    lower.contains("windowlabelalreadyexists")
+        || (lower.contains("alreadyexists") && lower.contains("label"))
+}
 
-            WebviewWindowBuilder::from_config(app, settings_config)
-                .map_err(|error| format!("Failed to prepare settings window: {error}"))?
-                .build()
-                .map_err(|error| format!("Failed to create settings window: {error}"))?
+pub(crate) fn should_destroy_session_restored_window(is_allowed_now: bool) -> bool {
+    !is_allowed_now
+}
+
+fn secondary_open_mutex(label: &str) -> &'static AsyncMutex<()> {
+    match label {
+        SETTINGS_WINDOW_LABEL => {
+            static LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+            LOCK.get_or_init(|| AsyncMutex::new(()))
         }
-    };
+        ARTICLE_WINDOW_LABEL => {
+            static LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+            LOCK.get_or_init(|| AsyncMutex::new(()))
+        }
+        UPDATE_WINDOW_LABEL => {
+            static LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+            LOCK.get_or_init(|| AsyncMutex::new(()))
+        }
+        _ => {
+            static LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+            LOCK.get_or_init(|| AsyncMutex::new(()))
+        }
+    }
+}
 
-    let _ = settings_window.unminimize();
-    settings_window
+async fn with_secondary_window_open_lock<R>(label: &str, action: impl FnOnce() -> R) -> R {
+    let _guard = secondary_open_mutex(label).lock().await;
+    action()
+}
+
+fn show_secondary_window(window: &WebviewWindow, label: &str) -> Result<(), String> {
+    let _ = window.unminimize();
+    window
         .show()
-        .map_err(|error| format!("Failed to show settings window: {error}"))?;
-    settings_window
-        .set_focus()
-        .map_err(|error| format!("Failed to focus settings window: {error}"))
+        .map_err(|error| format!("Failed to show {label} window: {error}"))?;
+    let _ = window.set_focus();
+    Ok(())
+}
+
+fn create_or_get_secondary_window(app: &AppHandle, label: &str) -> Result<WebviewWindow, String> {
+    app.state::<UserInitiatedWindowsState>().allow(label);
+    if let Some(window) = app.get_webview_window(label) {
+        return Ok(window);
+    }
+
+    let window_config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == label)
+        .ok_or_else(|| format!("{label} window config was not found."))?;
+
+    match WebviewWindowBuilder::from_config(app, window_config)
+        .map_err(|error| format!("Failed to prepare {label} window: {error}"))?
+        .build()
+    {
+        Ok(window) => Ok(window),
+        Err(error) => {
+            let message = error.to_string();
+            if is_window_label_already_exists(&message) {
+                app.get_webview_window(label)
+                    .ok_or_else(|| format!("Failed to create {label} window: {message}"))
+            } else {
+                Err(format!("Failed to create {label} window: {message}"))
+            }
+        }
+    }
+}
+
+pub fn open_settings_window(app: &AppHandle) -> Result<(), String> {
+    let settings_window = create_or_get_secondary_window(app, SETTINGS_WINDOW_LABEL)?;
+    show_secondary_window(&settings_window, SETTINGS_WINDOW_LABEL)
 }
 
 #[tauri::command]
-pub fn shell_settings_window_open(app: AppHandle) -> Result<(), String> {
-    open_settings_window(&app)
+pub async fn shell_settings_window_open(app: AppHandle) -> Result<(), String> {
+    with_secondary_window_open_lock(SETTINGS_WINDOW_LABEL, || open_settings_window(&app)).await
 }
 
 /// Hide/show native Overlay traffic lights (close / miniaturize / zoom).
@@ -322,32 +374,8 @@ pub fn open_article_window(app: &AppHandle) -> Result<(), String> {
 }
 
 fn open_secondary_window(app: &AppHandle, label: &str) -> Result<(), String> {
-    app.state::<UserInitiatedWindowsState>().allow(label);
-    let window = match app.get_webview_window(label) {
-        Some(window) => window,
-        None => {
-            let window_config = app
-                .config()
-                .app
-                .windows
-                .iter()
-                .find(|window| window.label == label)
-                .ok_or_else(|| format!("{label} window config was not found."))?;
-
-            WebviewWindowBuilder::from_config(app, window_config)
-                .map_err(|error| format!("Failed to prepare {label} window: {error}"))?
-                .build()
-                .map_err(|error| format!("Failed to create {label} window: {error}"))?
-        }
-    };
-
-    let _ = window.unminimize();
-    window
-        .show()
-        .map_err(|error| format!("Failed to show {label} window: {error}"))?;
-    window
-        .set_focus()
-        .map_err(|error| format!("Failed to focus {label} window: {error}"))
+    let window = create_or_get_secondary_window(app, label)?;
+    show_secondary_window(&window, label)
 }
 
 fn emit_secondary_window_open(app: &AppHandle, label: &str, event_name: &str) -> Result<(), String> {
@@ -360,13 +388,13 @@ fn emit_secondary_window_open(app: &AppHandle, label: &str, event_name: &str) ->
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn shell_article_window_open(
+pub async fn shell_article_window_open(
     app: AppHandle,
     article: JsonValue,
     state: State<'_, Arc<ArticleWindowState>>,
 ) -> Result<(), String> {
     state.set_payload(article)?;
-    open_article_window(&app)
+    with_secondary_window_open_lock(ARTICLE_WINDOW_LABEL, || open_article_window(&app)).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -384,18 +412,22 @@ pub fn shell_article_window_get_data(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn shell_update_window_open(
+pub async fn shell_update_window_open(
     app: AppHandle,
     payload: JsonValue,
     state: State<'_, Arc<UpdateWindowState>>,
 ) -> Result<(), String> {
     state.set_payload(payload)?;
-    let existed = app.get_webview_window(UPDATE_WINDOW_LABEL).is_some();
-    open_secondary_window(&app, UPDATE_WINDOW_LABEL)?;
-    if existed {
-        emit_secondary_window_open(&app, UPDATE_WINDOW_LABEL, UPDATE_WINDOW_OPEN_EVENT)?;
-    }
-    Ok(())
+    with_secondary_window_open_lock(UPDATE_WINDOW_LABEL, || {
+        open_secondary_window(&app, UPDATE_WINDOW_LABEL)?;
+        if let Err(error) =
+            emit_secondary_window_open(&app, UPDATE_WINDOW_LABEL, UPDATE_WINDOW_OPEN_EVENT)
+        {
+            eprintln!("[KiJi] Failed to emit {UPDATE_WINDOW_OPEN_EVENT}: {error}");
+        }
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -627,5 +659,93 @@ mod tests {
         assert_eq!(overlay_traffic_light_inset_for_label("article"), (16.0, 22.0));
         assert_eq!(overlay_traffic_light_inset_for_label("settings"), (16.0, 20.0));
         assert_eq!(overlay_traffic_light_inset_for_label("update"), (16.0, 20.0));
+    }
+
+    #[test]
+    fn secondary_window_open_commands_are_async() {
+        let production = include_str!("window.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        assert!(production.contains("pub async fn shell_settings_window_open"));
+        assert!(production.contains("pub async fn shell_article_window_open"));
+        assert!(production.contains("pub async fn shell_update_window_open"));
+        assert!(!production.lines().any(|line| {
+            line.contains("pub fn shell_settings_window_open")
+                || line.contains("pub fn shell_article_window_open")
+                || line.contains("pub fn shell_update_window_open")
+        }));
+    }
+
+    #[test]
+    fn already_exists_create_error_is_treated_as_show_not_failure() {
+        assert!(is_window_label_already_exists(
+            "a window with label `settings` already exists"
+        ));
+        assert!(is_window_label_already_exists(
+            "Failed to create settings window: WindowLabelAlreadyExists(settings)"
+        ));
+        assert!(!is_window_label_already_exists(
+            "Failed to create settings window: webview2 error"
+        ));
+        assert!(!is_window_label_already_exists(
+            "This feed URL already exists in your library."
+        ));
+    }
+
+    #[test]
+    fn update_window_open_emits_after_successful_show() {
+        let production = include_str!("window.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        assert!(
+            !production.contains("let existed = app.get_webview_window(UPDATE_WINDOW_LABEL)"),
+            "sampling existed before open skips update-window:open on concurrent first-opens"
+        );
+        let open_fn = production
+            .split("pub async fn shell_update_window_open")
+            .nth(1)
+            .unwrap_or("");
+        assert!(open_fn.contains("emit_secondary_window_open"));
+        assert!(!open_fn.contains("if existed"));
+    }
+
+    #[test]
+    fn session_restore_destroy_rechecks_allow_before_destroy() {
+        let state = UserInitiatedWindowsState::default();
+        assert!(should_destroy_session_restored_window(
+            state.is_allowed("settings")
+        ));
+        state.allow("settings");
+        assert!(!should_destroy_session_restored_window(
+            state.is_allowed("settings")
+        ));
+    }
+
+    #[tokio::test]
+    async fn secondary_window_open_lock_serializes_waiters() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let current = Arc::new(AtomicUsize::new(0));
+        let max = Arc::new(AtomicUsize::new(0));
+        let mut tasks = Vec::new();
+        for _ in 0..8 {
+            let current = Arc::clone(&current);
+            let max = Arc::clone(&max);
+            tasks.push(tauri::async_runtime::spawn(async move {
+                with_secondary_window_open_lock(SETTINGS_WINDOW_LABEL, || {
+                    let n = current.fetch_add(1, Ordering::SeqCst) + 1;
+                    max.fetch_max(n, Ordering::SeqCst);
+                    std::thread::sleep(Duration::from_millis(8));
+                    current.fetch_sub(1, Ordering::SeqCst);
+                })
+                .await
+            }));
+        }
+        for task in tasks {
+            task.await.expect("join");
+        }
+        assert_eq!(max.load(Ordering::SeqCst), 1);
     }
 }

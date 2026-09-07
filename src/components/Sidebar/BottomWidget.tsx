@@ -10,6 +10,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import type { Theme } from '@/services/settings';
 import { SHORTCUT_LABELS, withShortcutHint } from '@/services/shortcuts/shortcutService';
 import { ButtonStack, type ButtonConfig } from '@/components/common/ButtonStack';
+import { openSettingsWindow } from '@/services/ui/openSettingsWindow';
 import './BottomWidget.css';
 
 const THEME_SEQUENCE: Theme[] = ['auto', 'light', 'dark'];
@@ -29,9 +30,7 @@ export const BottomWidget: React.FC<BottomWidgetProps> = ({ children }) => {
   } as const;
 
   const handleSettings = () => {
-    if (window.kijiAPI) {
-      window.kijiAPI.openSettings();
-    }
+    void openSettingsWindow();
   };
 
   const handleThemeCycle = () => {

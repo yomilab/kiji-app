@@ -5,6 +5,7 @@ import { publishAppMenuCommand } from '@/services/ui/appMenuCommandBus';
 import { logger } from '@/services/logger';
 import type { AppMenuAction, AppMenuLocalAction } from '@/services/ui/appMenuModel';
 import { openAboutWindow } from '@/services/system/appUpdateService';
+import { openSettingsWindow } from '@/services/ui/openSettingsWindow';
 
 function isLocalAction(action: AppMenuAction): action is AppMenuLocalAction {
   return (
@@ -19,7 +20,7 @@ function isLocalAction(action: AppMenuAction): action is AppMenuLocalAction {
 async function dispatchLocalAction(action: AppMenuLocalAction): Promise<void> {
   switch (action.type) {
     case 'openSettings':
-      await window.kijiAPI?.openSettings();
+      await openSettingsWindow();
       return;
     case 'about': {
       try {

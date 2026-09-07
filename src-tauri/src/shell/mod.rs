@@ -14,6 +14,7 @@ pub use window::{
     shell_window_set_traffic_lights_visible, ArticleWindowState, UpdateWindowState,
     UserInitiatedWindowsState,
 };
+pub(crate) use window::should_destroy_session_restored_window;
 pub use window_guards::init as window_guards_plugin;
 
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
