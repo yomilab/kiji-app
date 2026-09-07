@@ -56,6 +56,8 @@ import {
   STATION_SWITCH_SQLITE_RECONCILE_LIMIT,
 } from '@/services/feeds/stationSwitchLimits';
 import { SourceSwitchLifecycle } from '@/services/feeds/sourceSwitchLifecycle';
+import { interruptArticleListSearchMatch } from '@/lib/tauriClient/searchInterrupt';
+import { isSearchMatchInterrupted } from '@/lib/tauriClient/commandError';
 import type {
   FeedSourceRefreshPayload,
   TagSourceRefreshPayload,
@@ -103,6 +105,14 @@ type PendingLoadMoreCommitMetric = LoadMoreQueryMetric & {
 };
 
 type ArticleListSearchCommand = 'clear' | { kind: 'search'; text: string };
+
+const buildArticleListSearchKey = (sourceKey: string, text: string, epoch: number): string => (
+  `${sourceKey}\u0000${text}\u0000${epoch}`
+);
+
+const isPendingSearchCommand = (command: ArticleListSearchCommand | null): command is { kind: 'search'; text: string } => (
+  command !== null && command !== 'clear'
+);
 
 type PendingSwitchVisibleReconcile = {
   token: number;
@@ -888,6 +898,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const articleListSearchRevisionRef = useRef(0);
   const searchNativeInFlightRef = useRef(false);
   const pendingSearchCommandRef = useRef<ArticleListSearchCommand | null>(null);
+  const lastIssuedSearchKeyRef = useRef<string | null>(null);
+  const inFlightSearchKeyRef = useRef<string | null>(null);
+  const inFlightSearchRevisionRef = useRef<number | null>(null);
   const searchCommandDrainPromiseRef = useRef<Promise<void> | null>(null);
   const articleListAtTopRef = useRef(true);
   const articleListAnchorHashRef = useRef<string | null>(null);
@@ -3821,6 +3834,19 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         totalKnown: resolved.totalKnown,
       });
     } catch (error) {
+      if (
+        isSearchMatchInterrupted(error)
+        || articleListSearchRevisionRef.current !== requestRevision
+      ) {
+        logger.info('FeedContext', 'Article-list search dropped', {
+          searchText,
+          sourceKey: source.key,
+          token,
+          revision: requestRevision,
+          reason: isSearchMatchInterrupted(error) ? 'interrupted' : 'superseded',
+        });
+        return;
+      }
       logger.warn('FeedContext', 'Article-list search failed', {
         searchText,
         sourceKey: source.key,
@@ -3921,9 +3947,17 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const command = pendingSearchCommandRef.current;
           pendingSearchCommandRef.current = null;
           if (command === 'clear') {
+            inFlightSearchKeyRef.current = null;
             await runClearSearchFollowUp(articleListSearchRevisionRef.current);
           } else {
-            await runNativeSearchQuery(command.text, articleListSearchRevisionRef.current);
+            inFlightSearchKeyRef.current = lastIssuedSearchKeyRef.current;
+            inFlightSearchRevisionRef.current = articleListSearchRevisionRef.current;
+            try {
+              await runNativeSearchQuery(command.text, articleListSearchRevisionRef.current);
+            } finally {
+              inFlightSearchKeyRef.current = null;
+              inFlightSearchRevisionRef.current = null;
+            }
           }
         }
       } finally {
@@ -3956,8 +3990,18 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     const source = getRefreshSourceDescriptor(navigationState) ?? activeSourceRef.current;
+    const shouldInterrupt = searchNativeInFlightRef.current;
     articleListSearchRevisionRef.current += 1;
+    const requestRevision = articleListSearchRevisionRef.current;
+    lastIssuedSearchKeyRef.current = null;
     restoreNonSearchListImmediately(source);
+    pendingSearchCommandRef.current = 'clear';
+    if (shouldInterrupt) {
+      await interruptArticleListSearchMatch();
+    }
+    if (articleListSearchRevisionRef.current !== requestRevision) {
+      return;
+    }
     await enqueueArticleListSearchCommand('clear');
   }, [enqueueArticleListSearchCommand, navigationState, restoreNonSearchListImmediately]);
 
@@ -3973,11 +4017,48 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return;
     }
 
+    const searchKey = buildArticleListSearchKey(source.key, searchText, searchResyncEpoch);
+    const pendingClear = pendingSearchCommandRef.current === 'clear';
+    if (
+      !pendingClear
+      && inFlightSearchKeyRef.current === searchKey
+      && inFlightSearchRevisionRef.current === articleListSearchRevisionRef.current
+    ) {
+      const pending = pendingSearchCommandRef.current;
+      if (isPendingSearchCommand(pending) && pending.text !== searchText) {
+        pendingSearchCommandRef.current = null;
+      }
+      return;
+    }
+
+    if (
+      !pendingClear
+      && lastIssuedSearchKeyRef.current === searchKey
+      && articleListSearchQueryRef.current === searchText
+      && (
+        pendingSearchCommandRef.current === null
+        || (isPendingSearchCommand(pendingSearchCommandRef.current)
+          && pendingSearchCommandRef.current.text === searchText)
+      )
+    ) {
+      return;
+    }
+
+    const shouldInterrupt = searchNativeInFlightRef.current;
     articleListSearchRevisionRef.current += 1;
+    const requestRevision = articleListSearchRevisionRef.current;
     articleListSearchQueryRef.current = searchText;
+    lastIssuedSearchKeyRef.current = searchKey;
     pendingBackgroundRefreshIgnoreViewportRef.current = false;
+    pendingSearchCommandRef.current = { kind: 'search', text: searchText };
+    if (shouldInterrupt) {
+      await interruptArticleListSearchMatch();
+    }
+    if (articleListSearchRevisionRef.current !== requestRevision) {
+      return;
+    }
     await enqueueArticleListSearchCommand({ kind: 'search', text: searchText });
-  }, [clearArticleListSearch, enqueueArticleListSearchCommand, navigationState]);
+  }, [clearArticleListSearch, enqueueArticleListSearchCommand, navigationState, searchResyncEpoch]);
 
   const loadMoreArticles = useCallback(async (options: LoadMoreArticlesOptions = {}) => {
     const showLoadingIndicator = options.showLoadingIndicator ?? true;
@@ -3985,6 +4066,12 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const isUrgentLoadMore = priority === 'urgent';
     const paging = loadMorePagingSnapshotRef.current;
     if (paging.isLoadingMoreArticles || loadMoreInFlightRef.current) return;
+    if (
+      searchNativeInFlightRef.current
+      || isPendingSearchCommand(pendingSearchCommandRef.current)
+    ) {
+      return;
+    }
     if (!articleListHasMore({
       loadedCount: paging.length,
       totalCount: paging.articlesTotalCount,
@@ -4076,6 +4163,19 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           collectionDispatch({ type: 'APPEND_ARTICLES', payload: more.articles });
         });
       }
+    } catch (error) {
+      if (isSearchMatchInterrupted(error)) {
+        logger.info('FeedContext', 'Article-list search load-more dropped', {
+          sourceKey,
+          searchText: activeSearchText,
+          reason: 'interrupted',
+        });
+        return;
+      }
+      logger.warn('FeedContext', 'Article-list load-more failed', {
+        sourceKey,
+        error,
+      });
     } finally {
       // Always release the lock. Only mutate visible loading flags if this
       // request still belongs to the active navigation token.

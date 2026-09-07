@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use super::{
+    map_sqlite_query_error,
     models::{bool_to_i64, to_json_string, to_optional_json_string, SavedArticleRecord},
     search::create_fts_prefix_query,
     DbState,
@@ -30,8 +31,18 @@ pub async fn saved_query(
     state: State<'_, DbState>,
 ) -> Result<SavedArticleQueryResponse, String> {
     let db = state.inner().clone();
-    db.read(move |connection| query_saved_articles(connection, request))
-        .await
+    let is_search = request
+        .search_text
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|text| !text.is_empty());
+    if is_search {
+        db.read_search(move |connection| query_saved_articles(connection, request))
+            .await
+    } else {
+        db.read(move |connection| query_saved_articles(connection, request))
+            .await
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -229,7 +240,7 @@ pub fn query_saved_articles(
                 params_from_iter(bindings.iter()),
                 |row| row.get::<_, i64>(0),
             )
-            .map_err(|error| format!("Failed to count saved articles: {error}"))?
+            .map_err(|error| map_sqlite_query_error("Failed to count saved articles", error))?
     };
 
     let mut data_bindings = bindings;
@@ -273,16 +284,16 @@ pub fn query_saved_articles(
 
     let mut statement = connection
         .prepare(&data_sql)
-        .map_err(|error| format!("Failed to prepare saved article query: {error}"))?;
+        .map_err(|error| map_sqlite_query_error("Failed to prepare saved article query", error))?;
     let rows = statement
         .query_map(
             params_from_iter(data_bindings.iter()),
             SavedArticleRecord::from_row,
         )
-        .map_err(|error| format!("Failed to query saved articles: {error}"))?;
+        .map_err(|error| map_sqlite_query_error("Failed to query saved articles", error))?;
     let articles = rows
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("Failed to read saved article row: {error}"))?;
+        .map_err(|error| map_sqlite_query_error("Failed to read saved article row", error))?;
 
     Ok(SavedArticleQueryResponse { articles, total })
 }

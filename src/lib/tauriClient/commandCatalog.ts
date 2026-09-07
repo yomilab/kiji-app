@@ -77,6 +77,7 @@ export const tauriCommandCatalog: Record<
     { apiMethod: "parseArticle", ipcChannel: "parse-article", kind: "renderer", targetCommand: "articles.parse", notes: "Renderer composes feeds_fetch plus article extraction." },
     { apiMethod: "fetchHtmlSafe", ipcChannel: "fetch-html-safe", kind: "invoke", targetCommand: "articles.fetchHtmlSafe", rustCommand: "feeds_fetch_html_safe" },
     { apiMethod: "dbArticlesQuery", ipcChannel: "db-articles-query", kind: "invoke", targetCommand: "articles.query", rustCommand: "articles_query" },
+    { apiMethod: "dbArticlesInterruptSearch", ipcChannel: "db-articles-interrupt-search", kind: "invoke", targetCommand: "articles.interruptSearch", rustCommand: "articles_interrupt_search" },
     { apiMethod: "dbArticlesGet", ipcChannel: "db-articles-get", kind: "invoke", targetCommand: "articles.get", rustCommand: "articles_get" },
     { apiMethod: "dbArticlesGetContent", ipcChannel: "db-articles-get-content", kind: "invoke", targetCommand: "articles.getContent", rustCommand: "articles_get_content" },
     { apiMethod: "dbArticlesExists", ipcChannel: "db-articles-exists", kind: "invoke", targetCommand: "articles.exists", rustCommand: "articles_exists" },

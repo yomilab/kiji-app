@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use tauri::State;
 
 use super::{
+    map_sqlite_query_error,
     models::{bool_to_i64, to_optional_json_string, ArticleRecord},
     search::create_fts_prefix_query,
     DbState,
@@ -56,8 +57,18 @@ pub async fn articles_query(
     state: State<'_, DbState>,
 ) -> Result<ArticleQueryResponse, String> {
     let db = state.inner().clone();
-    db.read(move |connection| query_articles(connection, request))
-        .await
+    let is_search = request
+        .search_text
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|text| !text.is_empty());
+    if is_search {
+        db.read_search(move |connection| query_articles(connection, request))
+            .await
+    } else {
+        db.read(move |connection| query_articles(connection, request))
+            .await
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -507,11 +518,21 @@ pub fn query_articles(
         && read_filter.is_none()
         && request.starred.is_none()
         && saved_filter.is_none();
+    // Station/tag search: MATCH + GROUP BY hash inside the page-key subquery,
+    // then join article/feed metadata for the LIMIT rows only. Do not LIMIT the
+    // FTS hit set before date sort (that would change load-more rank).
+    let grouped_source_search_fast_path = has_source_filter
+        && !single_feed_only
+        && normalized_search_text.is_some()
+        && read_filter.is_none()
+        && request.starred.is_none()
+        && saved_filter.is_none();
+    let page_key_fast_path = grouped_source_fast_path || grouped_source_search_fast_path;
 
     let mut having_conditions: Vec<String> = Vec::new();
     if let (Some(cursor_date), Some(cursor_hash)) = (request.cursor_date, request.cursor_hash) {
         let cursor_operator = if sort_order == "ASC" { ">" } else { "<" };
-        if grouped_source_fast_path {
+        if page_key_fast_path {
             // The aggregated sort date only exists after GROUP BY, so cursor
             // paging filters in HAVING on the aggregate alias.
             having_conditions.push(format!(
@@ -570,7 +591,7 @@ pub fn query_articles(
             .query_row(&count_sql, params_from_iter(count_bindings.iter()), |row| {
                 row.get::<_, i64>(0)
             })
-            .map_err(|error| format!("Failed to count articles: {error}"))?
+            .map_err(|error| map_sqlite_query_error("Failed to count articles", error))?
     } else {
         0
     };
@@ -584,10 +605,11 @@ pub fn query_articles(
         "a.feed_id"
     };
 
-    let mut data_sql = if grouped_source_fast_path {
-        // Page keys from the covering feed-date index, then join metadata for
-        // the LIMIT rows only. Avoids sorting tens of thousands of joined
-        // article+feed rows on every cold station switch (H17).
+    let mut data_sql = if page_key_fast_path {
+        // Page keys from the covering feed-date index (or MATCH+date for
+        // search), then join metadata for the LIMIT rows only. Avoids sorting
+        // tens of thousands of joined article+feed rows on every cold station
+        // switch (H17) and every station search.
         let page_sort_expr = if request.sort_field.as_deref() == Some("fetched_date") {
             "afi.fetched_date"
         } else {
@@ -597,6 +619,11 @@ pub fn query_articles(
             String::new()
         } else {
             format!(" HAVING {}", having_conditions.join(" AND "))
+        };
+        let page_from_sql = if grouped_source_search_fast_path {
+            "article_feed_items afi JOIN articles a ON a.hash = afi.article_hash JOIN articles_search ON articles_search.rowid = a.rowid"
+        } else {
+            "article_feed_items afi"
         };
         format!(
             r#"
@@ -627,7 +654,7 @@ pub fn query_articles(
               SELECT
                 afi.article_hash AS article_hash,
                 MAX({page_sort_expr}) AS sort_date
-              FROM article_feed_items afi
+              FROM {page_from_sql}
               {data_where}
               GROUP BY afi.article_hash
               {having_sql}
@@ -682,7 +709,7 @@ pub fn query_articles(
         }
     }
 
-    if grouped_source_fast_path {
+    if page_key_fast_path {
         // Close the page subquery, then join metadata for the limited rows.
         data_sql.push_str(
             r#"
@@ -697,13 +724,13 @@ pub fn query_articles(
 
     let mut statement = connection
         .prepare(&data_sql)
-        .map_err(|error| format!("Failed to prepare article query: {error}"))?;
+        .map_err(|error| map_sqlite_query_error("Failed to prepare article query", error))?;
     let rows = statement
         .query_map(params_from_iter(bindings.iter()), ArticleRecord::from_row)
-        .map_err(|error| format!("Failed to query articles: {error}"))?;
+        .map_err(|error| map_sqlite_query_error("Failed to query articles", error))?;
     let articles = rows
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("Failed to read article row: {error}"))?;
+        .map_err(|error| map_sqlite_query_error("Failed to read article row", error))?;
     let has_more = request
         .limit
         .map(|limit| {

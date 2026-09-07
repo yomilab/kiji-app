@@ -13,6 +13,7 @@ import { convertFeedItemsToArticles } from '@/services/articles/articleConverter
 import { clearTagFeedIdsCacheForTests } from '@/services/tags/tagFeedIdsCache';
 import { clearFeedMetadataCacheForTests } from '@/services/feeds/feedMetadataCache';
 import { feedNetworkDataResult } from '../helpers/feedNetworkFetchMock';
+import { interruptArticleListSearchMatch } from '@/lib/tauriClient/searchInterrupt';
 
 vi.mock('@/stores/articleStore', () => ({
   query: vi.fn(),
@@ -76,6 +77,10 @@ vi.mock('@/services/saved/savedArticlesService', () => ({
     querySavedViewArticles: vi.fn(),
     enrichSavedViewArticlesMeta: vi.fn(),
   },
+}));
+
+vi.mock('@/lib/tauriClient/searchInterrupt', () => ({
+  interruptArticleListSearchMatch: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/services/logger', () => ({
@@ -2545,6 +2550,279 @@ describe('FeedContext Cross-Type Race Conditions', () => {
       expect(searchCalls.length).toBeGreaterThan(searchCallsBeforeRefresh);
     });
     expect(latestContext!.articles.map((article) => article.hash)).toEqual(['needle-1']);
+  });
+
+  it('does not re-invoke native search for the same trimmed query on the same resync epoch', async () => {
+    const initialArticles = [
+      createArticle('hash-1', 'feed-a'),
+      createArticle('hash-2', 'feed-a'),
+    ];
+    const searchArticles = [createArticle('needle-1', 'feed-a')];
+
+    (feedStore.getById as Mock).mockResolvedValue({
+      id: 'feed-a',
+      url: 'url-a',
+      lastFetched: new Date(),
+    });
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.searchText === 'needle') {
+        return Promise.resolve({ articles: searchArticles, total: 0 });
+      }
+      if (query.feedIds?.includes('feed-a')) {
+        return Promise.resolve({ articles: initialArticles, total: 2 });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      await latestContext!.selectFeed('feed-a', 'url-a', 'Feed A');
+    });
+
+    await act(async () => {
+      await latestContext!.searchCurrentSource('needle');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['needle-1']);
+    });
+
+    const searchCallsBeforeTrailingSpace = (articleStore.query as Mock).mock.calls.filter(
+      ([query]: [MockArticleQuery]) => query.searchText === 'needle'
+    ).length;
+    expect(searchCallsBeforeTrailingSpace).toBeGreaterThanOrEqual(1);
+
+    await act(async () => {
+      await latestContext!.searchCurrentSource('needle ');
+    });
+
+    const searchCallsAfterTrailingSpace = (articleStore.query as Mock).mock.calls.filter(
+      ([query]: [MockArticleQuery]) => query.searchText === 'needle'
+    ).length;
+    expect(searchCallsAfterTrailingSpace).toBe(searchCallsBeforeTrailingSpace);
+  });
+
+  it('does not load more from the frozen unfiltered page while search MATCH is in flight', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => (
+      createArticle(`hash-full-${index}`, 'feed-a')
+    ));
+    const searchPage = [createArticle('needle-1', 'feed-a')];
+    const searchDeferred = createDeferred<{ articles: Article[]; total: number }>();
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    );
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.searchText === 'needle') {
+        return searchDeferred.promise;
+      }
+      if (query.tagName === 'A' && query.includeTotal === false) {
+        return Promise.resolve({ articles: firstPage, total: 0 });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles).toHaveLength(100);
+    });
+
+    let searchStarted = Promise.resolve();
+    await act(async () => {
+      searchStarted = latestContext!.searchCurrentSource('needle');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const searchCallsBeforeLoadMore = (articleStore.query as Mock).mock.calls.filter(
+      ([query]: [MockArticleQuery]) => query.searchText === 'needle'
+    ).length;
+    expect(searchCallsBeforeLoadMore).toBeGreaterThanOrEqual(1);
+
+    await act(async () => {
+      await latestContext!.loadMoreArticles({ showLoadingIndicator: false, priority: 'prefetch' });
+    });
+
+    const searchCallsAfterLoadMore = (articleStore.query as Mock).mock.calls.filter(
+      ([query]: [MockArticleQuery]) => query.searchText === 'needle'
+    );
+    expect(searchCallsAfterLoadMore).toHaveLength(searchCallsBeforeLoadMore);
+    expect(searchCallsAfterLoadMore.some(([query]) => Boolean(query.cursor))).toBe(false);
+
+    searchDeferred.resolve({ articles: searchPage, total: 0 });
+    await act(async () => {
+      await searchStarted;
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['needle-1']);
+    });
+  });
+
+  it('treats SEARCH_MATCH_INTERRUPTED as superseded so a follow-up query can paint', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => (
+      createArticle(`hash-full-${index}`, 'feed-a')
+    ));
+    const firstSearch = createDeferred<{ articles: Article[]; total: number }>();
+    const nextSearch = [createArticle('later-1', 'feed-a')];
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    );
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.searchText === 'first') {
+        return firstSearch.promise;
+      }
+      if (query.searchText === 'later') {
+        return Promise.resolve({ articles: nextSearch, total: 0 });
+      }
+      if (query.tagName === 'A' && query.includeTotal === false) {
+        return Promise.resolve({ articles: firstPage, total: 0 });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles).toHaveLength(100);
+    });
+
+    await act(async () => {
+      void latestContext!.searchCurrentSource('first');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await act(async () => {
+      void latestContext!.searchCurrentSource('later');
+    });
+
+    expect(interruptArticleListSearchMatch).toHaveBeenCalled();
+
+    firstSearch.reject(new Error('SEARCH_MATCH_INTERRUPTED'));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['later-1']);
+    });
+  });
+
+  it('re-enqueues the original query after an intervening revision instead of skipping the stale MATCH', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => (
+      createArticle(`hash-full-${index}`, 'feed-a')
+    ));
+    const firstSearch = createDeferred<{ articles: Article[]; total: number }>();
+    const retrySearch = [createArticle('foo-retry', 'feed-a')];
+
+    (tagsManager.getFeedsByTag as Mock).mockResolvedValue(['feed-a']);
+    (feedStore.getAll as Mock).mockResolvedValue([
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    ]);
+    (feedsManager.getFeedById as Mock).mockResolvedValue(
+      stationFeed('feed-a', { lastFetched: new Date() }),
+    );
+    (articleStore.query as Mock).mockImplementation((query: MockArticleQuery) => {
+      if (query.searchText === 'foo') {
+        if ((articleStore.query as Mock).mock.calls.filter(
+          ([item]: [MockArticleQuery]) => item.searchText === 'foo'
+        ).length === 1) {
+          return firstSearch.promise;
+        }
+        return Promise.resolve({ articles: retrySearch, total: 0 });
+      }
+      if (query.searchText === 'foobar') {
+        return Promise.resolve({ articles: [createArticle('foobar-1', 'feed-a')], total: 0 });
+      }
+      if (query.tagName === 'A' && query.includeTotal === false) {
+        return Promise.resolve({ articles: firstPage, total: 0 });
+      }
+      return Promise.resolve({ articles: [], total: 0 });
+    });
+
+    act(() => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+
+    await act(async () => {
+      void latestContext!.selectTag('A');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles).toHaveLength(100);
+    });
+
+    await act(async () => {
+      void latestContext!.searchCurrentSource('foo');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await act(async () => {
+      void latestContext!.searchCurrentSource('foobar');
+      void latestContext!.searchCurrentSource('foo');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    firstSearch.reject(new Error('SEARCH_MATCH_INTERRUPTED'));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    });
+
+    await waitForExpectation(() => {
+      const fooCalls = (articleStore.query as Mock).mock.calls.filter(
+        ([query]: [MockArticleQuery]) => query.searchText === 'foo'
+      );
+      expect(fooCalls.length).toBeGreaterThanOrEqual(2);
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['foo-retry']);
+    });
   });
 
   it('restores an unknown station page after search instead of keeping the match count', async () => {

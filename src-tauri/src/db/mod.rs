@@ -25,7 +25,7 @@ pub use feeds::{
 use migrations::read_current_migration_version;
 pub use migrations::run_migrations;
 pub use models::{ArticleRecord, FeedRecord, SavedArticleRecord};
-use rusqlite::Connection;
+use rusqlite::{Connection, ErrorCode, InterruptHandle};
 pub use saved::{
     get_saved_article_by_id, get_saved_articles_page, saved_create, saved_delete, saved_get,
     saved_get_by_article_hash, saved_get_by_link, saved_get_content, saved_insert_batch,
@@ -39,7 +39,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex,
     },
     time::Duration,
@@ -69,11 +69,22 @@ pub struct DatabaseStatus {
 const READER_POOL_SIZE: usize = 3;
 const BUSY_TIMEOUT_MS: u64 = 5_000;
 
+/// Distinct invoke error when a search MATCH is cancelled via `sqlite3_interrupt`.
+/// The renderer must treat this as superseded, not a failed-search freeze.
+pub(crate) const SEARCH_MATCH_INTERRUPTED: &str = "SEARCH_MATCH_INTERRUPTED";
+
+struct SearchInterruptRegistration {
+    generation: u64,
+    handle: InterruptHandle,
+}
+
 struct DbStateInner {
     path: PathBuf,
     writer: Mutex<Connection>,
     readers: Vec<Mutex<Connection>>,
     next_reader: AtomicUsize,
+    search_interrupts: Vec<Mutex<Option<SearchInterruptRegistration>>>,
+    search_interrupt_generation: AtomicU64,
     previous_shutdown_unclean: bool,
 }
 
@@ -108,8 +119,10 @@ impl DbState {
 
         // Readers open after the writer so the schema and WAL sidecars exist.
         let mut readers = Vec::with_capacity(READER_POOL_SIZE);
+        let mut search_interrupts = Vec::with_capacity(READER_POOL_SIZE);
         for _ in 0..READER_POOL_SIZE {
             readers.push(Mutex::new(open_reader_connection(&path)?));
+            search_interrupts.push(Mutex::new(None));
         }
 
         Ok(Self {
@@ -118,6 +131,8 @@ impl DbState {
                 writer: Mutex::new(writer),
                 readers,
                 next_reader: AtomicUsize::new(0),
+                search_interrupts,
+                search_interrupt_generation: AtomicU64::new(1),
                 previous_shutdown_unclean,
             }),
         })
@@ -206,11 +221,64 @@ impl DbState {
         &self,
         action: impl FnOnce(&Connection) -> Result<T, String>,
     ) -> Result<T, String> {
+        self.with_reader_slot(false, action)
+    }
+
+    /// Same as [`DbState::with_reader`], but registers a generation-scoped
+    /// `InterruptHandle` so article-list search MATCH can be cancelled without
+    /// taking the reader mutex. Unfiltered reads must not use this path.
+    pub(crate) fn with_search_reader<T>(
+        &self,
+        action: impl FnOnce(&Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.with_reader_slot(true, action)
+    }
+
+    fn with_reader_slot<T>(
+        &self,
+        register_search_interrupt: bool,
+        action: impl FnOnce(&Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
         let index = self.inner.next_reader.fetch_add(1, Ordering::Relaxed) % self.inner.readers.len();
         let connection = self.inner.readers[index]
             .lock()
             .map_err(|_| "Failed to lock a database reader connection.".to_string())?;
-        action(&connection)
+        let generation = if register_search_interrupt {
+            let generation = self
+                .inner
+                .search_interrupt_generation
+                .fetch_add(1, Ordering::Relaxed);
+            let handle = connection.get_interrupt_handle();
+            let mut slot = self.inner.search_interrupts[index]
+                .lock()
+                .map_err(|_| "Failed to lock the search interrupt slot.".to_string())?;
+            *slot = Some(SearchInterruptRegistration { generation, handle });
+            Some(generation)
+        } else {
+            None
+        };
+        let result = action(&connection);
+        if let Some(generation) = generation {
+            if let Ok(mut slot) = self.inner.search_interrupts[index].lock() {
+                if slot.as_ref().map(|registration| registration.generation) == Some(generation) {
+                    *slot = None;
+                }
+            }
+        }
+        result
+    }
+
+    /// Interrupts in-flight search MATCH statements only. Idle readers and the
+    /// writer are never registered, so this must not abort H12 COUNT, switch
+    /// pages, body reads, or writes.
+    pub fn interrupt_search_matches(&self) {
+        for slot in &self.inner.search_interrupts {
+            if let Ok(guard) = slot.lock() {
+                if let Some(registration) = guard.as_ref() {
+                    registration.handle.interrupt();
+                }
+            }
+        }
     }
 
     /// Runs a mutating statement on the single writer connection. Writes
@@ -240,6 +308,19 @@ impl DbState {
             .map_err(|error| format!("Database read task failed: {error}"))?
     }
 
+    /// Async search MATCH helper: pooled reader with a generation-scoped
+    /// interrupt registration. Use only for queries that include `search_text`.
+    pub async fn read_search<T, F>(&self, action: F) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Connection) -> Result<T, String> + Send + 'static,
+    {
+        let db = self.clone();
+        tauri::async_runtime::spawn_blocking(move || db.with_search_reader(action))
+            .await
+            .map_err(|error| format!("Database read task failed: {error}"))?
+    }
+
     /// Async write helper: single writer on the blocking thread pool, keeping
     /// SQLite work off the Tauri event loop.
     pub async fn write<T, F>(&self, action: F) -> Result<T, String>
@@ -264,6 +345,20 @@ pub async fn db_get_status(state: State<'_, DbState>) -> Result<DatabaseStatus, 
     tauri::async_runtime::spawn_blocking(move || db.status())
         .await
         .map_err(|error| format!("Database status task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn articles_interrupt_search(state: State<'_, DbState>) -> Result<(), String> {
+    state.inner().interrupt_search_matches();
+    Ok(())
+}
+
+pub(crate) fn map_sqlite_query_error(context: &str, error: rusqlite::Error) -> String {
+    if matches!(error.sqlite_error_code(), Some(ErrorCode::OperationInterrupted)) {
+        SEARCH_MATCH_INTERRUPTED.to_string()
+    } else {
+        format!("{context}: {error}")
+    }
 }
 
 fn resolve_database_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -1204,6 +1299,176 @@ mod tests {
         assert_eq!(cursor_page.articles.len(), 3);
         assert_eq!(cursor_page.articles[0].hash, "station-hash-01");
         assert_eq!(cursor_page.articles[2].hash, "station-hash-03");
+    }
+
+    #[test]
+    fn station_search_pages_via_match_then_metadata_after_limit() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+
+        for feed_id in ["feed-a", "feed-b"] {
+            connection
+                .execute(
+                    r#"
+                    INSERT INTO feeds (
+                      id, title, url, created_at, description, last_fetched, last_failed_fetch_at,
+                      unread_count, article_count, tags_json, favicon, favicon_has_transparency,
+                      favicon_dominant_color, favicon_bg_light, favicon_bg_dark, favicon_fetch_failed,
+                      emoji, image, categories_json, language, is_podcast,
+                      podcast_metadata_json, reader_mode_enabled, etag, last_modified_header
+                    ) VALUES (
+                      ?1, ?1, ?2, '2026-07-14T00:00:00.000Z', '', NULL, NULL, 0, 0, '["Station"]',
+                      NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, '[]', 'en', 0, NULL,
+                      0, NULL, NULL
+                    )
+                    "#,
+                    params![feed_id, format!("https://example.com/{feed_id}.xml")],
+                )
+                .expect("insert feed");
+        }
+
+        connection
+            .execute(
+                "INSERT INTO tags (name, color, emoji, created_at, sort_order) VALUES ('Station', NULL, NULL, '2026-07-14T00:00:00.000Z', 0)",
+                [],
+            )
+            .expect("insert tag");
+
+        for feed_id in ["feed-a", "feed-b"] {
+            connection
+                .execute(
+                    "INSERT INTO feed_tags (feed_id, tag_name) VALUES (?1, 'Station')",
+                    params![feed_id],
+                )
+                .expect("tag feed");
+        }
+
+        for index in 0..8 {
+            let feed_id = if index % 2 == 0 { "feed-a" } else { "feed-b" };
+            let hash = format!("search-hash-{index:02}");
+            let published = format!("2026-07-14T{:02}:00:00.000Z", 20 - index);
+            connection
+                .execute(
+                    r#"
+                    INSERT INTO articles (
+                      hash, feed_id, title, description, content, link, author,
+                      published_date, fetched_date, read, starred, saved, saved_article_id,
+                      last_read_at, metadata_json, feed_url, feed_title, feed_favicon,
+                      feed_favicon_has_transparency, feed_favicon_bg_light, feed_favicon_bg_dark, feed_image
+                    ) VALUES (
+                      ?1, ?2, ?3, '', '', ?4, NULL,
+                      ?5, ?5, 0, 0, 0, NULL,
+                      NULL, NULL, NULL, NULL, NULL,
+                      NULL, NULL, NULL, NULL
+                    )
+                    "#,
+                    params![
+                        hash,
+                        feed_id,
+                        format!("Station needleword {index}"),
+                        format!("https://example.com/{hash}"),
+                        published
+                    ],
+                )
+                .expect("insert matching article");
+            connection
+                .execute(
+                    r#"
+                    INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date)
+                    VALUES (?1, ?2, ?3, ?3)
+                    "#,
+                    params![feed_id, hash, published],
+                )
+                .expect("insert feed item");
+        }
+
+        connection
+            .execute(
+                r#"
+                INSERT INTO articles (
+                  hash, feed_id, title, description, content, link, author,
+                  published_date, fetched_date, read, starred, saved, saved_article_id,
+                  last_read_at, metadata_json, feed_url, feed_title, feed_favicon,
+                  feed_favicon_has_transparency, feed_favicon_bg_light, feed_favicon_bg_dark, feed_image
+                ) VALUES (
+                  'other-hash', 'feed-a', 'Unrelated title', '', '', 'https://example.com/other', NULL,
+                  '2026-07-14T21:00:00.000Z', '2026-07-14T21:00:00.000Z', 0, 0, 0, NULL,
+                  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+                )
+                "#,
+                [],
+            )
+            .expect("insert non-matching article");
+        connection
+            .execute(
+                r#"
+                INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date)
+                VALUES ('feed-a', 'other-hash', '2026-07-14T21:00:00.000Z', '2026-07-14T21:00:00.000Z')
+                "#,
+                [],
+            )
+            .expect("insert non-matching feed item");
+
+        let page = query_articles(
+            &connection,
+            ArticleQueryRequest {
+                feed_id: None,
+                feed_ids: None,
+                tag_name: Some("Station".to_string()),
+                unread_only: None,
+                saved_only: None,
+                read: None,
+                starred: None,
+                saved: None,
+                sort_field: None,
+                sort_order: Some("desc".to_string()),
+                search_text: Some("needleword".to_string()),
+                limit: Some(5),
+                offset: None,
+                cursor_date: None,
+                cursor_hash: None,
+                include_total: Some(false),
+            },
+        )
+        .expect("query station search page");
+
+        assert_eq!(page.articles.len(), 5);
+        assert_eq!(page.articles[0].hash, "search-hash-00");
+        assert_eq!(page.articles[4].hash, "search-hash-04");
+        assert!(
+            page.articles
+                .iter()
+                .all(|article| article.title.contains("needleword")),
+            "search page must not include the unmatched newer row"
+        );
+        assert_eq!(page.total, 0);
+
+        let cursor_page = query_articles(
+            &connection,
+            ArticleQueryRequest {
+                feed_id: None,
+                feed_ids: Some(vec!["feed-a".to_string(), "feed-b".to_string()]),
+                tag_name: None,
+                unread_only: None,
+                saved_only: None,
+                read: None,
+                starred: None,
+                saved: None,
+                sort_field: None,
+                sort_order: Some("desc".to_string()),
+                search_text: Some("needleword".to_string()),
+                limit: Some(3),
+                offset: None,
+                cursor_date: Some("2026-07-14T16:00:00.000Z".to_string()),
+                cursor_hash: Some("search-hash-04".to_string()),
+                include_total: Some(false),
+            },
+        )
+        .expect("query station search cursor page");
+
+        assert_eq!(cursor_page.articles.len(), 3);
+        assert_eq!(cursor_page.articles[0].hash, "search-hash-05");
+        assert_eq!(cursor_page.articles[2].hash, "search-hash-07");
     }
 
     #[test]

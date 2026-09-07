@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { isExpectedFeedCommandFailure } from "./commandError";
+import { isExpectedFeedCommandFailure, isSearchMatchInterrupted } from "./commandError";
 
 export interface CommandPayload extends Record<string, unknown> {}
 
@@ -26,6 +26,12 @@ export async function invokeCommand<TResponse>(
 }
 
 function resolveCommandFailureLevel(command: string, error: unknown): "error" | "warn" {
+  if (
+    isSearchMatchInterrupted(error)
+    && (command === "articles_query" || command === "saved_query")
+  ) {
+    return "warn";
+  }
   return isExpectedFeedCommandFailure(command, error) ? "warn" : "error";
 }
 

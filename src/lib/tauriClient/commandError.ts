@@ -1,3 +1,5 @@
+export const SEARCH_MATCH_INTERRUPTED = "SEARCH_MATCH_INTERRUPTED";
+
 export interface StructuredCommandError {
   code: string;
   message: string;
@@ -27,6 +29,11 @@ export function parseStructuredCommandError(error: unknown): StructuredCommandEr
   }
 
   return null;
+}
+
+export function isSearchMatchInterrupted(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes(SEARCH_MATCH_INTERRUPTED);
 }
 
 export function isExpectedFeedCommandFailure(command: string, error: unknown): boolean {
