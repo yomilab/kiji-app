@@ -1,8 +1,10 @@
+#[cfg(target_os = "macos")]
 use crate::scheduler::webview_delivery::{
     emit_scheduler_event_to_main_webview, RESUME_WAKE_SCRIPT, SLEEP_WAKE_SCRIPT,
 };
 use tauri::AppHandle;
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const SCHEDULER_SYSTEM_SLEEP_EVENT: &str = "scheduler:system-sleep";
 pub const SCHEDULER_SYSTEM_RESUME_EVENT: &str = "scheduler:system-resume";
 
@@ -10,6 +12,10 @@ pub fn start_system_power_watch(app: &AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         start_macos_power_watch(app)?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
     }
 
     Ok(())
@@ -59,6 +65,7 @@ fn start_macos_power_watch(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn emit_scheduler_power_event(app: &AppHandle, event: &str, wake_script: &str) {
     emit_scheduler_event_to_main_webview(app, event, wake_script, "Power");
 }

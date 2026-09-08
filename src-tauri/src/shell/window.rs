@@ -256,6 +256,7 @@ pub fn shell_window_set_traffic_lights_visible(
 #[cfg(target_os = "macos")]
 static TRAFFIC_LIGHT_INSET_GENERATION: AtomicU64 = AtomicU64::new(0);
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn overlay_traffic_light_inset_for_label(label: &str) -> (f64, f64) {
     match label {
         "settings" | "update" => (16.0, 20.0),
