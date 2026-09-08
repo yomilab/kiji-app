@@ -78,6 +78,7 @@ fn create_migration_ledger(connection: &Connection) -> Result<(), String> {
 fn ensure_schema_shape(connection: &Connection) -> Result<(), String> {
     ensure_additive_feed_columns(connection)?;
     ensure_additive_tag_columns(connection)?;
+    ensure_feed_tags_sort_order_column(connection)?;
     ensure_article_feed_items(connection)?;
     ensure_saved_article_metadata_column(connection)?;
     ensure_query_indexes(connection)?;
@@ -207,6 +208,14 @@ fn migration_16(connection: &Connection) -> Result<(), String> {
     ensure_articles_unsaved_hash_index(connection)
 }
 
+fn migration_17(connection: &Connection) -> Result<(), String> {
+    // The backfill reads feeds.sort_order, which only exists once the additive
+    // feed columns have been applied — ledgers stamped past migration 3 skip it.
+    ensure_additive_feed_columns(connection)?;
+    ensure_feed_tags_sort_order_column(connection)?;
+    backfill_feed_tags_sort_order(connection)
+}
+
 static MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         version: 1,
@@ -272,6 +281,10 @@ static MIGRATIONS: &[MigrationStep] = &[
         version: 16,
         up: migration_16,
     },
+    MigrationStep {
+        version: 17,
+        up: migration_17,
+    },
 ];
 
 fn ensure_additive_feed_columns(connection: &Connection) -> Result<(), String> {
@@ -297,6 +310,49 @@ fn ensure_additive_feed_columns(connection: &Connection) -> Result<(), String> {
 
 fn ensure_additive_tag_columns(connection: &Connection) -> Result<(), String> {
     ensure_add_column(connection, "tags", "sort_order", "INTEGER DEFAULT 0")
+}
+
+fn ensure_feed_tags_sort_order_column(connection: &Connection) -> Result<(), String> {
+    ensure_add_column(
+        connection,
+        "feed_tags",
+        "sort_order",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+}
+
+fn backfill_feed_tags_sort_order(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute(
+            r#"
+            UPDATE feed_tags
+            SET sort_order = (
+              SELECT COUNT(*)
+              FROM feed_tags AS other
+              JOIN feeds AS other_feed ON other_feed.id = other.feed_id
+              JOIN feeds AS this_feed ON this_feed.id = feed_tags.feed_id
+              WHERE other.tag_name = feed_tags.tag_name
+                AND (
+                  COALESCE(other_feed.sort_order, 0) < COALESCE(this_feed.sort_order, 0)
+                  OR (
+                    COALESCE(other_feed.sort_order, 0) = COALESCE(this_feed.sort_order, 0)
+                    AND (
+                      COALESCE(other_feed.title, '') COLLATE NOCASE
+                        < COALESCE(this_feed.title, '') COLLATE NOCASE
+                      OR (
+                        COALESCE(other_feed.title, '') COLLATE NOCASE
+                          = COALESCE(this_feed.title, '') COLLATE NOCASE
+                        AND other.feed_id <= feed_tags.feed_id
+                      )
+                    )
+                  )
+                )
+            ) - 1
+            "#,
+            [],
+        )
+        .map(|_| ())
+        .map_err(|error| format!("Failed to backfill feed_tags.sort_order: {error}"))
 }
 
 fn ensure_article_feed_items(connection: &Connection) -> Result<(), String> {

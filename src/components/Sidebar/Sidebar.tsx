@@ -15,6 +15,7 @@ import { isInteractiveStationRefreshInProgress } from '@/services/feeds/feedRefr
 import { useUserMessageChannel } from '@/hooks/useUserMessageChannel';
 import { SIDEBAR_INDICATOR_CHANNEL } from '@/services/ui/sidebarIndicatorService';
 import { beginLayoutColumnResize, endLayoutColumnResize } from '@/services/ui/layoutColumnResize';
+import { abortSidebarListDrag } from './sidebarListDrag';
 import { resolveHoveredSidebarSection } from './sidebarSectionHover';
 import { SidebarSyncIndicator } from './SidebarSyncIndicator';
 import './Sidebar.css';
@@ -315,6 +316,7 @@ export const Sidebar: React.FC = () => {
   };
 
   const handleToggleLibrary = (point: { x: number; y: number }) => {
+    abortSidebarListDrag();
     lastPointerRef.current = point;
     setLibraryExpanded((current) => {
       const next = !current;
@@ -327,6 +329,7 @@ export const Sidebar: React.FC = () => {
   };
 
   const handleToggleStations = (point: { x: number; y: number }) => {
+    abortSidebarListDrag();
     lastPointerRef.current = point;
     setStationsExpanded((current) => {
       const next = !current;

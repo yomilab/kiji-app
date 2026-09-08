@@ -3,7 +3,6 @@ import type { FeedPriorityEntry, SchedulerFeedEntry } from './types';
 
 const WEIGHT_FREQUENCY = 0.40;
 const WEIGHT_STALENESS = 0.35;
-const WEIGHT_POSITION = 0.10;
 const WEIGHT_BOOST = 0.15;
 
 function clamp(value: number, min: number, max: number): number {
@@ -89,13 +88,12 @@ export function computePriority(
 ): FeedPriorityEntry {
   const frequency = entry.updateFrequencyScore;
   const staleness = computeStalenessScore(entry.lastFetched, frequency);
-  const position = computePositionScore(entry.sortOrder, totalFeeds);
+  void totalFeeds;
   const boost = computeManualBoost(boostUntil);
 
   const rawScore =
     WEIGHT_FREQUENCY * frequency +
     WEIGHT_STALENESS * staleness +
-    WEIGHT_POSITION * position +
     WEIGHT_BOOST * boost;
 
   const failurePenalty = Math.pow(0.5, entry.consecutiveFailures);

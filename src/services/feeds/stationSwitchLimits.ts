@@ -7,6 +7,10 @@ export const STATION_SWITCH_FOREGROUND_REFRESH_CAP = 6;
 /** Cap sqlite reconcile query size so warm switches do not scan hundreds of rows. */
 export const STATION_SWITCH_SQLITE_RECONCILE_LIMIT = 100;
 
+/** Station-switch refresh walks membership as a set, then a stable feed_id order. */
+export const sortStationSwitchRefreshIds = (feedIds: string[]): string[] =>
+  [...feedIds].sort((left, right) => left.localeCompare(right));
+
 export type StationSwitchIdleCancel = () => void;
 
 export const scheduleStationSwitchIdleWork = (work: () => void): StationSwitchIdleCancel => {

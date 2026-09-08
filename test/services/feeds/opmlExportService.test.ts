@@ -43,8 +43,8 @@ describe("opmlExportService", () => {
 
     const zebraStation = topLevelOutlines[0]!;
     const zebraFeeds = Array.from(zebraStation.children).filter((node) => node.tagName.toLowerCase() === "outline");
-    expect(zebraFeeds[0]?.getAttribute("xmlUrl")).toBe("https://example.com/a.xml");
-    expect(zebraFeeds[1]?.getAttribute("xmlUrl")).toBe("https://example.com/z.xml");
+    expect(zebraFeeds[0]?.getAttribute("xmlUrl")).toBe("https://example.com/z.xml");
+    expect(zebraFeeds[1]?.getAttribute("xmlUrl")).toBe("https://example.com/a.xml");
   });
 
   it("exports OPML with two-level station structure and duplicates multi-station feeds", async () => {

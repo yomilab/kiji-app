@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { articlesManager } from '@/services/articles/articlesManager';
@@ -8,6 +8,8 @@ import {
   useFeedsAddedMutation,
   useFeedsCountsUpdatedMutation,
   useStationDeletedMutation,
+  useUnstationedHydratedMutation,
+  useUnstationedReorderedMutation,
 } from '@/hooks/useFeedLibraryMutation';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 import { AddFeedModal } from './AddFeedModal';
@@ -16,6 +18,9 @@ import { useFeedFaviconRefreshed, useFeedNavigation, useFeedUIActions } from '@/
 import { ButtonStack, type ButtonConfig } from '@/components/common/ButtonStack';
 import { Modal } from '@/components/common/Modal';
 import { FaviconImage } from '@/components/common/FaviconImage';
+import { appendPromotedFeedsToUnstationed, persistUnstationedOrder } from '@/services/feeds/libraryOrderPersist';
+import { mergeUnstationedSortIntoFeeds } from '@/services/feeds/libraryRank';
+import { useSidebarReorder } from './useSidebarReorder';
 import './FeedList.css';
 
 interface Feed {
@@ -43,6 +48,11 @@ interface FeedListItemProps {
   isSelected: boolean;
   onSelectFeed: (feed: Feed) => Promise<void>;
   onOpenFeedEdit: (feedId: string) => void;
+  setRowRef: (id: string, node: HTMLElement | null) => void;
+  onDragStart: (id: string, event: React.DragEvent) => void;
+  onDragOver: (id: string, event: React.DragEvent) => void;
+  onDrop: (id: string, event: React.DragEvent) => void;
+  onDragEnd: () => void;
 }
 
 const FeedListItem = React.memo<FeedListItemProps>(({
@@ -50,6 +60,11 @@ const FeedListItem = React.memo<FeedListItemProps>(({
   isSelected,
   onSelectFeed,
   onOpenFeedEdit,
+  setRowRef,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }) => {
   const buttons = useMemo<ButtonConfig[]>(() => [
     {
@@ -65,8 +80,14 @@ const FeedListItem = React.memo<FeedListItemProps>(({
 
   return (
     <li
+      ref={(node) => setRowRef(feed.id, node)}
       className={`feed-list-item ${isSelected ? 'feed-list-item-selected' : ''}`}
+      draggable
       onClick={() => { void onSelectFeed(feed); }}
+      onDragStart={(event) => onDragStart(feed.id, event)}
+      onDragOver={(event) => onDragOver(feed.id, event)}
+      onDrop={(event) => { void onDrop(feed.id, event); }}
+      onDragEnd={onDragEnd}
       data-section="unstationed-feed-item"
       data-component="feed-item"
       data-action="select-feed"
@@ -99,6 +120,7 @@ const FeedListItem = React.memo<FeedListItemProps>(({
 
 export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModal }) => {
   const [feeds, setFeeds] = useState<Feed[]>([]);
+  const lastAppliedUnstationedHydrateRevision = useRef(0);
   const [tagEditFeedId, setTagEditFeedId] = useState<string | null>(null);
   const [feedToDelete, setFeedToDelete] = useState<{ id: string; title: string } | null>(null);
   const { selectedFeedId, selectFeed, clearFeedSelection, openFeedEditView } = useFeedNavigation();
@@ -109,6 +131,8 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
   const addedFeeds = useFeedsAddedMutation();
   const feedsCountsUpdated = useFeedsCountsUpdatedMutation();
   const deletedStation = useStationDeletedMutation();
+  const unstationedReordered = useUnstationedReorderedMutation();
+  const unstationedHydrated = useUnstationedHydratedMutation();
 
   const sortUntaggedFeeds = useCallback((feedList: Feed[]) => (
     [...feedList].sort((a, b) => {
@@ -121,8 +145,15 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
     })
   ), []);
 
-  const loadFeeds = useCallback(async () => {
+  const loadFeeds = useCallback(async (options?: { force?: boolean }) => {
     const feedList = await feedsManager.getAllFeeds();
+    if (
+      !options?.force
+      && lastAppliedUnstationedHydrateRevision.current > 0
+      && feedLibraryMutationBus.isUnstationedHydrateFresh()
+    ) {
+      return;
+    }
     const untaggedFeeds = sortUntaggedFeeds(
       feedList.filter(feed => !feed.tags || feed.tags.length === 0)
     );
@@ -136,6 +167,22 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
   const handleOpenFeedEdit = useCallback((feedId: string) => {
     openFeedEditView({ kind: 'feed', id: feedId });
   }, [openFeedEditView]);
+
+  const {
+    setRowRef,
+    onDragStart,
+    onDragOver,
+    onDrop,
+    onDragEnd,
+  } = useSidebarReorder({
+    group: 'unstationed',
+    listKey: 'unstationed',
+    items: feeds,
+    getId: (feed) => feed.id,
+    persist: persistUnstationedOrder,
+    onReorder: (nextItems) => setFeeds(nextItems.map((feed, sortOrder) => ({ ...feed, sortOrder }))),
+    onRollback: () => { void loadFeeds({ force: true }); },
+  });
 
   useEffect(() => {
     void loadFeeds();
@@ -245,14 +292,19 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
         return;
       }
 
+      void appendPromotedFeedsToUnstationed(untaggedFeeds.map((feed) => feed.id));
       setFeeds((current) => {
         const existingIds = new Set(current.map((feed) => feed.id));
-        const missingFeeds = untaggedFeeds.filter((feed) => !existingIds.has(feed.id));
-        if (missingFeeds.length === 0) {
+        const toAdd = untaggedFeeds.filter((feed) => !existingIds.has(feed.id));
+        if (toAdd.length === 0) {
           return current;
         }
 
-        return sortUntaggedFeeds([...current, ...missingFeeds]);
+        const nextSortBase = current.reduce((max, feed) => Math.max(max, feed.sortOrder ?? 0), -1) + 1;
+        return [
+          ...current,
+          ...toAdd.map((feed, index) => ({ ...feed, sortOrder: nextSortBase + index })),
+        ];
       });
     });
   }, [deletedStation, sortUntaggedFeeds]);
@@ -272,6 +324,39 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
       return sortUntaggedFeeds([...current, ...nextFeeds]);
     });
   }, [addedFeeds, sortUntaggedFeeds]);
+
+  useEffect(() => {
+    if (!unstationedReordered) {
+      return;
+    }
+
+    setFeeds((current) => {
+      const stamped = mergeUnstationedSortIntoFeeds(current, unstationedReordered.feeds);
+      const orderById = new Map(
+        unstationedReordered.feeds.map((feed) => [feed.id, feed.sortOrder]),
+      );
+      const next = [...stamped].sort((left, right) => (
+        (orderById.get(left.id) ?? Number.MAX_SAFE_INTEGER)
+        - (orderById.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+      ));
+      return next.some((feed, index) => feed !== current[index] || feed.sortOrder !== current[index]?.sortOrder)
+        ? next
+        : current;
+    });
+  }, [unstationedReordered]);
+
+  useEffect(() => {
+    if (!unstationedHydrated || !feedLibraryMutationBus.isUnstationedHydrateFresh(unstationedHydrated)) {
+      return;
+    }
+
+    if (unstationedHydrated.revision <= lastAppliedUnstationedHydrateRevision.current) {
+      return;
+    }
+
+    lastAppliedUnstationedHydrateRevision.current = unstationedHydrated.revision;
+    setFeeds(sortUntaggedFeeds(unstationedHydrated.feeds));
+  }, [sortUntaggedFeeds, unstationedHydrated]);
 
   const handleFeedAdded = async (feedId: string, feedUrl: string, feedTitle: string) => {
     const addedFeed = await feedsManager.getFeedById(feedId);
@@ -328,6 +413,11 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
                   isSelected={selectedFeedId === feed.id}
                   onSelectFeed={handleFeedSelect}
                   onOpenFeedEdit={handleOpenFeedEdit}
+                  setRowRef={setRowRef}
+                  onDragStart={onDragStart}
+                  onDragOver={onDragOver}
+                  onDrop={onDrop}
+                  onDragEnd={onDragEnd}
                 />
               ))}
             </ul>

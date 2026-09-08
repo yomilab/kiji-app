@@ -124,6 +124,8 @@ export const tags = {
   detachFeed: tauriClient.feeds.tags.detachFeed,
   listFeedIds: tauriClient.feeds.tags.listFeedIds,
   listByFeed: tauriClient.feeds.tags.listByFeed,
+  reorder: tauriClient.feeds.tags.reorder,
+  reorderMembership: tauriClient.feeds.tags.reorderMembership,
 };
 
 function partialFeedRecord(updates: Partial<Feed>, record: FeedRecord): Partial<Omit<FeedRecord, "id">> {

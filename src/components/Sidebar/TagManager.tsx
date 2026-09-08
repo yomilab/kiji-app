@@ -4,7 +4,6 @@ import UnfoldMoreOutlined from '@mui/icons-material/UnfoldMoreOutlined';
 import UnfoldLessOutlined from '@mui/icons-material/UnfoldLessOutlined';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { feedsManager, type Feed } from '@/services/feeds/feedsManager';
-import { seedArticleFeedMetadataFromFeed } from '@/services/articles/articleListMemory';
 import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import {
   useFeedDeletedMutation,
@@ -14,6 +13,7 @@ import {
   useStationPatchedMutation,
   useStationsHydratedMutation,
   useStationsReorderedMutation,
+  useStationMembershipReorderedMutation,
 } from '@/hooks/useFeedLibraryMutation';
 import { useFeedFaviconRefreshed, useFeedNavigation, type FeedEditTarget } from '@/contexts/FeedContext';
 import { ButtonStack, type ButtonConfig } from '@/components/common/ButtonStack';
@@ -23,6 +23,15 @@ import {
   applyStationLibraryPatchToExpandedStations,
   applyStationLibraryPatchToTags,
 } from '@/services/ui/applyStationLibraryPatch';
+import { abortSidebarListDrag, mergePartialReorder } from './sidebarListDrag';
+import { persistNestedMembershipOrder, persistStationOrder } from '@/services/feeds/libraryOrderPersist';
+import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
+import { useSidebarReorder } from './useSidebarReorder';
+import {
+  collectPinnedFeedIds,
+  rememberFeedsInCache,
+  trimTagManagerFeedCache,
+} from './tagManagerFeedCache';
 import './TagManager.css';
 
 interface StationFeedItemProps {
@@ -30,6 +39,11 @@ interface StationFeedItemProps {
   isSelected: boolean;
   onSelectFeed: (feed: Feed) => Promise<void>;
   onOpenFeedEditView: (target: FeedEditTarget) => void;
+  setRowRef: (id: string, node: HTMLElement | null) => void;
+  onDragStart: (id: string, event: React.DragEvent) => void;
+  onDragOver: (id: string, event: React.DragEvent) => void;
+  onDrop: (id: string, event: React.DragEvent) => void;
+  onDragEnd: () => void;
 }
 
 const StationFeedItem = React.memo<StationFeedItemProps>(({
@@ -37,6 +51,11 @@ const StationFeedItem = React.memo<StationFeedItemProps>(({
   isSelected,
   onSelectFeed,
   onOpenFeedEditView,
+  setRowRef,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }) => {
   const buttons = useMemo<ButtonConfig[]>(() => [
     {
@@ -52,11 +71,17 @@ const StationFeedItem = React.memo<StationFeedItemProps>(({
 
   return (
     <li
+      ref={(node) => setRowRef(feed.id, node)}
       className={`station-feed-item ${isSelected ? 'station-feed-item-selected' : ''}`}
+      draggable
       onClick={(e) => {
         e.stopPropagation();
         void onSelectFeed(feed);
       }}
+      onDragStart={(event) => onDragStart(feed.id, event)}
+      onDragOver={(event) => onDragOver(feed.id, event)}
+      onDrop={(event) => { void onDrop(feed.id, event); }}
+      onDragEnd={onDragEnd}
       data-section="station-feed-item"
       data-component="feed-item"
       data-action="select-feed"
@@ -96,6 +121,13 @@ interface StationListItemProps {
   onOpenFeedEditView: (target: FeedEditTarget) => void;
   onSelectFeed: (feed: Feed) => Promise<void>;
   selectedFeedId: string | null;
+  onMembershipReordered: (stationName: string, feedIds: string[]) => void;
+  onMembershipReload: () => void;
+  setStationRowRef: (id: string, node: HTMLElement | null) => void;
+  onStationDragStart: (id: string, event: React.DragEvent) => void;
+  onStationDragOver: (id: string, event: React.DragEvent) => void;
+  onStationDrop: (id: string, event: React.DragEvent) => void;
+  onStationDragEnd: () => void;
 }
 
 const StationListItem = React.memo<StationListItemProps>(({
@@ -108,7 +140,27 @@ const StationListItem = React.memo<StationListItemProps>(({
   onOpenFeedEditView,
   onSelectFeed,
   selectedFeedId,
+  onMembershipReordered,
+  onMembershipReload,
+  setStationRowRef,
+  onStationDragStart,
+  onStationDragOver,
+  onStationDrop,
+  onStationDragEnd,
 }) => {
+  const nestedReorder = useSidebarReorder({
+    group: 'nested',
+    listKey: tag.name,
+    items: stationFeeds,
+    getId: (feed) => feed.id,
+    persist: async (feedIds) => {
+      await persistNestedMembershipOrder(tag.name, feedIds);
+    },
+    onReorder: (nextFeeds) => {
+      onMembershipReordered(tag.name, mergePartialReorder(tag.feedIds, nextFeeds.map((feed) => feed.id)));
+    },
+    onRollback: onMembershipReload,
+  });
   const stationButtons = useMemo<ButtonConfig[]>(() => [
     {
       id: 'toggle',
@@ -133,8 +185,14 @@ const StationListItem = React.memo<StationListItemProps>(({
   return (
     <li className={`tag-item-wrapper${isExpanded ? ' is-expanded' : ''}`}>
       <div
+        ref={(node) => setStationRowRef(tag.name, node)}
         className={`tag-item ${isSelected ? 'is-selected' : ''}`}
+        draggable
         onClick={() => onTagClick(tag.name)}
+        onDragStart={(event) => onStationDragStart(tag.name, event)}
+        onDragOver={(event) => onStationDragOver(tag.name, event)}
+        onDrop={(event) => { void onStationDrop(tag.name, event); }}
+        onDragEnd={onStationDragEnd}
         data-section="station-item"
         data-component="station-item"
         data-action="select-station"
@@ -171,6 +229,11 @@ const StationListItem = React.memo<StationListItemProps>(({
                 isSelected={selectedFeedId === feed.id}
                 onSelectFeed={onSelectFeed}
                 onOpenFeedEditView={onOpenFeedEditView}
+                setRowRef={nestedReorder.setRowRef}
+                onDragStart={nestedReorder.onDragStart}
+                onDragOver={nestedReorder.onDragOver}
+                onDrop={nestedReorder.onDrop}
+                onDragEnd={nestedReorder.onDragEnd}
               />
             ))}
           </ul>
@@ -180,30 +243,16 @@ const StationListItem = React.memo<StationListItemProps>(({
   );
 });
 
-const TAG_MANAGER_FEED_CACHE_MAX_ENTRIES = 200;
-
-const rememberFeedInCache = (prev: Map<string, Feed>, feed: Feed): Map<string, Feed> => {
-  const next = new Map(prev);
-  next.delete(feed.id);
-  next.set(feed.id, feed);
-  seedArticleFeedMetadataFromFeed(feed);
-
-  while (next.size > TAG_MANAGER_FEED_CACHE_MAX_ENTRIES) {
-    const oldestKey = next.keys().next().value;
-    if (!oldestKey) {
-      break;
-    }
-    next.delete(oldestKey);
-  }
-
-  return next;
-};
-
 export const TagManager: React.FC = () => {
   const [tags, setTags] = useState<Tag[]>([]);
   const [expandedStations, setExpandedStations] = useState<Set<string>>(new Set());
   const [feedCache, setFeedCache] = useState<Map<string, Feed>>(new Map());
   const feedCacheRef = useRef(feedCache);
+  const lastAppliedHydrateRevision = useRef(0);
+  const expandedStationsRef = useRef(expandedStations);
+  expandedStationsRef.current = expandedStations;
+  const tagsRef = useRef(tags);
+  tagsRef.current = tags;
   const { selectedTag, selectTag, selectedFeedId, selectFeed, openFeedEditView, clearFeedSelection } = useFeedNavigation();
   const feedFaviconRefreshed = useFeedFaviconRefreshed();
   const patchedFeed = useFeedPatchedMutation();
@@ -213,22 +262,37 @@ export const TagManager: React.FC = () => {
   const deletedStation = useStationDeletedMutation();
   const hydratedStations = useStationsHydratedMutation();
   const stationsReordered = useStationsReorderedMutation();
+  const membershipReordered = useStationMembershipReorderedMutation();
 
   useEffect(() => {
     feedCacheRef.current = feedCache;
   }, [feedCache]);
 
+  // Collapse / membership shrink must drop non-pinned rows so the Map cannot grow without bound.
+  useEffect(() => {
+    const pinnedIds = collectPinnedFeedIds(tags, expandedStations);
+    setFeedCache((prev) => {
+      const trimmed = trimTagManagerFeedCache(prev, pinnedIds);
+      if (trimmed === prev) {
+        return prev;
+      }
+      feedCacheRef.current = trimmed;
+      return trimmed;
+    });
+  }, [expandedStations, tags]);
+
   const ensureFeedsCached = useCallback(async (feedIds: string[]) => {
     const missing = feedIds.filter(id => !feedCacheRef.current.has(id));
     if (missing.length > 0) {
       const fetched = await Promise.all(missing.map(id => feedsManager.getFeedById(id)));
+      const feeds = fetched.filter((feed): feed is Feed => Boolean(feed));
+      const pinnedIds = collectPinnedFeedIds(
+        tagsRef.current,
+        expandedStationsRef.current,
+        feedIds,
+      );
       setFeedCache((prev) => {
-        let next = prev;
-        for (const feed of fetched) {
-          if (feed) {
-            next = rememberFeedInCache(next, feed);
-          }
-        }
+        const next = rememberFeedsInCache(prev, feeds, pinnedIds);
         feedCacheRef.current = next;
         return next;
       });
@@ -238,26 +302,34 @@ export const TagManager: React.FC = () => {
   }, []);
 
   const toggleStation = useCallback((tagName: string) => {
+    abortSidebarListDrag();
     setExpandedStations(prev => {
       const next = new Set(prev);
       if (next.has(tagName)) {
         next.delete(tagName);
       } else {
         next.add(tagName);
-        const tag = tags.find(t => t.name === tagName);
+        const tag = tagsRef.current.find(t => t.name === tagName);
         if (tag) void ensureFeedsCached(tag.feedIds);
       }
       return next;
     });
-  }, [ensureFeedsCached, tags]);
+  }, [ensureFeedsCached]);
 
   const handleStationFeedClick = useCallback(async (feed: Feed) => {
     await selectFeed(feed.id, feed.url, feed.title);
   }, [selectFeed]);
 
-  const loadTags = useCallback(async () => {
+  const loadTags = useCallback(async (options?: { force?: boolean }) => {
     try {
       const allTags = await tagsManager.getAllTags();
+      if (
+        !options?.force
+        && lastAppliedHydrateRevision.current > 0
+        && feedLibraryMutationBus.isStationsHydrateFresh()
+      ) {
+        return;
+      }
       setTags(allTags);
     } catch (error) {
       console.error('Error loading tags:', error);
@@ -277,6 +349,28 @@ export const TagManager: React.FC = () => {
     openFeedEditView(target);
   }, [openFeedEditView]);
 
+  const handleMembershipReordered = useCallback((stationName: string, feedIds: string[]) => {
+    setTags((current) => current.map((tag) => (
+      tag.name === stationName ? { ...tag, feedIds } : tag
+    )));
+  }, []);
+
+  const {
+    setRowRef: setStationRowRef,
+    onDragStart: onStationDragStart,
+    onDragOver: onStationDragOver,
+    onDrop: onStationDrop,
+    onDragEnd: onStationDragEnd,
+  } = useSidebarReorder({
+    group: 'station',
+    listKey: 'stations',
+    items: tags,
+    getId: (tag) => tag.name,
+    persist: persistStationOrder,
+    onReorder: setTags,
+    onRollback: () => { void loadTags({ force: true }); },
+  });
+
   useEffect(() => {
     void loadTags();
     setFeedCache(new Map());
@@ -289,7 +383,11 @@ export const TagManager: React.FC = () => {
       if (!updated) return;
       setFeedCache((prev) => {
         if (!prev.has(feedId)) return prev;
-        return rememberFeedInCache(prev, updated);
+        return rememberFeedsInCache(
+          prev,
+          [updated],
+          collectPinnedFeedIds(tagsRef.current, expandedStationsRef.current),
+        );
       });
     });
   }, [feedFaviconRefreshed]);
@@ -302,10 +400,14 @@ export const TagManager: React.FC = () => {
         return prev;
       }
 
-      return rememberFeedInCache(prev, {
-        ...current,
-        ...patchedFeed.changes,
-      });
+      return rememberFeedsInCache(
+        prev,
+        [{
+          ...current,
+          ...patchedFeed.changes,
+        }],
+        collectPinnedFeedIds(tagsRef.current, expandedStationsRef.current),
+      );
     });
   }, [patchedFeed]);
 
@@ -368,7 +470,7 @@ export const TagManager: React.FC = () => {
     });
 
     if (shouldRefreshExpandedFeeds) {
-      void ensureFeedsCached(patchedStation.station.feedIds);
+      void ensureFeedsCached(patchedStation.station.feedIds ?? []);
     }
   }, [ensureFeedsCached, patchedStation]);
 
@@ -391,13 +493,23 @@ export const TagManager: React.FC = () => {
   }, [clearFeedSelection, deletedStation]);
 
   useEffect(() => {
-    if (!hydratedStations) return;
+    if (!hydratedStations || !feedLibraryMutationBus.isStationsHydrateFresh(hydratedStations)) {
+      return;
+    }
 
-    // Replace the station list from a full snapshot after bulk imports so the
-    // sidebar cannot miss intermediate station events that were emitted faster
-    // than React could observe them.
+    if (hydratedStations.revision <= lastAppliedHydrateRevision.current) {
+      return;
+    }
+
+    lastAppliedHydrateRevision.current = hydratedStations.revision;
     setTags(hydratedStations.stations);
-  }, [hydratedStations]);
+    const expandedIds = hydratedStations.stations
+      .filter((tag) => expandedStationsRef.current.has(tag.name))
+      .flatMap((tag) => tag.feedIds);
+    if (expandedIds.length > 0) {
+      void ensureFeedsCached(expandedIds);
+    }
+  }, [ensureFeedsCached, hydratedStations]);
 
   useEffect(() => {
     if (!stationsReordered) return;
@@ -418,6 +530,18 @@ export const TagManager: React.FC = () => {
     });
   }, [stationsReordered]);
 
+  useEffect(() => {
+    if (!membershipReordered) {
+      return;
+    }
+
+    if (!feedLibraryMutationBus.isStationMembershipLeftoverFresh(membershipReordered)) {
+      return;
+    }
+
+    handleMembershipReordered(membershipReordered.stationName, membershipReordered.feedIds);
+  }, [handleMembershipReordered, membershipReordered]);
+
   if (tags.length === 0) {
     return null;
   }
@@ -431,14 +555,6 @@ export const TagManager: React.FC = () => {
             ? tag.feedIds
               .map(id => feedCache.get(id))
               .filter((f): f is Feed => !!f)
-              .sort((a, b) => {
-                const sortOrderDiff = (a.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.sortOrder ?? Number.MAX_SAFE_INTEGER);
-                if (sortOrderDiff !== 0) {
-                  return sortOrderDiff;
-                }
-
-                return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
-              })
             : [];
           return (
             <StationListItem
@@ -452,6 +568,13 @@ export const TagManager: React.FC = () => {
               onOpenFeedEditView={handleOpenFeedEditView}
               onSelectFeed={handleStationFeedClick}
               selectedFeedId={selectedFeedId}
+              onMembershipReordered={handleMembershipReordered}
+              onMembershipReload={() => { void loadTags({ force: true }); }}
+              setStationRowRef={setStationRowRef}
+              onStationDragStart={onStationDragStart}
+              onStationDragOver={onStationDragOver}
+              onStationDrop={onStationDrop}
+              onStationDragEnd={onStationDragEnd}
             />
           );
         })}

@@ -62,6 +62,7 @@ export const tauriCommandCatalog: Record<
     { apiMethod: "dbFeedsUpdateArticleCount", ipcChannel: "db-feeds-update-article-count", kind: "invoke", targetCommand: "feeds.updateArticleCount", rustCommand: "feeds_update_article_count" },
     { apiMethod: "dbFeedsUpdateLastFetched", ipcChannel: "db-feeds-update-last-fetched", kind: "invoke", targetCommand: "feeds.updateLastFetched", rustCommand: "feeds_update_last_fetched" },
     { apiMethod: "dbFeedsCount", ipcChannel: "db-feeds-count", kind: "invoke", targetCommand: "feeds.count", rustCommand: "feeds_count" },
+    { apiMethod: "dbFeedsReorderUnstationed", ipcChannel: "db-feeds-reorder-unstationed", kind: "invoke", targetCommand: "feeds.reorderUnstationed", rustCommand: "feeds_reorder_unstationed" },
     { apiMethod: "dbTagsGetAll", ipcChannel: "db-tags-get-all", kind: "invoke", targetCommand: "feeds.tags.list", rustCommand: "feeds_tags_list" },
     { apiMethod: "dbTagsGetWithFeedIds", ipcChannel: "db-tags-get-with-feed-ids", kind: "invoke", targetCommand: "feeds.tags.listWithFeedIds", rustCommand: "feeds_tags_list_with_feed_ids" },
     { apiMethod: "dbTagsUpsert", ipcChannel: "db-tags-upsert", kind: "invoke", targetCommand: "feeds.tags.upsert", rustCommand: "feeds_tags_upsert" },
@@ -72,6 +73,8 @@ export const tauriCommandCatalog: Record<
     { apiMethod: "dbTagsRemoveFeed", ipcChannel: "db-tags-remove-feed", kind: "invoke", targetCommand: "feeds.tags.detachFeed", rustCommand: "feeds_tags_detach_feed" },
     { apiMethod: "dbTagsGetFeedIds", ipcChannel: "db-tags-get-feed-ids", kind: "invoke", targetCommand: "feeds.tags.listFeedIds", rustCommand: "feeds_tags_list_feed_ids" },
     { apiMethod: "dbTagsGetByFeed", ipcChannel: "db-tags-get-by-feed", kind: "invoke", targetCommand: "feeds.tags.listByFeed", rustCommand: "feeds_tags_list_by_feed" },
+    { apiMethod: "dbTagsReorder", ipcChannel: "db-tags-reorder", kind: "invoke", targetCommand: "feeds.tags.reorder", rustCommand: "feeds_tags_reorder" },
+    { apiMethod: "dbTagsReorderMembership", ipcChannel: "db-tags-reorder-membership", kind: "invoke", targetCommand: "feeds.tags.reorderMembership", rustCommand: "feeds_tags_reorder_membership" },
   ],
   articles: [
     { apiMethod: "parseArticle", ipcChannel: "parse-article", kind: "renderer", targetCommand: "articles.parse", notes: "Renderer composes feeds_fetch plus article extraction." },

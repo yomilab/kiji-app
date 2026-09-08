@@ -63,3 +63,24 @@ export const useFeedsCountsUpdatedMutation = () =>
     feedLibraryMutationBus.getFeedsCountsUpdated,
     (): null => null,
   );
+
+export const useUnstationedReorderedMutation = () =>
+  useSyncExternalStore(
+    feedLibraryMutationBus.subscribe,
+    feedLibraryMutationBus.getUnstationedReordered,
+    (): null => null,
+  );
+
+export const useStationMembershipReorderedMutation = () =>
+  useSyncExternalStore(
+    feedLibraryMutationBus.subscribe,
+    feedLibraryMutationBus.getStationMembershipReordered,
+    (): null => null,
+  );
+
+export const useUnstationedHydratedMutation = () =>
+  useSyncExternalStore(
+    feedLibraryMutationBus.subscribe,
+    feedLibraryMutationBus.getUnstationedHydrated,
+    (): null => null,
+  );

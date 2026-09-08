@@ -28,8 +28,31 @@ import {
   useFeedDeletedMutation,
   useFeedPatchedMutation,
   useFeedsAddedMutation,
+  useSmartViewsPatchedMutation,
   useStationPatchedMutation,
+  useStationMembershipReorderedMutation,
+  useStationsHydratedMutation,
+  useStationsReorderedMutation,
+  useUnstationedHydratedMutation,
+  useUnstationedReorderedMutation,
 } from '@/hooks/useFeedLibraryMutation';
+import {
+  persistSmartViewSettings,
+  persistStationOrder as persistStationOrderShared,
+} from '@/services/feeds/libraryOrderPersist';
+import {
+  applyStationMembershipToStations,
+  applyStationTagsToFeeds,
+  buildFeedToStationsMap,
+  mergeUnstationedSortIntoFeeds,
+  shouldRollbackLibraryReorder,
+} from '@/services/feeds/libraryRank';
+import {
+  enqueueLibraryReorder,
+  isLibraryReorderSuperseded,
+  isLibraryReorderSupersededByImport,
+  isNonLibraryImportLockHeld,
+} from '@/services/feeds/libraryReorderQueue';
 import { FaviconImage } from '@/components/common/FaviconImage';
 import { DropdownMenu } from '@/components/common/DropdownMenu/DropdownMenu';
 import { EmojiSubmenu } from '@/components/common/EmojiPicker/EmojiSubmenu';
@@ -864,6 +887,12 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   const deletedFeed = useFeedDeletedMutation();
   const patchedStation = useStationPatchedMutation();
   const addedFeeds = useFeedsAddedMutation();
+  const smartViewsPatched = useSmartViewsPatchedMutation();
+  const stationsReordered = useStationsReorderedMutation();
+  const stationsHydrated = useStationsHydratedMutation();
+  const membershipReordered = useStationMembershipReorderedMutation();
+  const unstationedReordered = useUnstationedReorderedMutation();
+  const unstationedHydrated = useUnstationedHydratedMutation();
 
   const [feeds, setFeeds] = useState<Feed[]>([]);
   const [stations, setStations] = useState<Tag[]>([]);
@@ -898,6 +927,8 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   const stationRowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
   const libraryRowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
   const stationMenuRef = useRef<HTMLDivElement | null>(null);
+  const loadGenerationRef = useRef(0);
+  const hasLoadedLibraryRef = useRef(false);
   const opmlActionToastTimerRef = useRef<number | null>(null);
   const stationsRef = useLatestRef(stations);
   const feedsRef = useLatestRef(feeds);
@@ -932,6 +963,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   }, []);
 
   const loadData = useCallback(async () => {
+    const generation = loadGenerationRef.current;
     setIsLoading(true);
     setError(null);
 
@@ -942,25 +974,69 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
         settingsManager.getSmartViews(),
       ]);
 
-      const orderedStations = sortStationsByAddedDateDesc(allTags);
-      const nextMap = new Map<string, string[]>();
+      if (generation !== loadGenerationRef.current) {
+        return;
+      }
 
-      for (const tag of orderedStations) {
-        for (const feedId of tag.feedIds) {
-          const existing = nextMap.get(feedId) || [];
-          existing.push(tag.name);
-          nextMap.set(feedId, existing);
+      const leftoverStations = feedLibraryMutationBus.getStationsHydrated();
+      const leftoverUnstationed = feedLibraryMutationBus.getUnstationedHydrated();
+      const leftoverMembership = feedLibraryMutationBus.getStationMembershipReordered();
+      const leftoverStationsReordered = feedLibraryMutationBus.getStationsReordered();
+      const leftoverUnstationedReordered = feedLibraryMutationBus.getUnstationedReordered();
+      let nextStations = sortStationsByAddedDateDesc(allTags);
+      let nextFeeds = sortByManualOrder(allFeeds, (feed) => feed.title);
+
+      // While OPML holds the non-library lock, SQLite is already the import write but
+      // hydrate may not be published yet — do not overlay pre-import leftovers.
+      if (!isNonLibraryImportLockHeld()) {
+        if (feedLibraryMutationBus.isStationsHydrateFresh(leftoverStations) && leftoverStations) {
+          nextStations = leftoverStations.stations;
+          nextFeeds = applyStationTagsToFeeds(nextFeeds, nextStations);
+        } else if (
+          leftoverStationsReordered
+          && leftoverStationsReordered.revision > (leftoverStations?.revision ?? 0)
+        ) {
+          const orderByName = new Map(
+            leftoverStationsReordered.stations.map((station, index) => (
+              [station.name, station.sortOrder ?? index]
+            )),
+          );
+          nextStations = [...nextStations].sort((left, right) => (
+            (orderByName.get(left.name) ?? Number.MAX_SAFE_INTEGER)
+            - (orderByName.get(right.name) ?? Number.MAX_SAFE_INTEGER)
+          ));
+        }
+
+        if (leftoverMembership && feedLibraryMutationBus.isStationMembershipLeftoverFresh(leftoverMembership)) {
+          nextStations = applyStationMembershipToStations(
+            nextStations,
+            leftoverMembership.stationName,
+            leftoverMembership.feedIds,
+          );
+          nextFeeds = applyStationTagsToFeeds(nextFeeds, nextStations);
+        }
+
+        if (feedLibraryMutationBus.isUnstationedHydrateFresh(leftoverUnstationed) && leftoverUnstationed) {
+          nextFeeds = mergeUnstationedSortIntoFeeds(nextFeeds, leftoverUnstationed.feeds);
+        } else if (
+          leftoverUnstationedReordered
+          && leftoverUnstationedReordered.revision > (leftoverUnstationed?.revision ?? 0)
+        ) {
+          nextFeeds = mergeUnstationedSortIntoFeeds(nextFeeds, leftoverUnstationedReordered.feeds);
         }
       }
 
-      setFeeds(sortByManualOrder(allFeeds, (feed) => feed.title));
-      setStations(orderedStations);
+      hasLoadedLibraryRef.current = true;
+      setFeeds(nextFeeds);
+      setStations(nextStations);
       setLibraryItems(buildLibraryItemRows(smartViews));
-      setFeedToStationsMap(nextMap);
+      setFeedToStationsMap(buildFeedToStationsMap(nextStations));
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : 'Failed to load feed editor.';
       setError(message);
     } finally {
+      // A superseded load must still clear the flag: the bus effect that bumped the
+      // generation already wrote fresher state, and nothing else re-runs loadData.
       setIsLoading(false);
     }
   }, []);
@@ -968,6 +1044,87 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!stationsReordered || !hasLoadedLibraryRef.current) {
+      return;
+    }
+
+    loadGenerationRef.current += 1;
+    setStations((current) => {
+      const orderByName = new Map(
+        stationsReordered.stations.map((station, index) => [station.name, station.sortOrder ?? index]),
+      );
+      return [...current].sort((left, right) => (
+        (orderByName.get(left.name) ?? Number.MAX_SAFE_INTEGER)
+        - (orderByName.get(right.name) ?? Number.MAX_SAFE_INTEGER)
+      ));
+    });
+  }, [stationsReordered]);
+
+  useEffect(() => {
+    if (!smartViewsPatched || !hasLoadedLibraryRef.current) {
+      return;
+    }
+
+    loadGenerationRef.current += 1;
+    setLibraryItems(buildLibraryItemRows(smartViewsPatched.smartViews));
+  }, [smartViewsPatched]);
+
+  useEffect(() => {
+    if (!stationsHydrated || !hasLoadedLibraryRef.current) {
+      return;
+    }
+
+    if (!feedLibraryMutationBus.isStationsHydrateFresh(stationsHydrated)) {
+      return;
+    }
+
+    loadGenerationRef.current += 1;
+    setStations(stationsHydrated.stations);
+    setFeedToStationsMap(buildFeedToStationsMap(stationsHydrated.stations));
+    setFeeds((current) => applyStationTagsToFeeds(current, stationsHydrated.stations));
+  }, [stationsHydrated]);
+
+  useEffect(() => {
+    if (!membershipReordered || !hasLoadedLibraryRef.current) {
+      return;
+    }
+
+    if (!feedLibraryMutationBus.isStationMembershipLeftoverFresh(membershipReordered)) {
+      return;
+    }
+
+    loadGenerationRef.current += 1;
+    const nextStations = applyStationMembershipToStations(
+      stationsRef.current,
+      membershipReordered.stationName,
+      membershipReordered.feedIds,
+    );
+    setStations(nextStations);
+    setFeedToStationsMap(buildFeedToStationsMap(nextStations));
+    setFeeds((current) => applyStationTagsToFeeds(current, nextStations));
+  }, [membershipReordered, stationsRef]);
+
+  useEffect(() => {
+    if (!unstationedReordered || !hasLoadedLibraryRef.current) {
+      return;
+    }
+
+    setFeeds((current) => mergeUnstationedSortIntoFeeds(current, unstationedReordered.feeds));
+  }, [unstationedReordered]);
+
+  useEffect(() => {
+    if (!unstationedHydrated || !hasLoadedLibraryRef.current) {
+      return;
+    }
+
+    if (!feedLibraryMutationBus.isUnstationedHydrateFresh(unstationedHydrated)) {
+      return;
+    }
+
+    setFeeds((current) => mergeUnstationedSortIntoFeeds(current, unstationedHydrated.feeds));
+  }, [unstationedHydrated]);
 
   useEffect(() => {
     return () => {
@@ -1085,6 +1242,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
         return {
           ...station,
           ...patchedStation.station,
+          feedIds: patchedStation.station.feedIds ?? station.feedIds,
         };
       });
 
@@ -1105,6 +1263,7 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
         ...current,
         {
           ...patchedStation.station,
+          feedIds: patchedStation.station.feedIds ?? [],
           color: undefined,
         },
       ]);
@@ -1213,7 +1372,6 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       feedLibraryMutationBus.publishStationPatched(stationName, {
         name: updatedStation.name,
         emoji: updatedStation.emoji,
-        feedIds: updatedStation.feedIds,
         createdAt: updatedStation.createdAt,
         sortOrder: updatedStation.sortOrder,
       });
@@ -1479,20 +1637,45 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     )));
 
     try {
-      if (shouldAssign) {
-        await tagsManager.addTagToFeed(feedId, stationName);
-      } else {
-        await tagsManager.removeTagFromFeed(feedId, stationName);
-      }
+      const persistAssignment = async () => {
+        await enqueueLibraryReorder(`nested:${stationName}`, async ({ isCurrent }) => {
+          if (shouldAssign) {
+            await tagsManager.addTagToFeed(feedId, stationName);
+          } else {
+            await tagsManager.removeTagFromFeed(feedId, stationName);
+          }
 
-      feedLibraryMutationBus.publishFeedPatched(feedId, { tags: nextStationNames });
-      feedLibraryMutationBus.publishStationPatched(stationName, {
-        name: nextStation.name,
-        emoji: nextStation.emoji,
-        feedIds: nextStation.feedIds,
-        createdAt: nextStation.createdAt,
-        sortOrder: nextStation.sortOrder,
-      });
+          const allTags = await tagsManager.getAllTags();
+          const persisted = allTags.find((tag) => tag.name === stationName);
+          const persistedFeedIds = persisted?.feedIds ?? nextStation.feedIds;
+          if (!isCurrent()) {
+            return;
+          }
+          feedLibraryMutationBus.publishFeedPatched(feedId, { tags: nextStationNames });
+          feedLibraryMutationBus.publishStationPatched(stationName, {
+            name: nextStation.name,
+            emoji: nextStation.emoji,
+            feedIds: persistedFeedIds,
+            createdAt: nextStation.createdAt,
+            sortOrder: nextStation.sortOrder,
+          });
+          setStations((current) => applyStationMembershipToStations(
+            current,
+            stationName,
+            persistedFeedIds,
+          ));
+        });
+      };
+
+      try {
+        await persistAssignment();
+      } catch (error) {
+        if (isLibraryReorderSuperseded(error) && !isLibraryReorderSupersededByImport(error)) {
+          await persistAssignment();
+        } else {
+          throw error;
+        }
+      }
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : 'Failed to update feed stations.';
       appToastService.show(message);
@@ -1593,7 +1776,6 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
         feedLibraryMutationBus.publishStationPatched(state.originalName, {
           name: nextName,
           emoji: previousStation.emoji,
-          feedIds: previousStation.feedIds,
           createdAt: previousStation.createdAt,
           sortOrder: previousStation.sortOrder,
         });
@@ -1624,11 +1806,15 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     }));
 
     try {
-      await settingsManager.setSmartViews(nextSmartViews);
-      feedLibraryMutationBus.publishSmartViewsPatched(nextSmartViews);
+      await persistSmartViewSettings(nextSmartViews);
     } catch (updateError) {
+      if (!shouldRollbackLibraryReorder(updateError)) {
+        return;
+      }
       const message = updateError instanceof Error ? updateError.message : 'Failed to save library item settings.';
-      appToastService.show(message);
+      if (!isLibraryReorderSuperseded(updateError)) {
+        appToastService.show(message);
+      }
       void loadData();
     }
   }, [loadData]);
@@ -1641,21 +1827,15 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     setStations(nextStations);
 
     try {
-      const stationUpdates = nextStations.map((station, index) => ({
-        station,
-        sortOrder: index,
-      }));
-
-      await Promise.all(stationUpdates.map(({ station, sortOrder }) => tagsManager.updateTag(station.name, { sortOrder })));
-      feedLibraryMutationBus.publishStationsReordered(
-        stationUpdates.map(({ station, sortOrder }) => ({
-          name: station.name,
-          sortOrder,
-        }))
-      );
+      await persistStationOrderShared(nextStations.map((station) => station.name));
     } catch (updateError) {
+      if (!shouldRollbackLibraryReorder(updateError)) {
+        return;
+      }
       const message = updateError instanceof Error ? updateError.message : 'Failed to save station order.';
-      appToastService.show(message);
+      if (!isLibraryReorderSuperseded(updateError)) {
+        appToastService.show(message);
+      }
       void loadData();
     }
   }, [loadData]);
@@ -1966,26 +2146,30 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
     });
   }, [applyDragState]);
 
-  const handleDrop = useCallback(async (group: DragGroup, targetId: string, event: React.DragEvent<HTMLTableRowElement>) => {
+  const handleDrop = useCallback(async (group: DragGroup, _targetId: string, event: React.DragEvent<HTMLTableRowElement>) => {
     event.preventDefault();
 
     const currentDragState = dragStateRef.current;
-    if (!currentDragState || currentDragState.group !== group || currentDragState.id === targetId) {
+    if (!currentDragState || currentDragState.group !== group) {
       applyDragState(null);
       return;
     }
 
-    const placement = currentDragState.overId === targetId ? currentDragState.placement : 'before';
+    const dropId = currentDragState.overId;
+    const placement = currentDragState.placement;
     applyDragState(null);
+    if (!dropId || currentDragState.id === dropId) {
+      return;
+    }
 
     if (group === 'library') {
-      const reorderedLibraryItems = reorderList(libraryItemsRef.current, currentDragState.id, targetId, placement, (item) => item.id);
+      const reorderedLibraryItems = reorderList(libraryItemsRef.current, currentDragState.id, dropId, placement, (item) => item.id);
       await persistLibraryItems(reorderedLibraryItems);
       return;
     }
 
     if (group === 'station') {
-      const reorderedStations = reorderList(stationsRef.current, currentDragState.id, targetId, placement, (station) => station.name);
+      const reorderedStations = reorderList(stationsRef.current, currentDragState.id, dropId, placement, (station) => station.name);
       await persistStationOrder(reorderedStations);
       return;
     }
@@ -2083,8 +2267,10 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
 
       for (const station of affectedStations) {
         feedLibraryMutationBus.publishStationPatched(station.name, {
-          ...station,
-          feedIds: station.feedIds.filter((feedId) => feedId !== targetFeedId),
+          name: station.name,
+          emoji: station.emoji,
+          createdAt: station.createdAt,
+          sortOrder: station.sortOrder,
         });
       }
       feedLibraryMutationBus.publishFeedDeleted(targetFeedId);
@@ -2268,8 +2454,10 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
         );
         for (const station of affectedStations) {
           feedLibraryMutationBus.publishStationPatched(station.name, {
-            ...station,
-            feedIds: station.feedIds.filter((id) => id !== feedId),
+            name: station.name,
+            emoji: station.emoji,
+            createdAt: station.createdAt,
+            sortOrder: station.sortOrder,
           });
         }
 

@@ -2,7 +2,7 @@ import type { Tag } from '@/types/tag';
 
 export interface StationLibraryPatch {
   previousName: string;
-  station: Pick<Tag, 'name' | 'emoji' | 'feedIds' | 'createdAt' | 'sortOrder'>;
+  station: Pick<Tag, 'name' | 'emoji' | 'createdAt' | 'sortOrder'> & Partial<Pick<Tag, 'feedIds'>>;
 }
 
 const compareTagsByOrderThenName = (left: Tag, right: Tag): number => {
@@ -35,6 +35,7 @@ export function applyStationLibraryPatchToTags(
     return {
       ...tag,
       ...patch.station,
+      feedIds: patch.station.feedIds ?? tag.feedIds,
     };
   });
 
@@ -52,6 +53,7 @@ export function applyStationLibraryPatchToTags(
 
   return [...tags, {
     ...patch.station,
+    feedIds: patch.station.feedIds ?? [],
     color: undefined,
   }].sort(compareTagsByOrderThenName);
 }

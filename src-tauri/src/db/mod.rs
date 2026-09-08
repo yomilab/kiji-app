@@ -18,7 +18,7 @@ pub use articles::{
 };
 pub use feeds::{
     feeds_count, feeds_create, feeds_delete, feeds_delete_many, feeds_get, feeds_get_by_url,
-    feeds_list, feeds_update,
+    feeds_list, feeds_reorder_unstationed, feeds_update,
     feeds_update_article_count, feeds_update_last_fetched, feeds_update_unread_count,
     list_feeds, update_feed, FeedUpdate,
 };
@@ -47,7 +47,8 @@ use std::{
 pub use tags::{
     feeds_tags_attach_feed, feeds_tags_delete, feeds_tags_detach_feed, feeds_tags_list,
     feeds_tags_list_by_feed, feeds_tags_list_feed_ids, feeds_tags_list_with_feed_ids,
-    feeds_tags_rename, feeds_tags_update, feeds_tags_upsert,
+    feeds_tags_rename, feeds_tags_reorder, feeds_tags_reorder_membership, feeds_tags_update,
+    feeds_tags_upsert,
 };
 use tauri::{AppHandle, Manager, State};
 

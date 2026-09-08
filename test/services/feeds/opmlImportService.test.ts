@@ -10,6 +10,7 @@ vi.mock('@/services/feeds/feedsManager', () => ({
     getAllFeeds: vi.fn(),
     addFeedWithoutMetadata: vi.fn(),
     updateFeed: vi.fn(),
+    reorderUnstationed: vi.fn(),
   },
 }));
 
@@ -18,6 +19,8 @@ vi.mock('@/services/tags/tagsManager', () => ({
     addTagToFeed: vi.fn(),
     getAllTags: vi.fn(),
     updateTag: vi.fn(),
+    reorderStations: vi.fn(),
+    reorderMembership: vi.fn(),
   },
 }));
 
@@ -35,6 +38,10 @@ describe('opmlImportService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(feedStore.update).mockResolvedValue(undefined);
+    vi.mocked(tagsManager.getAllTags).mockResolvedValue([]);
+    vi.mocked(tagsManager.reorderStations).mockResolvedValue(undefined);
+    vi.mocked(tagsManager.reorderMembership).mockResolvedValue(undefined);
+    vi.mocked(feedsManager.reorderUnstationed).mockResolvedValue(undefined);
   });
 
   it('imports unique feeds without blocking on favicon fetch during DB writes', async () => {
@@ -89,9 +96,59 @@ describe('opmlImportService', () => {
     expect(feedsManager.addFeedWithoutMetadata).toHaveBeenCalledTimes(1);
     expect(feedsManager.addFeedWithoutMetadata).toHaveBeenCalledWith('https://new.com/rss/', 'New Feed');
     expect(tagsManager.addTagToFeed).toHaveBeenCalledWith('feed-New Feed', 'Tech');
-    expect(tagsManager.updateTag).toHaveBeenCalledWith('Tech', { sortOrder: 0 });
+    expect(tagsManager.addTagToFeed).toHaveBeenCalledWith('existing-1', 'Tech');
+    expect(tagsManager.updateTag).not.toHaveBeenCalled();
+    expect(tagsManager.reorderStations).toHaveBeenCalledWith(['Tech']);
+    expect(tagsManager.reorderMembership).toHaveBeenCalledWith(
+      'Tech',
+      expect.arrayContaining(['feed-New Feed', 'existing-1']),
+    );
     expect(faviconFetcher.fetchFavicon).not.toHaveBeenCalled();
     expect(feedsManager.updateFeed).not.toHaveBeenCalled();
+  });
+
+  it('restores station and membership order for existing URLs and later outlines', async () => {
+    vi.mocked(feedsManager.getAllFeeds).mockResolvedValue([
+      { id: 'existing-1', url: 'https://shared.com/feed', tags: ['Old'] } as never,
+      { id: 'existing-2', url: 'https://solo.com/feed', tags: [] } as never,
+    ]);
+    vi.mocked(tagsManager.getAllTags).mockResolvedValue([
+      { name: 'Old', feedIds: ['existing-1'], sortOrder: 0 } as never,
+    ]);
+    vi.mocked(tagsManager.addTagToFeed).mockResolvedValue(undefined);
+
+    const opmlText = `<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <body>
+    <outline text="Beta">
+      <outline text="Shared" xmlUrl="https://shared.com/feed" />
+    </outline>
+    <outline text="Alpha">
+      <outline text="Shared again" xmlUrl="https://shared.com/feed/" />
+      <outline text="Solo" xmlUrl="https://solo.com/feed" />
+    </outline>
+  </body>
+</opml>`;
+
+    const result = await opmlImportService.importFromText(opmlText);
+
+    expect(result.summary).toEqual({
+      total: 3,
+      imported: 0,
+      skippedDuplicate: 3,
+      invalid: 0,
+      failed: 0,
+    });
+    expect(feedsManager.addFeedWithoutMetadata).not.toHaveBeenCalled();
+    expect(tagsManager.addTagToFeed).toHaveBeenCalledWith('existing-1', 'Beta');
+    expect(tagsManager.addTagToFeed).toHaveBeenCalledWith('existing-1', 'Alpha');
+    expect(tagsManager.addTagToFeed).toHaveBeenCalledWith('existing-2', 'Alpha');
+    expect(tagsManager.reorderStations).toHaveBeenCalledWith(['Beta', 'Alpha', 'Old']);
+    expect(tagsManager.reorderMembership).toHaveBeenCalledWith('Beta', ['existing-1']);
+    expect(tagsManager.reorderMembership).toHaveBeenCalledWith(
+      'Alpha',
+      expect.arrayContaining(['existing-1', 'existing-2']),
+    );
   });
 
   it('parses OPML 1.0 with unescaped ampersands in outline attributes', async () => {

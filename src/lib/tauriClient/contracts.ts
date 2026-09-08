@@ -844,6 +844,18 @@ export interface FeedsContract {
     request: { feedId: string };
     response: string[];
   };
+  tagsReorder: {
+    request: { names: string[] };
+    response: void;
+  };
+  tagsReorderMembership: {
+    request: { tagName: string; feedIds: string[] };
+    response: void;
+  };
+  reorderUnstationed: {
+    request: { feedIds: string[] };
+    response: void;
+  };
 }
 
 export interface ArticlesContract {

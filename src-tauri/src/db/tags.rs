@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension, ToSql};
 use serde::Deserialize;
@@ -104,6 +106,27 @@ pub async fn feeds_tags_list_by_feed(
 ) -> Result<Vec<String>, String> {
     let db = state.inner().clone();
     db.read(move |connection| tags_by_feed(connection, &feed_id))
+        .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn feeds_tags_reorder(
+    names: Vec<String>,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    db.write(move |connection| reorder_tags(connection, &names))
+        .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn feeds_tags_reorder_membership(
+    tag_name: String,
+    feed_ids: Vec<String>,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    db.write(move |connection| reorder_tag_membership(connection, &tag_name, &feed_ids))
         .await
 }
 
@@ -264,7 +287,13 @@ pub fn attach_feed(connection: &Connection, feed_id: &str, tag_name: &str) -> Re
 
     connection
         .execute(
-            "INSERT OR IGNORE INTO feed_tags (feed_id, tag_name) VALUES (?1, ?2)",
+            r#"
+            INSERT INTO feed_tags (feed_id, tag_name, sort_order)
+            SELECT ?1, ?2, COALESCE((SELECT MAX(sort_order) FROM feed_tags WHERE tag_name = ?2), -1) + 1
+            WHERE NOT EXISTS (
+              SELECT 1 FROM feed_tags WHERE feed_id = ?1 AND tag_name = ?2
+            )
+            "#,
             params![feed_id, tag_name],
         )
         .map_err(|error| format!("Failed to attach feed tag: {error}"))?;
@@ -298,7 +327,9 @@ pub fn detach_feed(connection: &Connection, feed_id: &str, tag_name: &str) -> Re
 
 pub fn feed_ids_by_tag(connection: &Connection, tag_name: &str) -> Result<Vec<String>, String> {
     let mut statement = connection
-        .prepare("SELECT feed_id FROM feed_tags WHERE tag_name = ?1 ORDER BY feed_id")
+        .prepare(
+            "SELECT feed_id FROM feed_tags WHERE tag_name = ?1 ORDER BY sort_order ASC, feed_id ASC",
+        )
         .map_err(|error| format!("Failed to prepare tag feed query: {error}"))?;
     let rows = statement
         .query_map(params![tag_name], |row| row.get::<_, String>(0))
@@ -331,6 +362,67 @@ fn get_tag(connection: &Connection, name: &str) -> Result<Option<TagRecord>, Str
         )
         .optional()
         .map_err(|error| format!("Failed to read tag: {error}"))
+}
+
+pub fn reorder_tags(connection: &Connection, names: &[String]) -> Result<(), String> {
+    let current: HashSet<String> = list_tags(connection)?
+        .into_iter()
+        .map(|tag| tag.name)
+        .collect();
+    let next: HashSet<String> = names.iter().cloned().collect();
+    if current != next || names.len() != current.len() {
+        return Err("Station reorder list must match the current station set.".to_string());
+    }
+
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to start station reorder transaction: {error}"))?;
+    {
+        let mut statement = transaction
+            .prepare("UPDATE tags SET sort_order = ?1 WHERE name = ?2")
+            .map_err(|error| format!("Failed to prepare station reorder: {error}"))?;
+        for (index, name) in names.iter().enumerate() {
+            statement
+                .execute(params![index as i64, name])
+                .map_err(|error| format!("Failed to reorder station {name}: {error}"))?;
+        }
+    }
+
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit station reorder: {error}"))
+}
+
+pub fn reorder_tag_membership(
+    connection: &Connection,
+    tag_name: &str,
+    feed_ids: &[String],
+) -> Result<(), String> {
+    let current: HashSet<String> = feed_ids_by_tag(connection, tag_name)?.into_iter().collect();
+    let next: HashSet<String> = feed_ids.iter().cloned().collect();
+    if current != next || feed_ids.len() != current.len() {
+        return Err("Station membership reorder list must match current members.".to_string());
+    }
+
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to start membership reorder transaction: {error}"))?;
+    {
+        let mut statement = transaction
+            .prepare("UPDATE feed_tags SET sort_order = ?1 WHERE tag_name = ?2 AND feed_id = ?3")
+            .map_err(|error| format!("Failed to prepare membership reorder: {error}"))?;
+        for (index, feed_id) in feed_ids.iter().enumerate() {
+            statement
+                .execute(params![index as i64, tag_name, feed_id])
+                .map_err(|error| {
+                    format!("Failed to reorder feed {feed_id} in station {tag_name}: {error}")
+                })?;
+        }
+    }
+
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit membership reorder: {error}"))
 }
 
 fn next_sort_order(connection: &Connection) -> Result<i64, String> {
