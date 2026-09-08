@@ -100,11 +100,16 @@ export const mergeUnstationedSortIntoFeeds = (
   ordered: Array<Pick<Feed, 'id' | 'sortOrder'>>,
 ): Feed[] => {
   const orderById = new Map(ordered.map((feed) => [feed.id, feed.sortOrder]));
-  return feeds.map((feed) => (
-    orderById.has(feed.id)
-      ? { ...feed, sortOrder: orderById.get(feed.id) }
-      : feed
-  ));
+  // Spread only when the rank actually moved — a fresh object for every row would defeat
+  // the React.memo identity checks in FeedList and re-render the whole unstationed list.
+  return feeds.map((feed) => {
+    if (!orderById.has(feed.id)) {
+      return feed;
+    }
+
+    const sortOrder = orderById.get(feed.id);
+    return feed.sortOrder === sortOrder ? feed : { ...feed, sortOrder };
+  });
 };
 
 export const resolveInsertionDrop = (

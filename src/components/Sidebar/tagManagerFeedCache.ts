@@ -39,44 +39,36 @@ export const trimTagManagerFeedCache = (
   cache: Map<string, Feed>,
   pinnedIds: ReadonlySet<string>,
 ): Map<string, Feed> => {
-  const ceiling = Math.max(TAG_MANAGER_FEED_CACHE_MAX_ENTRIES, pinnedIds.size);
   if (cache.size <= TAG_MANAGER_FEED_CACHE_MAX_ENTRIES) {
     return cache;
   }
 
-  let next: Map<string, Feed> | null = null;
-  const working = (): Map<string, Feed> => {
-    if (!next) {
-      next = new Map(cache);
-    }
-    return next;
-  };
-
-  while (working().size > TAG_MANAGER_FEED_CACHE_MAX_ENTRIES) {
-    let evicted = false;
-    for (const key of working().keys()) {
-      if (pinnedIds.has(key)) {
-        continue;
-      }
-      working().delete(key);
-      evicted = true;
+  // One pass, oldest first (Map iterates in insertion order). Restarting the scan per
+  // eviction would be O(pinned x evictions) on a large expanded station.
+  const victims = new Set<string>();
+  let remaining = cache.size;
+  for (const key of cache.keys()) {
+    if (remaining <= TAG_MANAGER_FEED_CACHE_MAX_ENTRIES) {
       break;
     }
-    if (!evicted) {
-      break;
+    if (pinnedIds.has(key)) {
+      continue;
     }
+    victims.add(key);
+    remaining -= 1;
   }
 
-  // Safety: never exceed the expanded-paint ceiling.
-  while (working().size > ceiling) {
-    const oldestKey = working().keys().next().value;
-    if (oldestKey === undefined) {
-      break;
-    }
-    working().delete(oldestKey);
+  // What survives is either <= MAX or only pinned ids, so the retained size can never
+  // exceed max(MAX, pinnedIds.size) — expanded paint is the only way past the soft cap.
+  if (victims.size === 0) {
+    return cache;
   }
 
-  return next ?? cache;
+  const next = new Map(cache);
+  for (const key of victims) {
+    next.delete(key);
+  }
+  return next;
 };
 
 /** Batch insert then trim once — avoids copying the Map per feed. */

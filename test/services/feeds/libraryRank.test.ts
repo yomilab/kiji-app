@@ -69,6 +69,20 @@ describe('libraryRank', () => {
     expect(next[1]?.sortOrder).toBe(0);
   });
 
+  it('keeps row identity for feeds whose rank did not move', () => {
+    const feeds: Feed[] = [
+      { id: 'a', title: 'A', url: 'https://a.example', tags: [], sortOrder: 0 },
+      { id: 'b', title: 'B', url: 'https://b.example', tags: [], sortOrder: 1 },
+    ];
+    const next = mergeUnstationedSortIntoFeeds(feeds, [
+      { id: 'a', sortOrder: 0 },
+      { id: 'b', sortOrder: 5 },
+    ]);
+    expect(next[0]).toBe(feeds[0]);
+    expect(next[1]).not.toBe(feeds[1]);
+    expect(next[1]?.sortOrder).toBe(5);
+  });
+
   it('treats leftover station hydrate as stale after a later membership reorder', () => {
     feedLibraryMutationBus.resetForTests();
     feedLibraryMutationBus.publishLibraryHydrated({

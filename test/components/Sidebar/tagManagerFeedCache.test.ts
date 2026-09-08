@@ -58,6 +58,16 @@ describe('tagManagerFeedCache', () => {
     expect(trimmed.has('old0')).toBe(false);
   });
 
+  it('returns the same map identity when nothing is evicted', () => {
+    const cache = new Map<string, Feed>();
+    for (let index = 0; index < TAG_MANAGER_FEED_CACHE_MAX_ENTRIES + 5; index += 1) {
+      cache.set(`p${index}`, feed(`p${index}`));
+    }
+    const pinned = new Set(cache.keys());
+
+    expect(trimTagManagerFeedCache(cache, pinned)).toBe(cache);
+  });
+
   it('batches inserts and trims once instead of copying the map per feed', () => {
     const prev = new Map<string, Feed>();
     for (let index = 0; index < TAG_MANAGER_FEED_CACHE_MAX_ENTRIES; index += 1) {
