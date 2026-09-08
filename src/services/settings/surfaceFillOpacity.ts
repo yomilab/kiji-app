@@ -15,6 +15,7 @@ export function isSurfaceFillDragging(): boolean {
 export const SURFACE_FILL_OPACITY_MIN = 0.4;
 export const SURFACE_FILL_OPACITY_MAX = 0.96;
 export const SURFACE_FILL_OPACITY_MACOS_DEFAULT = 0.55;
+/** Slider / persist default for Windows, Linux, and other. Unset CSS in theme.css is 0.75 / 0.80 so the reader bias (+0.08) still yields 0.96 when this value is stored. */
 export const SURFACE_FILL_OPACITY_WINDOWS_DEFAULT = 0.88;
 export const SURFACE_FILL_ALPHA_VAR = "--app-surface-fill-alpha";
 export const READER_FILL_ALPHA_VAR = "--app-reader-fill-alpha";

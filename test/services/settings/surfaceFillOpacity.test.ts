@@ -42,6 +42,7 @@ describe("surfaceFillOpacity", () => {
     document.documentElement.setAttribute("data-os", "windows");
     applySurfaceFillOpacityToRoot(undefined);
     expect(document.documentElement.style.getPropertyValue(SURFACE_FILL_ALPHA_VAR)).toBe("");
+    expect(document.documentElement.style.getPropertyValue(READER_FILL_ALPHA_VAR)).toBe("");
 
     applySurfaceFillOpacityToRoot(0.88);
     expect(document.documentElement.style.getPropertyValue(SURFACE_FILL_ALPHA_VAR)).toBe("0.88");
@@ -49,6 +50,7 @@ describe("surfaceFillOpacity", () => {
 
     applySurfaceFillOpacityToRoot(undefined);
     expect(document.documentElement.style.getPropertyValue(SURFACE_FILL_ALPHA_VAR)).toBe("");
+    expect(document.documentElement.style.getPropertyValue(READER_FILL_ALPHA_VAR)).toBe("");
   });
 
   it("exposes a drag flag so ThemeContext can skip mid-drag reloads", () => {

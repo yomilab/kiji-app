@@ -92,11 +92,16 @@
  * Windows / Linux: no macOS sidebar vibrancy. Use a denser frosted fill so the
  * sidebar is not see-through empty; backdrop-filter still softens when the
  * compositor supports it (and when Windows acrylic/mica is active under the pane).
+ * Unset CSS defaults (0.75 / 0.80 dark) sit below the list literals (0.88 / 0.90)
+ * so the sidebar reads as a glass strip next to the list, matching Settings
+ * (glass nav vs opaque pane). Do not drop to macOS 0.55 — Linux has no mica.
+ * JS SURFACE_FILL_OPACITY_WINDOWS_DEFAULT stays 0.88 so the slider thumb and
+ * reader bias (+0.08 → 0.96) stay in lockstep when a value is stored.
  */
 html[data-os="windows"],
 html[data-os="linux"],
 html[data-os="other"] {
-  --app-surface-fill-alpha: 0.88;
+  --app-surface-fill-alpha: 0.75;
   --app-reader-fill-alpha: 0.96;
   --theme-article-bg: rgba(250, 250, 249, 0.88);
 }
@@ -157,7 +162,7 @@ html[data-os="other"] {
 html[data-os="windows"][data-theme="dark"],
 html[data-os="linux"][data-theme="dark"],
 html[data-os="other"][data-theme="dark"] {
-  --app-surface-fill-alpha: 0.90;
+  --app-surface-fill-alpha: 0.80;
   --app-reader-fill-alpha: 0.96;
   --theme-sidebar-bg: rgba(27, 27, 29, var(--app-surface-fill-alpha));
   --theme-article-bg: rgba(27, 27, 29, 0.90);
