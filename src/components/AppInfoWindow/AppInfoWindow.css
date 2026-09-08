@@ -6,7 +6,7 @@
   background-color: transparent;
   overflow: hidden;
   font-family: var(--font-family-ui);
-  border-radius: 14px;
+  border-radius: var(--app-window-radius);
   color: var(--theme-text-primary);
 }
 

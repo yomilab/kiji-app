@@ -27,6 +27,7 @@ import { logger } from '@/services/logger';
 import { subscribeToWindowFocus } from '@/services/tauri/tauriEventSubscription';
 import { appToastService } from '@/services/ui/appToastService';
 import { confirmDialog } from '@/services/ui/confirmDialogService';
+import { openSettingsWindow } from '@/services/ui/openSettingsWindow';
 import { isMainRendererWindow } from '@/utils/rendererWindow';
 
 const BACKGROUND_SCHEDULER_WAKE_LOCK = 'kiji-feed-scheduler-background';
@@ -303,9 +304,7 @@ export const useAppShortcuts = ({
       const run = async () => {
         if (isOpenSettingsShortcut(event)) {
           event.preventDefault();
-          if (window.kijiAPI) {
-            window.kijiAPI.openSettings();
-          }
+          void openSettingsWindow();
         }
 
         if (isResetSettingsShortcut(event)) {

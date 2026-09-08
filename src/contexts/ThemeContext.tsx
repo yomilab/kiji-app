@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from 'react';
 import { settingsManager, DEFAULT_SETTINGS } from '@/services/settings';
 import type { Theme, UiThemeVariant, FontFamilySettings, ReadingLayoutSettings } from '@/services/settings';
-import { applyFontFamiliesToRoot, applyReadingLayoutToRoot } from '@/services/settings/styleVariables';
+import { applyFontFamiliesToRoot, applyReadingLayoutToRoot, applySurfaceFillOpacityToRoot } from '@/services/settings/styleVariables';
+import { isSurfaceFillDragging } from '@/services/settings/surfaceFillOpacity';
 import { loadFontsFromFamilyString } from '@/utils/googleFonts';
 import { tauriClient } from '@/lib/tauriClient';
 
@@ -59,6 +60,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         setFontFamilies(settings.fontFamilies);
         setReadingLayout(settings.readingLayout);
         setUiThemeVariant(settings.uiThemeVariant);
+        applySurfaceFillOpacityToRoot(settings.surfaceFillOpacity);
       } catch (error) {
         console.error('Error loading settings:', error);
         // Fallback to auto mode following system preference
@@ -208,6 +210,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         setFontFamilies(settings.fontFamilies);
         setReadingLayout(settings.readingLayout);
         setUiThemeVariant(settings.uiThemeVariant);
+        if (!isSurfaceFillDragging()) {
+          applySurfaceFillOpacityToRoot(settings.surfaceFillOpacity);
+        }
       } catch (error) {
         console.error('[ThemeContext] Error reloading appearance settings after settings change:', error);
       }

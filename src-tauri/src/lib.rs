@@ -60,7 +60,7 @@ use shell::{
     shell_update_window_get_data, shell_update_window_open, shell_share,
     shell_share_list_services, shell_share_to_service, window_guards_plugin, ApplicationMenu,
     ArticleWindowState, ImageContextMenuState, UpdateWindowState,
-    UserInitiatedWindowsState,
+    UserInitiatedWindowsState, should_destroy_session_restored_window,
 };
 use system::{
     apply_app_appearance, start_accent_color_watch, start_system_power_watch,
@@ -88,6 +88,11 @@ pub fn run() {
             // down before it boots a full renderer.
             eprintln!("[KiJi] Destroying session-restored window: {label}");
             tauri::async_runtime::spawn(async move {
+                if !should_destroy_session_restored_window(
+                    app.state::<UserInitiatedWindowsState>().is_allowed(&label),
+                ) {
+                    return;
+                }
                 if let Some(window) = app.get_webview_window(&label) {
                     let _ = window.destroy();
                 }

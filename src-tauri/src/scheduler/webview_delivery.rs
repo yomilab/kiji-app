@@ -4,6 +4,7 @@ use serde::Serialize;
 pub const MAIN_WEBVIEW_LABEL: &str = "main";
 
 pub const TICK_WAKE_SCRIPT: &str = "globalThis.__kijiSchedulerTick?.()";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const SLEEP_WAKE_SCRIPT: &str = "globalThis.__kijiSchedulerSleep?.()";
 pub const RESUME_WAKE_SCRIPT: &str = "globalThis.__kijiSchedulerResume?.()";
 

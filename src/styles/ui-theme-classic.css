@@ -34,7 +34,7 @@ html[data-ui-theme="classic"] .article-list-title-section {
   -webkit-backdrop-filter: none;
 }
 
-html[data-ui-theme="classic"] .article-view {
+html[data-ui-theme="classic"] .article-view-embedded {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   will-change: transform, opacity;
@@ -48,9 +48,9 @@ html[data-ui-theme="classic"] .app-layer {
 }
 
 html[data-ui-theme="classic"] .feed-edit-group-header {
-  background: color-mix(in srgb, var(--article-list-bg) 94%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: var(--article-list-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 html[data-ui-theme="classic"] .feed-edit-table-header-shell {

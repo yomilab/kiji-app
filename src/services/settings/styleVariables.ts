@@ -41,6 +41,11 @@ export const applyFontFamiliesToRoot = (fontFamilies: FontFamilySettings): void 
   applyCssVar("--font-family-article-no-ascii", fontFamilies.articleNonAsciiFont);
 };
 
+export {
+  applySurfaceFillOpacityToRoot,
+  clampSurfaceFillOpacity,
+} from './surfaceFillOpacity';
+
 export const applyReadingLayoutToRoot = (readingLayout: ReadingLayoutSettings): void => {
   const effectiveLayout = resolveReadingLayout(readingLayout);
   applyCssVar("--article-content-font-size", `${effectiveLayout.fontSize}px`);

@@ -4,6 +4,7 @@ mod share;
 mod window;
 mod window_bounds;
 mod window_guards;
+mod windows_chrome;
 
 pub use context_menu::{shell_context_menu_show_image, ImageContextMenuState};
 pub use menu::{shell_menu_update_state, ApplicationMenu};
@@ -14,6 +15,7 @@ pub use window::{
     shell_window_set_traffic_lights_visible, ArticleWindowState, UpdateWindowState,
     UserInitiatedWindowsState,
 };
+pub(crate) use window::should_destroy_session_restored_window;
 pub use window_guards::init as window_guards_plugin;
 
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};

@@ -19,6 +19,7 @@ import {
   type RendererPreferences,
 } from './storageModel';
 import { loadNativeAppSettings, saveNativeAppSettings } from './nativeSettingsBackend';
+import { clampSurfaceFillOpacity } from './surfaceFillOpacity';
 
 const normalizeSmartViews = (smartViews: UserSettings['smartViews'] | undefined): UserSettings['smartViews'] => {
   const smartViewMap = new Map((smartViews ?? []).map((view) => [view.id, view]));
@@ -44,6 +45,11 @@ const normalizeSidebarSectionFold = (
   stationsExpanded: fold?.stationsExpanded ?? DEFAULT_SETTINGS.sidebarSectionFold.stationsExpanded,
 });
 
+const optionalSurfaceFillOpacity = (value: unknown): { surfaceFillOpacity?: number } => {
+  const clamped = clampSurfaceFillOpacity(value);
+  return clamped === undefined ? {} : { surfaceFillOpacity: clamped };
+};
+
 const normalizeRendererPreferences = (preferences: Partial<RendererPreferences>): RendererPreferences => ({
   fontFamilies: {
     ...DEFAULT_SETTINGS.fontFamilies,
@@ -61,6 +67,7 @@ const normalizeRendererPreferences = (preferences: Partial<RendererPreferences>)
   smartViews: normalizeSmartViews(preferences.smartViews),
   uiThemeVariant: normalizeUiThemeVariant(preferences.uiThemeVariant),
   windowPosition: preferences.windowPosition,
+  ...optionalSurfaceFillOpacity(preferences.surfaceFillOpacity),
 });
 
 const normalizeSettings = (settings: Partial<UserSettings>): UserSettings => ({
@@ -92,6 +99,7 @@ const normalizeSettings = (settings: Partial<UserSettings>): UserSettings => ({
   sidebarSectionFold: normalizeSidebarSectionFold(settings.sidebarSectionFold),
   smartViews: normalizeSmartViews(settings.smartViews),
   uiThemeVariant: normalizeUiThemeVariant(settings.uiThemeVariant),
+  ...optionalSurfaceFillOpacity(settings.surfaceFillOpacity),
 });
 
 /**
@@ -103,6 +111,8 @@ class SettingsManager {
   private storage: IStorage;
 
   private migrationComplete = false;
+
+  private rendererWriteQueue: Promise<void> = Promise.resolve();
 
   constructor() {
     this.storage = StorageFactory.getStorage();
@@ -136,6 +146,25 @@ class SettingsManager {
 
   private async saveRendererPreferences(preferences: RendererPreferences): Promise<void> {
     await this.storage.set(
+      SETTINGS_STORAGE_KEYS.renderer,
+      JSON.stringify(normalizeRendererPreferences(preferences)),
+    );
+  }
+
+  private readRendererPreferencesSync(): RendererPreferences {
+    try {
+      const data = localStorage.getItem(SETTINGS_STORAGE_KEYS.renderer);
+      if (!data) {
+        return normalizeRendererPreferences({});
+      }
+      return normalizeRendererPreferences(JSON.parse(data) as Partial<RendererPreferences>);
+    } catch {
+      return normalizeRendererPreferences({});
+    }
+  }
+
+  private writeRendererPreferencesSync(preferences: RendererPreferences): void {
+    localStorage.setItem(
       SETTINGS_STORAGE_KEYS.renderer,
       JSON.stringify(normalizeRendererPreferences(preferences)),
     );
@@ -241,25 +270,37 @@ class SettingsManager {
     await saveNativeAppSettings(nativePatch);
   }
 
+  private enqueueRendererWrite<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.rendererWriteQueue.then(work, work);
+    this.rendererWriteQueue = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
   private async updateRendererPreferences(patch: Partial<RendererPreferences>): Promise<void> {
-    const current = await this.loadRendererPreferences();
-    await this.saveRendererPreferences({
-      ...current,
-      ...patch,
-      fontFamilies: patch.fontFamilies
-        ? { ...current.fontFamilies, ...patch.fontFamilies }
-        : current.fontFamilies,
-      readingLayout: patch.readingLayout
-        ? { ...current.readingLayout, ...patch.readingLayout }
-        : current.readingLayout,
-      sidebarLibrary: patch.sidebarLibrary
-        ? { ...current.sidebarLibrary, ...patch.sidebarLibrary }
-        : current.sidebarLibrary,
-      sidebarSectionFold: patch.sidebarSectionFold
-        ? normalizeSidebarSectionFold({ ...current.sidebarSectionFold, ...patch.sidebarSectionFold })
-        : current.sidebarSectionFold,
-      smartViews: patch.smartViews ?? current.smartViews,
-      windowPosition: patch.windowPosition ?? current.windowPosition,
+    await this.enqueueRendererWrite(async () => {
+      const current = await this.loadRendererPreferences();
+      const surfaceFillOpacity = Object.prototype.hasOwnProperty.call(patch, 'surfaceFillOpacity')
+        ? clampSurfaceFillOpacity(patch.surfaceFillOpacity)
+        : current.surfaceFillOpacity;
+      await this.saveRendererPreferences({
+        ...current,
+        ...patch,
+        fontFamilies: patch.fontFamilies
+          ? { ...current.fontFamilies, ...patch.fontFamilies }
+          : current.fontFamilies,
+        readingLayout: patch.readingLayout
+          ? { ...current.readingLayout, ...patch.readingLayout }
+          : current.readingLayout,
+        sidebarLibrary: patch.sidebarLibrary
+          ? { ...current.sidebarLibrary, ...patch.sidebarLibrary }
+          : current.sidebarLibrary,
+        sidebarSectionFold: patch.sidebarSectionFold
+          ? normalizeSidebarSectionFold({ ...current.sidebarSectionFold, ...patch.sidebarSectionFold })
+          : current.sidebarSectionFold,
+        smartViews: patch.smartViews ?? current.smartViews,
+        windowPosition: patch.windowPosition ?? current.windowPosition,
+        ...(surfaceFillOpacity === undefined ? {} : { surfaceFillOpacity }),
+      });
     });
   }
 
@@ -345,6 +386,30 @@ class SettingsManager {
 
   async setUiThemeVariant(variant: UiThemeVariant): Promise<void> {
     await this.updateRendererPreferences({ uiThemeVariant: normalizeUiThemeVariant(variant) });
+  }
+
+  async getSurfaceFillOpacity(): Promise<number | undefined> {
+    const settings = await this.getSettings();
+    return clampSurfaceFillOpacity(settings.surfaceFillOpacity);
+  }
+
+  async setSurfaceFillOpacity(value: number | undefined): Promise<void> {
+    await this.updateRendererPreferences({
+      surfaceFillOpacity: clampSurfaceFillOpacity(value),
+    });
+  }
+
+  /** Sync localStorage write for Settings close / pagehide — do not await a webview that is dying. */
+  setSurfaceFillOpacityNow(value: number | undefined): void {
+    const current = this.readRendererPreferencesSync();
+    const surfaceFillOpacity = clampSurfaceFillOpacity(value);
+    const next = { ...current };
+    if (surfaceFillOpacity === undefined) {
+      delete next.surfaceFillOpacity;
+    } else {
+      next.surfaceFillOpacity = surfaceFillOpacity;
+    }
+    this.writeRendererPreferencesSync(next);
   }
 
   async getSidebarLibrary(): Promise<UserSettings['sidebarLibrary']> {

@@ -82,6 +82,8 @@ export interface UserSettings {
   sidebarSectionFold: SidebarSectionFoldSettings;
   smartViews: SmartViewSettings[];
   uiThemeVariant: UiThemeVariant;
+  /** Renderer-only pane fill. Absent = per-OS CSS defaults. Never persist a cross-OS literal. */
+  surfaceFillOpacity?: number;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {

@@ -30,21 +30,6 @@
         root.setAttribute("data-theme", resolvedTheme);
         root.style.colorScheme = resolvedTheme;
 
-        // Surface style variant (renderer-only store): modern glass vs classic solid.
-        let uiThemeVariant = "modern";
-        try {
-          const uiSettingsJson = localStorage.getItem("user-settings-ui");
-          if (uiSettingsJson) {
-            const uiSettings = JSON.parse(uiSettingsJson);
-            if (uiSettings && (uiSettings.uiThemeVariant === "classic" || uiSettings.uiThemeVariant === "modern")) {
-              uiThemeVariant = uiSettings.uiThemeVariant;
-            }
-          }
-        } catch (error) {
-          console.error("Error reading startup UI theme variant:", error);
-        }
-        root.setAttribute("data-ui-theme", uiThemeVariant);
-
         // Platform chrome: macOS uses native sidebar vibrancy; Windows/Linux need CSS glass.
         const ua = navigator.userAgent.toLowerCase();
         const platform = navigator.platform ? navigator.platform.toLowerCase() : "";
@@ -57,6 +42,28 @@
                 ? "linux"
                 : "other";
         root.setAttribute("data-os", os);
+
+        // Surface style variant (renderer-only store): modern glass vs classic solid.
+        let uiThemeVariant = "modern";
+        try {
+          const uiSettingsJson = localStorage.getItem("user-settings-ui");
+          if (uiSettingsJson) {
+            const uiSettings = JSON.parse(uiSettingsJson);
+            if (uiSettings && (uiSettings.uiThemeVariant === "classic" || uiSettings.uiThemeVariant === "modern")) {
+              uiThemeVariant = uiSettings.uiThemeVariant;
+            }
+            const fill = uiSettings && uiSettings.surfaceFillOpacity;
+            if (typeof fill === "number" && Number.isFinite(fill)) {
+              const clamped = Math.min(0.96, Math.max(0.4, fill));
+              const reader = Math.min(0.96, clamped + (os === "macos" ? 0.37 : 0.08));
+              root.style.setProperty("--app-surface-fill-alpha", String(clamped));
+              root.style.setProperty("--app-reader-fill-alpha", String(reader));
+            }
+          }
+        } catch (error) {
+          console.error("Error reading startup UI theme variant:", error);
+        }
+        root.setAttribute("data-ui-theme", uiThemeVariant);
       })();
     </script>
   </head>

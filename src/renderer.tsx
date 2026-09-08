@@ -11,7 +11,7 @@ import { TrafficLights } from "./components/TrafficLights/TrafficLights";
 import { FeedProvider } from "./contexts/FeedContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { logger } from "./services/logger";
-import { applyFontFamiliesToRoot, applyReadingLayoutToRoot } from "./services/settings/styleVariables";
+import { applyFontFamiliesToRoot, applyReadingLayoutToRoot, applySurfaceFillOpacityToRoot } from "./services/settings/styleVariables";
 import { SETTINGS_STORAGE_KEYS } from "./services/settings/storageModel";
 import { keybindingService } from "./services/shortcuts/shortcutService";
 import { savedArticlesSyncBridge } from "./services/saved/sync/savedArticlesSyncBridge";
@@ -45,6 +45,7 @@ function initializeVisualSettings(): void {
     const settings = JSON.parse(settingsJson) as {
       fontFamilies?: Parameters<typeof applyFontFamiliesToRoot>[0];
       readingLayout?: Parameters<typeof applyReadingLayoutToRoot>[0];
+      surfaceFillOpacity?: number;
     };
 
     if (settings.fontFamilies) {
@@ -53,6 +54,7 @@ function initializeVisualSettings(): void {
     if (settings.readingLayout) {
       applyReadingLayoutToRoot(settings.readingLayout);
     }
+    applySurfaceFillOpacityToRoot(settings.surfaceFillOpacity);
   } catch (error) {
     console.error("Error initializing visual settings:", error);
   }

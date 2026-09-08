@@ -78,8 +78,60 @@ describe("UI layout parity (21b)", () => {
     expect(themeCss).toContain("--theme-primary-color");
     expect(themeCss).toContain("--font-family-ui");
     expect(themeCss).toContain('html[data-os="windows"]');
-    expect(themeCss).toContain("rgba(250, 250, 249, 0.88)");
-    expect(themeCss).toContain("rgba(27, 27, 29, 0.9)");
+    expect(themeCss).toContain("--app-surface-fill-alpha: 0.55");
+    expect(themeCss).toContain("--app-surface-fill-alpha: 0.45");
+    expect(themeCss).toContain("--app-surface-fill-alpha: 0.75");
+    expect(themeCss).toContain("--app-surface-fill-alpha: 0.80");
+    expect(themeCss).not.toContain("--app-surface-fill-alpha: 0.88");
+    expect(themeCss).not.toContain("--app-surface-fill-alpha: 0.90");
+    expect(themeCss).toContain("rgba(250, 250, 249, var(--app-surface-fill-alpha))");
+    expect(themeCss).toContain("rgba(27, 27, 29, var(--app-surface-fill-alpha))");
+    expect(themeCss).toContain("--theme-article-bg: rgba(250, 250, 249, 0.55)");
+    expect(themeCss).toContain("--theme-article-bg: rgba(250, 250, 249, 0.88)");
+    expect(themeCss).toContain("--theme-article-bg: rgba(27, 27, 29, 0.90)");
+    expect(themeCss).not.toContain("--theme-article-bg: rgba(250, 250, 249, var(--app-surface-fill-alpha))");
+  });
+
+  it("keeps Windows/Linux AppMenuBar fills independent of sidebar alpha", () => {
+    const menuCss = readFileSync(
+      join(process.cwd(), "src/components/AppMenuBar/AppMenuBar.css"),
+      "utf8",
+    );
+    const dropdownCss = readFileSync(
+      join(process.cwd(), "src/components/common/DropdownMenu/DropdownMenu.css"),
+      "utf8",
+    );
+
+    expect(menuCss).not.toContain("var(--theme-sidebar-bg)");
+    expect(menuCss).toContain("rgba(250, 249, 247, 0.96)");
+    expect(menuCss).toContain("rgba(27, 27, 29, 0.96)");
+    expect(dropdownCss).toContain("rgba(255, 255, 255, 0.5)");
+  });
+
+  it("keeps Classic list solid and the embedded reader opaque over the deck", () => {
+    const classicCss = readFileSync(join(process.cwd(), "src/styles/ui-theme-classic.css"), "utf8");
+    const baseCss = readFileSync(join(process.cwd(), "src/styles/base.css"), "utf8");
+    const articleViewCss = readFileSync(
+      join(process.cwd(), "src/components/MainArea/ArticleView.css"),
+      "utf8",
+    );
+
+    expect(classicCss).toContain("--theme-article-bg: #FAF9F7");
+    expect(classicCss).toContain("--theme-article-view-bg: #1B1B1D");
+    expect(classicCss).toContain('html[data-ui-theme="classic"] .article-view-embedded');
+    expect(classicCss).not.toMatch(/html\[data-ui-theme="classic"\] \.article-view\s*\{/);
+    expect(classicCss).not.toContain("var(--app-surface-fill-alpha)");
+    expect(classicCss).not.toContain("var(--app-reader-fill-alpha)");
+
+    expect(baseCss).toContain(".app-container.article-view-active .article-view-embedded");
+    expect(baseCss).toContain("var(--theme-article-view-solid-bg)");
+
+    expect(articleViewCss).toContain(".article-view:not(.article-view-embedded)");
+    expect(articleViewCss).toContain(
+      "html[data-os=\"windows\"] .article-view.article-view-embedded",
+    );
+    expect(articleViewCss).toContain(".app-container.article-view-active .article-view-embedded");
+    expect(articleViewCss).toContain("transition: none");
   });
 
   it("settings content pane tokens follow data-theme light and dark", () => {

@@ -1,7 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { subscribeToWindowFocus } from '@/services/tauri/tauriEventSubscription';
 import { settingsManager, DEFAULT_SETTINGS, UI_THEME_VARIANT_OPTIONS } from '@/services/settings';
+import {
+  SURFACE_FILL_OPACITY_MIN,
+  SURFACE_FILL_OPACITY_MAX,
+  applySurfaceFillOpacityToRoot,
+  beginSurfaceFillDrag,
+  clampSurfaceFillOpacity,
+  defaultSurfaceFillOpacityForOs,
+  endSurfaceFillDrag,
+} from '@/services/settings/surfaceFillOpacity';
 import type { ContentParser, UiThemeVariant } from '@/services/settings';
 import type { BackgroundUpdateMode } from '@/services/scheduler/types';
 import { CJK_FONT_OPTIONS, COMMON_FONT_OPTIONS } from '@/services/settings/fontFamilies';
@@ -27,6 +36,7 @@ import FormatBoldIcon from '@mui/icons-material/FormatBold';
 import FileOpenOutlinedIcon from '@mui/icons-material/FileOpenOutlined';
 import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
 import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined';
+import OpacityOutlinedIcon from '@mui/icons-material/OpacityOutlined';
 import { StatefulButtonGroup, type ButtonState } from '@/components/common/StatefulButtonGroup';
 import defaultAppIconPreview from '@/assets/images/kiji-logo.png';
 import defaultDarkAppIconPreview from '@/assets/images/kiji-logo-dark.png';
@@ -125,6 +135,14 @@ export const SettingsWindow: React.FC = () => {
   );
   const [contentParser, setContentParser] = useState<ContentParser>(DEFAULT_SETTINGS.contentParser);
   const [uiThemeVariant, setUiThemeVariant] = useState<UiThemeVariant>(DEFAULT_SETTINGS.uiThemeVariant);
+  const chromeDefaultFillOpacity = defaultSurfaceFillOpacityForOs(
+    typeof document === 'undefined' ? 'macos' : document.documentElement.getAttribute('data-os'),
+  );
+  const [surfaceFillOpacity, setSurfaceFillOpacity] = useState(chromeDefaultFillOpacity);
+  const surfaceFillDraggingRef = useRef(false);
+  const surfaceFillDirtyRef = useRef(false);
+  const surfaceFillValueRef = useRef(chromeDefaultFillOpacity);
+  const surfaceFillCommitLockRef = useRef(false);
   const [savedArticlesSyncFolder, setSavedArticlesSyncFolder] = useState<string | null>(null);
   const isSavedArticlesSyncEnabled = savedArticlesSyncFolder !== null;
   const { fontFamilies, updateFontFamilies, readingLayout, updateReadingLayout } = useTheme();
@@ -166,13 +184,20 @@ export const SettingsWindow: React.FC = () => {
     const loadSettings = async () => {
       try {
         const settings = await settingsManager.getSettings();
-        if (disposed) {
+        if (disposed || surfaceFillDraggingRef.current) {
           return;
         }
 
         setBackgroundUpdate(settings.backgroundUpdate ?? DEFAULT_SETTINGS.backgroundUpdate);
         setContentParser(settings.contentParser ?? DEFAULT_SETTINGS.contentParser);
         setUiThemeVariant(settings.uiThemeVariant ?? DEFAULT_SETTINGS.uiThemeVariant);
+        const storedFill = clampSurfaceFillOpacity(settings.surfaceFillOpacity);
+        const nextFill = storedFill ?? defaultSurfaceFillOpacityForOs(
+          document.documentElement.getAttribute('data-os'),
+        );
+        surfaceFillValueRef.current = nextFill;
+        setSurfaceFillOpacity(nextFill);
+        applySurfaceFillOpacityToRoot(storedFill);
         setSavedArticlesSyncFolder(settings.savedArticlesSyncFolder ?? null);
 
         if (window.kijiAPI?.getSystemAppIconState) {
@@ -200,6 +225,36 @@ export const SettingsWindow: React.FC = () => {
         removeSettingsChangedListener();
       }
       removeFocusListener();
+    };
+  }, []);
+
+  useEffect(() => {
+    const flushSurfaceFillOpacity = () => {
+      if (!surfaceFillDirtyRef.current && !surfaceFillCommitLockRef.current) {
+        return;
+      }
+
+      surfaceFillDirtyRef.current = false;
+      surfaceFillDraggingRef.current = false;
+      surfaceFillCommitLockRef.current = false;
+      endSurfaceFillDrag();
+      const value = surfaceFillValueRef.current;
+      try {
+        settingsManager.setSurfaceFillOpacityNow(value);
+        notifySettingsChanged(true);
+      } catch (error) {
+        console.error('Error saving surface fill opacity:', error);
+      }
+    };
+
+    const handlePageHide = () => {
+      flushSurfaceFillOpacity();
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      flushSurfaceFillOpacity();
     };
   }, []);
 
@@ -455,18 +510,25 @@ export const SettingsWindow: React.FC = () => {
     });
   }, []);
 
-  const notifySettingsChanged = () => {
+  const notifySettingsChanged = (immediate = false) => {
     if (!window.kijiAPI?.notifySettingsChanged) {
+      return;
+    }
+
+    const emit = () => {
+      void window.kijiAPI.notifySettingsChanged().catch((error) => {
+        console.error('Error notifying settings change:', error);
+      });
+    };
+
+    if (immediate) {
+      emit();
       return;
     }
 
     // Keep the settings UI responsive by letting the broadcast and any
     // follow-up sync scheduling happen outside the current interaction turn.
-    window.setTimeout(() => {
-      void window.kijiAPI.notifySettingsChanged().catch((error) => {
-        console.error('Error notifying settings change:', error);
-      });
-    }, 0);
+    window.setTimeout(emit, 0);
   };
 
   const handleWindowDragMouseDown = (event: React.MouseEvent<HTMLElement>) => {
@@ -509,6 +571,64 @@ export const SettingsWindow: React.FC = () => {
     } catch (error) {
       console.error('Error saving content parser:', error);
     }
+  };
+
+  const persistSurfaceFillOpacity = (value: number): void => {
+    if (surfaceFillCommitLockRef.current && !surfaceFillDirtyRef.current) {
+      return;
+    }
+
+    surfaceFillCommitLockRef.current = true;
+    surfaceFillDirtyRef.current = false;
+    try {
+      settingsManager.setSurfaceFillOpacityNow(value);
+      notifySettingsChanged(true);
+    } catch (error) {
+      console.error('Error saving surface fill opacity:', error);
+    } finally {
+      surfaceFillCommitLockRef.current = false;
+      surfaceFillDraggingRef.current = false;
+      endSurfaceFillDrag();
+    }
+  };
+
+  const commitSurfaceFillOpacity = () => {
+    if (!surfaceFillDirtyRef.current || surfaceFillCommitLockRef.current) {
+      return;
+    }
+
+    persistSurfaceFillOpacity(surfaceFillValueRef.current);
+  };
+
+  const handleSurfaceFillOpacityInput = (sliderValue: number) => {
+    const next = clampSurfaceFillOpacity(sliderValue / 100);
+    if (next === undefined) {
+      return;
+    }
+
+    if (!surfaceFillDraggingRef.current) {
+      beginSurfaceFillDrag();
+    }
+    surfaceFillDraggingRef.current = true;
+    surfaceFillDirtyRef.current = true;
+    surfaceFillValueRef.current = next;
+    setSurfaceFillOpacity(next);
+    applySurfaceFillOpacityToRoot(next);
+  };
+
+  const handleSurfaceFillOpacityReset = () => {
+    const osDefault = defaultSurfaceFillOpacityForOs(
+      document.documentElement.getAttribute('data-os'),
+    );
+    surfaceFillDirtyRef.current = false;
+    surfaceFillCommitLockRef.current = false;
+    surfaceFillDraggingRef.current = false;
+    endSurfaceFillDrag();
+    surfaceFillValueRef.current = osDefault;
+    setSurfaceFillOpacity(osDefault);
+    applySurfaceFillOpacityToRoot(undefined);
+    settingsManager.setSurfaceFillOpacityNow(undefined);
+    notifySettingsChanged(true);
   };
 
   const handleUiThemeVariantChange = async (variant: UiThemeVariant) => {
@@ -974,6 +1094,57 @@ export const SettingsWindow: React.FC = () => {
                           </option>
                         ))}
                       </select>
+                    </div>
+                  </div>
+                  <div className="settings-reading-slider-row">
+                    <div className="settings-reading-slider-header">
+                      <span className="settings-reading-slider-label">Surface opacity</span>
+                      <span className="settings-reading-slider-value">
+                        {`${Math.round(surfaceFillOpacity * 100)}%`}
+                      </span>
+                    </div>
+                    <p className="settings-item-description" style={{ margin: '0 0 10px' }}>
+                      Sidebar and Settings sidebar fill.
+                    </p>
+                    <div className="settings-reading-slider-control">
+                      <span className="settings-reading-slider-icon" aria-hidden="true">
+                        <OpacityOutlinedIcon fontSize="inherit" />
+                      </span>
+                      <input
+                        className="settings-range"
+                        type="range"
+                        aria-label="Surface opacity"
+                        min={Math.round(SURFACE_FILL_OPACITY_MIN * 100)}
+                        max={Math.round(SURFACE_FILL_OPACITY_MAX * 100)}
+                        step={1}
+                        value={Math.round(surfaceFillOpacity * 100)}
+                        style={getReadingRangeStyle(
+                          Math.round(surfaceFillOpacity * 100),
+                          Math.round(SURFACE_FILL_OPACITY_MIN * 100),
+                          Math.round(SURFACE_FILL_OPACITY_MAX * 100),
+                        )}
+                        onInput={(event) => {
+                          handleSurfaceFillOpacityInput(Number(event.currentTarget.value));
+                        }}
+                        onPointerUp={() => {
+                          commitSurfaceFillOpacity();
+                        }}
+                        onKeyUp={() => {
+                          commitSurfaceFillOpacity();
+                        }}
+                        onBlur={() => {
+                          commitSurfaceFillOpacity();
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="settings-reading-slider-reset"
+                        aria-label="Reset surface opacity"
+                        title="Reset to default"
+                        onClick={handleSurfaceFillOpacityReset}
+                      >
+                        <RestartAltOutlinedIcon fontSize="inherit" />
+                      </button>
                     </div>
                   </div>
                 </div>

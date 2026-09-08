@@ -1,7 +1,7 @@
 {
   "name": "kiji-app",
   "private": true,
-  "version": "1.1.1",
+  "version": "1.2.0",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
@@ -93,7 +93,10 @@
     "@vitejs/plugin-react": "^4.6.0",
     "jsdom": "^26.1.0",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4",
+    "vite": "^7.3.6",
     "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "esbuild": "0.28.1"
   }
 }

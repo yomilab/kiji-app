@@ -26,7 +26,7 @@
   z-index: 1;
   position: relative;
   font-family: var(--font-family-ui);
-  border-radius: 14px;
+  border-radius: var(--app-window-radius);
 }
 
 [data-theme="dark"] .settings-window {
@@ -770,6 +770,31 @@ html[data-os="other"] .settings-sidebar {
   color: var(--settings-text-secondary);
   font-size: 18px;
   flex-shrink: 0;
+}
+
+.settings-reading-slider-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--settings-text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.settings-reading-slider-reset:hover {
+  color: var(--settings-text-primary);
+}
+
+.settings-reading-slider-reset:focus-visible {
+  outline: none;
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--system-accent-color) 18%, transparent);
 }
 
 .settings-range {

@@ -20,6 +20,12 @@ html {
   scrollbar-width: none;
 }
 
+/* Win10 rectangular HWND + CSS clip punches a black hole through mica.
+   Win11 rounding is DWM on the HWND; keep the webview fill square. */
+html[data-os="windows"] {
+  --app-window-radius: 0px;
+}
+
 body {
   font-family: system-ui, -apple-system, 'PingFang SC', sans-serif;
   font-size: 13px;
@@ -136,13 +142,14 @@ body.layout-col-resizing {
 /* While the deck slides, the sidebar/main layers move under the reader every
    frame — running the reader's backdrop blur then would resample a full-screen
    blur per frame, and the layer's in-flight transform empties the backdrop
-   anyway. So: opaque solid surface + no backdrop-filter during opening/closing,
-   GPU hint scoped to the transition; the glass applies once settled (open). */
+   anyway. Opaque solid for the whole overlay (opening / open / closing): the
+   deck stays painted for the close slide, so glass would show that layout. */
 .app-container.article-view-transitioning .app-layer-article {
   will-change: transform;
 }
 
-.app-container.article-view-transitioning .article-view {
+.app-container.article-view-transitioning .article-view,
+.app-container.article-view-active .article-view-embedded {
   background-color: var(--theme-article-view-solid-bg);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;

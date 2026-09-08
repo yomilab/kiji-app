@@ -8,6 +8,7 @@ mod share_macos;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub struct ButtonRect {
     pub x: f64,
     pub y: f64,
@@ -18,8 +19,10 @@ pub struct ButtonRect {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShareRequest {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub title: String,
     pub url: String,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub button_rect: Option<ButtonRect>,
 }
 
@@ -90,6 +93,11 @@ pub fn shell_share(app: AppHandle, request: ShareRequest) -> Result<ShareRespons
         }
     }
 
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+    }
+
     copy_share_url_to_clipboard(&url)?;
     Ok(ShareResponse { success: true })
 }
@@ -113,6 +121,7 @@ fn copy_share_url_to_clipboard(url: &str) -> Result<(), String> {
 
 /// Convert a DOM `getBoundingClientRect()` (top-left origin) into an NSView
 /// anchor point at the button's bottom-right corner (bottom-left origin).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn dom_button_anchor_in_view(
     button_rect: &ButtonRect,
     view_height: f64,
