@@ -19,10 +19,12 @@
   transition: background-color 0.15s ease-out;
 }
 
-/* Keep the Windows/Linux in-app menu bar reachable while reading */
-html[data-os="windows"] .article-view,
-html[data-os="linux"] .article-view,
-html[data-os="other"] .article-view {
+/* Keep the Windows/Linux in-app menu bar reachable in the standalone window.
+   Embedded overlay already sits under AppMenuBar in .app-window-body — do not
+   inset it another 36px or the sliding deck shows in that strip. */
+html[data-os="windows"] .article-view:not(.article-view-embedded),
+html[data-os="linux"] .article-view:not(.article-view-embedded),
+html[data-os="other"] .article-view:not(.article-view-embedded) {
   top: 36px;
   height: auto;
   border-top-left-radius: 0;
@@ -34,9 +36,24 @@ html[data-os="other"] .article-view {
 .article-view.article-view-embedded {
   position: absolute;
   inset: 0;
+  top: 0;
   width: 100%;
   height: 100%;
   z-index: auto;
+}
+
+html[data-os="windows"] .article-view.article-view-embedded,
+html[data-os="linux"] .article-view.article-view-embedded,
+html[data-os="other"] .article-view.article-view-embedded {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 100%;
+}
+
+.app-container.article-view-active .article-view-embedded {
+  transition: none;
 }
 
 /* Article View Window - for independent windows with transparent background */

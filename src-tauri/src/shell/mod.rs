@@ -4,6 +4,7 @@ mod share;
 mod window;
 mod window_bounds;
 mod window_guards;
+mod windows_chrome;
 
 pub use context_menu::{shell_context_menu_show_image, ImageContextMenuState};
 pub use menu::{shell_menu_update_state, ApplicationMenu};

@@ -82,6 +82,8 @@ vi.mock("@/services/settings", () => ({
     setBackgroundUpdate: vi.fn().mockResolvedValue(undefined),
     setContentParser: vi.fn().mockResolvedValue(undefined),
     setUiThemeVariant: vi.fn().mockResolvedValue(undefined),
+    setSurfaceFillOpacity: vi.fn().mockResolvedValue(undefined),
+    setSurfaceFillOpacityNow: vi.fn(),
     saveSettings: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -161,6 +163,9 @@ describe("SettingsWindow", () => {
     cleanup();
     vi.useRealTimers();
     vi.clearAllMocks();
+    document.documentElement.removeAttribute("data-os");
+    document.documentElement.style.removeProperty("--app-surface-fill-alpha");
+    document.documentElement.style.removeProperty("--app-reader-fill-alpha");
   });
 
   it("exports an error report and shows inline status", async () => {
@@ -215,6 +220,67 @@ describe("SettingsWindow", () => {
     await waitFor(() => {
       expect(themeValue.updateFontFamilies).toHaveBeenCalledWith({ articleNonAsciiFont: FontStack.PINGFANG_SC });
     });
+  });
+
+  it("applies surface opacity while dragging and persists once on commit", async () => {
+    document.documentElement.setAttribute("data-os", "windows");
+    render(<SettingsWindow />);
+    clickSidebarCategory("Appearance");
+
+    const slider = await screen.findByRole("slider", { name: "Surface opacity" });
+    expect(slider).toHaveValue("88");
+    expect(settingsManager.setSurfaceFillOpacity).not.toHaveBeenCalled();
+
+    fireEvent.input(slider, { target: { value: "70" } });
+    expect(settingsManager.setSurfaceFillOpacityNow).not.toHaveBeenCalled();
+    expect(window.kijiAPI.notifySettingsChanged).not.toHaveBeenCalled();
+    expect(document.documentElement.style.getPropertyValue("--app-surface-fill-alpha")).toBe("0.7");
+
+    fireEvent.pointerUp(slider);
+
+    expect(settingsManager.setSurfaceFillOpacityNow).toHaveBeenCalledTimes(1);
+    expect(settingsManager.setSurfaceFillOpacityNow).toHaveBeenCalledWith(0.7);
+    await waitFor(() => {
+      expect(window.kijiAPI.notifySettingsChanged).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("resets surface opacity by unsetting the stored key", async () => {
+    document.documentElement.setAttribute("data-os", "windows");
+    render(<SettingsWindow />);
+    clickSidebarCategory("Appearance");
+
+    expect(screen.getByText("Sidebar and Settings sidebar fill.")).toBeInTheDocument();
+    expect(screen.queryByText(/The article list and in-app reader/)).toBeNull();
+
+    const slider = await screen.findByRole("slider", { name: "Surface opacity" });
+    fireEvent.input(slider, { target: { value: "70" } });
+    expect(document.documentElement.style.getPropertyValue("--app-surface-fill-alpha")).toBe("0.7");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset surface opacity" }));
+
+    expect(settingsManager.setSurfaceFillOpacityNow).toHaveBeenCalledTimes(1);
+    expect(settingsManager.setSurfaceFillOpacityNow).toHaveBeenCalledWith(undefined);
+    expect(window.kijiAPI.notifySettingsChanged).toHaveBeenCalledTimes(1);
+    expect(document.documentElement.style.getPropertyValue("--app-surface-fill-alpha")).toBe("");
+    expect(slider).toHaveValue("88");
+
+    cleanup();
+    expect(settingsManager.setSurfaceFillOpacityNow).toHaveBeenCalledTimes(1);
+  });
+
+  it("flushes a dirty surface-opacity thumb when the settings window unmounts", async () => {
+    render(<SettingsWindow />);
+    clickSidebarCategory("Appearance");
+
+    const slider = await screen.findByRole("slider", { name: "Surface opacity" });
+    fireEvent.input(slider, { target: { value: "64" } });
+    expect(settingsManager.setSurfaceFillOpacityNow).not.toHaveBeenCalled();
+
+    cleanup();
+
+    expect(settingsManager.setSurfaceFillOpacityNow).toHaveBeenCalledWith(0.64);
+    expect(window.kijiAPI.notifySettingsChanged).toHaveBeenCalled();
   });
 
   it("shows Light as the default app icon and keeps the other built-in choices", async () => {

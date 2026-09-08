@@ -32,8 +32,10 @@ describe("settings storage model", () => {
     expect(renderer.sidebarSectionFold).toEqual(DEFAULT_SETTINGS.sidebarSectionFold);
     expect(renderer.smartViews).toEqual(DEFAULT_SETTINGS.smartViews);
     expect(renderer.uiThemeVariant).toBe(DEFAULT_SETTINGS.uiThemeVariant);
+    expect(renderer.surfaceFillOpacity).toBeUndefined();
     expect(Object.keys(toNativeAppSettings(DEFAULT_SETTINGS))).not.toContain("fontFamilies");
     expect(Object.keys(toNativeAppSettings(DEFAULT_SETTINGS))).not.toContain("uiThemeVariant");
+    expect(Object.keys(toNativeAppSettings(DEFAULT_SETTINGS))).not.toContain("surfaceFillOpacity");
     expect(Object.keys(toNativeAppSettings(DEFAULT_SETTINGS))).not.toContain("sidebarSectionFold");
   });
 
@@ -44,6 +46,24 @@ describe("settings storage model", () => {
     expect(merged.fontFamilies).toEqual(DEFAULT_SETTINGS.fontFamilies);
     expect(merged.savedArticlesSyncFolder).toBe(DEFAULT_NATIVE_SETTINGS.savedArticlesSyncFolder);
     expect(merged.uiThemeVariant).toBe(DEFAULT_SETTINGS.uiThemeVariant);
+    expect(merged.surfaceFillOpacity).toBeUndefined();
+  });
+
+  it("keeps an unset surface fill out of renderer JSON and clamps stored values", () => {
+    expect(toRendererPreferences(DEFAULT_SETTINGS).surfaceFillOpacity).toBeUndefined();
+
+    const withFill = toRendererPreferences({
+      ...DEFAULT_SETTINGS,
+      surfaceFillOpacity: 0.72,
+    });
+    expect(withFill.surfaceFillOpacity).toBe(0.72);
+    expect(Object.keys(toNativeAppSettings({
+      ...DEFAULT_SETTINGS,
+      surfaceFillOpacity: 0.72,
+    }))).not.toContain("surfaceFillOpacity");
+
+    const merged = mergeUserSettings(DEFAULT_NATIVE_SETTINGS, withFill);
+    expect(merged.surfaceFillOpacity).toBe(0.72);
   });
 
   it("stores window position in native settings and falls back to legacy renderer windowPosition", () => {
@@ -211,5 +231,69 @@ describe("settingsManager storage boundaries", () => {
     expect(settings.savedArticlesSyncFolder).toBe("/Users/m/Sync/Notes/daily/kiji");
     expect(localStorage.getItem(SETTINGS_STORAGE_KEYS.legacy)).toBeNull();
     expect(localStorage.getItem(SETTINGS_STORAGE_KEYS.renderer)).toContain("uiFont");
+  });
+
+  it("does not persist a default surface fill when the key is absent", async () => {
+    vi.doMock("@/lib/tauriClient", () => ({
+      tauriClient: {
+        settings: {
+          get: vi.fn().mockResolvedValue(DEFAULT_NATIVE_SETTINGS),
+          update: vi.fn().mockResolvedValue(DEFAULT_NATIVE_SETTINGS),
+        },
+      },
+    }));
+
+    const { settingsManager } = await import("@/services/settings/settingsManager");
+    await settingsManager.setUiThemeVariant("classic");
+
+    const rendererRaw = localStorage.getItem(SETTINGS_STORAGE_KEYS.renderer);
+    expect(rendererRaw).toBeTruthy();
+    expect(JSON.parse(rendererRaw as string).surfaceFillOpacity).toBeUndefined();
+    expect(await settingsManager.getSurfaceFillOpacity()).toBeUndefined();
+  });
+
+  it("clamps surface fill opacity and keeps it out of native settings", async () => {
+    const updateMock = vi.fn().mockResolvedValue(DEFAULT_NATIVE_SETTINGS);
+    vi.doMock("@/lib/tauriClient", () => ({
+      tauriClient: {
+        settings: {
+          get: vi.fn().mockResolvedValue(DEFAULT_NATIVE_SETTINGS),
+          update: updateMock,
+        },
+      },
+    }));
+
+    const { settingsManager } = await import("@/services/settings/settingsManager");
+    await settingsManager.setSurfaceFillOpacity(0.12);
+    expect(JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEYS.renderer) as string).surfaceFillOpacity).toBe(0.4);
+
+    await settingsManager.setSurfaceFillOpacity(1);
+
+    const first = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEYS.renderer) as string);
+    expect(first.surfaceFillOpacity).toBe(0.96);
+    expect(updateMock).not.toHaveBeenCalled();
+
+    const settings = await settingsManager.getSettings();
+    expect(settings.surfaceFillOpacity).toBe(0.96);
+    expect(Object.keys(toNativeAppSettings(settings))).not.toContain("surfaceFillOpacity");
+  });
+
+  it("writes surface fill synchronously so a dying settings webview can flush", async () => {
+    vi.doMock("@/lib/tauriClient", () => ({
+      tauriClient: {
+        settings: {
+          get: vi.fn().mockResolvedValue(DEFAULT_NATIVE_SETTINGS),
+          update: vi.fn().mockResolvedValue(DEFAULT_NATIVE_SETTINGS),
+        },
+      },
+    }));
+
+    const { settingsManager } = await import("@/services/settings/settingsManager");
+    settingsManager.setSurfaceFillOpacityNow(0.64);
+
+    expect(JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEYS.renderer) as string).surfaceFillOpacity).toBe(0.64);
+
+    settingsManager.setSurfaceFillOpacityNow(undefined);
+    expect(JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEYS.renderer) as string).surfaceFillOpacity).toBeUndefined();
   });
 });

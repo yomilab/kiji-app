@@ -4,6 +4,7 @@ use crate::{
         fit_window_bounds_to_displays, monitor_work_area_logical, SavedWindowBounds,
         MAIN_WINDOW_MIN_HEIGHT, MAIN_WINDOW_MIN_WIDTH,
     },
+    shell::windows_chrome::apply_and_attach_native_window_radius,
 };
 use futures_util::lock::Mutex as AsyncMutex;
 use serde_json::Value as JsonValue;
@@ -123,6 +124,7 @@ pub fn restore_main_window_bounds(
     };
 
     apply_main_window_bounds(&main_window, &settings, &suppress_save)?;
+    apply_and_attach_native_window_radius(&main_window);
     attach_main_window_bounds_listener(main_window, settings, suppress_save);
     Ok(())
 }
@@ -168,6 +170,7 @@ fn show_secondary_window(window: &WebviewWindow, label: &str) -> Result<(), Stri
     window
         .show()
         .map_err(|error| format!("Failed to show {label} window: {error}"))?;
+    apply_and_attach_native_window_radius(window);
     let _ = window.set_focus();
     Ok(())
 }
@@ -190,7 +193,10 @@ fn create_or_get_secondary_window(app: &AppHandle, label: &str) -> Result<Webvie
         .map_err(|error| format!("Failed to prepare {label} window: {error}"))?
         .build()
     {
-        Ok(window) => Ok(window),
+        Ok(window) => {
+            apply_and_attach_native_window_radius(&window);
+            Ok(window)
+        }
         Err(error) => {
             let message = error.to_string();
             if is_window_label_already_exists(&message) {
@@ -709,6 +715,33 @@ mod tests {
             .unwrap_or("");
         assert!(open_fn.contains("emit_secondary_window_open"));
         assert!(!open_fn.contains("if existed"));
+    }
+
+    #[test]
+    fn native_window_radius_is_best_effort_on_show_and_create() {
+        let production = include_str!("window.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        assert!(production.contains("apply_and_attach_native_window_radius(&main_window)"));
+        let show_fn = production
+            .split("fn show_secondary_window")
+            .nth(1)
+            .unwrap_or("");
+        let show_before_focus = show_fn.split("set_focus").next().unwrap_or("");
+        assert!(
+            show_before_focus.contains("apply_and_attach_native_window_radius(window)"),
+            "existing windows skip build() — re-apply DWM radius on show before focus"
+        );
+        let create_fn = production
+            .split("fn create_or_get_secondary_window")
+            .nth(1)
+            .unwrap_or("");
+        assert!(create_fn.contains("apply_and_attach_native_window_radius(&window)"));
+        assert!(
+            !show_fn.contains("apply_and_attach_native_window_radius(window)?"),
+            "DWM failure must not fail show"
+        );
     }
 
     #[test]
