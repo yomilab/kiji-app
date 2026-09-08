@@ -2,14 +2,24 @@
 
 ## Unreleased
 
+## [1.2.0] - 2026-09-08
+
+Reliability and system-fix release after 1.1.1: Windows window open, article-list totals, sidebar, startup, and security.
+
 ### Fixed
 
-- Security: upgrade `defuddle` to 0.19.3 (extractor XSS) and `serde_with` to 3.21.0 (lockfile).
+- Windows 10: File → Settings…, the sidebar gear, and Ctrl+, now open Settings (async secondary webviews; WebView2 no longer deadlocks).
+- Cold station/feed switch no longer sticks the article list at **100 Items** with load-more dead; load-more no longer re-renders the app shell.
+- Sidebar fold persist, chevron ghost fill, drag-and-sort, long-title ellipsis, and refresh-icon spin origin.
+- Feed-management sticky headers no longer show dark Modern-theme bands (WKWebView backdrop ghost).
+- Windows/Linux release rustc unused warnings silenced; CI paint-gate jsdom teardown no longer flakes.
+- Security: `defuddle` 0.19.3, `serde_with` 3.21.0, `browserslist` 4.28.9, Vite 7.3.6 / `esbuild` 0.28.1.
 - OPML import: the switch into the imported station/feed now awaits the first fetch (bounded to the switch's foreground cap; the rest refreshes in the background) and holds the skeleton until it settles — showing fetched rows immediately, or an honest empty view — instead of racing a 30s hold timer against background cycles, which could clear onto an empty view with rows already committed or blank rows right after switching back (`FeedContext.tsx`).
 - Refresh reliability: background refresh cycles superseded by station switching (the native IPC has no cancellation channel, so Rust still commits fetched articles) now publish their committed inserts and count syncs instead of being discarded, so the visible list no longer stays stale until the next switch (`feedSchedulerService.ts`, `nativeFeedRefresh.ts`).
 
 ### Added
 
+- Settings → Appearance **Surface opacity** slider (sidebar / Settings sidebar fill; Classic list stays solid).
 - Settings **Wave** app icon: Light plate + three bowed bars (`kiji-logo-wave.png`, `src-tauri/icons-wave`). Light stays the packaged default.
 - `website-sync-on-release.yml`: on GitHub Release publish, generate `release.json`, attach to the release, and dispatch `kiji-website` sync (`scripts/generate-release-manifest.mjs`).
 
