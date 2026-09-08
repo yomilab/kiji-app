@@ -192,8 +192,7 @@ html[data-os="other"] .sidebar {
   position: absolute;
   left: 12px;
   right: 12px;
-  height: 2px;
-  border-radius: 1px;
+  height: 1px;
   background: var(--system-accent-color);
   pointer-events: none;
 }
