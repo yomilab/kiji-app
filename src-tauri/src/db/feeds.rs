@@ -231,16 +231,23 @@ pub fn reorder_unstationed_feeds(
         return Err("Unstationed reorder list must match current untagged feeds.".to_string());
     }
 
-    for (index, feed_id) in feed_ids.iter().enumerate() {
-        connection
-            .execute(
-                "UPDATE feeds SET sort_order = ?1 WHERE id = ?2",
-                params![index as i64, feed_id],
-            )
-            .map_err(|error| format!("Failed to reorder unstationed feed {feed_id}: {error}"))?;
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to start unstationed reorder transaction: {error}"))?;
+    {
+        let mut statement = transaction
+            .prepare("UPDATE feeds SET sort_order = ?1 WHERE id = ?2")
+            .map_err(|error| format!("Failed to prepare unstationed reorder: {error}"))?;
+        for (index, feed_id) in feed_ids.iter().enumerate() {
+            statement
+                .execute(params![index as i64, feed_id])
+                .map_err(|error| format!("Failed to reorder unstationed feed {feed_id}: {error}"))?;
+        }
     }
 
-    Ok(())
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit unstationed reorder: {error}"))
 }
 
 fn unstationed_feed_ids(connection: &Connection) -> Result<Vec<String>, String> {

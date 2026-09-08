@@ -374,16 +374,23 @@ pub fn reorder_tags(connection: &Connection, names: &[String]) -> Result<(), Str
         return Err("Station reorder list must match the current station set.".to_string());
     }
 
-    for (index, name) in names.iter().enumerate() {
-        connection
-            .execute(
-                "UPDATE tags SET sort_order = ?1 WHERE name = ?2",
-                params![index as i64, name],
-            )
-            .map_err(|error| format!("Failed to reorder station {name}: {error}"))?;
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to start station reorder transaction: {error}"))?;
+    {
+        let mut statement = transaction
+            .prepare("UPDATE tags SET sort_order = ?1 WHERE name = ?2")
+            .map_err(|error| format!("Failed to prepare station reorder: {error}"))?;
+        for (index, name) in names.iter().enumerate() {
+            statement
+                .execute(params![index as i64, name])
+                .map_err(|error| format!("Failed to reorder station {name}: {error}"))?;
+        }
     }
 
-    Ok(())
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit station reorder: {error}"))
 }
 
 pub fn reorder_tag_membership(
@@ -397,18 +404,25 @@ pub fn reorder_tag_membership(
         return Err("Station membership reorder list must match current members.".to_string());
     }
 
-    for (index, feed_id) in feed_ids.iter().enumerate() {
-        connection
-            .execute(
-                "UPDATE feed_tags SET sort_order = ?1 WHERE tag_name = ?2 AND feed_id = ?3",
-                params![index as i64, tag_name, feed_id],
-            )
-            .map_err(|error| {
-                format!("Failed to reorder feed {feed_id} in station {tag_name}: {error}")
-            })?;
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to start membership reorder transaction: {error}"))?;
+    {
+        let mut statement = transaction
+            .prepare("UPDATE feed_tags SET sort_order = ?1 WHERE tag_name = ?2 AND feed_id = ?3")
+            .map_err(|error| format!("Failed to prepare membership reorder: {error}"))?;
+        for (index, feed_id) in feed_ids.iter().enumerate() {
+            statement
+                .execute(params![index as i64, tag_name, feed_id])
+                .map_err(|error| {
+                    format!("Failed to reorder feed {feed_id} in station {tag_name}: {error}")
+                })?;
+        }
     }
 
-    Ok(())
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit membership reorder: {error}"))
 }
 
 fn next_sort_order(connection: &Connection) -> Result<i64, String> {

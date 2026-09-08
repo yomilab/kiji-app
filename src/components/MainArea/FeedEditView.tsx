@@ -1035,9 +1035,9 @@ export const FeedEditView: React.FC<FeedEditViewProps> = ({ layout: _layout = '2
       const message = loadError instanceof Error ? loadError.message : 'Failed to load feed editor.';
       setError(message);
     } finally {
-      if (generation === loadGenerationRef.current) {
-        setIsLoading(false);
-      }
+      // A superseded load must still clear the flag: the bus effect that bumped the
+      // generation already wrote fresher state, and nothing else re-runs loadData.
+      setIsLoading(false);
     }
   }, []);
 

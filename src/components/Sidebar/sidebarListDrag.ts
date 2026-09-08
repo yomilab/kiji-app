@@ -43,17 +43,70 @@ export const armSidebarClickSuppress = (): void => {
   }
 };
 
+export const abortSidebarListDrag = (): void => {
+  for (const abort of abortHandlers) {
+    abort();
+  }
+};
+
+// One observer and one listener set for the whole sidebar: every list row registers an
+// abort handler, so per-instance listeners would make a single blur cost O(rows^2).
+let globalAbortListenersAttached = false;
+let overlayObserver: MutationObserver | null = null;
+
+const onWindowBlur = () => abortSidebarListDrag();
+const onPointerCancel = () => abortSidebarListDrag();
+
+const onVisibilityChange = () => {
+  if (document.hidden) {
+    abortSidebarListDrag();
+  }
+};
+
+const onOverlayClassMutation = () => {
+  if (document.querySelector('.app-container.article-view-active')) {
+    abortSidebarListDrag();
+  }
+};
+
+const attachGlobalAbortListeners = (): void => {
+  if (globalAbortListenersAttached || typeof window === 'undefined') {
+    return;
+  }
+
+  globalAbortListenersAttached = true;
+  window.addEventListener('blur', onWindowBlur);
+  window.addEventListener('pointercancel', onPointerCancel);
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  const appRoot = document.querySelector('.app-container');
+  if (appRoot) {
+    overlayObserver = new MutationObserver(onOverlayClassMutation);
+    overlayObserver.observe(appRoot, { attributes: true, attributeFilter: ['class'] });
+  }
+};
+
+const detachGlobalAbortListeners = (): void => {
+  if (!globalAbortListenersAttached) {
+    return;
+  }
+
+  globalAbortListenersAttached = false;
+  window.removeEventListener('blur', onWindowBlur);
+  window.removeEventListener('pointercancel', onPointerCancel);
+  document.removeEventListener('visibilitychange', onVisibilityChange);
+  overlayObserver?.disconnect();
+  overlayObserver = null;
+};
+
 export const registerSidebarDragAbort = (abort: () => void): void => {
   abortHandlers.add(abort);
+  attachGlobalAbortListeners();
 };
 
 export const unregisterSidebarDragAbort = (abort: () => void): void => {
   abortHandlers.delete(abort);
-};
-
-export const abortSidebarListDrag = (): void => {
-  for (const abort of abortHandlers) {
-    abort();
+  if (abortHandlers.size === 0) {
+    detachGlobalAbortListeners();
   }
 };
 

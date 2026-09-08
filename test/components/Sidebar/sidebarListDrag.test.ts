@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  abortSidebarListDrag,
   armSidebarClickSuppress,
   encodeSidebarDragPayload,
   isSidebarRowDragIgnored,
   mergePartialReorder,
   parseSidebarDragPayload,
+  registerSidebarDragAbort,
   reorderIds,
+  unregisterSidebarDragAbort,
 } from '@/components/Sidebar/sidebarListDrag';
 
 describe('sidebarListDrag', () => {
@@ -68,5 +71,36 @@ describe('sidebarListDrag', () => {
     document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(select).toHaveBeenCalledTimes(1);
     document.removeEventListener('click', select);
+  });
+
+  it('shares one window listener set across every registered list', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    const first = vi.fn();
+    const second = vi.fn();
+
+    registerSidebarDragAbort(first);
+    registerSidebarDragAbort(second);
+    const blurRegistrations = addSpy.mock.calls.filter(([type]) => type === 'blur');
+    expect(blurRegistrations).toHaveLength(1);
+
+    window.dispatchEvent(new Event('blur'));
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+
+    unregisterSidebarDragAbort(first);
+    expect(removeSpy.mock.calls.filter(([type]) => type === 'blur')).toHaveLength(0);
+    unregisterSidebarDragAbort(second);
+    expect(removeSpy.mock.calls.filter(([type]) => type === 'blur')).toHaveLength(1);
+
+    window.dispatchEvent(new Event('blur'));
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+
+    abortSidebarListDrag();
+    expect(first).toHaveBeenCalledTimes(1);
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
   });
 });

@@ -209,6 +209,9 @@ fn migration_16(connection: &Connection) -> Result<(), String> {
 }
 
 fn migration_17(connection: &Connection) -> Result<(), String> {
+    // The backfill reads feeds.sort_order, which only exists once the additive
+    // feed columns have been applied — ledgers stamped past migration 3 skip it.
+    ensure_additive_feed_columns(connection)?;
     ensure_feed_tags_sort_order_column(connection)?;
     backfill_feed_tags_sort_order(connection)
 }
@@ -330,10 +333,18 @@ fn backfill_feed_tags_sort_order(connection: &Connection) -> Result<(), String> 
               JOIN feeds AS this_feed ON this_feed.id = feed_tags.feed_id
               WHERE other.tag_name = feed_tags.tag_name
                 AND (
-                  other_feed.sort_order < this_feed.sort_order
+                  COALESCE(other_feed.sort_order, 0) < COALESCE(this_feed.sort_order, 0)
                   OR (
-                    other_feed.sort_order = this_feed.sort_order
-                    AND other.feed_id <= feed_tags.feed_id
+                    COALESCE(other_feed.sort_order, 0) = COALESCE(this_feed.sort_order, 0)
+                    AND (
+                      COALESCE(other_feed.title, '') COLLATE NOCASE
+                        < COALESCE(this_feed.title, '') COLLATE NOCASE
+                      OR (
+                        COALESCE(other_feed.title, '') COLLATE NOCASE
+                          = COALESCE(this_feed.title, '') COLLATE NOCASE
+                        AND other.feed_id <= feed_tags.feed_id
+                      )
+                    )
                   )
                 )
             ) - 1

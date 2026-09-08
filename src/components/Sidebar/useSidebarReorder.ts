@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
 import {
-  abortSidebarListDrag,
   armSidebarClickSuppress,
   clearSidebarDropClasses,
   encodeSidebarDragPayload,
@@ -67,34 +66,10 @@ export const useSidebarReorder = <T,>(options: {
   }, [applyDragState]);
 
   useEffect(() => {
+    // Blur / pointercancel / visibility / overlay listeners live in sidebarListDrag as a
+    // single shared set — registering here only adds this list's abort handler.
     registerSidebarDragAbort(abort);
-    const onVisibility = () => {
-      if (document.hidden) {
-        abortSidebarListDrag();
-      }
-    };
-    const onBlur = () => abortSidebarListDrag();
-    const onPointerCancel = () => abortSidebarListDrag();
-    const abortIfOverlayActive = () => {
-      if (document.querySelector('.app-container.article-view-active')) {
-        abortSidebarListDrag();
-      }
-    };
-    const overlayObserver = new MutationObserver(abortIfOverlayActive);
-    const appRoot = document.querySelector('.app-container');
-    if (appRoot) {
-      overlayObserver.observe(appRoot, { attributes: true, attributeFilter: ['class'] });
-    }
-    window.addEventListener('blur', onBlur);
-    window.addEventListener('pointercancel', onPointerCancel);
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      unregisterSidebarDragAbort(abort);
-      overlayObserver.disconnect();
-      window.removeEventListener('blur', onBlur);
-      window.removeEventListener('pointercancel', onPointerCancel);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
+    return () => unregisterSidebarDragAbort(abort);
   }, [abort]);
 
   const onDragStart = useCallback((id: string, event: React.DragEvent) => {
