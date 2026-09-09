@@ -1,3 +1,4 @@
+import { APP_NAME } from '@/config/appIdentity';
 import type { AppMenuCommand, AppMenuState } from '@/types/appMenu';
 
 export type AppMenuLocalAction =
@@ -40,23 +41,23 @@ export function buildWindowsAppMenuTree(state: AppMenuState): AppMenuTopLevel[] 
 
   return [
     {
-      id: 'file',
-      label: 'File',
-      accessKey: 'f',
+      id: 'kiji',
+      label: APP_NAME,
+      accessKey: 'k',
       items: [
         {
           kind: 'item',
           id: 'about',
-          label: 'About KiJi',
+          label: `About ${APP_NAME}`,
           action: { type: 'about' },
         },
         {
           kind: 'item',
           id: 'check-updates',
-          label: state.updateAvailable ? 'Update KiJi' : 'Check for Updates',
+          label: state.updateAvailable ? `Update ${APP_NAME}` : 'Check for Updates',
           action: { type: 'checkUpdates' },
         },
-        { kind: 'separator', id: 'file-sep-app' },
+        { kind: 'separator', id: 'kiji-sep-app' },
         {
           kind: 'item',
           id: 'settings',
@@ -64,7 +65,20 @@ export function buildWindowsAppMenuTree(state: AppMenuState): AppMenuTopLevel[] 
           action: { type: 'openSettings' },
           shortcutHint: 'Ctrl+,',
         },
-        { kind: 'separator', id: 'file-sep-1' },
+        { kind: 'separator', id: 'kiji-sep-quit' },
+        {
+          kind: 'item',
+          id: 'quit',
+          label: `Quit ${APP_NAME}`,
+          action: { type: 'quit' },
+        },
+      ],
+    },
+    {
+      id: 'file',
+      label: 'File',
+      accessKey: 'f',
+      items: [
         {
           kind: 'item',
           id: 'export-feeds',
@@ -77,7 +91,7 @@ export function buildWindowsAppMenuTree(state: AppMenuState): AppMenuTopLevel[] 
           label: 'Export Saved Articles',
           action: { type: 'exportSavedArticles' },
         },
-        { kind: 'separator', id: 'file-sep-2' },
+        { kind: 'separator', id: 'file-sep-1' },
         {
           kind: 'item',
           id: 'clear-feeds',
@@ -95,18 +109,12 @@ export function buildWindowsAppMenuTree(state: AppMenuState): AppMenuTopLevel[] 
           id: 'clear-old-3m',
           label: 'Clear Articles Older Than 3 Months',
           action: { type: 'clearArticlesOlderThan', months: 3 },
-        },        {
+        },
+        {
           kind: 'item',
           id: 'clear-all-articles',
           label: 'Clear All Articles',
           action: { type: 'clearArticles' },
-        },
-        { kind: 'separator', id: 'file-sep-3' },
-        {
-          kind: 'item',
-          id: 'quit',
-          label: 'Quit KiJi',
-          action: { type: 'quit' },
         },
       ],
     },
