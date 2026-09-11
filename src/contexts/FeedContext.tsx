@@ -878,6 +878,13 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     tagQuery: ArticleQuery;
     mode: 'total-only' | 'full';
   } | null>(null);
+  // Warm snapshot paint is first-frame only. Native Phase B boostMany returns 0
+  // and total-only reconcile no-ops when totalKnown, so overnight SQLite rows
+  // never replace the cached list until a later insert on the active source.
+  // One token-scoped full page replace (n ≤ snapshot cap) closes that hole
+  // without a second cold deferred page (H17) or a sticky 0-insert interval hook.
+  const warmSnapshotReconcileTokenRef = useRef<number | null>(null);
+  const warmSnapshotReconcileInFlightRef = useRef<number | null>(null);
   const articleViewOverlayPhaseRef = useRef<ArticleViewOverlayPhase>('closed');
   const activeArticleHashRef = useRef<string | null>(null);
   const isFeedProviderMountedRef = useRef(false);
@@ -1308,6 +1315,8 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     pendingColdSwitchSqliteTokenRef.current = null;
     deferNetworkSchedulerResumeTokenRef.current = null;
     importEmptyCommitTokenRef.current = null;
+    warmSnapshotReconcileTokenRef.current = null;
+    warmSnapshotReconcileInFlightRef.current = null;
     clearStationUiRefreshTimer();
     cancelSourceSelectionRefreshSchedule();
     if (previousToken > 0) {
@@ -1562,14 +1571,56 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return;
     }
 
+    if (mode === 'full' && warmSnapshotReconcileInFlightRef.current === token) {
+      return;
+    }
+
     const visibleCount = Math.max(currentArticlesRef.current.length, SMART_VIEW_ARTICLE_LIMIT);
     const reloadEpoch = listReloadEpochRef.current;
+    if (mode === 'full' && warmSnapshotReconcileTokenRef.current === token) {
+      warmSnapshotReconcileInFlightRef.current = token;
+    }
     const { articles: fresh, total: freshTotal } = await articleStore.query({
       ...tagQuery,
       limit: visibleCount,
       includeTotal: true,
     });
     if (!isSelectionActive(token) || reloadEpoch !== listReloadEpochRef.current) {
+      if (warmSnapshotReconcileInFlightRef.current === token) {
+        warmSnapshotReconcileInFlightRef.current = null;
+      }
+      return;
+    }
+
+    // Search does not bump listReloadEpoch. Freeze can also arm after the
+    // query started. Re-stash full and skip SET_ARTICLES so search hits /
+    // load-more tails are not replaced. A load-more that started *and*
+    // finished during this COUNT leaves loadMoreInFlight false but a longer
+    // list; dispatching the old visibleCount would shrink it and consume
+    // the one-shot token.
+    const listGrewDuringQuery = currentArticlesRef.current.length > visibleCount;
+    if (
+      articleListScrollActiveRef.current
+      || loadMoreInFlightRef.current
+      || articleListSearchActiveRef.current
+      || articleListSearchQueryRef.current !== null
+      || isArticleViewTransitioning()
+      || listGrewDuringQuery
+    ) {
+      pendingSwitchVisibleReconcileRef.current = { token, sourceKey, tagQuery, mode: 'full' };
+      if (warmSnapshotReconcileInFlightRef.current === token) {
+        warmSnapshotReconcileInFlightRef.current = null;
+      }
+      if (
+        listGrewDuringQuery
+        && !articleListScrollActiveRef.current
+        && !loadMoreInFlightRef.current
+        && !articleListSearchActiveRef.current
+        && articleListSearchQueryRef.current === null
+        && !isArticleViewTransitioning()
+      ) {
+        void reconcileSwitchVisiblePage({ token, sourceKey, tagQuery, mode: 'full' });
+      }
       return;
     }
 
@@ -1577,6 +1628,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       totalKnown: true,
       pageWasFull: fresh.length >= visibleCount,
     });
+    if (warmSnapshotReconcileTokenRef.current === token) {
+      warmSnapshotReconcileTokenRef.current = null;
+      warmSnapshotReconcileInFlightRef.current = null;
+    }
   }, [dispatchArticlesTransitionIfChanged, isArticleViewTransitioning, isSelectionActive, startTransition]);
 
   const flushPendingSwitchVisibleReconcileIfIdle = useCallback((): void => {
@@ -2494,7 +2549,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           token,
           sourceKey,
           tagQuery: feedQuery,
-          mode: 'total-only',
+          mode: warmSnapshotReconcileTokenRef.current === token ? 'full' : 'total-only',
         };
         flushPendingSwitchVisibleReconcileIfIdle();
         return;
@@ -2544,7 +2599,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           token,
           sourceKey,
           tagQuery: feedQuery,
-          mode: 'total-only',
+          mode: warmSnapshotReconcileTokenRef.current === token ? 'full' : 'total-only',
         });
       } else {
         const { articles: fresh, total: freshTotal } = await articleStore.query(feedQuery);
@@ -2674,14 +2729,16 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           token,
           sourceKey,
           tagQuery,
-          mode: 'total-only',
+          mode: warmSnapshotReconcileTokenRef.current === token ? 'full' : 'total-only',
         };
       } else {
         await reconcileSwitchVisiblePage({
           token,
           sourceKey,
           tagQuery,
-          mode: currentArticlesRef.current.length > 0 ? 'total-only' : 'full',
+          mode: warmSnapshotReconcileTokenRef.current === token
+            ? 'full'
+            : (currentArticlesRef.current.length > 0 ? 'total-only' : 'full'),
         });
         freshArticleCount = currentArticlesRef.current.length;
         freshArticleTotal = nonSearchArticlesTotalCountRef.current;
@@ -2756,6 +2813,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const immediatePaintApplied = switchLifecycle.isImmediatePaintApplied(token);
       restoredSnapshot = restoreSourceArticleSnapshot(sourceKey);
       if (restoredSnapshot) {
+        warmSnapshotReconcileTokenRef.current = token;
         sidebarSwitchTrace.mark(token, 'snapshot-restored', {
           cachedArticleCount: restoredSnapshot.list.length,
           cachedArticleTotal: restoredSnapshot.total,
@@ -2786,12 +2844,12 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       lastQuerySourceKeyRef.current = sourceKey;
       const isColdSwitch = shouldReset && restoredSnapshot === null;
 
-      if (restoredSnapshot && !restoredSnapshot.totalKnown && restoredSnapshot.query) {
+      if (restoredSnapshot && warmSnapshotReconcileTokenRef.current === token) {
         pendingSwitchVisibleReconcileRef.current = {
           token,
           sourceKey,
-          tagQuery: restoredSnapshot.query,
-          mode: 'total-only',
+          tagQuery: restoredSnapshot.query ?? query,
+          mode: 'full',
         };
         flushPendingSwitchVisibleReconcileIfIdle();
       }
