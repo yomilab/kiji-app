@@ -1,4 +1,8 @@
 import { memo, type RefObject } from 'react';
+import {
+  handleWindowChromeDragMouseDown,
+  TAURI_DRAG_REGION_DEEP,
+} from '@/services/ui/windowChromeDragRegion';
 import { ArticleListWidgets } from './ArticleListWidgets';
 import { ArticleListSearchInput } from './ArticleListSearchInput';
 import { ArticleListHeaderSkeleton } from './ArticleListSkeleton';
@@ -38,7 +42,13 @@ export const ArticleListHeaderSection = memo(function ArticleListHeaderSection({
   const titleSectionClassName = `article-list-title-section ${hasListScrollOffset ? 'article-list-title-section-scrolled' : ''}`;
 
   return (
-    <div className={titleSectionClassName} data-section="article-list-title">
+    <div
+      className={titleSectionClassName}
+      data-section="article-list-title"
+      // Tauri drag.js moves the window from empty chrome; buttons stay clickable.
+      data-tauri-drag-region={TAURI_DRAG_REGION_DEEP}
+      onMouseDown={(event) => handleWindowChromeDragMouseDown(event, { closeSearch: false })}
+    >
       <ArticleListWidgets
         onToggleSearch={onToggleSearch}
         isSavedView={isSavedView}

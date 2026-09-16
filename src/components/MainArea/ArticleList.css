@@ -126,6 +126,8 @@ html[data-os="other"] .article-list {
   padding: 32px 0 10px 0;
   position: sticky;
   top: 0;
+  user-select: none;
+  -webkit-user-select: none;
   /* No fill/filter here: a nested backdrop-filter inside the glass container
      mis-composites in WKWebView (ghost layer offset by the blur radius). The
      container's glass shows through, keeping the header perfectly uniform. */

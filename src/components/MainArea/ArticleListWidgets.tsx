@@ -6,6 +6,8 @@ import { TOOLTIPS } from '@/config/tooltips';
 import { SHORTCUT_LABELS, withShortcutHint } from '@/services/shortcuts/shortcutService';
 import { savedArticlesIOService } from '@/services/saved/savedArticlesIOService';
 import { DropdownMenu } from '@/components/common/DropdownMenu/DropdownMenu';
+import { useWindowChromeDragDismiss } from '@/hooks/useWindowChromeDragDismiss';
+import { TAURI_DRAG_REGION_FALSE } from '@/services/ui/windowChromeDragRegion';
 import './ArticleListWidgets.css';
 
 interface ArticleListWidgetsProps {
@@ -29,6 +31,8 @@ export const ArticleListWidgets: React.FC<ArticleListWidgetsProps> = ({
   const closeMenu = useCallback(() => {
     setIsMenuOpen(false);
   }, []);
+
+  useWindowChromeDragDismiss(closeMenu);
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -66,7 +70,11 @@ export const ArticleListWidgets: React.FC<ArticleListWidgetsProps> = ({
   };
 
   return (
-    <div className="article-list-widgets" data-section="article-list-widgets">
+    <div
+      className="article-list-widgets"
+      data-section="article-list-widgets"
+      data-tauri-drag-region={TAURI_DRAG_REGION_FALSE}
+    >
       <div className="article-list-widgets-buttons has-no-drag">
         <button
           className="button is-text is-small article-view-action-button article-list-search-button"

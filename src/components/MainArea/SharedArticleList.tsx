@@ -12,6 +12,10 @@ import { ArticleListScrollBranch } from './ArticleListScrollBranch';
 import { ArticleListScrollOffsetProvider } from './hooks/articleListScrollOffsetContext';
 import { useArticleListSearch } from './hooks/useArticleListSearch';
 import { useArticleListLayoutResize } from './hooks/useArticleListLayoutResize';
+import {
+  handleWindowChromeDragMouseDown,
+  TAURI_DRAG_REGION_DEEP,
+} from '@/services/ui/windowChromeDragRegion';
 import './ArticleList.css';
 
 interface SharedArticleListProps {
@@ -63,7 +67,12 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
         {showResizeHandle && (
           <div className={`article-list-resize-handle ${isDragging ? 'is-dragging' : ''}`} onMouseDown={handleBorderMouseDown} />
         )}
-        <div className="article-list-title-section" data-section="article-list-title">
+        <div
+          className="article-list-title-section"
+          data-section="article-list-title"
+          data-tauri-drag-region={TAURI_DRAG_REGION_DEEP}
+          onMouseDown={(event) => handleWindowChromeDragMouseDown(event, { closeSearch: false })}
+        >
           <ArticleListWidgets
             onToggleSearch={handleToggleSearch}
             isSavedView={isSavedView}

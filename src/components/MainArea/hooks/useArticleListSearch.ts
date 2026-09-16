@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState, type RefObject } from 'react';
+import { useWindowChromeDragDismiss } from '@/hooks/useWindowChromeDragDismiss';
 import {
   isArticleListSearchShortcut,
   isCloseOnEscapeShortcut,
   keybindingService,
 } from '@/services/shortcuts/shortcutService';
+import type { WindowChromeDragDismissOptions } from '@/services/ui/windowChromeDragDismiss';
 
 interface UseArticleListSearchOptions {
   articleListRef: RefObject<HTMLDivElement>;
@@ -50,6 +52,14 @@ export const useArticleListSearch = ({
     setIsSearchOpen(false);
     clearSearchText();
   }, [clearSearchText]);
+
+  const handleChromeDragDismiss = useCallback((options: WindowChromeDragDismissOptions) => {
+    if (options.closeSearch) {
+      handleCloseSearch();
+    }
+  }, [handleCloseSearch]);
+
+  useWindowChromeDragDismiss(handleChromeDragDismiss);
 
   // Cmd/Ctrl+F opens search, Esc closes and clears search filter.
   useEffect(() => {

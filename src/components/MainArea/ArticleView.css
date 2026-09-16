@@ -69,7 +69,6 @@ html[data-os="other"] .article-view.article-view-embedded {
 
 /* Back Button Header Bar */
 .article-view-header-bar {
-  -webkit-app-region: drag;
   flex-shrink: 0;
   height: 52px;
   display: flex;

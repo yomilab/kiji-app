@@ -11,6 +11,7 @@ import {
 } from '@/services/ui/appMenuModel';
 import { dispatchAppMenuAction } from '@/services/ui/dispatchAppMenuAction';
 import { WindowCaptionButtons } from '@/components/WindowChrome/WindowCaptionButtons';
+import { useWindowChromeDragDismiss } from '@/hooks/useWindowChromeDragDismiss';
 import './AppMenuBar.css';
 
 function MenuItems({
@@ -113,6 +114,8 @@ export const AppMenuBar: React.FC = () => {
     setOpenMenuId(null);
     setOpenSubmenuId(null);
   }, []);
+
+  useWindowChromeDragDismiss(closeMenus);
 
   const handleItemAction = useCallback(
     (item: Extract<AppMenuItem, { kind: 'item' }>) => {

@@ -225,5 +225,6 @@ describe('SharedArticleList error fallback behavior', () => {
 
     expect(screen.getByText('Unable to connect to the feed URL.')).toBeInTheDocument();
     expect(screen.queryByTestId('mock-article-row')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-section="article-list-title"]')?.getAttribute('data-tauri-drag-region')).toBe('deep');
   });
 });

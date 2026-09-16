@@ -35,6 +35,11 @@ import { StatefulButtonGroup, type ButtonState } from '@/components/common/State
 import { ArticleContent, ArticleContentSkeleton, type ArticleContentMetricsDetail } from '@/components/common/ArticleContent';
 import { ArticlePdfViewer } from '@/components/common/ArticlePdf';
 import { InteractionProfiler } from '@/components/common/InteractionProfiler';
+import {
+  handleWindowChromeDragMouseDown,
+  TAURI_DRAG_REGION_DEEP,
+  TAURI_DRAG_REGION_FALSE,
+} from '@/services/ui/windowChromeDragRegion';
 import { TOOLTIPS } from '@/config/tooltips';
 import {
   isCloseArticleViewShortcut,
@@ -2258,6 +2263,8 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
           className={`article-view-header-bar ${hasScrollOffset ? 'article-view-header-bar-scrolled' : ''}`}
           data-section="article-view-header"
           data-component="article-header-bar"
+          data-tauri-drag-region={TAURI_DRAG_REGION_DEEP}
+          onMouseDown={(event) => handleWindowChromeDragMouseDown(event, { closeSearch: true })}
         >
           <motion.div
             className="article-view-header-chrome"
@@ -2279,7 +2286,11 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
                 </span>
               </button>
             )}
-            <div className="article-view-actions has-no-drag" data-component="article-actions">
+            <div
+              className="article-view-actions has-no-drag"
+              data-component="article-actions"
+              data-tauri-drag-region={TAURI_DRAG_REGION_FALSE}
+            >
               {isFeedLinkedArticle && canToggleReaderMode && (
                 <StatefulButtonGroup
                   states={readerModeStates}
