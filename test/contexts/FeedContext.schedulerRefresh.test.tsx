@@ -606,6 +606,40 @@ describe('FeedContext scheduler refresh', () => {
     });
   });
 
+  it('does not refresh the Read view when the scheduler reports new unread inserts', async () => {
+    const initialArticles = [createArticle('hash-r1', 'feed-1')];
+
+    (articleStore.query as vi.Mock).mockResolvedValue({
+      articles: initialArticles,
+      total: initialArticles.length,
+    });
+
+    await renderProvider();
+
+    await waitForExpectation(() => expect(latestContext).not.toBeNull());
+    await act(async () => {
+      await latestContext!.selectSmartView('read');
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-r1']);
+    });
+    const queryCountAfterSelect = (articleStore.query as vi.Mock).mock.calls.length;
+
+    await act(async () => {
+      __emitSchedulerEvent({
+        type: 'feed-updated',
+        feedId: 'feed-2',
+        newArticleCount: 1,
+      });
+      __emitSchedulerEvent({ type: 'cycle-complete' });
+      await new Promise((resolve) => setTimeout(resolve, 320));
+    });
+
+    expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-r1']);
+    expect((articleStore.query as vi.Mock).mock.calls.length).toBe(queryCountAfterSelect);
+  });
+
   it('coalesces multiple scheduler feed updates into one visible-source reload', async () => {
     const initialArticles = [createArticle('hash-a1', 'feed-1')];
     const refreshedArticles = [

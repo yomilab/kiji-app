@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFeedNavigation } from '@/contexts/FeedContext';
+import { isLibrarySmartViewId } from '@/constants';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAppUpdatePrompt } from '@/hooks/useAppUpdatePrompt';
 import { isCloseOnEscapeShortcut, keybindingService } from '@/services/shortcuts/shortcutService';
@@ -102,12 +103,7 @@ export const AppMenuBar: React.FC = () => {
     () =>
       buildWindowsAppMenuTree({
         theme,
-        libraryView:
-          selectedSmartView === 'saved'
-          || selectedSmartView === 'unread'
-          || selectedSmartView === 'all'
-            ? selectedSmartView
-            : null,
+        libraryView: isLibrarySmartViewId(selectedSmartView) ? selectedSmartView : null,
         updateAvailable: Boolean(availability),
       }),
     [availability, selectedSmartView, theme],

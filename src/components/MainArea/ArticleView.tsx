@@ -1092,7 +1092,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   const currentBodyTaskIdRef = useRef(0);
   const currentBodyTaskCancelRef = useRef<null | (() => Promise<void>)>(null);
   const modeRequestVersionRef = useRef(0);
-  const pendingArticleListUpdateRef = useRef<{ hash: string; updates: ArticleListUpdatePayload } | null>(null);
+  const pendingArticleListUpdateRef = useRef<{ hash: string; updates: ArticleListUpdatePayload; article: Article | null } | null>(null);
   const readerContentHashRef = useRef<string | null>(null);
   const readerFetchKeyRef = useRef<string | null>(null);
 
@@ -1155,12 +1155,17 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
           ...existing.updates,
           ...updates,
         },
+        article: articleToShow?.hash === hash ? articleToShow : existing.article,
       };
       return;
     }
 
-    pendingArticleListUpdateRef.current = { hash, updates };
-  }, []);
+    pendingArticleListUpdateRef.current = {
+      hash,
+      updates,
+      article: articleToShow?.hash === hash ? articleToShow : null,
+    };
+  }, [articleToShow]);
 
   const queueOrApplyArticleListUpdate = useCallback((hash: string, updates: ArticleListUpdatePayload) => {
     if (currentArticleHashRef.current === hash) {
@@ -1175,7 +1180,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     const pending = pendingArticleListUpdateRef.current;
     if (!pending) return;
     pendingArticleListUpdateRef.current = null;
-    updateArticleInList(pending.hash, pending.updates);
+    updateArticleInList(pending.hash, pending.updates, pending.article);
   }, [updateArticleInList]);
 
   useDependencyEffect(() => {

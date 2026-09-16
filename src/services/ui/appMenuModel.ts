@@ -177,6 +177,13 @@ export function buildWindowsAppMenuTree(state: AppMenuState): AppMenuTopLevel[] 
               action: { type: 'selectLibraryView', libraryView: 'all' },
               checked: libraryView === 'all',
             },
+            {
+              kind: 'item',
+              id: 'library-read',
+              label: 'Read',
+              action: { type: 'selectLibraryView', libraryView: 'read' },
+              checked: libraryView === 'read',
+            },
           ],
         },
       ],

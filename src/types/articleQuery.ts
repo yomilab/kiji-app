@@ -9,14 +9,15 @@ export interface ArticleQuery {
     saved?: boolean;
   };
   sort?: {
-    field: "publishedDate" | "fetchedDate";
+    field: "publishedDate" | "fetchedDate" | "lastReadAt";
     order: "asc" | "desc";
   };
   searchText?: string;
   limit?: number;
   offset?: number;
   cursor?: {
-    effectiveDate: string;
+    /** Null means the last_read_at DESC NULL-tail keyset (hash only). */
+    effectiveDate: string | null;
     hash: string;
   };
   includeTotal?: boolean;

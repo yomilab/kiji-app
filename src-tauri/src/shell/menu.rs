@@ -26,6 +26,7 @@ const MENU_THEME_DARK: &str = "menu-theme-dark";
 const MENU_LIBRARY_SAVED: &str = "menu-library-saved";
 const MENU_LIBRARY_UNREAD: &str = "menu-library-unread";
 const MENU_LIBRARY_ALL: &str = "menu-library-all";
+const MENU_LIBRARY_READ: &str = "menu-library-read";
 const MENU_ADD_SUBSCRIPTION: &str = "menu-add-subscription";
 const MENU_IMPORT_FEEDS: &str = "menu-import-feeds";
 const MENU_HELP_SUPPORT: &str = "menu-help-support";
@@ -68,6 +69,7 @@ pub struct ApplicationMenu {
     library_saved: CheckMenuItem<Wry>,
     library_unread: CheckMenuItem<Wry>,
     library_all: CheckMenuItem<Wry>,
+    library_read: CheckMenuItem<Wry>,
     check_updates: MenuItem<Wry>,
 }
 
@@ -112,6 +114,7 @@ impl ApplicationMenu {
         let library_saved = menu_check(app, MENU_LIBRARY_SAVED, "Saved", false)?;
         let library_unread = menu_check(app, MENU_LIBRARY_UNREAD, "Unread", false)?;
         let library_all = menu_check(app, MENU_LIBRARY_ALL, "All Items", false)?;
+        let library_read = menu_check(app, MENU_LIBRARY_READ, "Read", false)?;
         let check_updates = MenuItem::with_id(
             app,
             MENU_CHECK_UPDATES,
@@ -134,6 +137,7 @@ impl ApplicationMenu {
             library_saved,
             library_unread,
             library_all,
+            library_read,
             check_updates,
         };
 
@@ -212,6 +216,7 @@ impl ApplicationMenu {
                 &handles.library_saved,
                 &handles.library_unread,
                 &handles.library_all,
+                &handles.library_read,
             ],
         )
         .map_err(menu_error)?;
@@ -389,6 +394,15 @@ impl ApplicationMenu {
                     },
                 );
             }
+            MENU_LIBRARY_READ => {
+                self.set_library_view(Some("read".into()));
+                emit_menu_command(
+                    app,
+                    AppMenuCommand::SelectLibraryView {
+                        library_view: "read".into(),
+                    },
+                );
+            }
             MENU_ADD_SUBSCRIPTION => emit_menu_command(app, AppMenuCommand::OpenAddSubscription),
             MENU_IMPORT_FEEDS => emit_menu_command(app, AppMenuCommand::ImportFeeds),
             MENU_HELP_SUPPORT => {
@@ -419,6 +433,9 @@ impl ApplicationMenu {
         let _ = self
             .library_all
             .set_checked(library_view.as_deref() == Some("all"));
+        let _ = self
+            .library_read
+            .set_checked(library_view.as_deref() == Some("read"));
     }
 
     pub fn apply_patch(&self, patch: AppMenuStatePatch) -> Result<(), String> {

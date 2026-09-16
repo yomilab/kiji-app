@@ -85,6 +85,15 @@ export function articleToRecord(article: Article): ArticleRecord {
   };
 }
 
+export function toNativeArticleSortField(
+  field: NonNullable<ArticleQuery["sort"]>["field"] | undefined,
+): "published_date" | "fetched_date" | "last_read_at" | undefined {
+  if (field === "publishedDate") return "published_date";
+  if (field === "fetchedDate") return "fetched_date";
+  if (field === "lastReadAt") return "last_read_at";
+  return undefined;
+}
+
 export async function query(q: ArticleQuery): Promise<ArticleQueryResult> {
   const now = new Date();
   const result = await tauriClient.articles.query({
@@ -93,12 +102,12 @@ export async function query(q: ArticleQuery): Promise<ArticleQueryResult> {
     read: q.filter?.read,
     starred: q.filter?.starred,
     saved: q.filter?.saved,
-    sortField: q.sort?.field === "publishedDate" ? "published_date" : q.sort?.field === "fetchedDate" ? "fetched_date" : undefined,
+    sortField: toNativeArticleSortField(q.sort?.field),
     sortOrder: q.sort?.order,
     searchText: q.searchText,
     limit: q.limit,
     offset: q.offset,
-    cursorDate: q.cursor?.effectiveDate,
+    cursorDate: q.cursor?.effectiveDate ?? undefined,
     cursorHash: q.cursor?.hash,
     includeTotal: q.includeTotal,
   });

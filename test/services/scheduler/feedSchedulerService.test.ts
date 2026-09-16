@@ -919,6 +919,45 @@ describe("feedSchedulerService", () => {
           }),
         }),
       );
+      expect(
+        (previewNativeCycle.mock.calls[0][0] as { options?: { bypassFailureBackoff?: boolean } })
+          .options?.bypassFailureBackoff,
+      ).not.toBe(true);
+    });
+
+    it("passes one-shot bypassFailureBackoff on the paused boostMany resume cycle", async () => {
+      const stationFeedIds = Array.from({ length: 65 }, (_, index) => `feed-${index + 1}`);
+      await feedScheduler.start();
+
+      feedScheduler.pauseForStationSelection();
+      feedScheduler.boostMany(stationFeedIds);
+
+      expect(previewNativeCycle).not.toHaveBeenCalled();
+
+      feedScheduler.resumeAfterStationSelection();
+      await vi.waitFor(() => {
+        expect(previewNativeCycle).toHaveBeenCalledTimes(1);
+      });
+
+      expect(previewNativeCycle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({
+            onlyFeedIds: stationFeedIds,
+            bypassFailureBackoff: true,
+          }),
+        }),
+      );
+
+      previewNativeCycle.mockClear();
+      getSchedulerEventHandler("scheduler:cycle-tick")?.();
+      await vi.waitFor(() => {
+        expect(previewNativeCycle).toHaveBeenCalledTimes(1);
+      });
+
+      expect(
+        (previewNativeCycle.mock.calls[0][0] as { options?: { bypassFailureBackoff?: boolean } })
+          .options?.bypassFailureBackoff,
+      ).not.toBe(true);
     });
 
     it("passes bypassFailureBackoff on resume catch-up after an all-failed native cycle", async () => {

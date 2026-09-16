@@ -21,7 +21,7 @@ import {
 import { loadNativeAppSettings, saveNativeAppSettings } from './nativeSettingsBackend';
 import { clampSurfaceFillOpacity } from './surfaceFillOpacity';
 
-const normalizeSmartViews = (smartViews: UserSettings['smartViews'] | undefined): UserSettings['smartViews'] => {
+export const normalizeSmartViews = (smartViews: UserSettings['smartViews'] | undefined): UserSettings['smartViews'] => {
   const smartViewMap = new Map((smartViews ?? []).map((view) => [view.id, view]));
 
   return DEFAULT_SMART_VIEW_DEFINITIONS.map((definition, index) => {

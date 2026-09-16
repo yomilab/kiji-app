@@ -111,6 +111,7 @@ pub const CREATE_INDEXES: &str = r#"
   CREATE INDEX IF NOT EXISTS idx_articles_feed_id        ON articles(feed_id);
   CREATE INDEX IF NOT EXISTS idx_articles_effective_date ON articles(COALESCE(published_date, fetched_date) DESC);
   CREATE INDEX IF NOT EXISTS idx_articles_read           ON articles(read, COALESCE(published_date, fetched_date) DESC);
+  CREATE INDEX IF NOT EXISTS idx_articles_read_last_read ON articles(read, last_read_at DESC, hash);
   CREATE INDEX IF NOT EXISTS idx_articles_starred        ON articles(starred);
   CREATE INDEX IF NOT EXISTS idx_articles_feed_date      ON articles(feed_id, COALESCE(published_date, fetched_date) DESC);
   CREATE INDEX IF NOT EXISTS idx_articles_saved          ON articles(saved);

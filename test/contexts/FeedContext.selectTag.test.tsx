@@ -9,6 +9,7 @@ import { feedsManager } from '@/services/feeds/feedsManager';
 import { feedsFetcher } from '@/services/feeds/feedsFetcher';
 import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
 import { isNativeFeedIngestionEnabled } from '@/services/scheduler/nativeSchedulerCycle';
+import * as nativeFeedRefresh from '@/services/scheduler/nativeFeedRefresh';
 import * as articleStore from '@/stores/articleStore';
 import * as feedStore from '@/stores/feedStore';
 import { feedNetworkDataResult } from '../helpers/feedNetworkFetchMock';
@@ -955,10 +956,16 @@ describe('FeedContext selectTag', () => {
     beforeEach(() => {
       (isNativeFeedIngestionEnabled as unknown as Mock).mockReturnValue(true);
       mockTwoStations();
+      vi.spyOn(nativeFeedRefresh, 'runNativeFeedRefresh').mockResolvedValue({
+        insertedArticles: 0,
+        feedResults: [],
+        insertedByFeedId: new Map(),
+      });
     });
 
     afterEach(() => {
       (isNativeFeedIngestionEnabled as unknown as Mock).mockReturnValue(false);
+      vi.mocked(nativeFeedRefresh.runNativeFeedRefresh).mockRestore();
     });
 
     const renderProvider = async () => {
@@ -1032,6 +1039,302 @@ describe('FeedContext selectTag', () => {
       });
       expect(pageQuery).toBeDefined();
       expect((pageQuery![0] as { limit: number }).limit).toBeGreaterThanOrEqual(cachedNews.length);
+    });
+
+    it('holds scheduler resume until a Daily-sized in-flight COUNT replaces the snapshot', async () => {
+      const snapshot = Array.from({ length: 360 }, (_, index) => (
+        createArticle(`hash-daily-old-${index}`, 'feed-daily')
+      ));
+      const freshDaily = [
+        createArticle('hash-daily-today', 'feed-daily'),
+        ...snapshot.slice(0, 359),
+      ];
+      const newsArticles = [createArticle('hash-news-old', 'feed-news')];
+      const fullDeferred = createDeferred<{ articles: Article[]; total: number }>();
+      const resumeSpy = vi.spyOn(feedScheduler, 'resumeAfterStationSelection');
+
+      (tagsManager.getFeedsByTag as vi.Mock).mockImplementation((tagName: string) => {
+        if (tagName === 'News') return Promise.resolve(['feed-news']);
+        if (tagName === 'Daily') return Promise.resolve(['feed-daily']);
+        return Promise.resolve([]);
+      });
+      (articleStore.query as vi.Mock).mockImplementation((query: {
+        tagName?: string;
+        feedIds?: string[];
+        includeTotal?: boolean;
+        limit?: number;
+      }) => {
+        if (queryForTag(query, 'Daily', 'feed-daily')) {
+          if (query.includeTotal === true && (query.limit ?? 0) >= 360) {
+            return fullDeferred.promise;
+          }
+          return Promise.resolve({ articles: snapshot, total: 17463 });
+        }
+        if (queryForTag(query, 'News', 'feed-news')) {
+          return Promise.resolve({ articles: newsArticles, total: newsArticles.length });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      await renderProvider();
+
+      await act(async () => {
+        void latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles).toHaveLength(360);
+      });
+
+      await act(async () => {
+        void latestContext!.selectTag('News');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('News');
+      });
+
+      resumeSpy.mockClear();
+
+      await act(async () => {
+        void latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+        expect(latestContext!.articles).toHaveLength(360);
+        expect(latestContext!.articles[0]?.hash).toBe('hash-daily-old-0');
+      });
+
+      expect(resumeSpy).not.toHaveBeenCalled();
+
+      await act(async () => {
+        fullDeferred.resolve({ articles: freshDaily, total: 17550 });
+      });
+
+      await waitForExpectation(() => {
+        expect(latestContext!.articles[0]?.hash).toBe('hash-daily-today');
+        expect(latestContext!.articlesTotalCount).toBe(17550);
+      });
+      expect(resumeSpy).toHaveBeenCalled();
+      resumeSpy.mockRestore();
+    });
+
+    it('re-arms a full replace when Cmd+R cancels an in-flight warm COUNT', async () => {
+      const fullDeferreds: Array<ReturnType<typeof createDeferred<{ articles: Article[]; total: number }>>> = [];
+      const freshNewsOnRefresh = [
+        createArticle('hash-news-today', 'feed-news'),
+        cachedNews[0],
+      ];
+
+      (articleStore.query as vi.Mock).mockImplementation((query: {
+        tagName?: string;
+        feedIds?: string[];
+        includeTotal?: boolean;
+        limit?: number;
+      }) => {
+        if (queryForTag(query, 'News', 'feed-news')) {
+          if (query.includeTotal === true && (query.limit ?? 0) > 1) {
+            const deferred = createDeferred<{ articles: Article[]; total: number }>();
+            fullDeferreds.push(deferred);
+            return deferred.promise;
+          }
+          return Promise.resolve({ articles: cachedNews, total: cachedNews.length });
+        }
+        if (queryForTag(query, 'Daily', 'feed-daily')) {
+          return Promise.resolve({ articles: dailyArticles, total: dailyArticles.length });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      await renderProvider();
+
+      await act(async () => {
+        void latestContext!.selectTag('News');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-news-old']);
+      });
+
+      await act(async () => {
+        void latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+      });
+
+      await act(async () => {
+        void latestContext!.selectTag('News');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('News');
+        expect(fullDeferreds.length).toBeGreaterThanOrEqual(1);
+      });
+
+      await act(async () => {
+        await latestContext!.refreshFeed();
+      });
+
+      await waitForExpectation(() => {
+        expect(fullDeferreds.length).toBeGreaterThanOrEqual(2);
+      });
+
+      await act(async () => {
+        fullDeferreds.forEach((deferred) => {
+          deferred.resolve({ articles: freshNewsOnRefresh, total: freshNewsOnRefresh.length });
+        });
+      });
+
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+          'hash-news-today',
+          'hash-news-old',
+        ]);
+      });
+    });
+
+    it('re-arms a full replace when Cmd+R runs before the warm COUNT starts', async () => {
+      const fullDeferreds: Array<ReturnType<typeof createDeferred<{ articles: Article[]; total: number }>>> = [];
+      const freshNewsOnRefresh = [
+        createArticle('hash-news-today', 'feed-news'),
+        cachedNews[0],
+      ];
+
+      (articleStore.query as vi.Mock).mockImplementation((query: {
+        tagName?: string;
+        feedIds?: string[];
+        includeTotal?: boolean;
+        limit?: number;
+      }) => {
+        if (queryForTag(query, 'News', 'feed-news')) {
+          if (query.includeTotal === true && (query.limit ?? 0) > 1) {
+            const deferred = createDeferred<{ articles: Article[]; total: number }>();
+            fullDeferreds.push(deferred);
+            return deferred.promise;
+          }
+          return Promise.resolve({ articles: cachedNews, total: cachedNews.length });
+        }
+        if (queryForTag(query, 'Daily', 'feed-daily')) {
+          return Promise.resolve({ articles: dailyArticles, total: dailyArticles.length });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      await renderProvider();
+
+      await act(async () => {
+        void latestContext!.selectTag('News');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-news-old']);
+      });
+
+      await act(async () => {
+        void latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+      });
+
+      await act(async () => {
+        latestContext!.setArticleViewOverlayPhase('closing');
+      });
+
+      await act(async () => {
+        void latestContext!.selectTag('News');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('News');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-news-old']);
+      });
+      expect(fullDeferreds.length).toBe(0);
+
+      await act(async () => {
+        await latestContext!.refreshFeed();
+      });
+
+      await act(async () => {
+        latestContext!.setArticleViewOverlayPhase('closed');
+      });
+
+      await waitForExpectation(() => {
+        expect(fullDeferreds.length).toBeGreaterThanOrEqual(1);
+      });
+
+      await act(async () => {
+        fullDeferreds.forEach((deferred) => {
+          deferred.resolve({ articles: freshNewsOnRefresh, total: freshNewsOnRefresh.length });
+        });
+      });
+
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual([
+          'hash-news-today',
+          'hash-news-old',
+        ]);
+      });
+    });
+
+    it('does not inherit a Daily warm-full successor onto a News hop', async () => {
+      const dailyFullDeferred = createDeferred<{ articles: Article[]; total: number }>();
+      const dailySnapshot = [createArticle('hash-daily-old', 'feed-daily')];
+      const dailyFresh = [createArticle('hash-daily-today', 'feed-daily')];
+
+      (articleStore.query as vi.Mock).mockImplementation((query: {
+        tagName?: string;
+        feedIds?: string[];
+        includeTotal?: boolean;
+        limit?: number;
+      }) => {
+        if (queryForTag(query, 'Daily', 'feed-daily')) {
+          if (query.includeTotal === true && (query.limit ?? 0) > 1) {
+            return dailyFullDeferred.promise;
+          }
+          return Promise.resolve({ articles: dailySnapshot, total: dailySnapshot.length });
+        }
+        if (queryForTag(query, 'News', 'feed-news')) {
+          return Promise.resolve({ articles: cachedNews, total: cachedNews.length });
+        }
+        return Promise.resolve({ articles: [], total: 0 });
+      });
+
+      await renderProvider();
+
+      await act(async () => {
+        void latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-daily-old']);
+      });
+
+      await act(async () => {
+        void latestContext!.selectTag('News');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('News');
+      });
+
+      await act(async () => {
+        void latestContext!.selectTag('Daily');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('Daily');
+      });
+
+      await act(async () => {
+        void latestContext!.selectTag('News');
+      });
+      await waitForExpectation(() => {
+        expect(latestContext!.selectedTag).toBe('News');
+        expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-news-old']);
+      });
+
+      await act(async () => {
+        dailyFullDeferred.resolve({ articles: dailyFresh, total: dailyFresh.length });
+      });
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      expect(latestContext!.articles.map((article) => article.hash)).toEqual(['hash-news-old']);
     });
 
     it('flushes a full page replace after overlay close, not header COUNT only', async () => {

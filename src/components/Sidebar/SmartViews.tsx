@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ArchiveIcon from '@mui/icons-material/Archive';
 import MarkEmailUnreadIcon from '@mui/icons-material/MarkEmailUnread';
+import MarkEmailReadIcon from '@mui/icons-material/MarkEmailRead';
 import InventoryIcon from '@mui/icons-material/Inventory';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import { DEFAULT_SMART_VIEW_DEFINITIONS, type SmartViewId } from '@/constants';
@@ -25,6 +26,7 @@ const SMART_VIEW_ICONS: Record<SmartViewId, SmartView['icon']> = {
   saved: ArchiveIcon,
   unread: MarkEmailUnreadIcon,
   all: InventoryIcon,
+  read: MarkEmailReadIcon,
 };
 
 const buildSmartViews = (

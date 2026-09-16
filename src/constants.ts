@@ -35,10 +35,15 @@ export const FEED_FETCH_TIMEOUT_MS = 5_000;
  */
 export const FAVICON_REFRESH_COOLDOWN_MS = 24 * 60 * 60_000;
 
-export type SmartViewId = 'saved' | 'unread' | 'all';
+export type SmartViewId = 'saved' | 'unread' | 'all' | 'read';
 
 export const DEFAULT_SMART_VIEW_DEFINITIONS: Array<{ id: SmartViewId; label: string }> = [
   { id: 'saved', label: 'Saved' },
   { id: 'unread', label: 'Unread' },
   { id: 'all', label: 'All Items' },
+  { id: 'read', label: 'Read' },
 ];
+
+export const isLibrarySmartViewId = (value: string | null | undefined): value is SmartViewId => (
+  value === 'saved' || value === 'unread' || value === 'all' || value === 'read'
+);

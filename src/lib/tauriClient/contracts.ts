@@ -185,7 +185,7 @@ export interface ArticleQueryRequest {
   read?: boolean;
   starred?: boolean;
   saved?: boolean;
-  sortField?: "published_date" | "fetched_date";
+  sortField?: "published_date" | "fetched_date" | "last_read_at";
   sortOrder?: "asc" | "desc";
   searchText?: string;
   limit?: number;
@@ -466,7 +466,7 @@ export interface SavedArticlesExportStartResponse {
   reason?: "busy";
 }
 
-export type AppMenuLibraryView = "saved" | "unread" | "all" | null;
+export type AppMenuLibraryView = "saved" | "unread" | "all" | "read" | null;
 
 export interface AppMenuState {
   theme: AppSettings["theme"];

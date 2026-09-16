@@ -470,7 +470,10 @@ pub fn query_articles(
     } else {
         "DESC"
     };
-    let sort_expr = if request.sort_field.as_deref() == Some("fetched_date") {
+    let sort_last_read = request.sort_field.as_deref() == Some("last_read_at");
+    let sort_expr = if sort_last_read {
+        "a.last_read_at"
+    } else if request.sort_field.as_deref() == Some("fetched_date") {
         if has_source_filter {
             "afi.fetched_date"
         } else {
@@ -498,28 +501,47 @@ pub fn query_articles(
     // stuck while the deferred page query sorted ~65k joined rows).
     let grouped_source_fast_path = has_source_filter
         && !single_feed_only
+        && !sort_last_read
         && normalized_search_text.is_none()
         && read_filter.is_none()
         && request.starred.is_none()
         && saved_filter.is_none();
 
     let mut having_conditions: Vec<String> = Vec::new();
-    if let (Some(cursor_date), Some(cursor_hash)) = (request.cursor_date, request.cursor_hash) {
-        let cursor_operator = if sort_order == "ASC" { ">" } else { "<" };
-        if grouped_source_fast_path {
-            // The aggregated sort date only exists after GROUP BY, so cursor
-            // paging filters in HAVING on the aggregate alias.
-            having_conditions.push(format!(
-                "(sort_date {cursor_operator} ? OR (sort_date = ? AND article_hash > ?))"
-            ));
-        } else {
-            conditions.push(format!(
-                "({sort_expr} {cursor_operator} ? OR ({sort_expr} = ? AND {sort_hash_expr} > ?))"
-            ));
+    if let Some(cursor_hash) = request.cursor_hash {
+        if sort_last_read {
+            if let Some(cursor_date) = request.cursor_date {
+                let cursor_operator = if sort_order == "ASC" { ">" } else { "<" };
+                // DESC NULLS LAST: after a dated cursor, remaining dated rows
+                // plus the NULL tail must both qualify. SQLite `NULL < date` is
+                // unknown, so the NULL partition is an explicit OR.
+                conditions.push(format!(
+                    "(({sort_expr} {cursor_operator} ? OR ({sort_expr} = ? AND {sort_hash_expr} > ?)) OR {sort_expr} IS NULL)"
+                ));
+                bindings.push(Value::Text(cursor_date.clone()));
+                bindings.push(Value::Text(cursor_date));
+                bindings.push(Value::Text(cursor_hash));
+            } else {
+                conditions.push(format!("{sort_expr} IS NULL AND {sort_hash_expr} > ?"));
+                bindings.push(Value::Text(cursor_hash));
+            }
+        } else if let Some(cursor_date) = request.cursor_date {
+            let cursor_operator = if sort_order == "ASC" { ">" } else { "<" };
+            if grouped_source_fast_path {
+                // The aggregated sort date only exists after GROUP BY, so cursor
+                // paging filters in HAVING on the aggregate alias.
+                having_conditions.push(format!(
+                    "(sort_date {cursor_operator} ? OR (sort_date = ? AND article_hash > ?))"
+                ));
+            } else {
+                conditions.push(format!(
+                    "({sort_expr} {cursor_operator} ? OR ({sort_expr} = ? AND {sort_hash_expr} > ?))"
+                ));
+            }
+            bindings.push(Value::Text(cursor_date.clone()));
+            bindings.push(Value::Text(cursor_date));
+            bindings.push(Value::Text(cursor_hash));
         }
-        bindings.push(Value::Text(cursor_date.clone()));
-        bindings.push(Value::Text(cursor_date));
-        bindings.push(Value::Text(cursor_hash));
     }
 
     let article_source_sql = if has_source_filter {
@@ -1223,5 +1245,94 @@ mod tests {
         let connection = setup_connection();
         let deleted = delete_articles_by_feeds(&connection, &[]).expect("empty batch");
         assert!(deleted.is_empty());
+    }
+
+    fn insert_library_article(
+        connection: &Connection,
+        hash: &str,
+        feed_id: &str,
+        read: i64,
+        last_read_at: Option<&str>,
+    ) {
+        connection
+            .execute(
+                "INSERT INTO articles (hash, feed_id, fetched_date, read, last_read_at) VALUES (?1, ?2, '2026-01-01T00:00:00Z', ?3, ?4)",
+                params![hash, feed_id, read, last_read_at],
+            )
+            .expect("insert library article");
+    }
+
+    fn read_query(
+        limit: i64,
+        cursor_date: Option<&str>,
+        cursor_hash: Option<&str>,
+    ) -> ArticleQueryRequest {
+        ArticleQueryRequest {
+            feed_id: None,
+            feed_ids: None,
+            tag_name: None,
+            unread_only: None,
+            saved_only: None,
+            read: Some(true),
+            starred: None,
+            saved: None,
+            sort_field: Some("last_read_at".to_string()),
+            sort_order: Some("desc".to_string()),
+            search_text: None,
+            limit: Some(limit),
+            offset: None,
+            cursor_date: cursor_date.map(str::to_string),
+            cursor_hash: cursor_hash.map(str::to_string),
+            include_total: Some(true),
+        }
+    }
+
+    #[test]
+    fn query_read_articles_sorts_by_last_read_at_nulls_last_and_pages_null_tail() {
+        let connection = setup_connection();
+        insert_feed(&connection, "f1");
+        insert_library_article(&connection, "dated-c", "f1", 1, Some("2026-09-03T00:00:00Z"));
+        insert_library_article(&connection, "dated-b", "f1", 1, Some("2026-09-02T00:00:00Z"));
+        insert_library_article(&connection, "dated-a", "f1", 1, Some("2026-09-01T00:00:00Z"));
+        insert_library_article(&connection, "null-b", "f1", 1, None);
+        insert_library_article(&connection, "null-a", "f1", 1, None);
+        insert_library_article(&connection, "unread-x", "f1", 0, Some("2026-09-04T00:00:00Z"));
+
+        let page_one = query_articles(&connection, read_query(3, None, None)).expect("page one");
+        assert_eq!(page_one.total, 5);
+        assert_eq!(
+            page_one
+                .articles
+                .iter()
+                .map(|article| article.hash.as_str())
+                .collect::<Vec<_>>(),
+            vec!["dated-c", "dated-b", "dated-a"]
+        );
+
+        let page_two = query_articles(
+            &connection,
+            read_query(3, Some("2026-09-01T00:00:00Z"), Some("dated-a")),
+        )
+        .expect("page two after last dated row");
+        assert_eq!(
+            page_two
+                .articles
+                .iter()
+                .map(|article| article.hash.as_str())
+                .collect::<Vec<_>>(),
+            vec!["null-a", "null-b"],
+            "dated cursor must continue into the NULL last_read_at tail"
+        );
+
+        let null_tail = query_articles(&connection, read_query(3, None, Some("null-a")))
+            .expect("null-tail cursor");
+        assert_eq!(
+            null_tail
+                .articles
+                .iter()
+                .map(|article| article.hash.as_str())
+                .collect::<Vec<_>>(),
+            vec!["null-b"]
+        );
     }
 }

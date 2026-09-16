@@ -20,7 +20,7 @@ import {
 } from '@/services/tags/tagFeedIdsCache';
 import type { Article } from '@/types/article';
 import type { ArticleQuery } from '@/types/articleQuery';
-import { FEED_FETCH_COOLDOWN_MS } from '@/constants';
+import { FEED_FETCH_COOLDOWN_MS, isLibrarySmartViewId, type SmartViewId } from '@/constants';
 import { maybeRefreshFavicon } from '@/services/favicons/faviconRefreshService';
 import { getFeedRefreshBlock } from '@/services/feeds/feedRefreshPolicy';
 import type { Feed } from '@/services/feeds/feedsManager';
@@ -30,7 +30,6 @@ import { getE2eConfig, writeE2eEvent } from '@/services/e2e/e2eHarness';
 import { storage } from '@/services/storage/storageFactory';
 import { abortSidebarListDrag } from '@/components/Sidebar/sidebarListDrag';
 import { useDependencyEffect, useMountEffect } from '@/hooks/useLifecycleEffects';
-import type { SmartViewId } from '@/constants';
 import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
 import { isNativeFeedIngestionEnabled } from '@/services/scheduler/nativeSchedulerCycle';
@@ -77,6 +76,7 @@ const DEFERRED_SWITCH_SQLITE_RECOVERY_DELAY_MS = 250;
 /** Post-clear list reload follows the live source; hop during the query retries this many times. */
 const POST_CLEAR_SOURCE_RELOAD_MAX_ATTEMPTS = 4;
 const DEFAULT_ARTICLE_LIST_SORT: NonNullable<ArticleQuery['sort']> = { field: 'publishedDate', order: 'desc' };
+const READ_ARTICLE_LIST_SORT: NonNullable<ArticleQuery['sort']> = { field: 'lastReadAt', order: 'desc' };
 const LAST_SIDEBAR_SELECTION_KEY = 'last-sidebar-selection';
 const HAS_PERFORMANCE_API = typeof performance !== 'undefined' && typeof performance.mark === 'function';
 export type ArticleViewOverlayPhase = 'closed' | 'opening' | 'open' | 'closing';
@@ -121,9 +121,19 @@ type LoadMorePagingSnapshot = {
   isLoadingMoreArticles: boolean;
 };
 
-const getArticlePaginationCursor = (article: Article | undefined): ArticleQuery['cursor'] | undefined => {
+const getArticlePaginationCursor = (
+  article: Article | undefined,
+  sort?: ArticleQuery['sort'],
+): ArticleQuery['cursor'] | undefined => {
   if (!article) {
     return undefined;
+  }
+
+  if (sort?.field === 'lastReadAt') {
+    return {
+      effectiveDate: article.lastReadAt ?? null,
+      hash: article.hash,
+    };
   }
 
   const effectiveDate = article.publishedDate || article.fetchedDate;
@@ -161,7 +171,22 @@ export type FeedEditTarget =
   | { kind: 'station'; id: string }
   | { kind: 'smart-view'; id: SmartViewId };
 
-type SmartViewType = 'saved' | 'pinned' | 'unread' | 'all';
+type SmartViewType = 'saved' | 'pinned' | 'unread' | 'all' | 'read';
+
+const smartViewSourceLabel = (viewType: SmartViewType): string => {
+  switch (viewType) {
+    case 'saved':
+      return 'Saved';
+    case 'pinned':
+      return 'Pinned';
+    case 'unread':
+      return 'Unread';
+    case 'read':
+      return 'Read';
+    default:
+      return 'All Items';
+  }
+};
 
 type SidebarSelectionSnapshot =
   | { type: 'feed'; feedId: string }
@@ -289,7 +314,7 @@ interface CollectionActions {
   refreshFeed: () => Promise<void>;
   reloadCurrentSourceFromStore: () => Promise<void>;
   loadMoreArticles: (options?: LoadMoreArticlesOptions) => Promise<void>;
-  updateArticleInList: (hash: string, updates?: ArticleListUpdatePayload) => void;
+  updateArticleInList: (hash: string, updates?: ArticleListUpdatePayload, article?: Article | null) => void;
   syncArticleListViewport: (snapshot: ArticleListViewportSnapshot) => void;
   searchCurrentSource: (query: string) => Promise<void>;
   clearArticleListSearch: () => Promise<void>;
@@ -374,7 +399,7 @@ function navigationReducer(state: NavigationState, action: NavigationAction): Na
       return {
         ...state,
         selectedFeedId: null,
-        selectedFeedTitle: action.payload === 'saved' ? 'Saved' : action.payload === 'pinned' ? 'Pinned' : action.payload === 'unread' ? 'Unread' : 'All Items',
+        selectedFeedTitle: smartViewSourceLabel(action.payload),
         selectedTag: null,
         selectedSmartView: action.payload,
         isFeedEditView: false,
@@ -419,7 +444,7 @@ type CollectionAction =
     };
   }
   | { type: 'APPEND_ARTICLES'; payload: Article[] }
-  | { type: 'UPDATE_ARTICLE'; payload: { hash: string; updates: ArticleListUpdatePayload; removeFromUnread?: boolean; removeFromSaved?: boolean } }
+  | { type: 'UPDATE_ARTICLE'; payload: { hash: string; updates: ArticleListUpdatePayload; removeFromUnread?: boolean; removeFromSaved?: boolean; removeFromRead?: boolean; insertOrMoveToTop?: boolean; article?: Article } }
   | { type: 'SET_LOADING'; payload: Partial<CollectionState> }
   | { type: 'RESET_ARTICLES' }
   | {
@@ -453,6 +478,7 @@ const areArticleListsEquivalent = (current: Article[], next: Article[]): boolean
       || (a.feedFaviconBgLight ?? '') !== (b.feedFaviconBgLight ?? '')
       || (a.feedFaviconBgDark ?? '') !== (b.feedFaviconBgDark ?? '')
       || (a.publishedDate ?? '') !== (b.publishedDate ?? '')
+      || (a.lastReadAt ?? '') !== (b.lastReadAt ?? '')
       || (a.previewImage ?? '') !== (b.previewImage ?? '')
     ) {
       return false;
@@ -555,17 +581,46 @@ function collectionReducer(state: CollectionState, action: CollectionAction): Co
       };
     }
     case 'UPDATE_ARTICLE': {
-      const { hash, updates, removeFromUnread, removeFromSaved } = action.payload;
+      const {
+        hash,
+        updates,
+        removeFromUnread,
+        removeFromSaved,
+        removeFromRead,
+        insertOrMoveToTop,
+        article,
+      } = action.payload;
       let nextArticles = state.articles;
       let nextTotal = state.articlesTotalCount;
 
-      if (removeFromUnread || removeFromSaved) {
+      if (removeFromUnread || removeFromSaved || removeFromRead) {
         const index = nextArticles.findIndex(a => a.hash === hash);
         if (index !== -1) {
           nextArticles = nextArticles.filter(a => a.hash !== hash);
           if (state.articlesTotalKnown) {
             nextTotal = Math.max(0, nextTotal - 1);
           }
+        }
+      } else if (insertOrMoveToTop) {
+        const index = nextArticles.findIndex(a => a.hash === hash);
+        if (index !== -1) {
+          const nextArticle = { ...nextArticles[index], ...updates };
+          if (index === 0) {
+            nextArticles = [nextArticle, ...nextArticles.slice(1)];
+          } else {
+            nextArticles = [
+              nextArticle,
+              ...nextArticles.slice(0, index),
+              ...nextArticles.slice(index + 1),
+            ];
+          }
+        } else if (article) {
+          nextArticles = [{ ...article, ...updates }, ...nextArticles];
+          if (state.articlesTotalKnown) {
+            nextTotal += 1;
+          }
+        } else {
+          nextArticles = nextArticles.map(a => a.hash === hash ? { ...a, ...updates } : a);
         }
       } else {
         nextArticles = nextArticles.map(a => a.hash === hash ? { ...a, ...updates } : a);
@@ -709,11 +764,14 @@ function uiReducer(state: UIState, action: UIAction): UIState {
   }
 }
 
-function createArticleListQuery(query: Omit<ArticleQuery, 'limit' | 'sort'>): ArticleQuery {
+function createArticleListQuery(
+  query: Omit<ArticleQuery, 'limit' | 'sort'>,
+  sort: NonNullable<ArticleQuery['sort']> = DEFAULT_ARTICLE_LIST_SORT,
+): ArticleQuery {
   return {
     ...query,
     limit: SMART_VIEW_ARTICLE_LIMIT,
-    sort: DEFAULT_ARTICLE_LIST_SORT,
+    sort,
   };
 }
 
@@ -883,8 +941,12 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // never replace the cached list until a later insert on the active source.
   // One token-scoped full page replace (n ≤ snapshot cap) closes that hole
   // without a second cold deferred page (H17) or a sticky 0-insert interval hook.
+  // Hold scheduler resume while that COUNT is in flight so a 0-insert native
+  // cycle cannot race the live query. Cmd+R that cancels it re-arms via
+  // warmFullSuccessorSourceKeyRef (same source only).
   const warmSnapshotReconcileTokenRef = useRef<number | null>(null);
   const warmSnapshotReconcileInFlightRef = useRef<number | null>(null);
+  const warmFullSuccessorSourceKeyRef = useRef<string | null>(null);
   const articleViewOverlayPhaseRef = useRef<ArticleViewOverlayPhase>('closed');
   const activeArticleHashRef = useRef<string | null>(null);
   const isFeedProviderMountedRef = useRef(false);
@@ -1236,6 +1298,28 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
+  const releaseHeldWarmFullSchedulerResume = useCallback((token: number) => {
+    if (deferNetworkSchedulerResumeTokenRef.current === token) {
+      deferNetworkSchedulerResumeTokenRef.current = null;
+      completeSelectionSwitchNetworkPriority(token);
+    }
+  }, [completeSelectionSwitchNetworkPriority]);
+
+  const shouldHoldSchedulerResumeForWarmFull = (token: number): boolean => {
+    if (warmSnapshotReconcileInFlightRef.current === token) {
+      return true;
+    }
+    if (warmSnapshotReconcileTokenRef.current !== token) {
+      return false;
+    }
+    const pending = pendingSwitchVisibleReconcileRef.current;
+    // Freeze re-stash: pending full is the surviving channel — resume may proceed.
+    if (pending?.token === token && pending.mode === 'full') {
+      return false;
+    }
+    return true;
+  };
+
   const clearPendingColdSwitchSqlite = useCallback((token: number) => {
     if (pendingColdSwitchSqliteTokenRef.current === token) {
       pendingColdSwitchSqliteTokenRef.current = null;
@@ -1290,6 +1374,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     clearSwitchLoadingInTransition();
+    if (shouldHoldSchedulerResumeForWarmFull(token)) {
+      deferNetworkSchedulerResumeTokenRef.current = token;
+      return;
+    }
     completeSelectionSwitchNetworkPriority(token);
   }, [
     clearPendingColdSwitchSqlite,
@@ -1305,6 +1393,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const beginSelectionRequest = useCallback((): number => {
     const previousToken = switchLifecycle.currentToken;
+    const previousSourceKey = activeSourceRef.current?.key ?? null;
+    const hadWarmFull =
+      warmSnapshotReconcileTokenRef.current !== null
+      || warmSnapshotReconcileInFlightRef.current !== null
+      || pendingSwitchVisibleReconcileRef.current?.mode === 'full';
     abortSelectionSwitchPriority();
     // Supersedes the previous attempt: aborts its signal, clears its timers
     // (deferred SQLite recovery), and cancels its paint-gate waits.
@@ -1317,6 +1410,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     importEmptyCommitTokenRef.current = null;
     warmSnapshotReconcileTokenRef.current = null;
     warmSnapshotReconcileInFlightRef.current = null;
+    warmFullSuccessorSourceKeyRef.current = hadWarmFull && previousSourceKey
+      ? previousSourceKey
+      : null;
     clearStationUiRefreshTimer();
     cancelSourceSelectionRefreshSchedule();
     if (previousToken > 0) {
@@ -1426,6 +1522,14 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
     }
 
+    if (source.viewType === 'read') {
+      return withSearchText({
+        filter: { read: true },
+        limit,
+        sort: READ_ARTICLE_LIST_SORT,
+      });
+    }
+
     return withSearchText({
       limit,
       sort: DEFAULT_ARTICLE_LIST_SORT,
@@ -1504,6 +1608,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return hasAnyNewArticles();
     }
 
+    if (source.viewType === 'read') {
+      return false;
+    }
+
     const pinnedFeedIds = await tagsManager.getFeedsByTag('pinned');
     return pinnedFeedIds.some(hasNewArticles);
   }, []);
@@ -1580,15 +1688,34 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (mode === 'full' && warmSnapshotReconcileTokenRef.current === token) {
       warmSnapshotReconcileInFlightRef.current = token;
     }
-    const { articles: fresh, total: freshTotal } = await articleStore.query({
-      ...tagQuery,
-      limit: visibleCount,
-      includeTotal: true,
-    });
+    let fresh: Article[];
+    let freshTotal: number;
+    try {
+      const queried = await articleStore.query({
+        ...tagQuery,
+        limit: visibleCount,
+        includeTotal: true,
+      });
+      fresh = queried.articles;
+      freshTotal = queried.total;
+    } catch {
+      if (warmSnapshotReconcileInFlightRef.current === token) {
+        warmSnapshotReconcileInFlightRef.current = null;
+      }
+      if (isSelectionActive(token)) {
+        pendingSwitchVisibleReconcileRef.current = { token, sourceKey, tagQuery, mode: 'full' };
+      }
+      releaseHeldWarmFullSchedulerResume(token);
+      return;
+    }
     if (!isSelectionActive(token) || reloadEpoch !== listReloadEpochRef.current) {
       if (warmSnapshotReconcileInFlightRef.current === token) {
         warmSnapshotReconcileInFlightRef.current = null;
       }
+      if (isSelectionActive(token)) {
+        pendingSwitchVisibleReconcileRef.current = { token, sourceKey, tagQuery, mode: 'full' };
+      }
+      releaseHeldWarmFullSchedulerResume(token);
       return;
     }
 
@@ -1611,6 +1738,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (warmSnapshotReconcileInFlightRef.current === token) {
         warmSnapshotReconcileInFlightRef.current = null;
       }
+      releaseHeldWarmFullSchedulerResume(token);
       if (
         listGrewDuringQuery
         && !articleListScrollActiveRef.current
@@ -1632,7 +1760,14 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       warmSnapshotReconcileTokenRef.current = null;
       warmSnapshotReconcileInFlightRef.current = null;
     }
-  }, [dispatchArticlesTransitionIfChanged, isArticleViewTransitioning, isSelectionActive, startTransition]);
+    releaseHeldWarmFullSchedulerResume(token);
+  }, [
+    dispatchArticlesTransitionIfChanged,
+    isArticleViewTransitioning,
+    isSelectionActive,
+    releaseHeldWarmFullSchedulerResume,
+    startTransition,
+  ]);
 
   const flushPendingSwitchVisibleReconcileIfIdle = useCallback((): void => {
     const pendingReconcile = pendingSwitchVisibleReconcileRef.current;
@@ -2854,10 +2989,28 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         flushPendingSwitchVisibleReconcileIfIdle();
       }
 
-      // Same-source Cmd+R / manual refresh: beginSelectionRequest cleared any
-      // in-flight COUNT. Re-queue before awaiting network so a failed Phase B
-      // cannot leave the header unknown with no COUNT pending.
-      if (!shouldReset && !nonSearchArticlesTotalKnownRef.current) {
+      if (warmFullSuccessorSourceKeyRef.current !== null
+        && warmFullSuccessorSourceKeyRef.current !== sourceKey) {
+        warmFullSuccessorSourceKeyRef.current = null;
+      }
+
+      // Same-source Cmd+R that cancelled a pending/in-flight warm full must
+      // re-arm full even when the header total is already known. Other
+      // same-source refreshes stay total-only.
+      if (!shouldReset && warmFullSuccessorSourceKeyRef.current === sourceKey) {
+        warmSnapshotReconcileTokenRef.current = token;
+        pendingSwitchVisibleReconcileRef.current = {
+          token,
+          sourceKey,
+          tagQuery: query,
+          mode: 'full',
+        };
+        flushPendingSwitchVisibleReconcileIfIdle();
+        warmFullSuccessorSourceKeyRef.current = null;
+      } else if (!shouldReset && !nonSearchArticlesTotalKnownRef.current) {
+        // Same-source Cmd+R / manual refresh: beginSelectionRequest cleared any
+        // in-flight COUNT. Re-queue before awaiting network so a failed Phase B
+        // cannot leave the header unknown with no COUNT pending.
         pendingSwitchVisibleReconcileRef.current = {
           token,
           sourceKey,
@@ -3122,9 +3275,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const query = type === 'unread'
         ? createArticleListQuery({ filter: { read: false } })
-        : type === 'pinned'
-          ? createArticleListQuery({ tagName: 'pinned' })
-          : createArticleListQuery({});
+        : type === 'read'
+          ? createArticleListQuery({ filter: { read: true } }, READ_ARTICLE_LIST_SORT)
+          : type === 'pinned'
+            ? createArticleListQuery({ tagName: 'pinned' })
+            : createArticleListQuery({});
       lastQueryRef.current = query;
       lastQuerySourceKeyRef.current = `smart:${type}`;
 
@@ -3243,7 +3398,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         sourceType: 'smart',
         sourceKey: `smart:${viewType}`,
         sourceId: viewType,
-        sourceLabel: viewType === 'saved' ? 'Saved' : viewType === 'pinned' ? 'Pinned' : viewType === 'unread' ? 'Unread' : 'All Items',
+        sourceLabel: smartViewSourceLabel(viewType),
       }, { exclusiveByKind: true });
     }
 
@@ -3292,7 +3447,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const parsed = JSON.parse(raw) as SidebarSelectionSnapshot;
 
         if (parsed.type === 'smart') {
-          await selectSmartView(parsed.viewType);
+          if (parsed.viewType === 'pinned' || isLibrarySmartViewId(parsed.viewType)) {
+            await selectSmartView(parsed.viewType);
+          }
           return;
         }
 
@@ -3691,9 +3848,12 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       let more: { articles: Article[] };
-      const cursor = getArticlePaginationCursor(paging.lastArticle);
-      const queryStartedAtMs = getPerformanceTimeMs();
       const source = activeSourceRef.current;
+      const sortForCursor = activeSearchText && source
+        ? createArticleQueryForSource(source, SMART_VIEW_ARTICLE_LIMIT, activeSearchText).sort
+        : lastQueryRef.current?.sort;
+      const cursor = getArticlePaginationCursor(paging.lastArticle, sortForCursor);
+      const queryStartedAtMs = getPerformanceTimeMs();
       if (activeSearchText) {
         if (!source) {
           return;
@@ -3772,10 +3932,30 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     queueLoadMoreCommitMetric,
   ]);
 
-  const updateArticleInList = useCallback((hash: string, updates: ArticleListUpdatePayload = { read: true }) => {
-    const removeFromUnread = navigationState.selectedSmartView === 'unread' && updates.read === true;
-    const removeFromSaved = navigationState.selectedSmartView === 'saved' && updates.saved === false;
-    collectionDispatch({ type: 'UPDATE_ARTICLE', payload: { hash, updates, removeFromUnread, removeFromSaved } });
+  const updateArticleInList = useCallback((
+    hash: string,
+    updates: ArticleListUpdatePayload = { read: true },
+    article?: Article | null,
+  ) => {
+    const selected = navigationState.selectedSmartView;
+    const removeFromUnread = selected === 'unread' && updates.read === true;
+    const removeFromSaved = selected === 'saved' && updates.saved === false;
+    const removeFromRead = selected === 'read' && updates.read === false;
+    const insertOrMoveToTop = selected === 'read'
+      && !removeFromRead
+      && (updates.read === true || Boolean(updates.lastReadAt));
+    collectionDispatch({
+      type: 'UPDATE_ARTICLE',
+      payload: {
+        hash,
+        updates,
+        removeFromUnread,
+        removeFromSaved,
+        removeFromRead,
+        insertOrMoveToTop,
+        article: article ?? undefined,
+      },
+    });
   }, [navigationState.selectedSmartView]);
 
   const flushSchedulerUiUpdates = useCallback(async (forceLibraryRefresh = false): Promise<void> => {

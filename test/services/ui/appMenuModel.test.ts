@@ -42,6 +42,32 @@ describe('appMenuModel', () => {
     expect(unread?.kind === 'item' && unread.checked).toBe(true);
   });
 
+  it('marks the Read library item when that view is selected', () => {
+    const tree = buildWindowsAppMenuTree({ theme: 'auto', libraryView: 'read' });
+    const view = tree.find((menu) => menu.id === 'view');
+    const library = view?.items.find(
+      (item) => item.kind === 'submenu' && item.id === 'library',
+    );
+    if (library?.kind !== 'submenu') {
+      throw new Error('expected library submenu');
+    }
+
+    expect(library.children.map((item) => item.kind === 'item' && item.id)).toEqual([
+      'library-saved',
+      'library-unread',
+      'library-all',
+      'library-read',
+    ]);
+    const read = library.children.find(
+      (item) => item.kind === 'item' && item.id === 'library-read',
+    );
+    const unread = library.children.find(
+      (item) => item.kind === 'item' && item.id === 'library-unread',
+    );
+    expect(read?.kind === 'item' && read.checked).toBe(true);
+    expect(unread?.kind === 'item' && unread.checked).toBe(false);
+  });
+
   it('enables in-app menu bar on Windows/Linux/other only', () => {
     expect(isInAppMenuBarOs('windows')).toBe(true);
     expect(isInAppMenuBarOs('linux')).toBe(true);

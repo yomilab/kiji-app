@@ -96,6 +96,8 @@ class FeedSchedulerService {
   private activeStationFocus: ActiveStationFocus | null = null;
   private skipOnceFeedIds = new Set<string>();
   private pendingImportRefreshFeedIds: Set<string> | null = null;
+  /** One-shot: paused/in-progress boostMany follow-up retries failure backoff. */
+  private pendingImportRefreshBypassFailureBackoff = false;
   private consecutiveDeferredTicks = 0;
   private activeCycleId = 0;
   private activeCycleDrain: Promise<void> | null = null;
@@ -216,6 +218,7 @@ class FeedSchedulerService {
 
     if (reason === 'selection-changed') {
       this.pendingImportRefreshFeedIds = null;
+      this.pendingImportRefreshBypassFailureBackoff = false;
       feedRefreshActivity.clearInteractiveRefreshDeferredTail();
       if (this.shouldScheduleCatchUpCycle()) {
         this.markPendingCycleTick('catch-up');
@@ -287,6 +290,7 @@ class FeedSchedulerService {
     this.activeStationFocus = null;
     this.skipOnceFeedIds.clear();
     this.pendingImportRefreshFeedIds = null;
+    this.pendingImportRefreshBypassFailureBackoff = false;
     this.consecutiveDeferredTicks = 0;
     this.deferStartupCycleUntilInteraction = false;
     this.clearStartupDeferTimer();
@@ -540,6 +544,7 @@ class FeedSchedulerService {
     if (this.cycleInProgress || this.isStationSelectionPaused()) {
       this.markPendingCycleTick('import-boost');
       this.mergePendingImportRefreshFeedIds(feedIds);
+      this.pendingImportRefreshBypassFailureBackoff = true;
 
       // A cycle that spans a system sleep can stall for hours; a boost is a
       // user-intent signal (station switch, import), so preempt the stale
@@ -592,12 +597,17 @@ class FeedSchedulerService {
 
   private consumePendingImportRefreshScope(): SchedulerCycleScope {
     if (!this.pendingImportRefreshFeedIds || this.pendingImportRefreshFeedIds.size === 0) {
+      this.pendingImportRefreshBypassFailureBackoff = false;
       return {};
     }
 
     const onlyFeedIds = this.pendingImportRefreshFeedIds;
+    const bypassFailureBackoff = this.pendingImportRefreshBypassFailureBackoff;
     this.pendingImportRefreshFeedIds = null;
-    return { onlyFeedIds };
+    this.pendingImportRefreshBypassFailureBackoff = false;
+    return bypassFailureBackoff
+      ? { onlyFeedIds, bypassFailureBackoff: true }
+      : { onlyFeedIds };
   }
 
   private clearStartupDeferTimer(): void {
