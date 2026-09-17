@@ -19,9 +19,12 @@ import { readE2eTextFile, takeE2eCommand, writeE2eHarnessText } from '@/services
 import { getE2eConfig, waitForE2eConfig, writeE2eEvent } from '@/services/e2e/e2eHarness';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
+import { openSettingsWindow } from '@/services/ui/openSettingsWindow';
 import { isMainRendererWindow } from '@/utils/rendererWindow';
 import { logger } from '@/services/logger';
 import * as articleStore from '@/stores/articleStore';
+
+const LIBRARY_VIEW_TYPES = new Set(['saved', 'pinned', 'unread', 'all', 'read']);
 
 const COMMAND_POLL_MS = 150;
 
@@ -174,6 +177,7 @@ export const useE2eCommandHandler = (): void => {
       const {
         selectFeed,
         selectTag,
+        selectSmartView,
         openFeedEditView,
         closeFeedEditView,
         selectedTag,
@@ -186,7 +190,8 @@ export const useE2eCommandHandler = (): void => {
         case 'select-station': {
           const stationName = String(command.payload.stationName ?? '');
           if (!stationName) return;
-          await selectTag(stationName, { forceNetwork: true });
+          const forceNetwork = command.payload.forceNetwork !== false;
+          await selectTag(stationName, { forceNetwork });
           await writeE2eEvent('navigation-changed', {
             sourceType: 'tag',
             sourceId: stationName,
@@ -224,6 +229,26 @@ export const useE2eCommandHandler = (): void => {
             sourceId: feedId,
             selectedTag,
             selectedFeedId: feedId,
+          });
+          return;
+        }
+        case 'select-library-view': {
+          const viewType = String(command.payload.viewType ?? '');
+          if (!LIBRARY_VIEW_TYPES.has(viewType)) return;
+          await selectSmartView(viewType as 'saved' | 'pinned' | 'unread' | 'all' | 'read');
+          await writeE2eEvent('navigation-changed', {
+            sourceType: 'smart',
+            sourceId: viewType,
+            selectedTag: null,
+            selectedFeedId: null,
+            selectedSmartView: viewType,
+          });
+          return;
+        }
+        case 'open-settings': {
+          await openSettingsWindow();
+          await writeE2eEvent('settings-opened', {
+            tab: typeof command.payload.tab === 'string' ? command.payload.tab : null,
           });
           return;
         }

@@ -15,7 +15,7 @@ import { getRendererWindowType, isMainRendererWindow } from '@/utils/rendererWin
 
 export const useE2eUiProbes = (): void => {
   const { articles, articlesTotalCount, articlesTotalKnown, pageWasFull } = useFeedCollectionArticles();
-  const { selectedFeedId, selectedTag, navigationNonce } = useFeedNavigation();
+  const { selectedFeedId, selectedTag, selectedSmartView, navigationNonce } = useFeedNavigation();
   const {
     articleViewOverlayPhase,
     activeArticleHash,
@@ -62,8 +62,8 @@ export const useE2eUiProbes = (): void => {
       return;
     }
 
-    const snapshotKey = `${selectedFeedId ?? ''}:${selectedTag ?? ''}:${navigationNonce}:${articles.length}`;
-    const hasActiveSource = Boolean(selectedFeedId || selectedTag);
+    const snapshotKey = `${selectedFeedId ?? ''}:${selectedTag ?? ''}:${selectedSmartView ?? ''}:${navigationNonce}:${articles.length}`;
+    const hasActiveSource = Boolean(selectedFeedId || selectedTag || selectedSmartView);
     if ((!hasActiveSource && articles.length < 1) || listSnapshotRef.current === snapshotKey) {
       return;
     }
@@ -77,29 +77,31 @@ export const useE2eUiProbes = (): void => {
       feedId: selectedFeedId,
       selectedFeedId,
       selectedTag,
+      selectedSmartView,
       navigationNonce,
     });
-  }, [articles.length, articlesTotalCount, articlesTotalKnown, pageWasFull, e2eConfig, navigationNonce, selectedFeedId, selectedTag]);
+  }, [articles.length, articlesTotalCount, articlesTotalKnown, pageWasFull, e2eConfig, navigationNonce, selectedFeedId, selectedTag, selectedSmartView]);
 
   useEffect(() => {
     if (!e2eConfig) {
       return;
     }
 
-    const navigationKey = `${selectedFeedId ?? ''}:${selectedTag ?? ''}:${navigationNonce}`;
+    const navigationKey = `${selectedFeedId ?? ''}:${selectedTag ?? ''}:${selectedSmartView ?? ''}:${navigationNonce}`;
     if (navigationKeyRef.current === navigationKey) {
       return;
     }
     navigationKeyRef.current = navigationKey;
 
     void writeE2eEvent('navigation-changed', {
-      sourceType: selectedFeedId ? 'feed' : selectedTag ? 'tag' : 'none',
-      sourceId: selectedFeedId ?? selectedTag,
+      sourceType: selectedFeedId ? 'feed' : selectedTag ? 'tag' : selectedSmartView ? 'smart' : 'none',
+      sourceId: selectedFeedId ?? selectedTag ?? selectedSmartView,
       selectedFeedId,
       selectedTag,
+      selectedSmartView,
       navigationNonce,
     });
-  }, [e2eConfig, navigationNonce, selectedFeedId, selectedTag]);
+  }, [e2eConfig, navigationNonce, selectedFeedId, selectedTag, selectedSmartView]);
 
   useEffect(() => {
     if (!e2eConfig || deckPhaseRef.current === articleViewOverlayPhase) {
