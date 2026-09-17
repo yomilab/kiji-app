@@ -2,42 +2,49 @@ import React, { useMemo } from 'react';
 import { SyncIndicator } from './SyncIndicator';
 import { useFeedCollectionArticles, useFeedNavigation } from '@/contexts/FeedContext';
 import { sidebarIndicatorOngoing } from '@/services/ui/sidebarIndicatorText';
+import type { InteractiveRefreshScopeKind } from '@/services/feeds/feedRefreshActivity';
 
 export interface FeedRefreshStatusInput {
   displayFeedCount: number;
   isBackgroundFeedRefreshing: boolean;
   interactiveRefreshScopeTotal: number;
   interactiveRefreshCompleted: number;
+  interactiveRefreshScopeKind?: InteractiveRefreshScopeKind | null;
+  interactiveRefreshScopeLabel?: string;
 }
 
 export const formatFeedRefreshStatus = (input: FeedRefreshStatusInput): string => {
-  // User-visible progress always uses the station scope (x/N). Never format
-  // queue depth (`displayFeedCount`) — it mirrors the internal foreground cap.
-  const stationScopeProgress = input.interactiveRefreshScopeTotal > 1
-    ? {
-        completed: input.interactiveRefreshCompleted,
-        total: input.interactiveRefreshScopeTotal,
-      }
-    : undefined;
+  // Never format queue depth (`displayFeedCount`) — it mirrors the internal cap.
+  void input.displayFeedCount;
+  const label = input.interactiveRefreshScopeLabel?.trim() ?? '';
+  const kind = input.interactiveRefreshScopeKind ?? null;
+  const total = input.interactiveRefreshScopeTotal;
+  const completed = input.interactiveRefreshCompleted;
+
+  if (kind === 'station' && label) {
+    if (total > 1 && completed > 0) {
+      return sidebarIndicatorOngoing('syncing', { completed, total }, { itemName: label });
+    }
+    return sidebarIndicatorOngoing('syncing', undefined, { itemName: label });
+  }
+
+  if (kind === 'feed' && label) {
+    return sidebarIndicatorOngoing('refreshing', undefined, { itemName: label });
+  }
+
+  if (total > 1 && completed > 0) {
+    return sidebarIndicatorOngoing('syncing', { completed, total }, { subject: 'feeds' });
+  }
+
+  if (total > 1 && completed === 0) {
+    return sidebarIndicatorOngoing('syncing', undefined, { subject: 'feeds' });
+  }
 
   if (input.isBackgroundFeedRefreshing) {
-    if (stationScopeProgress) {
-      if (stationScopeProgress.completed === 0) {
-        return sidebarIndicatorOngoing('syncing', undefined, { subject: 'feeds' });
-      }
-      return sidebarIndicatorOngoing('syncing', stationScopeProgress);
-    }
-    return sidebarIndicatorOngoing('syncing', undefined, { subject: 'all' });
+    return sidebarIndicatorOngoing('syncing', undefined, { subject: 'feeds' });
   }
 
-  if (stationScopeProgress) {
-    if (stationScopeProgress.completed === 0) {
-      return sidebarIndicatorOngoing('syncing', undefined, { subject: 'feeds' });
-    }
-    return sidebarIndicatorOngoing('refreshing', stationScopeProgress);
-  }
-
-  return sidebarIndicatorOngoing('refreshing', undefined, { subject: 'feeds' });
+  return sidebarIndicatorOngoing('syncing', undefined, { subject: 'feeds' });
 };
 
 const formatSyncTime = (date: Date | null): string => {
@@ -61,6 +68,8 @@ interface SidebarSyncIndicatorProps {
   isBackgroundFeedRefreshing: boolean;
   interactiveRefreshScopeTotal: number;
   interactiveRefreshCompleted: number;
+  interactiveRefreshScopeKind: InteractiveRefreshScopeKind | null;
+  interactiveRefreshScopeLabel: string;
   isAnyFeedRefreshing: boolean;
   stationRefreshInProgress: boolean;
   showSyncing: boolean;
@@ -75,6 +84,8 @@ export const SidebarSyncIndicator: React.FC<SidebarSyncIndicatorProps> = ({
   isBackgroundFeedRefreshing,
   interactiveRefreshScopeTotal,
   interactiveRefreshCompleted,
+  interactiveRefreshScopeKind,
+  interactiveRefreshScopeLabel,
   isAnyFeedRefreshing,
   stationRefreshInProgress,
   showSyncing,
@@ -99,6 +110,8 @@ export const SidebarSyncIndicator: React.FC<SidebarSyncIndicatorProps> = ({
         isBackgroundFeedRefreshing,
         interactiveRefreshScopeTotal,
         interactiveRefreshCompleted,
+        interactiveRefreshScopeKind,
+        interactiveRefreshScopeLabel,
       });
     }
 
@@ -122,6 +135,8 @@ export const SidebarSyncIndicator: React.FC<SidebarSyncIndicatorProps> = ({
     isBackgroundFeedRefreshing,
     isAnyFeedRefreshing,
     interactiveRefreshCompleted,
+    interactiveRefreshScopeKind,
+    interactiveRefreshScopeLabel,
     interactiveRefreshScopeTotal,
     lastSyncTime,
     selectedSmartView,

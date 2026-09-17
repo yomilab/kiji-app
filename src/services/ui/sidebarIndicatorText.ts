@@ -17,6 +17,8 @@ export type SidebarIndicatorSubject =
 
 export interface SidebarIndicatorTextOptions {
   subject?: SidebarIndicatorSubject;
+  /** Free-form feed or station title. Replaces the enum subject when set. */
+  itemName?: string;
 }
 
 const LABELS: Record<
@@ -80,6 +82,17 @@ function subjectLabel(
   return resolved ? SUBJECT_LABELS[resolved] : undefined;
 }
 
+function nounLabel(
+  action: SidebarIndicatorAction,
+  options?: SidebarIndicatorTextOptions,
+): string | undefined {
+  const itemName = options?.itemName?.trim();
+  if (itemName) {
+    return itemName;
+  }
+  return subjectLabel(action, options?.subject);
+}
+
 function joinParts(parts: Array<string | undefined>): string {
   return parts.filter((part): part is string => Boolean(part)).join(' ');
 }
@@ -90,7 +103,7 @@ export function sidebarIndicatorOngoing(
   options?: SidebarIndicatorTextOptions,
 ): string {
   const verb = LABELS[action].ongoing;
-  const subject = subjectLabel(action, options?.subject);
+  const subject = nounLabel(action, options);
 
   if (progress && 'total' in progress && progress.total > 1) {
     return joinParts([verb, `${progress.completed}/${progress.total}`, subject]);
@@ -109,7 +122,7 @@ export function sidebarIndicatorDone(
   options?: SidebarIndicatorTextOptions,
 ): string {
   const base = LABELS[action].done;
-  const subject = subjectLabel(action, options?.subject);
+  const subject = nounLabel(action, options);
 
   if (detail === undefined || detail === '') {
     return joinParts([base, subject]);

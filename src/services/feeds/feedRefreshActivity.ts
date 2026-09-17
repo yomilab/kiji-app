@@ -1,5 +1,7 @@
 export type FeedRefreshActivityScope = 'foreground' | 'background';
 
+export type InteractiveRefreshScopeKind = 'feed' | 'station';
+
 export interface FeedRefreshActivitySnapshot {
   activeFeedCount: number;
   queuedFeedCount: number;
@@ -12,12 +14,16 @@ export interface FeedRefreshActivitySnapshot {
   /**
    * Total feeds targeted by the current interactive (switch / manual station)
    * refresh — the station's feed count, NOT the foreground cap. Zero outside an
-   * interactive refresh. Drives the `Refreshing x/N feeds` indicator so the
-   * sidebar reports the true scope instead of the internal 6-feed cap.
+   * interactive refresh. Drives composed `Syncing x/N {station}` so the
+   * determinate ring can parse percent without painting the fraction.
    */
   interactiveRefreshScopeTotal: number;
   /** Completed foreground feeds in the current interactive refresh (numerator x). */
   interactiveRefreshCompleted: number;
+  /** In-flight refresh target. Null when idle or library-wide scheduler work. */
+  interactiveRefreshScopeKind: InteractiveRefreshScopeKind | null;
+  /** Feed or station title stamped with the in-flight refresh, not live selection. */
+  interactiveRefreshScopeLabel: string;
 }
 
 type FeedRefreshActivityListener = () => void;
@@ -49,6 +55,9 @@ export class FeedRefreshActivity {
   private interactiveRefreshScopeTotal = 0;
   private interactiveRefreshForegroundTotal = 0;
   private interactiveRefreshScopeGeneration = 0;
+  private interactiveRefreshScopeKind: InteractiveRefreshScopeKind | null = null;
+  private interactiveRefreshScopeLabel = '';
+  private interactiveRefreshDeferredTailGeneration = 0;
   /** Feeds settled during the current interactive scope — incremented per release. */
   private interactiveRefreshSettledCount = 0;
   /** Dedupes per-feed settlement within the current interactive scope generation. */
@@ -70,6 +79,8 @@ export class FeedRefreshActivity {
     isBackgroundFeedRefreshing: false,
     interactiveRefreshScopeTotal: 0,
     interactiveRefreshCompleted: 0,
+    interactiveRefreshScopeKind: null,
+    interactiveRefreshScopeLabel: '',
   };
 
   subscribe = (listener: FeedRefreshActivityListener): (() => void) => {
@@ -84,7 +95,11 @@ export class FeedRefreshActivity {
   beginQueuedFeeds(
     feedIds: string[],
     scope: FeedRefreshActivityScope = 'foreground',
-    options?: { scopeTotal?: number },
+    options?: {
+      scopeTotal?: number;
+      scopeKind?: InteractiveRefreshScopeKind;
+      scopeLabel?: string;
+    },
   ): (feedId?: string) => void {
     const pendingFeedCounts = new Map<string, number>();
 
@@ -103,13 +118,22 @@ export class FeedRefreshActivity {
     // Atomic scope + queue publish: when a switch records its station scope,
     // set it BEFORE the single publishSnapshot so the first snapshot already
     // carries `scopeTotal` and `foregroundTotal`. This avoids a transient
-    // `Refreshing 6 feeds` (scope=0, fg=cap) frame at switch start.
-    if (options?.scopeTotal !== undefined && scope === 'foreground') {
-      this.interactiveRefreshScopeTotal = Math.max(0, Math.floor(options.scopeTotal));
-      this.interactiveRefreshForegroundTotal = feedIds.length;
-      this.resetInteractiveRefreshSettled();
+    // `Refreshing 6 feeds` (scope=0, fg=cap) frame at switch start. Omitted
+    // options are a no-op (native START must not wipe a live station stamp).
+    const stampedFeedKind = scope === 'foreground' && options?.scopeKind === 'feed';
+    if (scope === 'foreground' && (options?.scopeTotal !== undefined || options?.scopeKind !== undefined)) {
       this.interactiveRefreshScopeGeneration += 1;
+      if (options?.scopeTotal !== undefined) {
+        this.interactiveRefreshScopeTotal = Math.max(0, Math.floor(options.scopeTotal));
+        this.interactiveRefreshForegroundTotal = feedIds.length;
+        this.resetInteractiveRefreshSettled();
+      }
+      if (options?.scopeKind !== undefined) {
+        this.interactiveRefreshScopeKind = options.scopeKind;
+        this.interactiveRefreshScopeLabel = (options.scopeLabel ?? '').trim();
+      }
     }
+    const feedStampGeneration = this.interactiveRefreshScopeGeneration;
 
     this.publishSnapshot();
 
@@ -153,6 +177,10 @@ export class FeedRefreshActivity {
         }
       }
 
+      if (stampedFeedKind && pendingFeedCounts.size === 0) {
+        this.clearInteractiveFeedStamp(feedStampGeneration);
+      }
+
       this.publishSnapshot();
     };
 
@@ -173,12 +201,19 @@ export class FeedRefreshActivity {
     // interactive switch scope — otherwise a cleared queue with a stale scope
     // shows a misleading completed count, or a re-queued cap without scope
     // shows `Refreshing 6 feeds`.
-    if (this.interactiveRefreshScopeTotal !== 0 || this.interactiveRefreshForegroundTotal !== 0) {
+    if (
+      this.interactiveRefreshScopeTotal !== 0
+      || this.interactiveRefreshForegroundTotal !== 0
+      || this.interactiveRefreshScopeKind !== null
+    ) {
       this.interactiveRefreshScopeTotal = 0;
       this.interactiveRefreshForegroundTotal = 0;
+      this.interactiveRefreshScopeKind = null;
+      this.interactiveRefreshScopeLabel = '';
       this.resetInteractiveRefreshSettled();
       this.interactiveRefreshDeferredTailActive = false;
       this.interactiveRefreshBackgroundTotal = 0;
+      this.interactiveRefreshDeferredTailGeneration = 0;
       this.interactiveRefreshScopeGeneration += 1;
       this.publishSnapshot();
     }
@@ -238,22 +273,38 @@ export class FeedRefreshActivity {
     if (
       this.interactiveRefreshDeferredTailActive === active
       && this.interactiveRefreshBackgroundTotal === nextBackgroundTotal
+      && (!active || this.interactiveRefreshDeferredTailGeneration === this.interactiveRefreshScopeGeneration)
     ) {
       return;
     }
     this.interactiveRefreshDeferredTailActive = active;
     this.interactiveRefreshBackgroundTotal = nextBackgroundTotal;
+    if (active) {
+      this.interactiveRefreshDeferredTailGeneration = this.interactiveRefreshScopeGeneration;
+    }
     this.publishSnapshot();
   }
 
-  clearInteractiveRefreshDeferredTail(): void {
+  clearInteractiveRefreshDeferredTail(generation?: number): void {
+    if (generation !== undefined && generation !== this.interactiveRefreshScopeGeneration) {
+      return;
+    }
+    if (
+      generation === undefined
+      && this.interactiveRefreshDeferredTailGeneration !== this.interactiveRefreshScopeGeneration
+    ) {
+      return;
+    }
     if (!this.interactiveRefreshDeferredTailActive && this.interactiveRefreshBackgroundTotal === 0) {
       return;
     }
     this.interactiveRefreshDeferredTailActive = false;
     this.interactiveRefreshBackgroundTotal = 0;
+    this.interactiveRefreshDeferredTailGeneration = 0;
     this.interactiveRefreshScopeTotal = 0;
     this.interactiveRefreshForegroundTotal = 0;
+    this.interactiveRefreshScopeKind = null;
+    this.interactiveRefreshScopeLabel = '';
     this.resetInteractiveRefreshSettled();
     this.publishSnapshot();
   }
@@ -313,25 +364,40 @@ export class FeedRefreshActivity {
     if (this.interactiveRefreshDeferredTailActive) {
       return;
     }
-    if (this.interactiveRefreshScopeTotal === 0 && this.interactiveRefreshForegroundTotal === 0) {
+    if (
+      this.interactiveRefreshScopeTotal === 0
+      && this.interactiveRefreshForegroundTotal === 0
+      && this.interactiveRefreshScopeKind === null
+    ) {
       return;
     }
     this.interactiveRefreshScopeTotal = 0;
     this.interactiveRefreshForegroundTotal = 0;
+    this.interactiveRefreshScopeKind = null;
+    this.interactiveRefreshScopeLabel = '';
     this.resetInteractiveRefreshSettled();
     this.publishSnapshot();
   }
 
+  private clearInteractiveFeedStamp(generation: number): void {
+    if (generation !== this.interactiveRefreshScopeGeneration) {
+      return;
+    }
+    if (this.interactiveRefreshScopeKind !== 'feed') {
+      return;
+    }
+    this.interactiveRefreshScopeKind = null;
+    this.interactiveRefreshScopeLabel = '';
+  }
+
   private publishSnapshot(): void {
-    // Station-switch handoff: Phase B calls beginQueuedFeeds(foreground,
-    // 'foreground') for the capped foreground set and setInteractiveRefreshScope
-    // with the station's full feed count, so the sidebar shows `Refreshing x/N
-    // feeds` against the station total (NOT the cap). When Phase B releases
+    // Station-switch handoff: Phase B stamps kind/label + station feed count in
+    // the same publish as the capped foreground queue so the sidebar shows
+    // `Syncing {station}` (composed `Syncing x/N {station}` after the first
+    // settlement) against the station total, NOT the cap. When Phase B releases
     // those and boostMany starts the background cycle for deferred feeds,
-    // beginQueuedFeeds(deferred, 'background') flips the sidebar to "Syncing
-    // all". The brief gap between foreground release and background start is a
-    // true idle moment (nothing is fetching) and is intentionally shown as the
-    // static fallback rather than a misleading "Syncing all".
+    // omitted-options START must not wipe the stamp. Unstamped library work
+    // shows `Syncing feeds`. One-feed stamps `Refreshing {title}`.
     const foregroundQueuedFeedCount = this.foregroundQueuedFeedTotal;
     const backgroundQueuedFeedCount = this.backgroundQueuedFeedTotal;
     const queuedFeedCount = this.queuedFeedTotal;
@@ -361,6 +427,8 @@ export class FeedRefreshActivity {
       isBackgroundFeedRefreshing,
       interactiveRefreshScopeTotal,
       interactiveRefreshCompleted,
+      interactiveRefreshScopeKind: this.interactiveRefreshScopeKind,
+      interactiveRefreshScopeLabel: this.interactiveRefreshScopeLabel,
     };
 
     if (
@@ -374,6 +442,8 @@ export class FeedRefreshActivity {
       && nextSnapshot.isBackgroundFeedRefreshing === this.snapshot.isBackgroundFeedRefreshing
       && nextSnapshot.interactiveRefreshScopeTotal === this.snapshot.interactiveRefreshScopeTotal
       && nextSnapshot.interactiveRefreshCompleted === this.snapshot.interactiveRefreshCompleted
+      && nextSnapshot.interactiveRefreshScopeKind === this.snapshot.interactiveRefreshScopeKind
+      && nextSnapshot.interactiveRefreshScopeLabel === this.snapshot.interactiveRefreshScopeLabel
     ) {
       return;
     }

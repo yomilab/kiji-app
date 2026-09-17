@@ -43,7 +43,8 @@ describe('BottomWidget', () => {
 
     const indicator = document.querySelector('[data-component="sync-indicator"]');
     expect(indicator?.getAttribute('data-component')).toBe('sync-indicator');
-    expect(screen.getByText('Refreshing 3/12 feeds')).toBeTruthy();
+    expect(screen.getByText('Refreshing feeds')).toBeTruthy();
+    expect(screen.queryByText('Refreshing 3/12 feeds')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Feeds' })).toBeNull();
     expect(screen.getByLabelText(/settings/i)).toBeTruthy();
   });

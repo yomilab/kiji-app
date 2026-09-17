@@ -14,6 +14,8 @@ const createDeferred = <T,>() => {
 const INTERACTIVE_SCOPE_IDLE = {
   interactiveRefreshScopeTotal: 0,
   interactiveRefreshCompleted: 0,
+  interactiveRefreshScopeKind: null,
+  interactiveRefreshScopeLabel: '',
 } as const;
 
 const flushMicrotasks = async () => {
@@ -255,5 +257,38 @@ describe('FeedRefreshActivity', () => {
       interactiveRefreshCompleted: 0,
     });
     expect(isInteractiveStationRefreshInProgress(activity.getSnapshot())).toBe(true);
+  });
+
+  it('stamps a feed label without scopeTotal and clears it on full release', () => {
+    const activity = new FeedRefreshActivity();
+    const release = activity.beginQueuedFeeds(['feed-1'], 'foreground', {
+      scopeKind: 'feed',
+      scopeLabel: 'BBC',
+    });
+    expect(activity.getSnapshot()).toMatchObject({
+      interactiveRefreshScopeTotal: 0,
+      interactiveRefreshScopeKind: 'feed',
+      interactiveRefreshScopeLabel: 'BBC',
+    });
+    release();
+    expect(activity.getSnapshot()).toMatchObject({
+      interactiveRefreshScopeKind: null,
+      interactiveRefreshScopeLabel: '',
+    });
+  });
+
+  it('omitted beginQueuedFeeds options do not wipe a live station stamp', () => {
+    const activity = new FeedRefreshActivity();
+    activity.beginQueuedFeeds([], 'foreground', {
+      scopeTotal: 12,
+      scopeKind: 'station',
+      scopeLabel: 'Daily',
+    });
+    activity.beginQueuedFeeds(['bg-1'], 'background');
+    expect(activity.getSnapshot()).toMatchObject({
+      interactiveRefreshScopeKind: 'station',
+      interactiveRefreshScopeLabel: 'Daily',
+      interactiveRefreshScopeTotal: 12,
+    });
   });
 });

@@ -7,8 +7,10 @@ import {
 
 describe('sidebarIndicatorText', () => {
   it('formats ongoing states with subject nouns', () => {
-    expect(sidebarIndicatorOngoing('syncing')).toBe('Syncing feeds');
-    expect(sidebarIndicatorOngoing('syncing', undefined, { subject: 'all' })).toBe('Syncing all');
+    expect(sidebarIndicatorOngoing('syncing', undefined, { itemName: 'Daily' })).toBe('Syncing Daily');
+    expect(sidebarIndicatorOngoing('refreshing', undefined, { itemName: 'BBC' })).toBe('Refreshing BBC');
+    expect(sidebarIndicatorOngoing('syncing', { completed: 3, total: 50 }, { itemName: 'Daily' }))
+      .toBe('Syncing 3/50 Daily');
     expect(sidebarIndicatorOngoing('refreshing', { count: 99 })).toBe('Refreshing 99 feeds');
     expect(sidebarIndicatorOngoing('importing', { count: 42 })).toBe('Importing 42 feeds');
     expect(sidebarIndicatorOngoing('fetching', { count: 12 }, { subject: 'favicons' })).toBe('Fetching 12 favicons');

@@ -21,6 +21,8 @@ const idleProps = {
   isBackgroundFeedRefreshing: false,
   interactiveRefreshScopeTotal: 0,
   interactiveRefreshCompleted: 0,
+  interactiveRefreshScopeKind: null as 'feed' | 'station' | null,
+  interactiveRefreshScopeLabel: '',
   isAnyFeedRefreshing: false,
   stationRefreshInProgress: false,
   showSyncing: false,
@@ -32,6 +34,12 @@ const indicator = (container: HTMLElement) =>
 
 const copy = (container: HTMLElement) =>
   indicator(container)?.querySelector('.sync-indicator-text')?.textContent;
+
+const progressSlot = (container: HTMLElement) =>
+  indicator(container)?.querySelector('[data-slot="sync-indicator-progress"]');
+
+const oldLoaderSlot = (container: HTMLElement) =>
+  indicator(container)?.querySelector('[data-slot="sync-indicator-loader"]');
 
 describe('SidebarSyncIndicator Saved-empty chrome', () => {
   afterEach(() => {
@@ -74,9 +82,48 @@ describe('SidebarSyncIndicator Saved-empty chrome', () => {
       interactiveRefreshScopeTotal: 12,
       interactiveRefreshCompleted: 3,
     });
-    expect(indicator(container)?.getAttribute('title')).toBe(expected);
-    expect(copy(container)).toBe(expected);
-    expect(indicator(container)?.querySelector('[data-slot="sync-indicator-loader"]')).toBeNull();
+    expect(expected).toMatch(/^(Refreshing|Syncing) \d+\/\d+/);
+    expect(copy(container)).toBe('Syncing feeds');
+    expect(indicator(container)?.getAttribute('title')).toBe('Syncing feeds');
+    expect(indicator(container)?.getAttribute('title')).not.toMatch(/\d+\/\d+/);
+    expect(oldLoaderSlot(container)).toBeNull();
+    expect(progressSlot(container)).not.toBeNull();
+    expect(progressSlot(container)?.getAttribute('role')).toBe('progressbar');
+    expect(progressSlot(container)?.getAttribute('aria-valuenow')).toBe('25');
+  });
+
+  it('names a live station Syncing {station} and keeps the ring without painting x/N', () => {
+    const { container } = render(
+      <SidebarSyncIndicator
+        {...idleProps}
+        totalFeeds={12}
+        isAnyFeedRefreshing
+        interactiveRefreshScopeTotal={12}
+        interactiveRefreshCompleted={3}
+        interactiveRefreshScopeKind="station"
+        interactiveRefreshScopeLabel="Daily"
+      />,
+    );
+
+    expect(copy(container)).toBe('Syncing Daily');
+    expect(indicator(container)?.getAttribute('title')).toBe('Syncing Daily');
+    expect(indicator(container)?.getAttribute('title')).not.toMatch(/\d+\/\d+/);
+    expect(progressSlot(container)?.getAttribute('aria-valuenow')).toBe('25');
+  });
+
+  it('names a live one-feed refresh Refreshing {title} without a ring', () => {
+    const { container } = render(
+      <SidebarSyncIndicator
+        {...idleProps}
+        totalFeeds={12}
+        isAnyFeedRefreshing
+        interactiveRefreshScopeKind="feed"
+        interactiveRefreshScopeLabel="BBC"
+      />,
+    );
+
+    expect(copy(container)).toBe('Refreshing BBC');
+    expect(progressSlot(container)).toBeNull();
   });
 
   it('shows refresh copy for scope-only station refresh before the queue fills', () => {
@@ -85,17 +132,15 @@ describe('SidebarSyncIndicator Saved-empty chrome', () => {
         {...idleProps}
         totalFeeds={12}
         stationRefreshInProgress
+        interactiveRefreshScopeTotal={12}
+        interactiveRefreshScopeKind="station"
+        interactiveRefreshScopeLabel="Daily"
       />,
     );
 
-    const expected = formatFeedRefreshStatus({
-      displayFeedCount: 0,
-      isBackgroundFeedRefreshing: false,
-      interactiveRefreshScopeTotal: 0,
-      interactiveRefreshCompleted: 0,
-    });
-    expect(copy(container)).toBe(expected);
-    expect(indicator(container)?.querySelector('[data-slot="sync-indicator-loader"]')).toBeNull();
+    expect(copy(container)).toBe('Syncing Daily');
+    expect(oldLoaderSlot(container)).toBeNull();
+    expect(progressSlot(container)).toBeNull();
   });
 
   it('keeps Syncing feeds on the 500ms hold', () => {
@@ -104,6 +149,7 @@ describe('SidebarSyncIndicator Saved-empty chrome', () => {
     );
 
     expect(copy(container)).toBe('Syncing feeds');
+    expect(progressSlot(container)).toBeNull();
   });
 
   it('lets overlay copy own the row even if refresh is live', () => {
@@ -117,6 +163,7 @@ describe('SidebarSyncIndicator Saved-empty chrome', () => {
     );
 
     expect(copy(container)).toBe('Importing…');
+    expect(progressSlot(container)).toBeNull();
   });
 
   it('lets export progress own the row even if refresh is live', () => {
@@ -129,7 +176,9 @@ describe('SidebarSyncIndicator Saved-empty chrome', () => {
       />,
     );
 
-    expect(copy(container)).toBe('Exporting 3/10');
+    expect(copy(container)).toBe('Exporting');
+    expect(progressSlot(container)).not.toBeNull();
+    expect(progressSlot(container)?.getAttribute('aria-valuenow')).toBe('30');
   });
 
   it('shows idle last-sync copy when no overlay or refresh is live', () => {
@@ -143,6 +192,7 @@ describe('SidebarSyncIndicator Saved-empty chrome', () => {
     );
 
     expect(copy(container)).toBe('Sep 1');
-    expect(indicator(container)?.querySelector('[data-slot="sync-indicator-loader"]')).toBeNull();
+    expect(oldLoaderSlot(container)).toBeNull();
+    expect(progressSlot(container)).toBeNull();
   });
 });

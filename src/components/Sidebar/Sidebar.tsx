@@ -65,6 +65,8 @@ export const Sidebar: React.FC = () => {
     isBackgroundFeedRefreshing,
     interactiveRefreshScopeTotal,
     interactiveRefreshCompleted,
+    interactiveRefreshScopeKind,
+    interactiveRefreshScopeLabel,
   } = refreshActivity;
   const stationRefreshInProgress = isInteractiveStationRefreshInProgress(refreshActivity);
   const sidebarIndicatorText = useUserMessageChannel(SIDEBAR_INDICATOR_CHANNEL);
@@ -449,6 +451,8 @@ export const Sidebar: React.FC = () => {
             isBackgroundFeedRefreshing={isBackgroundFeedRefreshing}
             interactiveRefreshScopeTotal={interactiveRefreshScopeTotal}
             interactiveRefreshCompleted={interactiveRefreshCompleted}
+            interactiveRefreshScopeKind={interactiveRefreshScopeKind}
+            interactiveRefreshScopeLabel={interactiveRefreshScopeLabel}
             isAnyFeedRefreshing={isAnyFeedRefreshing}
             stationRefreshInProgress={stationRefreshInProgress}
             showSyncing={showSyncing}

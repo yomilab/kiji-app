@@ -2007,22 +2007,30 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [isSelectionActive]);
 
   /**
-   * Native Phase B strategy for station switches: publish the sidebar
-   * `Refreshing x/N` scope, then hand every station feed to the scheduler via
+   * Native Phase B strategy for station switches: stamp sidebar
+   * `Syncing {station}` scope, then hand every station feed to the scheduler via
    * boostMany. No foreground network await — activeStationFocus front-loads
    * this station's feeds while the list stays interactive.
    */
-  const runNativeSwitchStationRefresh = useCallback((feedIds: string[], token: number): number => {
+  const runNativeSwitchStationRefresh = useCallback((feedIds: string[], token: number, tagName: string): {
+    inserted: number;
+    scopeGeneration: number;
+  } => {
     if (!isSelectionActive(token)) {
-      return 0;
+      return { inserted: 0, scopeGeneration: 0 };
     }
 
     sidebarSwitchTrace.mark(token, 'station-network-refresh-started', {
       feedCount: feedIds.length,
       scheduledBackground: true,
     });
-    feedRefreshActivity.beginQueuedFeeds([], 'foreground', { scopeTotal: feedIds.length });
-    interactiveRefreshScopeTokenRef.current = feedRefreshActivity.getInteractiveRefreshScopeGeneration();
+    feedRefreshActivity.beginQueuedFeeds([], 'foreground', {
+      scopeTotal: feedIds.length,
+      scopeKind: 'station',
+      scopeLabel: tagName,
+    });
+    const scopeGeneration = feedRefreshActivity.getInteractiveRefreshScopeGeneration();
+    interactiveRefreshScopeTokenRef.current = scopeGeneration;
     feedRefreshActivity.markInteractiveRefreshDeferredTail(true, feedIds.length);
     feedScheduler.boostMany(feedIds);
     sidebarSwitchTrace.mark(token, 'station-refresh-scheduled', {
@@ -2034,7 +2042,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       0,
       { insertedTotal: 0, deferredFeedCount: feedIds.length, scheduledBackground: true },
     );
-    return 0;
+    return { inserted: 0, scopeGeneration };
   }, [isSelectionActive]);
 
   /**
@@ -2048,9 +2056,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     token: number,
     sourceKey: string,
     intent: SourceRefreshIntent = 'manual',
-  ): Promise<number> => {
+    tagName: string,
+  ): Promise<{ inserted: number; scopeGeneration: number }> => {
     if (feedIds.length === 0) {
-      return 0;
+      return { inserted: 0, scopeGeneration: 0 };
     }
 
     // Import switches (awaitInitialFetch) must await the first fetch so the
@@ -2058,7 +2067,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // the native switch path only boosts and returns, which is what stranded
     // the post-import skeleton onto an empty view.
     if (intent === 'switch' && isNativeFeedIngestionEnabled() && options.awaitInitialFetch !== true) {
-      return runNativeSwitchStationRefresh(feedIds, token);
+      return runNativeSwitchStationRefresh(feedIds, token, tagName);
     }
 
     const eligibleFeedIds = await traceSidebarSwitchAsync(
@@ -2083,19 +2092,25 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     if (eligibleFeedIds.length === 0) {
       if (deferredFeedIds.length > 0 && isSelectionActive(token)) {
-        feedRefreshActivity.beginQueuedFeeds([], 'foreground', { scopeTotal: feedIds.length });
-        interactiveRefreshScopeTokenRef.current = feedRefreshActivity.getInteractiveRefreshScopeGeneration();
+        feedRefreshActivity.beginQueuedFeeds([], 'foreground', {
+          scopeTotal: feedIds.length,
+          scopeKind: 'station',
+          scopeLabel: tagName,
+        });
+        const scopeGeneration = feedRefreshActivity.getInteractiveRefreshScopeGeneration();
+        interactiveRefreshScopeTokenRef.current = scopeGeneration;
         feedRefreshActivity.markInteractiveRefreshDeferredTail(true, deferredFeedIds.length);
         feedScheduler.boostMany(deferredFeedIds);
         sidebarSwitchTrace.mark(token, 'station-refresh-deferred', {
           deferredFeedCount: deferredFeedIds.length,
         });
+        return { inserted: 0, scopeGeneration };
       }
-      return 0;
+      return { inserted: 0, scopeGeneration: 0 };
     }
 
     if (!isSelectionActive(token)) {
-      return 0;
+      return { inserted: 0, scopeGeneration: 0 };
     }
 
     // Atomic: record the true switch scope (station feed count, NOT the
@@ -2106,7 +2121,11 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds(
       foregroundFeedIds,
       'foreground',
-      { scopeTotal: feedIds.length },
+      {
+        scopeTotal: feedIds.length,
+        scopeKind: 'station',
+        scopeLabel: tagName,
+      },
     );
     const interactiveRefreshScopeToken = feedRefreshActivity.getInteractiveRefreshScopeGeneration();
     interactiveRefreshScopeTokenRef.current = interactiveRefreshScopeToken;
@@ -2264,7 +2283,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         feedScheduler.suppressFeedsForNextCycle(foregroundFeedIds);
       }
 
-      return insertedTotal;
+      return { inserted: insertedTotal, scopeGeneration: interactiveRefreshScopeToken };
     } finally {
       releaseQueuedFeed();
       if (deferredFeedIds.length > 0 && isSelectionActive(token)) {
@@ -2690,7 +2709,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds([feedId], 'foreground');
+      const releaseQueuedFeed = feedRefreshActivity.beginQueuedFeeds([feedId], 'foreground', {
+        scopeKind: 'feed',
+        scopeLabel: feedMeta.title,
+      });
       const activeSignal = switchLifecycle.currentSignal;
       try {
         const result = await refreshFeedFromNetwork(
@@ -2804,15 +2826,19 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     let insertedCount = 0;
+    let scopeGeneration = 0;
     try {
       sidebarSwitchTrace.mark(token, 'phase-b-started', { kind: 'tag' });
-      insertedCount = await refreshStationFeeds(
+      const stationRefresh = await refreshStationFeeds(
         feedIds,
         { ...refreshOptions, bypassBackoff: shouldReset || refreshOptions.bypassBackoff },
         token,
         sourceKey,
         intent,
+        tagName,
       );
+      insertedCount = stationRefresh.inserted;
+      scopeGeneration = stationRefresh.scopeGeneration;
       // Suppress is scoped to the foreground feeds actually refreshed, inside
       // refreshStationFeeds, so deferred feeds stay eligible for the next
       // background cycle to surface new articles.
@@ -2900,7 +2926,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Cold deferred SQLite may still own the skeleton; this helper either
       // clears+resumes or defers resume until Phase A finishes.
       completeNetworkPhaseSwitchLoading(token);
-      feedRefreshActivity.clearInteractiveRefreshScope(interactiveRefreshScopeTokenRef.current);
+      if (scopeGeneration !== 0) {
+        feedRefreshActivity.clearInteractiveRefreshScope(scopeGeneration);
+      }
       sidebarSwitchTrace.completeNetwork(token, {
         kind: 'tag',
         insertedCount: insertedCount ?? 0,

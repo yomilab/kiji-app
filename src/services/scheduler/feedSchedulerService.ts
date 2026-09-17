@@ -967,6 +967,9 @@ class FeedSchedulerService {
     const cycleId = this.activeCycleId + 1;
     this.activeCycleId = cycleId;
     this.clearDeferredCycleRetryTimer();
+    const scopedTailGeneration = scope.onlyFeedIds && scope.onlyFeedIds.size > 0
+      ? feedRefreshActivity.getInteractiveRefreshScopeGeneration()
+      : undefined;
     this.clearPendingCycleTick();
     this.beginCycleDrain();
     this.cycleInProgress = true;
@@ -1112,7 +1115,7 @@ class FeedSchedulerService {
           activeCycleId: this.activeCycleId,
         });
         if (scope.onlyFeedIds && scope.onlyFeedIds.size > 0 && !this.cycleInProgress) {
-          feedRefreshActivity.clearInteractiveRefreshDeferredTail();
+          feedRefreshActivity.clearInteractiveRefreshDeferredTail(scopedTailGeneration);
         }
         return;
       }
@@ -1128,7 +1131,7 @@ class FeedSchedulerService {
       });
 
       if (scope.onlyFeedIds && scope.onlyFeedIds.size > 0) {
-        feedRefreshActivity.clearInteractiveRefreshDeferredTail();
+        feedRefreshActivity.clearInteractiveRefreshDeferredTail(scopedTailGeneration);
       }
 
       this.maybeRunDeferredCycle(lifecycleId);

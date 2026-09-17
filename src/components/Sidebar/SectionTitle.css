@@ -1,4 +1,6 @@
-/* Section title — same 20px left inset as sidebar widgets / bottom indicator */
+/* Section title — 20px left inset (sidebar widget pad). Footer SyncIndicator
+   content is inset a further --sidebar-item-padding-x (32px) to match item icons,
+   not these titles. */
 .section-title-container {
   display: flex;
   align-items: center;

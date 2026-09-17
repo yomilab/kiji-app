@@ -2,13 +2,17 @@
    shrinks when the stack expands left; overflow ellipsizes the end of the string.
    Higher-z buttons can also paint over leftover glyphs during width/motion lag.
    Host stays `display: flex` so the inner text span is a flex item and can
-   ellipsize (an inline span would not). */
+   ellipsize (an inline span would not). Extra 12px pad matches Library/Station
+   item icons (20px widget pad + --sidebar-item-padding-x). Do not overflow:hidden
+   on the host — that clips the leading ring. */
 .sync-indicator {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
+  padding-left: var(--sidebar-item-padding-x);
   display: flex;
   align-items: center;
+  gap: 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--theme-primary-color);
@@ -17,6 +21,37 @@
   text-align: left;
   position: relative;
   z-index: 1;
+}
+
+.sync-indicator-progress {
+  flex: 0 0 var(--sidebar-item-icon-size);
+  width: var(--sidebar-item-icon-size);
+  height: var(--sidebar-item-icon-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sync-indicator-progress svg {
+  width: var(--sidebar-item-icon-size);
+  height: var(--sidebar-item-icon-size);
+  display: block;
+  transform: rotate(-90deg);
+}
+
+.sync-indicator-progress-track,
+.sync-indicator-progress-arc {
+  stroke: currentColor;
+  stroke-width: 2.25;
+  stroke-linecap: round;
+}
+
+.sync-indicator-progress-track {
+  opacity: 0.28;
+}
+
+.sync-indicator-progress-arc {
+  opacity: 1;
 }
 
 .sync-indicator-text {
