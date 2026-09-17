@@ -8,6 +8,7 @@ interface UseArticleListScrollOffsetSyncOptions {
   isSearchActive: boolean;
   setHasListScrollOffset: Dispatch<SetStateAction<boolean>>;
   syncViewportSnapshot: (isAtTop: boolean, isScrolling?: boolean, scrollTop?: number) => void;
+  isInitialLoading?: boolean;
 }
 
 export const useArticleListScrollOffsetSync = ({
@@ -17,8 +18,16 @@ export const useArticleListScrollOffsetSync = ({
   isSearchActive,
   setHasListScrollOffset,
   syncViewportSnapshot,
+  isInitialLoading = false,
 }: UseArticleListScrollOffsetSyncOptions): void => {
   useDependencyEffect(() => {
+    // Skeleton paint must not inherit a compact-header offset from leftover scrollTop.
+    if (isInitialLoading) {
+      setHasListScrollOffset(false);
+      syncViewportSnapshot(true, false, 0);
+      return;
+    }
+
     const listElement = articleListItemsRef.current;
     const scrollTop = listElement?.scrollTop ?? 0;
     const isAtTop = scrollTop <= 0;
@@ -29,6 +38,7 @@ export const useArticleListScrollOffsetSync = ({
     sourceKey,
     filteredCount,
     isSearchActive,
+    isInitialLoading,
     setHasListScrollOffset,
     syncViewportSnapshot,
   ]);

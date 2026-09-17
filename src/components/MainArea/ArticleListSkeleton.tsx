@@ -19,6 +19,9 @@ export const ArticleListHeaderSkeleton: React.FC = () => {
   );
 };
 
+/** Surplus placeholder rows clipped to the list scroller; not the height contract. */
+export const ARTICLE_LIST_SKELETON_ROW_COUNT = 32;
+
 export const ArticleListSkeleton: React.FC<ArticleListSkeletonProps> = ({ className }) => {
   const rootClassName = className
     ? `article-list-item skeleton-item ${className}`
@@ -50,14 +53,15 @@ export const ArticleListSkeleton: React.FC<ArticleListSkeletonProps> = ({ classN
 };
 
 export const ArticleListSkeletonGroup = React.forwardRef<HTMLDivElement, { count?: number; animateEntry?: boolean }>(
-  ({ count = 6, animateEntry = true }, ref) => {
+  ({ count = ARTICLE_LIST_SKELETON_ROW_COUNT, animateEntry = true }, ref) => {
+    // Temporary array discarded when the skeleton unmounts; bound is ARTICLE_LIST_SKELETON_ROW_COUNT.
     const items = Array.from({ length: count }).map((_, i) => (
       <ArticleListSkeleton key={i} />
     ));
 
     if (!animateEntry) {
       return (
-        <div ref={ref} className="article-list-skeleton-group" style={{ width: '100%' }}>
+        <div ref={ref} className="article-list-skeleton-group">
           {items}
         </div>
       );
@@ -71,7 +75,6 @@ export const ArticleListSkeletonGroup = React.forwardRef<HTMLDivElement, { count
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.3 }}
-        style={{ width: '100%' }}
       >
         {items}
       </motion.div>

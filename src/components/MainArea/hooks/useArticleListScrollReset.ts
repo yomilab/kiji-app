@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
-import { useDependencyEffect } from '@/hooks/useLifecycleEffects';
+import { useDependencyEffect, useLayoutDependencyEffect } from '@/hooks/useLifecycleEffects';
 
 interface RowVirtualizerLike {
   scrollToIndex: (index: number, options?: { align?: 'auto' | 'center' | 'end' | 'start' }) => void;
@@ -12,6 +12,7 @@ interface UseArticleListScrollResetOptions {
   articleListItemsRef: RefObject<HTMLDivElement>;
   rowVirtualizer: RowVirtualizerLike;
   setHasListScrollOffset: Dispatch<SetStateAction<boolean>>;
+  isInitialLoading?: boolean;
 }
 
 export const useArticleListScrollReset = ({
@@ -20,6 +21,7 @@ export const useArticleListScrollReset = ({
   articleListItemsRef,
   rowVirtualizer,
   setHasListScrollOffset,
+  isInitialLoading = false,
 }: UseArticleListScrollResetOptions): void => {
   const currentSourceKeyRef = useRef(sourceKey);
   const resetFrameRef = useRef<number | null>(null);
@@ -35,6 +37,15 @@ export const useArticleListScrollReset = ({
     setHasListScrollOffset(false);
     return true;
   }, [articleListItemsRef, filteredCount, rowVirtualizer, setHasListScrollOffset]);
+
+  // overflow:hidden does not zero leftover scrollTop; abspos skeleton would still shift.
+  useLayoutDependencyEffect(() => {
+    if (!isInitialLoading) return;
+    const listElement = articleListItemsRef.current;
+    if (!listElement) return;
+    listElement.scrollTop = 0;
+    setHasListScrollOffset(false);
+  }, [articleListItemsRef, isInitialLoading, setHasListScrollOffset, sourceKey]);
 
   useDependencyEffect(() => {
     if (sourceKey === currentSourceKeyRef.current) return;

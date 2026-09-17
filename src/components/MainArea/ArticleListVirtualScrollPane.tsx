@@ -249,6 +249,7 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
     articleListItemsRef,
     rowVirtualizer,
     setHasListScrollOffset,
+    isInitialLoading,
   });
 
   const requestLoadMoreArticles = useCallback((lastVisibleIndex: number, scrollVelocityPxPerMs = scrollVelocityPxPerMsRef.current) => {
@@ -285,6 +286,12 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   ]);
 
   const handleArticleListScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    // Wheel still lands on the scroller; do not compact the header or snapshot as scrolled.
+    if (isInitialLoading) {
+      setHasListScrollOffset(false);
+      return;
+    }
+
     const scrollElement = event.currentTarget;
     const { scrollTop } = scrollElement;
     const { velocityPxPerMs, sample } = measureArticleListScrollVelocity(
@@ -327,6 +334,7 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
     filteredArticles.length,
     isSearchDebouncePending,
     lastVirtualIndex,
+    isInitialLoading,
     requestLoadMoreArticles,
     setHasListScrollOffset,
     syncViewportSnapshot,
@@ -339,6 +347,7 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
     isSearchActive,
     setHasListScrollOffset,
     syncViewportSnapshot,
+    isInitialLoading,
   });
 
   useArticleListBackgroundScrollSync({
@@ -376,14 +385,14 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
       <div
         ref={articleListItemsRef}
         data-section="article-list-items"
-        className={`article-list-items ${totalFeeds === 0 || filteredArticles.length === 0 ? 'no-scrollbar' : ''}`}
+        className={`article-list-items${totalFeeds === 0 || filteredArticles.length === 0 ? ' no-scrollbar' : ''}${isInitialLoading ? ' article-list-items--skeleton' : ''}`}
         onScroll={(event) => {
           handleScrollPerformanceEvent(event.currentTarget.scrollTop);
           handleArticleListScroll(event);
         }}
       >
         {isInitialLoading ? (
-          <ArticleListSkeletonGroup key="skeleton" count={10} />
+          <ArticleListSkeletonGroup key="skeleton" />
         ) : filteredArticles.length === 0 ? (
           !isInitialLoading && debouncedSearchQuery.trim() ? (
             <motion.div
@@ -435,7 +444,7 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
             />
           </div>
         )}
-        {isLoadingMoreArticles && (
+        {!isInitialLoading && isLoadingMoreArticles && (
           <div className="article-list-load-more">
             <FeedLineLoader
               size="sm"

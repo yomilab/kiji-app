@@ -202,6 +202,27 @@ describe('SharedArticleList hooks', () => {
 
       expect(articleListItemsRef.current?.scrollTop).toBe(180);
     });
+
+    it('zeros leftover scrollTop before paint while the list skeleton is showing', () => {
+      const setHasListScrollOffset = vi.fn();
+      const articleListItemsRef = {
+        current: {
+          scrollTop: 240,
+        },
+      } as RefObject<HTMLDivElement>;
+
+      renderHook(() => useArticleListScrollReset({
+        sourceKey: 'feed:1',
+        filteredCount: 0,
+        articleListItemsRef,
+        rowVirtualizer: { scrollToIndex: vi.fn() },
+        setHasListScrollOffset,
+        isInitialLoading: true,
+      }));
+
+      expect(articleListItemsRef.current?.scrollTop).toBe(0);
+      expect(setHasListScrollOffset).toHaveBeenCalledWith(false);
+    });
   });
 
   describe('useArticleListScrollOffsetSync', () => {
@@ -225,6 +246,29 @@ describe('SharedArticleList hooks', () => {
 
       expect(setHasListScrollOffset).toHaveBeenCalledWith(true);
       expect(syncViewportSnapshot).toHaveBeenCalledWith(false, false, 60);
+    });
+
+    it('treats initial loading as unscrolled even when leftover scrollTop is present', () => {
+      const setHasListScrollOffset = vi.fn();
+      const syncViewportSnapshot = vi.fn();
+      const articleListItemsRef = {
+        current: {
+          scrollTop: 60,
+        },
+      } as RefObject<HTMLDivElement>;
+
+      renderHook(() => useArticleListScrollOffsetSync({
+        articleListItemsRef,
+        sourceKey: 'feed:1',
+        filteredCount: 0,
+        isSearchActive: false,
+        setHasListScrollOffset,
+        syncViewportSnapshot,
+        isInitialLoading: true,
+      }));
+
+      expect(setHasListScrollOffset).toHaveBeenCalledWith(false);
+      expect(syncViewportSnapshot).toHaveBeenCalledWith(true, false, 0);
     });
   });
 

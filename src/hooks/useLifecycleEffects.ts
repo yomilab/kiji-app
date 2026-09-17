@@ -1,4 +1,4 @@
-import { useEffect, useRef, type DependencyList, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, type DependencyList, type RefObject } from 'react';
 
 export const useMountEffect = (effect: () => void | (() => void)): void => {
   useEffect(effect, []);
@@ -9,6 +9,13 @@ export const useDependencyEffect = (
   dependencies: DependencyList
 ): void => {
   useEffect(effect, dependencies);
+};
+
+export const useLayoutDependencyEffect = (
+  effect: () => void | (() => void),
+  dependencies: DependencyList
+): void => {
+  useLayoutEffect(effect, dependencies);
 };
 
 export const useUnmountEffect = (cleanup: () => void): void => {

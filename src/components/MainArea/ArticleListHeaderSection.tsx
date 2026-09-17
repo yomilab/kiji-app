@@ -39,7 +39,7 @@ export const ArticleListHeaderSection = memo(function ArticleListHeaderSection({
   onCloseSearch,
   onToggleSearch,
 }: ArticleListHeaderSectionProps) {
-  const titleSectionClassName = `article-list-title-section ${hasListScrollOffset ? 'article-list-title-section-scrolled' : ''}`;
+  const titleSectionClassName = `article-list-title-section ${hasListScrollOffset && !isInitialLoading ? 'article-list-title-section-scrolled' : ''}`;
 
   return (
     <div

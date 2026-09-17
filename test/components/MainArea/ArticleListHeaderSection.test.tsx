@@ -16,7 +16,10 @@ vi.mock('@/services/saved/savedArticlesIOService', () => ({
   },
 }));
 
-const renderHeader = (isSavedView = true) => {
+const renderHeader = (
+  isSavedView = true,
+  overrides: Partial<React.ComponentProps<typeof ArticleListHeaderSection>> = {},
+) => {
   const articleListRef = createRef<HTMLDivElement>();
   return render(
     <div ref={articleListRef}>
@@ -34,6 +37,7 @@ const renderHeader = (isSavedView = true) => {
         onSearchChange={vi.fn()}
         onCloseSearch={vi.fn()}
         onToggleSearch={vi.fn()}
+        {...overrides}
       />
     </div>,
   );
@@ -62,5 +66,17 @@ describe('ArticleListHeaderSection window chrome drag', () => {
 
     fireEvent.mouseDown(screen.getByRole('heading', { name: 'Daily' }));
     expect(screen.queryByRole('button', { name: /import articles/i })).not.toBeInTheDocument();
+  });
+
+  it('does not apply the scrolled hairline while the list skeleton is showing', () => {
+    renderHeader(false, { hasListScrollOffset: true, isInitialLoading: true });
+    const section = document.querySelector('[data-section="article-list-title"]');
+    expect(section).not.toHaveClass('article-list-title-section-scrolled');
+  });
+
+  it('applies the scrolled hairline for real-row scroll once loading has finished', () => {
+    renderHeader(false, { hasListScrollOffset: true, isInitialLoading: false });
+    const section = document.querySelector('[data-section="article-list-title"]');
+    expect(section).toHaveClass('article-list-title-section-scrolled');
   });
 });
