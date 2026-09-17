@@ -18,7 +18,7 @@ pub use articles::{
 };
 pub use feeds::{
     feeds_count, feeds_create, feeds_delete, feeds_delete_many, feeds_get, feeds_get_by_url,
-    feeds_list, feeds_reorder_unstationed, feeds_update,
+    feeds_library_sidebar_snapshot, feeds_list, feeds_reorder_unstationed, feeds_update,
     feeds_update_article_count, feeds_update_last_fetched, feeds_update_unread_count,
     list_feeds, update_feed, FeedUpdate,
 };
@@ -400,7 +400,7 @@ fn read_foreign_keys_enabled(connection: &Connection) -> Result<bool, String> {
 mod tests {
     use super::{
         articles::{get_article, query_articles, sync_feed_article_counts_batch, ArticleQueryRequest},
-        feeds::list_feeds,
+        feeds::{list_feeds, list_feeds_sidebar, list_library_sidebar_snapshot},
         migrations::{read_current_migration_version, run_migrations},
         saved::{get_saved_article_by_hash, query_saved_articles, SavedArticleQueryRequest},
         schema::{CREATE_SEARCH_INDEXES, CREATE_TABLES, SCHEMA_VERSION},
@@ -1240,5 +1240,32 @@ mod tests {
             )
             .expect("read feed counts");
         assert_eq!(stored_counts, (1, 2));
+    }
+
+    #[test]
+    fn sidebar_snapshot_omits_favicon_blobs() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+        seed_repository_fixture(&connection);
+        connection
+            .execute(
+                "UPDATE feeds SET favicon = ?1 WHERE id = ?2",
+                params!["data:image/png;base64,AAAA", "feed-1"],
+            )
+            .expect("store favicon blob");
+
+        let full = list_feeds(&connection).expect("list feeds");
+        assert_eq!(full[0].favicon.as_deref(), Some("data:image/png;base64,AAAA"));
+
+        let sidebar = list_feeds_sidebar(&connection).expect("list sidebar feeds");
+        assert_eq!(sidebar.len(), 1);
+        assert!(sidebar[0].favicon_stored);
+        assert_eq!(sidebar[0].title, "Example Feed");
+
+        let snapshot = list_library_sidebar_snapshot(&connection).expect("sidebar snapshot");
+        assert_eq!(snapshot.feeds.len(), 1);
+        assert!(snapshot.feeds[0].favicon_stored);
+        assert_eq!(snapshot.stations.len(), 1);
+        assert_eq!(snapshot.stations[0].name, "Tech");
     }
 }

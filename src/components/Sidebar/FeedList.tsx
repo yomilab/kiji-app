@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import { feedsManager } from '@/services/feeds/feedsManager';
+import { getAllFeedMetadataCached } from '@/services/feeds/feedMetadataCache';
 import { articlesManager } from '@/services/articles/articlesManager';
 import {
   useFeedDeletedMutation,
@@ -146,7 +147,7 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
   ), []);
 
   const loadFeeds = useCallback(async (options?: { force?: boolean }) => {
-    const feedList = await feedsManager.getAllFeeds();
+    const feedList = await getAllFeedMetadataCached();
     if (
       !options?.force
       && lastAppliedUnstationedHydrateRevision.current > 0
@@ -185,7 +186,23 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
   });
 
   useEffect(() => {
-    void loadFeeds();
+    let cancelled = false;
+    const run = () => {
+      if (!cancelled) {
+        void loadFeeds();
+      }
+    };
+    const idleId = typeof window.requestIdleCallback === 'function'
+      ? window.requestIdleCallback(run, { timeout: 200 })
+      : window.setTimeout(run, 0);
+    return () => {
+      cancelled = true;
+      if (typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId as number);
+      } else {
+        window.clearTimeout(idleId);
+      }
+    };
   }, [loadFeeds]);
 
   useEffect(() => {

@@ -1282,4 +1282,33 @@ describe("feedSchedulerService", () => {
       );
     });
   });
+
+  it('catchUpAfterResumeHonorsStartupDeferUntilAckOr30s', async () => {
+    await feedScheduler.start();
+    feedScheduler.setStartupCycleDeferredForTests(true);
+    previewNativeCycle.mockClear();
+
+    schedulerReconfigure.mockClear();
+    await feedScheduler.catchUpAfterResume();
+    expect(previewNativeCycle).not.toHaveBeenCalled();
+    expect(schedulerReconfigure).toHaveBeenCalled();
+
+    feedScheduler.pauseForStationSelection();
+    feedScheduler.boostMany(['feed-1']);
+    feedScheduler.resumeAfterStationSelection();
+    expect(previewNativeCycle).not.toHaveBeenCalled();
+
+    feedScheduler.acknowledgeSidebarInteraction();
+    expect(previewNativeCycle).not.toHaveBeenCalled();
+  });
+
+  it('resumeAfterStationSelection.restoreDoesNotLiftDeferral', async () => {
+    await feedScheduler.start();
+    feedScheduler.setStartupCycleDeferredForTests(true);
+    previewNativeCycle.mockClear();
+
+    feedScheduler.pauseForStationSelection();
+    feedScheduler.resumeAfterStationSelection();
+    expect(previewNativeCycle).not.toHaveBeenCalled();
+  });
 });

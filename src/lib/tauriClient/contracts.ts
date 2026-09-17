@@ -57,6 +57,33 @@ export interface FeedRecord {
   lastFaviconRefresh: ISODateString | null;
 }
 
+export interface SidebarFeedRecord {
+  id: string;
+  title: string;
+  url: UrlString;
+  createdAt: ISODateString;
+  lastFetched: ISODateString | null;
+  lastFailedFetchAt: ISODateString | null;
+  unreadCount: number;
+  articleCount: number;
+  tags: string[];
+  faviconHasTransparency: boolean | null;
+  faviconBgLight: string | null;
+  faviconBgDark: string | null;
+  faviconFetchFailed: boolean;
+  faviconStored: boolean;
+  emoji: string | null;
+  sortOrder: number;
+  updateFrequencyScore: number;
+  consecutiveFailures: number;
+  lastFaviconRefresh: ISODateString | null;
+}
+
+export interface LibrarySidebarSnapshot {
+  feeds: SidebarFeedRecord[];
+  stations: TagRecord[];
+}
+
 export interface FeedCreateRequest {
   feed: FeedRecord;
 }
@@ -766,6 +793,9 @@ export interface FeedsContract {
   };
   list: {
     response: FeedRecord[];
+  };
+  librarySidebarSnapshot: {
+    response: LibrarySidebarSnapshot;
   };
   get: {
     request: { id: string };

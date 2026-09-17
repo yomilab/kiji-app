@@ -12,6 +12,8 @@ import * as feedStore from '@/stores/feedStore';
 
 import { clearTagFeedIdsCacheForTests } from '@/services/tags/tagFeedIdsCache';
 import { clearFeedMetadataCacheForTests } from '@/services/feeds/feedMetadataCache';
+import { resetSidebarRestoreGenerationForTests } from '@/services/feeds/sidebarRestoreGeneration';
+import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 
 const feedStoreTagsMock = vi.hoisted(() => ({
   listWithFeedIds: vi.fn().mockResolvedValue([]),
@@ -30,6 +32,7 @@ vi.mock('@/stores/feedStore', () => ({
   getCount: vi.fn(),
   getById: vi.fn(),
   getAll: vi.fn(),
+  listSidebarSnapshot: vi.fn(),
   tags: feedStoreTagsMock,
 }));
 
@@ -72,6 +75,15 @@ vi.mock('@/services/scheduler/nativeSchedulerCycle', async (importOriginal) => {
     isNativeFeedIngestionEnabled: () => false,
   };
 });
+
+vi.mock('@/services/feeds/opmlWorkflowService', () => ({
+  opmlWorkflowService: {
+    scheduleMissingFaviconBackfillAfterCatalog: vi.fn(),
+    scheduleMissingFaviconsAfterStationSelection: vi.fn(),
+    attachFaviconTaskListener: vi.fn(),
+    detachFaviconTaskListener: vi.fn(),
+  },
+}));
 
 vi.mock('@/services/favicons/faviconRefreshService', () => ({
   maybeRefreshFavicon: vi.fn(),
@@ -135,6 +147,8 @@ describe('FeedContext restore selection', () => {
     vi.useFakeTimers();
     clearTagFeedIdsCacheForTests();
     clearFeedMetadataCacheForTests();
+    resetSidebarRestoreGenerationForTests();
+    feedLibraryMutationBus.resetForTests();
     latestContext = null;
     localStorage.clear();
 
@@ -150,6 +164,10 @@ describe('FeedContext restore selection', () => {
 
     (feedStore.getCount as vi.Mock).mockResolvedValue(0);
     (feedStore.getAll as vi.Mock).mockResolvedValue([stationFeed]);
+    (feedStore.listSidebarSnapshot as vi.Mock).mockResolvedValue({
+      feeds: [stationFeed],
+      stations: [{ name: 'Station', feedIds: ['feed-a'], createdAt: '2026-01-01T00:00:00.000Z' }],
+    });
     feedStoreTagsMock.listWithFeedIds.mockResolvedValue([{ name: 'Station', feedIds: ['feed-a'] }]);
     feedStoreTagsMock.listFeedIds.mockResolvedValue(['feed-a']);
     (articleStore.query as vi.Mock).mockResolvedValue({
@@ -175,7 +193,7 @@ describe('FeedContext restore selection', () => {
     (feedsManager.updateFeed as vi.Mock).mockResolvedValue(undefined);
     (feedsFetcher.fetchFeed as vi.Mock).mockResolvedValue([]);
     (convertFeedItemsToArticles as vi.Mock).mockResolvedValue([]);
-    (tagsManager.getAllTags as vi.Mock).mockResolvedValue([{ name: 'Station' }]);
+    (tagsManager.getAllTags as vi.Mock).mockResolvedValue([{ name: 'Station', feedIds: ['feed-a'] }]);
     (tagsManager.getFeedsByTag as vi.Mock).mockResolvedValue(['feed-a']);
     (feedsManager.getFeedById as vi.Mock).mockResolvedValue({
       id: 'feed-a',
@@ -199,6 +217,7 @@ describe('FeedContext restore selection', () => {
     });
     container.remove();
     localStorage.clear();
+    feedLibraryMutationBus.resetForTests();
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
   });
@@ -227,6 +246,11 @@ describe('FeedContext restore selection', () => {
     expect(feedsFetcher.fetchFeed).not.toHaveBeenCalled();
 
     await act(async () => {
+      advanceSourceSelectionRefreshSchedule(vi.advanceTimersByTime.bind(vi));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
       vi.advanceTimersByTime(SOURCE_SELECTION_MIN_REFRESH_DELAY_MS + 200);
       await Promise.resolve();
     });
@@ -234,5 +258,60 @@ describe('FeedContext restore selection', () => {
     await waitForExpectation(() => {
       expect(feedsManager.getFeedById).toHaveBeenCalledWith('feed-a');
     });
+  });
+
+  it('restoreSelection.doesNotCallFeedStoreGetAllOrFeedsList', async () => {
+    await act(async () => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await waitForExpectation(() => {
+      expect(latestContext).not.toBeNull();
+      expect(latestContext!.selectedTag).toBe('Station');
+    });
+
+    expect(feedStore.getAll).not.toHaveBeenCalled();
+  });
+
+  it('restoreSelection.abortsAfterGetAllTagsIfClickWon', async () => {
+    let resolveTags!: (value: Array<{ name: string; feedIds: string[] }>) => void;
+    (tagsManager.getAllTags as Mock).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveTags = resolve;
+      }),
+    );
+
+    await act(async () => {
+      root.render(
+        <FeedProvider>
+          <Probe />
+        </FeedProvider>
+      );
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await waitForExpectation(() => {
+      expect(tagsManager.getAllTags).toHaveBeenCalled();
+      expect(latestContext).not.toBeNull();
+    });
+
+    await act(async () => {
+      await latestContext!.selectSmartView('unread');
+    });
+
+    await act(async () => {
+      resolveTags([{ name: 'Station', feedIds: ['feed-a'] }]);
+      await Promise.resolve();
+    });
+
+    expect(latestContext!.selectedTag).toBeNull();
+    expect(latestContext!.selectedSmartView).toBe('unread');
   });
 });

@@ -129,7 +129,7 @@ export const useApplicationMenuCommands = ({
         await tagsManager.deleteTag(tag.name);
       }
 
-      feedLibraryMutationBus.publishStationsHydrated([]);
+      feedLibraryMutationBus.publishLibraryHydrated({ stations: [], unstationed: [] });
       clearFeedSelection();
       await refreshTotalFeeds();
       notifyFeedLibraryChanged();

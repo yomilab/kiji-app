@@ -4,6 +4,7 @@ import UnfoldMoreOutlined from '@mui/icons-material/UnfoldMoreOutlined';
 import UnfoldLessOutlined from '@mui/icons-material/UnfoldLessOutlined';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { feedsManager, type Feed } from '@/services/feeds/feedsManager';
+import { getAllFeedMetadataCached } from '@/services/feeds/feedMetadataCache';
 import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import {
   useFeedDeletedMutation,
@@ -284,8 +285,9 @@ export const TagManager: React.FC = () => {
   const ensureFeedsCached = useCallback(async (feedIds: string[]) => {
     const missing = feedIds.filter(id => !feedCacheRef.current.has(id));
     if (missing.length > 0) {
-      const fetched = await Promise.all(missing.map(id => feedsManager.getFeedById(id)));
-      const feeds = fetched.filter((feed): feed is Feed => Boolean(feed));
+      const missingIds = new Set(missing);
+      const catalog = await getAllFeedMetadataCached();
+      const feeds = catalog.filter((feed) => missingIds.has(feed.id));
       const pinnedIds = collectPinnedFeedIds(
         tagsRef.current,
         expandedStationsRef.current,

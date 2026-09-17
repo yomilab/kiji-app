@@ -1,4 +1,5 @@
 import { feedsManager } from '@/services/feeds/feedsManager';
+import { getAllFeedMetadataCached } from '@/services/feeds/feedMetadataCache';
 import { opmlImportService, type OpmlImportResult, type ParseOpmlEntriesOptions } from '@/services/feeds/opmlImportService';
 import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
 import { helperTaskClient } from '@/services/tasks/helperTaskClient';
@@ -174,18 +175,23 @@ class OpmlWorkflowService {
   }
 
   private async enqueueMissingFaviconTasks(): Promise<void> {
-    const feeds = await feedsManager.getAllFeeds();
-    const missing = feeds.filter((feed) => (
-      !feed.emoji
-      && !feed.favicon
-      && !feed.faviconFetchFailed
-    ));
+    try {
+      const feeds = await getAllFeedMetadataCached();
+      const missing = feeds.filter((feed) => (
+        !feed.emoji
+        && !feed.favicon
+        && !feed.faviconStored
+        && !feed.faviconFetchFailed
+      ));
 
-    if (missing.length === 0) {
-      return;
+      if (missing.length === 0) {
+        return;
+      }
+
+      await this.enqueueFaviconTasks(missing);
+    } catch {
+      this.backfillScheduled = false;
     }
-
-    await this.enqueueFaviconTasks(missing);
   }
 
   private rememberVisibleStationFaviconBoost(feedId: string): void {

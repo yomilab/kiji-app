@@ -1,6 +1,7 @@
 import { tauriClient } from "../lib/tauriClient";
-import type { FeedRecord } from "../lib/tauriClient/contracts";
+import type { FeedRecord, SidebarFeedRecord, TagRecord } from "../lib/tauriClient/contracts";
 import type { Feed } from "../services/feeds/types";
+import type { Tag } from "../types/tag";
 
 export function recordToFeed(record: FeedRecord): Feed {
   return {
@@ -33,6 +34,42 @@ export function recordToFeed(record: FeedRecord): Feed {
     consecutiveFailures: record.consecutiveFailures,
     etag: record.etag ?? undefined,
     lastModifiedHeader: record.lastModifiedHeader ?? undefined,
+    faviconStored: Boolean(record.favicon),
+  };
+}
+
+export function sidebarRecordToFeed(record: SidebarFeedRecord): Feed {
+  return {
+    id: record.id,
+    title: record.title,
+    url: record.url,
+    createdAt: new Date(record.createdAt),
+    lastFetched: record.lastFetched ? new Date(record.lastFetched) : undefined,
+    lastFailedFetchAt: record.lastFailedFetchAt ? new Date(record.lastFailedFetchAt) : undefined,
+    unreadCount: record.unreadCount,
+    articleCount: record.articleCount,
+    tags: record.tags,
+    faviconHasTransparency: record.faviconHasTransparency ?? undefined,
+    faviconBgLight: record.faviconBgLight ?? undefined,
+    faviconBgDark: record.faviconBgDark ?? undefined,
+    faviconFetchFailed: record.faviconFetchFailed,
+    faviconStored: record.faviconStored,
+    lastFaviconRefresh: record.lastFaviconRefresh ? new Date(record.lastFaviconRefresh) : undefined,
+    emoji: record.emoji ?? undefined,
+    sortOrder: record.sortOrder,
+    updateFrequencyScore: record.updateFrequencyScore,
+    consecutiveFailures: record.consecutiveFailures,
+  };
+}
+
+export function tagRecordToTag(record: TagRecord): Tag {
+  return {
+    name: record.name,
+    feedIds: record.feedIds ?? [],
+    color: record.color ?? undefined,
+    createdAt: record.createdAt,
+    emoji: record.emoji ?? undefined,
+    sortOrder: record.sortOrder,
   };
 }
 
@@ -72,6 +109,14 @@ export function feedToRecord(feed: Feed): FeedRecord {
 
 export async function getAll(): Promise<Feed[]> {
   return (await tauriClient.feeds.list()).map(recordToFeed);
+}
+
+export async function listSidebarSnapshot(): Promise<{ feeds: Feed[]; stations: Tag[] }> {
+  const snapshot = await tauriClient.feeds.librarySidebarSnapshot();
+  return {
+    feeds: snapshot.feeds.map(sidebarRecordToFeed),
+    stations: snapshot.stations.map(tagRecordToTag),
+  };
 }
 
 export async function getById(id: string): Promise<Feed | null> {

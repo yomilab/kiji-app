@@ -20,14 +20,21 @@ vi.mock('@/stores/articleStore', () => ({
   syncFeedCountsBatch: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('@/stores/feedStore', () => ({
-  getCount: vi.fn(),
-  getById: vi.fn(),
-  getAll: vi.fn().mockResolvedValue([]),
-  tags: {
-    listWithFeedIds: vi.fn().mockResolvedValue([]),
-  },
-}));
+vi.mock('@/stores/feedStore', () => {
+  const getAll = vi.fn().mockResolvedValue([]);
+  return {
+    getCount: vi.fn(),
+    getById: vi.fn(),
+    getAll,
+    listSidebarSnapshot: vi.fn(async () => ({
+      feeds: await getAll(),
+      stations: [],
+    })),
+    tags: {
+      listWithFeedIds: vi.fn().mockResolvedValue([]),
+    },
+  };
+});
 
 vi.mock('@/services/feeds/feedsFetcher', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/feeds/feedsFetcher')>();

@@ -70,6 +70,62 @@ pub struct FeedRecord {
     pub last_favicon_refresh: Option<String>,
 }
 
+/// Sidebar catalog row: titles and refresh metadata without favicon/image blobs.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidebarFeedRecord {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    pub created_at: String,
+    pub last_fetched: Option<String>,
+    pub last_failed_fetch_at: Option<String>,
+    pub unread_count: i64,
+    pub article_count: i64,
+    pub tags: Vec<String>,
+    pub favicon_has_transparency: Option<bool>,
+    pub favicon_bg_light: Option<String>,
+    pub favicon_bg_dark: Option<String>,
+    pub favicon_fetch_failed: bool,
+    pub favicon_stored: bool,
+    pub emoji: Option<String>,
+    pub sort_order: i64,
+    pub update_frequency_score: f64,
+    pub consecutive_failures: i64,
+    pub last_favicon_refresh: Option<String>,
+}
+
+impl SidebarFeedRecord {
+    pub fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
+        let tags_json: Option<String> = row.get("tags_json")?;
+        let favicon_has_transparency: Option<i64> = row.get("favicon_has_transparency")?;
+        let favicon_fetch_failed: i64 = row.get("favicon_fetch_failed")?;
+        let favicon_stored: i64 = row.get("favicon_stored")?;
+
+        Ok(Self {
+            id: row.get("id")?,
+            title: row.get("title")?,
+            url: row.get("url")?,
+            created_at: row.get("created_at")?,
+            last_fetched: row.get("last_fetched")?,
+            last_failed_fetch_at: row.get("last_failed_fetch_at")?,
+            unread_count: row.get("unread_count")?,
+            article_count: row.get("article_count")?,
+            tags: parse_string_array(tags_json),
+            favicon_has_transparency: favicon_has_transparency.map(i64_to_bool),
+            favicon_bg_light: row.get("favicon_bg_light")?,
+            favicon_bg_dark: row.get("favicon_bg_dark")?,
+            favicon_fetch_failed: i64_to_bool(favicon_fetch_failed),
+            favicon_stored: i64_to_bool(favicon_stored),
+            emoji: row.get("emoji")?,
+            sort_order: row.get("sort_order")?,
+            update_frequency_score: row.get("update_frequency_score")?,
+            consecutive_failures: row.get("consecutive_failures")?,
+            last_favicon_refresh: row.get("last_favicon_refresh")?,
+        })
+    }
+}
+
 impl FeedRecord {
     pub fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
         let tags_json: Option<String> = row.get("tags_json")?;

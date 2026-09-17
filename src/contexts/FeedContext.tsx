@@ -14,7 +14,11 @@ import {
 import * as feedStore from '@/stores/feedStore';
 import { getAllFeedMetadataCached } from '@/services/feeds/feedMetadataCache';
 import {
-  ensureTagFeedIdsCache,
+  abortPendingSidebarRestore,
+  beginSidebarRestoreAttempt,
+  isCurrentSidebarRestoreAttempt,
+} from '@/services/feeds/sidebarRestoreGeneration';
+import {
   getCachedFeedIdsForTag,
   seedTagFeedIdsCache,
 } from '@/services/tags/tagFeedIdsCache';
@@ -198,6 +202,8 @@ type RefreshTriggerOptions = {
   /** Station switch bypasses failure backoff but still respects the 60s fetch cooldown. */
   bypassBackoff?: boolean;
   awaitInitialFetch?: boolean;
+  restore?: boolean;
+  acknowledgeSidebar?: boolean;
 };
 
 type RefreshFeedFromNetworkOptions = {
@@ -254,7 +260,7 @@ interface NavigationState {
 interface NavigationActions {
   selectFeed: (feedId: string, feedUrl: string, feedTitle: string, options?: RefreshTriggerOptions) => Promise<void>;
   selectTag: (tagName: string, options?: RefreshTriggerOptions, feedIdsHint?: string[]) => Promise<void>;
-  selectSmartView: (viewType: SmartViewType) => Promise<void>;
+  selectSmartView: (viewType: SmartViewType, options?: RefreshTriggerOptions) => Promise<void>;
   clearFeedSelection: () => void;
   openFeedEditView: (target?: FeedEditTarget) => void;
   closeFeedEditView: () => void;
@@ -896,7 +902,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const lastQueryRef = useRef<ArticleQuery | null>(null);
   const lastQuerySourceKeyRef = useRef<string | null>(null);
   const listReloadEpochRef = useRef(0);
-  const hasAttemptedSidebarRestoreRef = useRef(false);
   const backgroundScrollRequestRevisionRef = useRef(0);
   const activeSourceRef = useRef<RefreshSourceDescriptor | null>(null);
   const currentArticlesRef = useRef<Article[]>([]);
@@ -1391,7 +1396,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     selectionSchedulerPauseTokenRef.current = token;
   }, []);
 
-  const beginSelectionRequest = useCallback((): number => {
+  const beginSelectionRequest = useCallback((options?: { acknowledge?: boolean }): number => {
     const previousToken = switchLifecycle.currentToken;
     const previousSourceKey = activeSourceRef.current?.key ?? null;
     const hadWarmFull =
@@ -1418,7 +1423,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (previousToken > 0) {
       sidebarSwitchTrace.cancel(previousToken, 'superseded');
     }
-    feedScheduler.acknowledgeSidebarInteraction();
+    if (options?.acknowledge !== false) {
+      feedScheduler.acknowledgeSidebarInteraction();
+    }
     beginSelectionSwitchNetworkPriority(token);
     return token;
   }, [abortSelectionSwitchPriority, beginSelectionSwitchNetworkPriority, clearStationUiRefreshTimer, switchLifecycle]);
@@ -3339,6 +3346,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     title: string,
     options: RefreshTriggerOptions = {},
   ) => {
+    if (!options.restore) {
+      abortPendingSidebarRestore();
+    }
     feedScheduler.clearActiveStationFocus();
     const isSameFeed = feedId === prevNavRef.current.id && feedId !== null;
     if (!isSameFeed) {
@@ -3359,7 +3369,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }, { exclusiveByKind: true });
     }
 
-    const token = beginSelectionRequest();
+    const token = beginSelectionRequest({
+      acknowledge: options.acknowledgeSidebar !== false && !options.restore,
+    });
     if (!isSameFeed) {
       applyImmediateSelectionSwitchPaint(`feed:${feedId}`);
       switchLifecycle.markImmediatePaintApplied(token);
@@ -3377,6 +3389,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     options: RefreshTriggerOptions = {},
     feedIdsHint?: string[],
   ) => {
+    if (!options.restore) {
+      abortPendingSidebarRestore();
+    }
     if (feedIdsHint !== undefined) {
       seedTagFeedIdsCache([[tagName, feedIdsHint]]);
     }
@@ -3398,7 +3413,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }, { exclusiveByKind: true });
     }
 
-    const token = beginSelectionRequest();
+    const token = beginSelectionRequest({
+      acknowledge: options.acknowledgeSidebar !== false && !options.restore,
+    });
     if (!isSameTag) {
       applyImmediateSelectionSwitchPaint(`tag:${tagName}`);
       switchLifecycle.markImmediatePaintApplied(token);
@@ -3411,7 +3428,13 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     void handleTagSelection(tagName, !isSameTag, token, options);
   }, [applyImmediateSelectionSwitchPaint, beginSelectionRequest, clearArticleListScrollIdleState, handleTagSelection]);
 
-  const selectSmartView = useCallback(async (viewType: SmartViewType) => {
+  const selectSmartView = useCallback(async (
+    viewType: SmartViewType,
+    options: RefreshTriggerOptions = {},
+  ) => {
+    if (!options.restore) {
+      abortPendingSidebarRestore();
+    }
     feedScheduler.clearActiveStationFocus();
     const isSameSmart = viewType === prevNavRef.current.smart && viewType !== null;
     if (!isSameSmart) {
@@ -3430,7 +3453,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }, { exclusiveByKind: true });
     }
 
-    const token = beginSelectionRequest();
+    const token = beginSelectionRequest({
+      acknowledge: options.acknowledgeSidebar !== false && !options.restore,
+    });
     if (!isSameSmart && viewType !== 'saved') {
       // Saved paints synchronously through its own reset in the handler; the
       // other smart views reuse the snapshot-or-skeleton immediate paint.
@@ -3441,6 +3466,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [applyImmediateSelectionSwitchPaint, beginSelectionRequest, clearArticleListScrollIdleState, handleSmartViewSelection]);
 
   const clearFeedSelection = useCallback(() => {
+    abortPendingSidebarRestore();
     feedScheduler.clearActiveStationFocus();
     abortSelectionSwitchPriority();
     clearArticleListScrollIdleState();
@@ -3452,10 +3478,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [abortSelectionSwitchPriority, clearArticleListScrollIdleState]);
 
   useMountEffect(() => {
-    void ensureTagFeedIdsCache();
-  });
-
-  useMountEffect(() => {
     return sourceSelectionBus.subscribe((event) => {
       if (event.type === 'source-refresh-aborted') {
         abortSelectionSwitchPriority(event.payload.token);
@@ -3464,41 +3486,53 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
 
   useMountEffect(() => {
-    if (hasAttemptedSidebarRestoreRef.current) return;
-    hasAttemptedSidebarRestoreRef.current = true;
+    const attempt = beginSidebarRestoreAttempt();
 
     void (async () => {
       try {
         const raw = await storage.get(LAST_SIDEBAR_SELECTION_KEY);
-        if (!raw) return;
+        if (!isCurrentSidebarRestoreAttempt(attempt) || !raw) {
+          return;
+        }
 
         const parsed = JSON.parse(raw) as SidebarSelectionSnapshot;
+        const restoreOptions: RefreshTriggerOptions = {
+          restore: true,
+          acknowledgeSidebar: false,
+        };
 
         if (parsed.type === 'smart') {
           if (parsed.viewType === 'pinned' || isLibrarySmartViewId(parsed.viewType)) {
-            await selectSmartView(parsed.viewType);
+            await selectSmartView(parsed.viewType, restoreOptions);
           }
           return;
         }
 
         if (parsed.type === 'feed') {
-          const feed = await feedsManager.getFeedById(parsed.feedId);
+          const feeds = await getAllFeedMetadataCached();
+          if (!isCurrentSidebarRestoreAttempt(attempt)) {
+            return;
+          }
+          const feed = feeds.find((entry) => entry.id === parsed.feedId);
           if (!feed) {
             await storage.remove(LAST_SIDEBAR_SELECTION_KEY);
             return;
           }
-          await selectFeed(feed.id, feed.url, feed.title);
+          await selectFeed(feed.id, feed.url, feed.title, restoreOptions);
           return;
         }
 
         if (parsed.type === 'tag') {
           const tags = await tagsManager.getAllTags();
-          const exists = tags.some((tag) => tag.name === parsed.tagName);
-          if (!exists) {
+          if (!isCurrentSidebarRestoreAttempt(attempt)) {
+            return;
+          }
+          const tag = tags.find((entry) => entry.name === parsed.tagName);
+          if (!tag) {
             await storage.remove(LAST_SIDEBAR_SELECTION_KEY);
             return;
           }
-          await selectTag(parsed.tagName);
+          await selectTag(parsed.tagName, restoreOptions, tag.feedIds);
         }
       } catch (error) {
         logger.warn('FeedContext', 'Failed to restore last sidebar selection', { error });
@@ -3507,6 +3541,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
 
   const openFeedEditView = useCallback((target?: FeedEditTarget) => {
+    abortPendingSidebarRestore();
     abortSidebarListDrag();
     feedScheduler.clearActiveStationFocus();
     clearArticleListScrollIdleState();

@@ -8,7 +8,7 @@ import { BottomWidget } from './BottomWidget';
 import { SectionTitle, type SidebarSectionId } from './SectionTitle';
 import { settingsManager } from '@/services/settings';
 import { useFeedUI } from '@/contexts/FeedContext';
-import { feedsManager } from '@/services/feeds/feedsManager';
+import { getAllFeedMetadataCached } from '@/services/feeds/feedMetadataCache';
 import { isOpenAddFeedShortcut, keybindingService } from '@/services/shortcuts/shortcutService';
 import { useFeedRefreshActivity } from '@/hooks/useFeedRefreshActivity';
 import { isInteractiveStationRefreshInProgress } from '@/services/feeds/feedRefreshActivity';
@@ -114,26 +114,27 @@ export const Sidebar: React.FC = () => {
   // Reload the displayed sync time when scheduler-driven library updates land,
   // even if no visible loading state changed during a background cycle.
   useEffect(() => {
+    if (totalFeeds === 0) {
+      setLastSyncTime(null);
+      return;
+    }
+
+    let cancelled = false;
     const loadLastSyncTime = async () => {
       try {
-        // Don't load sync time if there are no feeds
-        if (totalFeeds === 0) {
-          setLastSyncTime(null);
+        const feeds = await getAllFeedMetadataCached();
+        if (cancelled) {
           return;
         }
-
-        const feeds = await feedsManager.getAllFeeds();
         if (feeds.length === 0) {
           setLastSyncTime(null);
           return;
         }
-        // Get the most recent lastFetched time from all feeds
         const lastFetched = feeds
-          .map((f) => f.lastFetched ? new Date(f.lastFetched) : null)
-          .filter((d): d is Date => d !== null)
-          .sort((a, b) => b.getTime() - a.getTime())[0];
+          .map((feed) => feed.lastFetched ? new Date(feed.lastFetched) : null)
+          .filter((date): date is Date => date !== null)
+          .sort((left, right) => right.getTime() - left.getTime())[0];
 
-        // Only update if the time has actually changed to prevent blink
         setLastSyncTime((prevTime) => {
           if (!lastFetched && !prevTime) return null;
           if (!lastFetched || !prevTime) return lastFetched || null;
@@ -145,7 +146,23 @@ export const Sidebar: React.FC = () => {
       }
     };
 
-    loadLastSyncTime();
+    const run = () => {
+      if (!cancelled) {
+        void loadLastSyncTime();
+      }
+    };
+    const idleId = typeof window.requestIdleCallback === 'function'
+      ? window.requestIdleCallback(run, { timeout: 200 })
+      : window.setTimeout(run, 0);
+
+    return () => {
+      cancelled = true;
+      if (typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId as number);
+      } else {
+        window.clearTimeout(idleId);
+      }
+    };
   }, [feedLibraryVersion, totalFeeds]);
 
   // Keyboard shortcut: Cmd+N to open add feed modal

@@ -4,7 +4,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { TagManager } from '@/components/Sidebar/TagManager';
 import { tagsManager } from '@/services/tags/tagsManager';
 import { feedsManager } from '@/services/feeds/feedsManager';
+import * as feedStore from '@/stores/feedStore';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
+import { clearFeedMetadataCacheForTests } from '@/services/feeds/feedMetadataCache';
 import type { Feed } from '@/services/feeds/feedsManager';
 import type { Tag } from '@/types/tag';
 
@@ -18,6 +20,12 @@ vi.mock('@/services/feeds/feedsManager', () => ({
   feedsManager: {
     getFeedById: vi.fn(),
   },
+}));
+
+vi.mock('@/stores/feedStore', () => ({
+  listSidebarSnapshot: vi.fn(),
+  getAll: vi.fn(),
+  getById: vi.fn(),
 }));
 
 vi.mock('@/services/feeds/opmlWorkflowService', () => ({
@@ -68,16 +76,107 @@ describe('TagManager nested station feeds', () => {
   afterEach(() => {
     cleanup();
     feedLibraryMutationBus.resetForTests();
+    clearFeedMetadataCacheForTests();
     vi.clearAllMocks();
+  });
+
+  const mockSidebarCatalog = (feeds: Feed[]) => {
+    vi.mocked(feedStore.listSidebarSnapshot).mockResolvedValue({
+      feeds,
+      stations: [daily, tech],
+    });
+  };
+
+  it('loadTags.doesNotAwaitCatalogOrHydrate', async () => {
+    vi.mocked(tagsManager.getAllTags).mockResolvedValue([daily, tech]);
+    vi.mocked(feedStore.listSidebarSnapshot).mockReturnValue(new Promise(() => undefined));
+    vi.mocked(feedsManager.getFeedById).mockReturnValue(new Promise(() => undefined));
+
+    render(<TagManager />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Daily')).toBeTruthy();
+      expect(screen.getByText('Tech')).toBeTruthy();
+    });
+
+    expect(feedStore.listSidebarSnapshot).not.toHaveBeenCalled();
+    expect(feedStore.getAll).not.toHaveBeenCalled();
+    expect(feedsManager.getFeedById).not.toHaveBeenCalled();
+  });
+
+  it('loadTags.skipsSetTagsWhenLeftoverFresh', async () => {
+    let resolveTags!: (value: Tag[]) => void;
+    vi.mocked(tagsManager.getAllTags).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveTags = resolve;
+      }),
+    );
+
+    render(<TagManager />);
+    feedLibraryMutationBus.publishLibraryHydrated({
+      stations: [daily, tech],
+      unstationed: [],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Daily')).toBeTruthy();
+    });
+
+    resolveTags([{
+      name: 'Stale',
+      feedIds: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }]);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Stale')).toBeNull();
+      expect(screen.getByText('Daily')).toBeTruthy();
+    });
+  });
+
+  it('handleClearFeeds.emptyLeftoverApplyClearsStationNames', async () => {
+    vi.mocked(tagsManager.getAllTags).mockResolvedValue([daily, tech]);
+    render(<TagManager />);
+    await waitFor(() => {
+      expect(screen.getByText('Daily')).toBeTruthy();
+    });
+
+    feedLibraryMutationBus.publishLibraryHydrated({
+      stations: [],
+      unstationed: [],
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Daily')).toBeNull();
+      expect(screen.queryByText('Tech')).toBeNull();
+    });
+  });
+
+  it('ensureFeedsCached.doesNotCallGetFeedByIdFanout', async () => {
+    vi.mocked(tagsManager.getAllTags).mockResolvedValue([daily, tech]);
+    mockSidebarCatalog([feedA, feedB]);
+    vi.mocked(feedsManager.getFeedById).mockResolvedValue(feedA);
+
+    const { container } = render(<TagManager />);
+    await waitFor(() => {
+      expect(screen.getByText('Daily')).toBeTruthy();
+    });
+
+    const expandButton = container.querySelector('[data-station-name="Daily"] [aria-label="Expand station"]');
+    fireEvent.click(expandButton as HTMLElement);
+
+    await waitFor(() => {
+      expect(screen.getByText('Alpha')).toBeTruthy();
+    });
+
+    expect(feedsManager.getFeedById).not.toHaveBeenCalled();
+    expect(feedStore.listSidebarSnapshot).toHaveBeenCalledTimes(1);
+    expect(feedStore.getAll).not.toHaveBeenCalled();
   });
 
   it('renders expanded feed items in flow under the station row', async () => {
     vi.mocked(tagsManager.getAllTags).mockResolvedValue([daily, tech]);
-    vi.mocked(feedsManager.getFeedById).mockImplementation(async (id: string) => {
-      if (id === 'feed-a') return feedA;
-      if (id === 'feed-b') return feedB;
-      return null;
-    });
+    mockSidebarCatalog([feedA, feedB]);
 
     const { container } = render(<TagManager />);
 
@@ -127,11 +226,10 @@ describe('TagManager nested station feeds', () => {
       feedIds: ['feed-b', 'feed-a'],
     };
     vi.mocked(tagsManager.getAllTags).mockResolvedValue([reversedDaily, tech]);
-    vi.mocked(feedsManager.getFeedById).mockImplementation(async (id: string) => {
-      if (id === 'feed-a') return { ...feedA, sortOrder: 0 };
-      if (id === 'feed-b') return { ...feedB, sortOrder: 50 };
-      return null;
-    });
+    mockSidebarCatalog([
+      { ...feedA, sortOrder: 0 },
+      { ...feedB, sortOrder: 50 },
+    ]);
 
     const { container } = render(<TagManager />);
     await waitFor(() => {
@@ -152,11 +250,7 @@ describe('TagManager nested station feeds', () => {
 
   it('does not re-apply leftover import hydrate when expanding after a later membership reorder', async () => {
     vi.mocked(tagsManager.getAllTags).mockResolvedValue([daily, tech]);
-    vi.mocked(feedsManager.getFeedById).mockImplementation(async (id: string) => {
-      if (id === 'feed-a') return feedA;
-      if (id === 'feed-b') return feedB;
-      return null;
-    });
+    mockSidebarCatalog([feedA, feedB]);
 
     const { container } = render(<TagManager />);
     await waitFor(() => {

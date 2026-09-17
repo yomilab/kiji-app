@@ -52,6 +52,7 @@ export const tauriCommandCatalog: Record<
     { apiMethod: "openOpmlFile", ipcChannel: "opml-open-file", kind: "invoke", targetCommand: "feeds.imports.openOpml", rustCommand: "shell_dialog_open_file" },
     { apiMethod: "saveOpmlFile", ipcChannel: "opml-save-file", kind: "invoke", targetCommand: "feeds.imports.saveOpml", rustCommand: "shell_dialog_save_file" },
     { apiMethod: "dbFeedsGetAll", ipcChannel: "db-feeds-get-all", kind: "invoke", targetCommand: "feeds.list", rustCommand: "feeds_list" },
+    { apiMethod: "dbFeedsLibrarySidebarSnapshot", ipcChannel: "db-feeds-library-sidebar-snapshot", kind: "invoke", targetCommand: "feeds.librarySidebarSnapshot", rustCommand: "feeds_library_sidebar_snapshot" },
     { apiMethod: "dbFeedsGet", ipcChannel: "db-feeds-get", kind: "invoke", targetCommand: "feeds.get", rustCommand: "feeds_get" },
     { apiMethod: "dbFeedsGetByUrl", ipcChannel: "db-feeds-get-by-url", kind: "invoke", targetCommand: "feeds.getByUrl", rustCommand: "feeds_get_by_url" },
     { apiMethod: "dbFeedsInsert", ipcChannel: "db-feeds-insert", kind: "invoke", targetCommand: "feeds.create", rustCommand: "feeds_create" },

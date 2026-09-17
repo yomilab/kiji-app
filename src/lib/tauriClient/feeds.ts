@@ -53,6 +53,12 @@ export async function list(): Promise<FeedsContract["list"]["response"]> {
   return invokeContract<FeedsContract["list"]>("feeds_list");
 }
 
+export async function librarySidebarSnapshot(): Promise<
+  FeedsContract["librarySidebarSnapshot"]["response"]
+> {
+  return invokeContract<FeedsContract["librarySidebarSnapshot"]>("feeds_library_sidebar_snapshot");
+}
+
 export async function get(
   request: FeedsContract["get"]["request"],
 ): Promise<FeedsContract["get"]["response"]> {

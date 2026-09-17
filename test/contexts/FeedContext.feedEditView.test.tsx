@@ -15,6 +15,8 @@ const feedStoreTagsMock = vi.hoisted(() => ({
 vi.mock('@/stores/feedStore', () => ({
   getCount: vi.fn(),
   getById: vi.fn(),
+  getAll: vi.fn().mockResolvedValue([]),
+  listSidebarSnapshot: vi.fn().mockResolvedValue({ feeds: [], stations: [] }),
   tags: feedStoreTagsMock,
 }));
 vi.mock('@/stores/articleStore');

@@ -35,4 +35,5 @@ export interface Feed {
   consecutiveFailures?: number;
   etag?: string;
   lastModifiedHeader?: string;
+  faviconStored?: boolean;
 }

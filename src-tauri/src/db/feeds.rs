@@ -1,5 +1,5 @@
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension, ToSql};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use tauri::State;
 
@@ -7,9 +7,19 @@ use super::{
     articles::{
         delete_article_feed_mappings, delete_orphan_unsaved_articles, reassign_article_owners,
     },
-    models::{bool_to_i64, to_json_string, to_optional_json_string, FeedRecord},
+    models::{
+        bool_to_i64, to_json_string, to_optional_json_string, FeedRecord, SidebarFeedRecord,
+        TagRecord,
+    },
     DbState,
 };
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibrarySidebarSnapshot {
+    pub feeds: Vec<SidebarFeedRecord>,
+    pub stations: Vec<TagRecord>,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,6 +58,15 @@ pub struct FeedUpdate {
 pub async fn feeds_list(state: State<'_, DbState>) -> Result<Vec<FeedRecord>, String> {
     let db = state.inner().clone();
     db.read(|connection| list_feeds(connection)).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn feeds_library_sidebar_snapshot(
+    state: State<'_, DbState>,
+) -> Result<LibrarySidebarSnapshot, String> {
+    let db = state.inner().clone();
+    db.read(|connection| list_library_sidebar_snapshot(connection))
+        .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -277,6 +296,40 @@ pub fn list_feeds(connection: &Connection) -> Result<Vec<FeedRecord>, String> {
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("Failed to read feed row: {error}"))
+}
+
+/// Catalog rows for sidebar first paint: omit favicon/image/podcast blobs.
+pub fn list_feeds_sidebar(connection: &Connection) -> Result<Vec<SidebarFeedRecord>, String> {
+    let mut statement = connection
+        .prepare(
+            r#"
+            SELECT
+              id, title, url, created_at, last_fetched, last_failed_fetch_at,
+              unread_count, article_count, tags_json,
+              favicon_has_transparency, favicon_bg_light, favicon_bg_dark,
+              favicon_fetch_failed, last_favicon_refresh, emoji,
+              sort_order, update_frequency_score, consecutive_failures,
+              CASE WHEN favicon IS NOT NULL AND length(favicon) > 0 THEN 1 ELSE 0 END AS favicon_stored
+            FROM feeds
+            ORDER BY sort_order ASC, title COLLATE NOCASE
+            "#,
+        )
+        .map_err(|error| format!("Failed to prepare sidebar feed list query: {error}"))?;
+    let rows = statement
+        .query_map([], SidebarFeedRecord::from_row)
+        .map_err(|error| format!("Failed to query sidebar feeds: {error}"))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to read sidebar feed row: {error}"))
+}
+
+pub fn list_library_sidebar_snapshot(
+    connection: &Connection,
+) -> Result<LibrarySidebarSnapshot, String> {
+    Ok(LibrarySidebarSnapshot {
+        feeds: list_feeds_sidebar(connection)?,
+        stations: super::tags::list_tags_with_feed_ids(connection)?,
+    })
 }
 
 pub fn get_feed(connection: &Connection, id: &str) -> Result<Option<FeedRecord>, String> {

@@ -204,6 +204,10 @@ class FeedSchedulerService {
 
     this.clearStationSelectionPauseTimer();
     logger.info('Scheduler', 'Resuming background refresh after station selection');
+    if (this.deferStartupCycleUntilInteraction) {
+      this.ensureStartupDeferFallbackTimer(this.lifecycleId);
+      return;
+    }
     this.maybeRunDeferredCycle(this.lifecycleId);
   }
 
@@ -227,6 +231,10 @@ class FeedSchedulerService {
     }
 
     const lifecycleId = this.lifecycleId;
+    if (this.deferStartupCycleUntilInteraction) {
+      this.ensureStartupDeferFallbackTimer(lifecycleId);
+      return;
+    }
     if (this.pendingCycleTick || this.shouldScheduleCatchUpCycle()) {
       this.clearPendingCycleTick();
       void this.runScheduledCycle(lifecycleId, this.consumePendingImportRefreshScope());
@@ -273,7 +281,16 @@ class FeedSchedulerService {
 
     this.deferStartupCycleUntilInteraction = false;
     this.clearStartupDeferTimer();
+    void this.ensureNativeDriverRunning(this.lifecycleId);
     logger.info('Scheduler', 'Startup background refresh deferral lifted after sidebar interaction');
+  }
+
+  /** Test-only: keep OnLaunch/interval ticks deferred until acknowledge or the 30s fallback. */
+  setStartupCycleDeferredForTests(deferred: boolean): void {
+    this.deferStartupCycleUntilInteraction = deferred;
+    if (!deferred) {
+      this.clearStartupDeferTimer();
+    }
   }
 
   async stop(): Promise<void> {
@@ -348,6 +365,17 @@ class FeedSchedulerService {
 
     const lifecycleId = this.lifecycleId;
     if (!this.isCurrentLifecycle(lifecycleId)) {
+      return;
+    }
+
+    if (this.deferStartupCycleUntilInteraction) {
+      if (this.shouldScheduleCatchUpCycle()) {
+        this.markPendingCycleTick('resume');
+      }
+      this.ensureStartupDeferFallbackTimer(lifecycleId);
+      // Keep the native timer alive across sleep during the 30s idle window;
+      // do not run a cycle until a real click or the fallback lifts deferral.
+      await this.ensureNativeDriverRunning(lifecycleId);
       return;
     }
 
@@ -560,6 +588,7 @@ class FeedSchedulerService {
             !this.isCurrentLifecycle(lifecycleId)
             || this.cycleInProgress
             || this.isStationSelectionPaused()
+            || this.deferStartupCycleUntilInteraction
           ) {
             return;
           }
@@ -572,6 +601,17 @@ class FeedSchedulerService {
       logger.info('Scheduler', this.isStationSelectionPaused()
         ? 'Deferred boosted import refresh during station selection'
         : 'Deferred boosted import refresh until current cycle completes', {
+        feedCount: feedIds.length,
+      });
+      return;
+    }
+
+    if (this.deferStartupCycleUntilInteraction) {
+      this.markPendingCycleTick('import-boost');
+      this.mergePendingImportRefreshFeedIds(feedIds);
+      this.pendingImportRefreshBypassFailureBackoff = true;
+      this.ensureStartupDeferFallbackTimer(this.lifecycleId);
+      logger.info('Scheduler', 'Deferred boosted import refresh until startup sidebar interaction', {
         feedCount: feedIds.length,
       });
       return;
@@ -630,7 +670,12 @@ class FeedSchedulerService {
 
       this.deferStartupCycleUntilInteraction = false;
       logger.info('Scheduler', 'Startup background refresh deferral expired; scheduling idle catch-up');
-      this.maybeRunDeferredCycle(lifecycleId);
+      void this.ensureNativeDriverRunning(lifecycleId).then(() => {
+        if (!this.isCurrentLifecycle(lifecycleId)) {
+          return;
+        }
+        this.maybeRunDeferredCycle(lifecycleId);
+      });
     }, STARTUP_CYCLE_IDLE_FALLBACK_MS);
   }
 
@@ -669,6 +714,11 @@ class FeedSchedulerService {
   }
 
   private maybeRunDeferredCycle(lifecycleId: number): void {
+    if (this.deferStartupCycleUntilInteraction) {
+      this.ensureStartupDeferFallbackTimer(lifecycleId);
+      return;
+    }
+
     if (
       !this.pendingCycleTick
       || this.cycleInProgress
