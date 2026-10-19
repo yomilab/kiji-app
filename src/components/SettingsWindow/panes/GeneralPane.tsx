@@ -3,6 +3,7 @@ import type { ContentParser } from '@/services/settings';
 import type { BackgroundUpdateMode } from '@/services/scheduler/types';
 import { SettingsGroup, SettingsRow, SettingsSelect, SettingsSwitch } from '../settingsControls';
 import { FolderGlyph } from '../settingsIcons';
+import { BackgroundModeRow } from '../BackgroundModeRow';
 import type { SettingsWindowState } from '../useSettingsWindowState';
 
 export const GeneralPane: React.FC<{ state: SettingsWindowState['general'] }> = ({ state }) => {
@@ -46,6 +47,10 @@ export const GeneralPane: React.FC<{ state: SettingsWindowState['general'] }> = 
             </SettingsSelect>
           )}
         />
+      </SettingsGroup>
+
+      <SettingsGroup title="App">
+        <BackgroundModeRow />
       </SettingsGroup>
 
       <SettingsGroup title="Saved Articles">

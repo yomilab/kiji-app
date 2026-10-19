@@ -19,7 +19,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tokio = { version = "1.48.0", features = ["time", "macros", "net", "io-util", "io-std", "sync", "rt-multi-thread"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
@@ -43,6 +43,9 @@ feed-rs = "2.3.1"
 sha2 = "0.10.9"
 url = "2.5.8"
 encoding_rs = "0.8.35"
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+tauri-plugin-single-instance = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- KiJi can keep running after you close its window, so feeds keep updating and AI assistants can still reach it. Turn it on in Settings → General → Keep KiJi running when you close the window. On Mac it's on by default and KiJi stays in the Dock; on Windows and Linux it lives in the system tray, where you can open or quit it, and opening KiJi again brings back the running window.
+
 ## [1.7.0] - 2026-10-19
 
 ### Added

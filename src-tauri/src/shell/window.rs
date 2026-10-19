@@ -651,6 +651,14 @@ fn attach_main_window_bounds_listener(
                 eprintln!("[WindowBounds] Failed to save main window bounds on close: {error}");
             }
 
+            if super::background::main_window_close_action(&app_handle)
+                == super::background::CloseAction::Hide
+            {
+                // Keep running (Dock on macOS, tray on Windows/Linux).
+                super::background::hide_main_window(&app_handle);
+                return;
+            }
+
             // Exit from a worker thread so RequestExit is not handled re-entrantly
             // on the main-thread CloseRequested stack (that path can abort).
             let app_handle = app_handle.clone();

@@ -1,3 +1,4 @@
+pub(crate) mod background;
 mod context_menu;
 mod menu;
 mod share;

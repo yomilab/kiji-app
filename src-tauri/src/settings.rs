@@ -111,6 +111,15 @@ pub struct AppSettings {
     pub background_update: BackgroundUpdateMode,
     pub content_parser: ContentParser,
     pub saved_articles_sync_folder: Option<String>,
+    /// Closing the main window hides it instead of quitting (feeds keep
+    /// refreshing, assistants can connect). On by default on macOS only.
+    pub keep_running_in_background: bool,
+}
+
+/// macOS apps keep running after their window closes; Windows/Linux users
+/// opt in (KiJi then lives in the system tray).
+pub fn default_keep_running_in_background() -> bool {
+    cfg!(target_os = "macos")
 }
 
 impl Default for AppSettings {
@@ -124,6 +133,7 @@ impl Default for AppSettings {
             background_update: BackgroundUpdateMode::Every15Minutes,
             content_parser: ContentParser::Defuddle,
             saved_articles_sync_folder: None,
+            keep_running_in_background: default_keep_running_in_background(),
         }
     }
 }
@@ -172,6 +182,10 @@ impl AppSettings {
             self.saved_articles_sync_folder = normalize_optional_string(saved_articles_sync_folder);
         }
 
+        if let Some(keep_running) = patch.keep_running_in_background {
+            self.keep_running_in_background = keep_running;
+        }
+
         Ok(())
     }
 }
@@ -196,6 +210,7 @@ pub struct AppSettingsPatch {
     pub background_update: Option<BackgroundUpdateMode>,
     pub content_parser: Option<ContentParser>,
     pub saved_articles_sync_folder: Option<Option<String>>,
+    pub keep_running_in_background: Option<bool>,
 }
 
 pub struct SettingsState {
@@ -254,6 +269,14 @@ impl SettingsState {
         write_settings_snapshot(&self.path, &settings)?;
 
         Ok(settings.clone())
+    }
+
+    pub fn set_keep_running_in_background(&self, enabled: bool) -> Result<(), String> {
+        self.update(AppSettingsPatch {
+            keep_running_in_background: Some(enabled),
+            ..Default::default()
+        })?;
+        Ok(())
     }
 
     pub fn update_window_bounds(
@@ -394,6 +417,24 @@ mod tests {
 
         settings.apply_patch(patch).expect("patch should apply");
         assert_eq!(settings.saved_articles_sync_folder, None);
+    }
+
+    #[test]
+    fn keep_running_defaults_per_platform_and_survives_old_files() {
+        assert_eq!(
+            AppSettings::default().keep_running_in_background,
+            cfg!(target_os = "macos")
+        );
+        // A settings file written before this option keeps working and gets
+        // the platform default.
+        let parsed: AppSettings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert_eq!(parsed.keep_running_in_background, cfg!(target_os = "macos"));
+
+        let mut settings = AppSettings::default();
+        settings
+            .apply_patch(AppSettingsPatch { keep_running_in_background: Some(true), ..Default::default() })
+            .unwrap();
+        assert!(settings.keep_running_in_background);
     }
 
     #[test]
