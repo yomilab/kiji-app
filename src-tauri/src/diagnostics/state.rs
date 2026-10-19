@@ -90,6 +90,9 @@ pub struct PerformanceSnapshot {
 pub struct DiagnosticsState {
     logs_dir: PathBuf,
     recent_entries: Mutex<Vec<LogEntry>>,
+    /// Date (YYYY-MM-DD) old logs were last pruned. KiJi can now run for
+    /// weeks in the background, so pruning also runs when the day changes.
+    last_cleanup_date: Mutex<String>,
 }
 
 impl DiagnosticsState {
@@ -106,6 +109,7 @@ impl DiagnosticsState {
         Ok(Self {
             logs_dir,
             recent_entries: Mutex::new(Vec::new()),
+            last_cleanup_date: Mutex::new(chrono::Utc::now().format("%Y-%m-%d").to_string()),
         })
     }
 
@@ -155,6 +159,21 @@ impl DiagnosticsState {
         self.persist_entry(&entry)
     }
 
+    fn cleanup_on_new_day(&self, log_date: &str) {
+        if log_date.len() != 10 {
+            return;
+        }
+        let Ok(mut last) = self.last_cleanup_date.lock() else { return };
+        if last.as_str() == log_date {
+            return;
+        }
+        *last = log_date.to_string();
+        drop(last);
+        if let Err(error) = cleanup_old_logs(&self.logs_dir) {
+            eprintln!("[KiJi] Log cleanup failed: {error}");
+        }
+    }
+
     fn persist_entry(&self, entry: &LogEntry) -> Result<(), String> {
         {
             let mut recent_entries = self
@@ -168,6 +187,7 @@ impl DiagnosticsState {
         }
 
         let log_date = entry.timestamp.get(0..10).unwrap_or("unknown");
+        self.cleanup_on_new_day(log_date);
         let formatted = format_entry(entry);
 
         if entry.level != "debug" {

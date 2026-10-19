@@ -573,6 +573,18 @@ impl AssistantState {
         }
     }
 
+    pub fn window_hidden(self: &Arc<Self>, window_label: &str) {
+        if self.current.window_hidden(window_label) {
+            self.notify_current_changed();
+        }
+    }
+
+    pub fn window_shown(self: &Arc<Self>, window_label: &str) {
+        if self.current.window_shown(window_label) {
+            self.notify_current_changed();
+        }
+    }
+
     pub fn window_destroyed(self: &Arc<Self>, window_label: &str) {
         if self.current.window_destroyed(window_label) {
             self.notify_current_changed();

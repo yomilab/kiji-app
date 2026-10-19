@@ -115,6 +115,9 @@ struct Inner {
     entries: Vec<CurrentArticle>,
     /// Window labels, most recently focused last.
     focus_order: Vec<String>,
+    /// Windows hidden but still alive (main window kept running in the
+    /// background): their article isn't "what the user is reading".
+    hidden: Vec<String>,
 }
 
 #[derive(Default)]
@@ -161,6 +164,23 @@ impl CurrentArticleRegistry {
         let before = current_of(&inner).cloned();
         inner.entries.retain(|entry| entry.window_label != window_label);
         inner.focus_order.retain(|label| label != window_label);
+        inner.hidden.retain(|label| label != window_label);
+        current_changed(&before, current_of(&inner))
+    }
+
+    pub fn window_hidden(&self, window_label: &str) -> bool {
+        let Ok(mut inner) = self.inner.lock() else { return false };
+        let before = current_of(&inner).cloned();
+        if !inner.hidden.iter().any(|label| label == window_label) {
+            inner.hidden.push(window_label.to_string());
+        }
+        current_changed(&before, current_of(&inner))
+    }
+
+    pub fn window_shown(&self, window_label: &str) -> bool {
+        let Ok(mut inner) = self.inner.lock() else { return false };
+        let before = current_of(&inner).cloned();
+        inner.hidden.retain(|label| label != window_label);
         current_changed(&before, current_of(&inner))
     }
 
@@ -180,6 +200,7 @@ fn current_of(inner: &Inner) -> Option<&CurrentArticle> {
         .focus_order
         .iter()
         .rev()
+        .filter(|label| !inner.hidden.contains(label))
         .find_map(|label| inner.entries.iter().find(|entry| &entry.window_label == label))
 }
 
@@ -237,6 +258,20 @@ mod tests {
         assert_eq!(registry.current().unwrap().hash.as_deref(), Some("a"));
         assert!(registry.clear("main"));
         assert!(registry.current().is_none());
+    }
+
+    #[test]
+    fn hidden_windows_are_not_what_the_user_is_reading() {
+        let registry = CurrentArticleRegistry::default();
+        registry.set(feed("main", "a"));
+        assert!(registry.window_hidden("main"));
+        assert!(registry.current().is_none());
+        // Another visible window still counts.
+        registry.set(feed("article-1", "b"));
+        assert_eq!(registry.current().unwrap().hash.as_deref(), Some("b"));
+        registry.window_destroyed("article-1");
+        assert!(registry.window_shown("main"));
+        assert_eq!(registry.current().unwrap().hash.as_deref(), Some("a"));
     }
 
     #[test]

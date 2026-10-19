@@ -1,3 +1,8 @@
+import {
+  backgroundRefreshQueryCount,
+  capBackgroundRefreshList,
+  isDocumentHidden,
+} from '@/services/articles/backgroundRefreshListCap';
 import React, { createContext, useContext, useCallback, ReactNode, useTransition, useRef, useReducer, useMemo } from 'react';
 import { feedsFetcher } from '@/services/feeds/feedsFetcher';
 import { storeParsedFeedContent } from '@/services/feeds/feedRefreshPipeline';
@@ -180,7 +185,9 @@ const ARTICLE_LIST_FRAME_YIELD_MAX_WAIT_MS = 100;
 
 const yieldToArticleListPrefetchFrame = async (): Promise<void> => {
   await new Promise<void>((resolve) => {
-    if (typeof window.requestAnimationFrame !== 'function') {
+    // A hidden window never paints: waiting for a frame only adds 100 ms and
+    // a misleading frameYield.timeout event (KiJi kept running in background).
+    if (typeof window.requestAnimationFrame !== 'function' || isDocumentHidden()) {
       window.setTimeout(resolve, 0);
       return;
     }
@@ -2358,7 +2365,15 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const intentGeneration = visibleListIntentGenerationRef.current;
         const previousArticles = currentArticlesRef.current;
         const previousHashes = new Set(previousArticles.map((article) => article.hash));
-        const query = createArticleQueryForSource(nextSource, previousArticles.length);
+        // Hidden window (kept running in the background): don't let the list
+        // grow for days; see backgroundRefreshListCap.
+        const capInput = {
+          hidden: isDocumentHidden(),
+          atTop: articleListAtTopRef.current,
+          previousLength: previousArticles.length,
+          pageSize: SMART_VIEW_ARTICLE_LIMIT,
+        };
+        const query = createArticleQueryForSource(nextSource, backgroundRefreshQueryCount(capInput));
         const { articles: freshArticles, total } = await articleStore.query(query);
         const activeSource = activeSourceRef.current;
 
@@ -2415,10 +2430,10 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             });
 
           const loadedNow = currentArticlesRef.current;
-          const publishedList = mergeUniqueArticlesByHash(freshArticles, loadedNow);
-          const pageWasFull = publishedList.length >= Math.max(
-            SMART_VIEW_ARTICLE_LIMIT,
-            previousArticles.length,
+          const { list: publishedList, pageWasFull } = capBackgroundRefreshList(
+            freshArticles,
+            loadedNow,
+            capInput,
           );
           currentArticlesRef.current = publishedList;
           loadMorePagingSnapshotRef.current = {
