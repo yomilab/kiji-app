@@ -12,7 +12,7 @@ const DESCRIPTIONS: Record<BackgroundModeStatus['platform'], string> = {
   windows:
     'KiJi keeps running in the notification area and keeps checking for new articles, and assistants can still reach it. Click its icon to open it again, or right-click it to quit.',
   linux:
-    'KiJi keeps running in the system tray and keeps checking for new articles, and assistants can still reach it. Click its icon to open it again.',
+    "KiJi keeps running in the system tray and keeps checking for new articles, and assistants can still reach it. Use the tray icon's menu to open or quit it.",
 };
 
 const NO_TRAY_NOTICE =

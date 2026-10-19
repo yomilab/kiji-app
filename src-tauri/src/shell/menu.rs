@@ -518,8 +518,8 @@ fn emit_menu_command(app: &AppHandle, command: AppMenuCommand) {
         return;
     };
 
-    let _ = main_window.show();
-    let _ = main_window.set_focus();
+    // Same path as the Dock/tray: unminimize, show, focus, update assistants.
+    super::background::show_main_window(app);
     let _ = main_window.emit("app-menu:command", command);
 }
 

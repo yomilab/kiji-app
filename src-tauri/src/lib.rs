@@ -333,8 +333,10 @@ pub fn run() {
         .run(|app_handle, event| {
             // macOS: clicking the Dock icon while the window is hidden.
             #[cfg(target_os = "macos")]
-            if let RunEvent::Reopen { has_visible_windows, .. } = &event {
-                if !has_visible_windows {
+            // Show main even when another KiJi window (Settings, an article)
+            // is visible: there is no other way back to it from the Dock.
+            if let RunEvent::Reopen { .. } = &event {
+                if !shell::background::main_window_is_visible(app_handle) {
                     shell::background::show_main_window(app_handle);
                 }
             }
