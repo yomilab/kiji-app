@@ -20,7 +20,8 @@ const baseStatus = (): AssistantStatus => ({
   clients: [],
 });
 
-const { assistant, clipboardWrite, saveFile, confirmDialog } = vi.hoisted(() => ({
+const { assistant, clipboardWrite, saveFile, confirmDialog, backgroundModeGet } = vi.hoisted(() => ({
+  backgroundModeGet: vi.fn(),
   assistant: {
     getStatus: vi.fn(),
     updateSettings: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock("@/lib/tauriClient", () => ({
     shell: {
       dialog: { saveFile: (request: unknown) => saveFile(request) },
       confirmDialog: (request: unknown) => confirmDialog(request),
+      backgroundMode: { get: () => backgroundModeGet() },
     },
   },
 }));
@@ -272,5 +274,26 @@ describe("AssistantSettings", () => {
     // One row under "Connect an Assistant", one under "Connected Assistants".
     expect(await screen.findAllByText("Claude Code")).toHaveLength(2);
     expect(await screen.findByText(/listed articles/)).toBeTruthy();
+  });
+  it("tells the user to keep KiJi running when closing the window would quit it", async () => {
+    const status = baseStatus();
+    status.settings.enabled = true;
+    status.local = { state: "ready" };
+    assistant.getStatus.mockResolvedValue(status);
+    backgroundModeGet.mockResolvedValue({ enabled: false, platform: "windows", trayReady: false });
+    render(<AssistantSettings />);
+    expect(await screen.findByText(/Assistants can reach KiJi only while it's running/)).toBeTruthy();
+  });
+
+  it("hides that hint when KiJi keeps running in the background", async () => {
+    const status = baseStatus();
+    status.settings.enabled = true;
+    status.local = { state: "ready" };
+    assistant.getStatus.mockResolvedValue(status);
+    backgroundModeGet.mockResolvedValue({ enabled: true, platform: "macos", trayReady: false });
+    render(<AssistantSettings />);
+    expect(await screen.findByText("Ready. Assistants can connect while KiJi is open.")).toBeTruthy();
+    await waitFor(() => expect(backgroundModeGet).toHaveBeenCalled());
+    expect(screen.queryByText(/only while it's running/)).toBeNull();
   });
 });

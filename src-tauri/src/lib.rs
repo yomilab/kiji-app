@@ -80,6 +80,7 @@ use mcp::{
     assistant_open_client_link, assistant_reset_access, assistant_set_current_article,
     assistant_update_settings, assistant_write_extension, AssistantState,
 };
+use shell::background::{shell_background_mode_get, shell_background_mode_set};
 use tauri::{webview::PageLoadEvent, Manager, RunEvent, WindowEvent};
 
 /// `kiji-app --mcp`: stdio bridge for AI clients (no window, no database).
@@ -89,7 +90,14 @@ pub fn run_mcp_bridge() -> i32 {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Windows/Linux: a second launch (e.g. while KiJi sits in the tray)
+    // brings back the running copy instead of opening the database twice.
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        shell::background::show_main_window(app);
+    }));
+    builder
         .manage(UserInitiatedWindowsState::default())
         .on_page_load(|webview, payload| {
             if payload.event() != PageLoadEvent::Started {
@@ -169,6 +177,8 @@ pub fn run() {
             e2e::start_e2e_harness(&app.handle());
 
             app.manage(settings_state);
+            app.manage(Arc::new(shell::background::BackgroundState::default()));
+            shell::background::apply(&app.handle());
             app.manage(Arc::new(ArticleWindowState::new()));
             app.manage(Arc::new(UpdateWindowState::new()));
             app.manage(Arc::new(ManageFeedsWindowState::default()));
@@ -190,6 +200,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             articles_begin_search,
             articles_cancel_search,
+            shell_background_mode_get,
+            shell_background_mode_set,
             assistant_clear_current_article,
             assistant_current_article_sharing,
             assistant_get_client_setup,
@@ -319,6 +331,13 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            // macOS: clicking the Dock icon while the window is hidden.
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Reopen { has_visible_windows, .. } = &event {
+                if !has_visible_windows {
+                    shell::background::show_main_window(app_handle);
+                }
+            }
             if let RunEvent::Exit = event {
                 if let Some(assistant) = app_handle.try_state::<Arc<AssistantState>>() {
                     assistant.shutdown();

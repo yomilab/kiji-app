@@ -136,3 +136,20 @@ export async function shareToService(
     serviceId,
   });
 }
+
+export interface BackgroundModeStatus {
+  /** Closing the main window hides it instead of quitting. */
+  enabled: boolean;
+  platform: "macos" | "windows" | "linux";
+  /** Windows/Linux: the tray icon is showing, so closing will hide. */
+  trayReady: boolean;
+}
+
+export const backgroundMode = {
+  get(): Promise<BackgroundModeStatus> {
+    return invokeCommand<BackgroundModeStatus>("shell_background_mode_get");
+  },
+  set(enabled: boolean): Promise<BackgroundModeStatus> {
+    return invokeCommand<BackgroundModeStatus>("shell_background_mode_set", { enabled });
+  },
+};

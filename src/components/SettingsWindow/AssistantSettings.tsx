@@ -76,6 +76,8 @@ const Switch: React.FC<SwitchProps> = ({ checked, disabled, label, onChange }) =
 
 export const AssistantSettings: React.FC = () => {
   const [status, setStatus] = useState<AssistantStatus | null>(null);
+  // null until known; false = closing the window quits KiJi.
+  const [keepsRunning, setKeepsRunning] = useState<boolean | null>(null);
   const [stations, setStations] = useState<TagRecord[]>([]);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -97,6 +99,17 @@ export const AssistantSettings: React.FC = () => {
     }
   }, []);
 
+  const refreshBackgroundMode = useCallback(async () => {
+    try {
+      const mode = await tauriClient.shell.backgroundMode.get();
+      if (mountedRef.current) {
+        setKeepsRunning(mode.enabled && (mode.platform === 'macos' || mode.trayReady));
+      }
+    } catch (error) {
+      logger.warn('AssistantSettings', 'Failed to read background mode', { error });
+    }
+  }, []);
+
   const refreshStations = useCallback(async () => {
     try {
       const tags = await tauriClient.feeds.tags.list();
@@ -110,12 +123,14 @@ export const AssistantSettings: React.FC = () => {
     mountedRef.current = true;
     void refreshStatus();
     void refreshStations();
+    void refreshBackgroundMode();
     const timer = window.setInterval(() => {
       void refreshStatus();
     }, STATUS_POLL_MS);
     const unsubscribeFocus = subscribeToWindowFocus(() => {
       void refreshStatus();
       void refreshStations();
+      void refreshBackgroundMode();
     });
     return () => {
       mountedRef.current = false;
@@ -281,6 +296,11 @@ export const AssistantSettings: React.FC = () => {
               {accessStatusText ? (
                 <p className={`settings-inline-status${status.local.state === 'error' ? ' assistant-status-error' : ''}`}>
                   {accessStatusText}
+                </p>
+              ) : null}
+              {settings.enabled && keepsRunning === false ? (
+                <p className="settings-inline-status">
+                  Assistants can reach KiJi only while it's running. To keep it available after you close the window, turn on “Keep KiJi running when you close the window” in General.
                 </p>
               ) : null}
             </div>
