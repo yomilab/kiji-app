@@ -125,17 +125,6 @@
   font-weight: 600;
 }
 
-.mf-tab-alert {
-  position: absolute;
-  top: -1px;
-  right: -4px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background-color: var(--mf-warn);
-  box-shadow: 0 0 0 1.5px var(--settings-main-bg);
-}
-
 /* ── Pane ────────────────────────────────────────────────────────────────── */
 .mf-main {
   position: relative;

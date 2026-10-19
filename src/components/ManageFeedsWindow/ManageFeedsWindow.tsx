@@ -241,7 +241,6 @@ export const ManageFeedsWindow: React.FC = () => {
               >
                 <span className="mf-toolbar-tab-icon" aria-hidden="true">
                   {tab.icon}
-                  {tab.id === 'feeds' && attentionCount > 0 ? <span className="mf-tab-alert" /> : null}
                 </span>
                 <span className="mf-toolbar-tab-label">{tab.label}</span>
               </button>
