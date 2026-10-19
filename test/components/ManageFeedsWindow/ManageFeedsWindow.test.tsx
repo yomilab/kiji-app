@@ -165,6 +165,9 @@ describe('ManageFeedsWindow', () => {
     expect(shared).toHaveTextContent('Can’t update');
     expect(rows.find((row) => row.textContent?.includes('Loose Ends'))).toHaveTextContent('loose.test');
     expect(screen.getByText('3 feeds · 1 can’t update')).toBeInTheDocument();
+    // A feed that can't update is reported in the list and subtitle, not as a dot on the tab.
+    expect(nav.querySelector('.mf-tab-alert')).toBeNull();
+    expect(within(nav).getByText('Feeds').parentElement?.querySelectorAll('span[class*="alert"]')).toHaveLength(0);
 
     fireEvent.click(within(nav).getByText('Stations'));
     expect(await screen.findByRole('list', { name: 'Stations' })).toBeInTheDocument();
