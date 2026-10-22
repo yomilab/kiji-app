@@ -7,6 +7,8 @@ vi.mock('@/contexts/FeedContext', () => ({
   useFeedUI: () => ({
     totalFeeds: 1,
   }),
+  useFeedNavigation: () => ({ selectedFeedId: 'feed-1', selectedTag: null, selectedSmartView: null }),
+  useFeedCollectionActions: () => ({ markCurrentSourceRead: vi.fn() }),
 }));
 
 vi.mock('@/services/saved/savedArticlesIOService', () => ({

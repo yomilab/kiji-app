@@ -1,5 +1,9 @@
 import { tauriClient } from "../lib/tauriClient";
-import type { ArticleRecord } from "../lib/tauriClient/contracts";
+import type {
+  ArticleRecord,
+  MarkReadScopeRequest,
+  MarkReadScopeResult,
+} from "../lib/tauriClient/contracts";
 import type { Article } from "../types/article";
 import type { ArticleQuery, ArticleQueryResult } from "../types/articleQuery";
 import { prepareArticleForList } from "../services/articles/articleListMemory";
@@ -209,6 +213,23 @@ export async function syncFeedCountsBatch(feedIds: string[]): Promise<Array<{
     return [];
   }
   return tauriClient.articles.syncFeedCountsBatch({ feedIds });
+}
+
+/** Marks a whole list scope read in one native transaction (counts included). */
+export async function markReadScope(request: MarkReadScopeRequest): Promise<MarkReadScopeResult> {
+  return tauriClient.articles.markReadScope(request);
+}
+
+/** Undo for `markReadScope`: these exact articles become unread again. */
+export async function restoreUnread(hashes: string[]): Promise<Array<{
+  feedId: string;
+  unreadCount: number;
+  articleCount: number;
+}>> {
+  if (hashes.length === 0) {
+    return [];
+  }
+  return tauriClient.articles.restoreUnread({ hashes });
 }
 
 export async function updateFeedMeta(

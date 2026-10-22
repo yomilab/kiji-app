@@ -494,6 +494,210 @@ pub async fn articles_sync_feed_counts_batch(
         .await
 }
 
+/// Hashes kept for Undo after a scoped mark-read. Larger batches still commit
+/// in one transaction but return no hashes (no Undo), so the renderer never
+/// holds an unbounded list.
+pub const MARK_READ_SCOPE_UNDO_LIMIT: i64 = 10_000;
+
+/// What the article list shows: one subscription, one station, or every
+/// article (the All and Unread views). Saved and Read are not scopes.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkReadScopeRequest {
+    pub feed_id: Option<String>,
+    pub tag_name: Option<String>,
+    pub smart_view: Option<String>,
+    /// ISO timestamp; only articles dated before it are marked.
+    pub older_than: Option<String>,
+    /// The list's live search text; the same matching as `articles_query`.
+    pub search_text: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkReadScopeResult {
+    pub changed: i64,
+    /// Every changed hash when `undoable`; empty otherwise.
+    pub hashes: Vec<String>,
+    pub undoable: bool,
+    pub feed_counts: Vec<FeedArticleCounts>,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn articles_mark_read_scope(
+    request: MarkReadScopeRequest,
+    state: State<'_, DbState>,
+) -> Result<MarkReadScopeResult, String> {
+    let db = state.inner().clone();
+    db.write(move |connection| mark_read_scope(connection, &request, MARK_READ_SCOPE_UNDO_LIMIT))
+        .await
+}
+
+/// Undo for `articles_mark_read_scope`: marks exactly these hashes unread
+/// again and returns the refreshed counts of every subscription listing them.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn articles_restore_unread(
+    hashes: Vec<String>,
+    state: State<'_, DbState>,
+) -> Result<Vec<FeedArticleCounts>, String> {
+    let db = state.inner().clone();
+    db.write(move |connection| restore_unread(connection, &hashes)).await
+}
+
+/// Marks every unread article in the scope read and refreshes the stored
+/// counts of every subscription that lists one of them, in one savepoint.
+/// `saved`/`starred` and the Saved snapshots are never touched.
+pub fn mark_read_scope(
+    connection: &Connection,
+    request: &MarkReadScopeRequest,
+    undo_limit: i64,
+) -> Result<MarkReadScopeResult, String> {
+    let mut conditions = vec!["a.read = 0".to_string()];
+    let mut bindings: Vec<Value> = Vec::new();
+
+    if let Some(feed_id) = request.feed_id.as_deref() {
+        conditions.push(
+            "a.hash IN (SELECT article_hash FROM article_feed_items WHERE feed_id = ?)".to_string(),
+        );
+        bindings.push(Value::Text(feed_id.to_string()));
+    } else if let Some(tag_name) = request.tag_name.as_deref() {
+        conditions.push(
+            "a.hash IN (SELECT afi.article_hash FROM article_feed_items afi \
+             WHERE afi.feed_id IN (SELECT feed_id FROM feed_tags WHERE tag_name = ?))"
+                .to_string(),
+        );
+        bindings.push(Value::Text(tag_name.to_string()));
+    } else {
+        match request.smart_view.as_deref() {
+            Some("all") | Some("unread") => {}
+            _ => return Err("This list can't be marked as read.".to_string()),
+        }
+    }
+
+    if let Some(older_than) = request.older_than.as_deref() {
+        conditions.push("COALESCE(a.published_date, a.fetched_date) < ?".to_string());
+        bindings.push(Value::Text(older_than.to_string()));
+    }
+
+    if let Some(search_text) = request
+        .search_text
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+    {
+        let search_query = create_fts_prefix_query(search_text)
+            .ok_or_else(|| "Search text did not contain searchable tokens.".to_string())?;
+        conditions.push(
+            "a.rowid IN (SELECT rowid FROM articles_search WHERE articles_search MATCH ?)"
+                .to_string(),
+        );
+        bindings.push(Value::Text(search_query));
+    }
+
+    let scope_where = where_clause(&conditions);
+
+    with_savepoint(connection, "mark_read_scope", |connection| {
+        let changed = connection
+            .query_row(
+                &format!("SELECT COUNT(*) FROM articles a {scope_where}"),
+                params_from_iter(bindings.iter()),
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| format!("Failed to count articles to mark as read: {error}"))?;
+        if changed == 0 {
+            return Ok(MarkReadScopeResult {
+                changed: 0,
+                hashes: Vec::new(),
+                undoable: true,
+                feed_counts: Vec::new(),
+            });
+        }
+
+        // Counts are per subscription mapping, so a story shared with a feed
+        // outside the scope refreshes that feed too.
+        let feed_ids = {
+            let mut statement = connection
+                .prepare(&format!(
+                    "SELECT DISTINCT afi.feed_id FROM article_feed_items afi \
+                     WHERE afi.article_hash IN (SELECT a.hash FROM articles a {scope_where})"
+                ))
+                .map_err(|error| format!("Failed to find feeds to recount: {error}"))?;
+            let rows = statement
+                .query_map(params_from_iter(bindings.iter()), |row| row.get::<_, String>(0))
+                .map_err(|error| format!("Failed to find feeds to recount: {error}"))?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("Failed to find feeds to recount: {error}"))?
+        };
+
+        let undoable = changed <= undo_limit;
+        let update_sql = format!(
+            "UPDATE articles SET read = 1 WHERE rowid IN (SELECT a.rowid FROM articles a {scope_where})"
+        );
+        let hashes = if undoable {
+            let mut statement = connection
+                .prepare(&format!("{update_sql} RETURNING hash"))
+                .map_err(|error| format!("Failed to mark articles as read: {error}"))?;
+            let rows = statement
+                .query_map(params_from_iter(bindings.iter()), |row| row.get::<_, String>(0))
+                .map_err(|error| format!("Failed to mark articles as read: {error}"))?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("Failed to mark articles as read: {error}"))?
+        } else {
+            connection
+                .execute(&update_sql, params_from_iter(bindings.iter()))
+                .map_err(|error| format!("Failed to mark articles as read: {error}"))?;
+            Vec::new()
+        };
+
+        let feed_counts = sync_feed_article_counts_batch(connection, &feed_ids)?;
+        Ok(MarkReadScopeResult {
+            changed,
+            hashes,
+            undoable,
+            feed_counts,
+        })
+    })
+}
+
+/// Marks exactly `hashes` unread (Undo) and refreshes affected feed counts.
+pub fn restore_unread(
+    connection: &Connection,
+    hashes: &[String],
+) -> Result<Vec<FeedArticleCounts>, String> {
+    if hashes.is_empty() {
+        return Ok(Vec::new());
+    }
+    with_savepoint(connection, "restore_unread", |connection| {
+        let mut feed_ids: Vec<String> = Vec::new();
+        // Chunked to stay well under SQLite's bound-parameter limit.
+        for chunk in hashes.chunks(500) {
+            let placeholders = repeat_placeholders(chunk.len());
+            let chunk_params: Vec<Value> =
+                chunk.iter().map(|hash| Value::Text(hash.clone())).collect();
+            connection
+                .execute(
+                    &format!("UPDATE articles SET read = 0 WHERE hash IN ({placeholders})"),
+                    params_from_iter(chunk_params.iter()),
+                )
+                .map_err(|error| format!("Failed to restore unread articles: {error}"))?;
+            let mut statement = connection
+                .prepare(&format!(
+                    "SELECT DISTINCT feed_id FROM article_feed_items WHERE article_hash IN ({placeholders})"
+                ))
+                .map_err(|error| format!("Failed to find feeds to recount: {error}"))?;
+            let rows = statement
+                .query_map(params_from_iter(chunk_params.iter()), |row| row.get::<_, String>(0))
+                .map_err(|error| format!("Failed to find feeds to recount: {error}"))?;
+            for row in rows {
+                feed_ids.push(row.map_err(|error| format!("Failed to find feeds to recount: {error}"))?);
+            }
+        }
+        feed_ids.sort();
+        feed_ids.dedup();
+        sync_feed_article_counts_batch(connection, &feed_ids)
+    })
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn articles_update_feed_meta(
     feed_id: String,
@@ -2502,5 +2706,240 @@ mod tests {
         let old_saved = median_ms(&saved, true);
         println!("starred list: v17 index {old_starred:.1} ms -> v18 index {new_starred:.1} ms");
         println!("saved list: v17 index {old_saved:.1} ms -> v18 index {new_saved:.1} ms");
+    }
+
+    mod mark_read_scope {
+        use super::*;
+
+        fn insert(connection: &Connection, hash: &str, feed_ids: &[&str], date: &str, read: i64, saved: i64) {
+            connection
+                .execute(
+                    "INSERT INTO articles (hash, feed_id, title, description, published_date, fetched_date, read, saved) \
+                     VALUES (?1, ?2, ?1, '', ?3, ?3, ?4, ?5)",
+                    params![hash, feed_ids[0], date, read, saved],
+                )
+                .expect("insert article");
+            for feed_id in feed_ids {
+                connection
+                    .execute(
+                        "INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date) VALUES (?1, ?2, ?3, ?3)",
+                        params![feed_id, hash, date],
+                    )
+                    .expect("insert mapping");
+            }
+        }
+
+        /// f1 + f2 in station Tech, f3 unstationed. `shared` is listed by f1 and f3.
+        fn fixture() -> Connection {
+            let connection = setup_connection();
+            for feed_id in ["f1", "f2", "f3"] {
+                insert_feed(&connection, feed_id);
+            }
+            connection
+                .execute("INSERT INTO tags (name, created_at) VALUES ('Tech', '2026-01-01T00:00:00Z')", [])
+                .expect("insert tag");
+            for feed_id in ["f1", "f2"] {
+                connection
+                    .execute("INSERT INTO feed_tags (feed_id, tag_name) VALUES (?1, 'Tech')", params![feed_id])
+                    .expect("attach feed");
+            }
+            insert(&connection, "rust-new", &["f1"], "2026-01-10T00:00:00Z", 0, 0);
+            insert(&connection, "old", &["f1"], "2026-01-01T00:00:00Z", 0, 0);
+            insert(&connection, "was-read", &["f1"], "2026-01-01T00:00:00Z", 1, 0);
+            insert(&connection, "shared", &["f1", "f3"], "2026-01-09T00:00:00Z", 0, 0);
+            insert(&connection, "saved-one", &["f2"], "2026-01-02T00:00:00Z", 0, 1);
+            insert(&connection, "other", &["f3"], "2026-01-02T00:00:00Z", 0, 0);
+            connection
+                .execute(
+                    "INSERT INTO saved_articles (id, article_hash, title, saved_date) VALUES ('s1', 'saved-one', 'Kept', '2026-01-03T00:00:00Z')",
+                    [],
+                )
+                .expect("insert saved snapshot");
+            recount_all_feed_article_counts(&connection).expect("seed counts");
+            connection
+        }
+
+        fn request() -> MarkReadScopeRequest {
+            MarkReadScopeRequest {
+                feed_id: None,
+                tag_name: None,
+                smart_view: None,
+                older_than: None,
+                search_text: None,
+            }
+        }
+
+        fn unread_hashes(connection: &Connection) -> Vec<String> {
+            let mut statement = connection
+                .prepare("SELECT hash FROM articles WHERE read = 0 ORDER BY hash")
+                .unwrap();
+            statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        }
+
+        fn stored_unread(connection: &Connection, feed_id: &str) -> i64 {
+            connection
+                .query_row("SELECT unread_count FROM feeds WHERE id = ?1", params![feed_id], |row| row.get(0))
+                .unwrap()
+        }
+
+        fn sorted(mut hashes: Vec<String>) -> Vec<String> {
+            hashes.sort();
+            hashes
+        }
+
+        #[test]
+        fn feed_scope_marks_only_that_feed_and_recounts_every_mapping() {
+            let connection = fixture();
+            assert_eq!(stored_unread(&connection, "f3"), 2);
+            let result = mark_read_scope(
+                &connection,
+                &MarkReadScopeRequest { feed_id: Some("f1".into()), ..request() },
+                MARK_READ_SCOPE_UNDO_LIMIT,
+            )
+            .unwrap();
+
+            assert_eq!(result.changed, 3);
+            assert!(result.undoable);
+            assert_eq!(sorted(result.hashes), vec!["old", "rust-new", "shared"]);
+            assert_eq!(unread_hashes(&connection), vec!["other", "saved-one"]);
+            assert_eq!(stored_unread(&connection, "f1"), 0);
+            assert_eq!(stored_unread(&connection, "f3"), 1, "shared story counts for f3 too");
+            assert_eq!(stored_unread(&connection, "f2"), 1, "f2 untouched");
+            let mut counted: Vec<&str> = result.feed_counts.iter().map(|counts| counts.feed_id.as_str()).collect();
+            counted.sort();
+            assert_eq!(counted, vec!["f1", "f3"]);
+            assert!(connection.is_autocommit(), "savepoint released");
+        }
+
+        #[test]
+        fn station_scope_keeps_saved_state_and_snapshots() {
+            let connection = fixture();
+            let result = mark_read_scope(
+                &connection,
+                &MarkReadScopeRequest { tag_name: Some("Tech".into()), ..request() },
+                MARK_READ_SCOPE_UNDO_LIMIT,
+            )
+            .unwrap();
+
+            assert_eq!(result.changed, 4);
+            assert_eq!(unread_hashes(&connection), vec!["other"]);
+            let (saved, saved_id): (i64, i64) = connection
+                .query_row(
+                    "SELECT saved, (SELECT COUNT(*) FROM saved_articles WHERE id = 's1' AND title = 'Kept') FROM articles WHERE hash = 'saved-one'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!((saved, saved_id), (1, 1), "saved flag and snapshot stay");
+            assert_eq!(stored_unread(&connection, "f2"), 0);
+            assert_eq!(stored_unread(&connection, "f3"), 1);
+        }
+
+        #[test]
+        fn all_scope_with_cutoff_marks_only_older_articles() {
+            let connection = fixture();
+            let result = mark_read_scope(
+                &connection,
+                &MarkReadScopeRequest {
+                    smart_view: Some("all".into()),
+                    older_than: Some("2026-01-05T00:00:00Z".into()),
+                    ..request()
+                },
+                MARK_READ_SCOPE_UNDO_LIMIT,
+            )
+            .unwrap();
+
+            assert_eq!(sorted(result.hashes), vec!["old", "other", "saved-one"]);
+            assert_eq!(unread_hashes(&connection), vec!["rust-new", "shared"]);
+            assert_eq!(stored_unread(&connection, "f1"), 2);
+            assert_eq!(stored_unread(&connection, "f2"), 0);
+            assert_eq!(stored_unread(&connection, "f3"), 1);
+
+            let everything = mark_read_scope(
+                &connection,
+                &MarkReadScopeRequest { smart_view: Some("unread".into()), ..request() },
+                MARK_READ_SCOPE_UNDO_LIMIT,
+            )
+            .unwrap();
+            assert_eq!(everything.changed, 2);
+            assert!(unread_hashes(&connection).is_empty());
+            for feed_id in ["f1", "f2", "f3"] {
+                assert_eq!(stored_unread(&connection, feed_id), 0, "{feed_id}");
+            }
+        }
+
+        #[test]
+        fn search_text_limits_the_scope_like_the_list() {
+            let connection = fixture();
+            let result = mark_read_scope(
+                &connection,
+                &MarkReadScopeRequest {
+                    feed_id: Some("f1".into()),
+                    search_text: Some("rust".into()),
+                    ..request()
+                },
+                MARK_READ_SCOPE_UNDO_LIMIT,
+            )
+            .unwrap();
+            assert_eq!(result.hashes, vec!["rust-new"]);
+            assert_eq!(stored_unread(&connection, "f1"), 2);
+        }
+
+        #[test]
+        fn saved_and_read_views_are_rejected_without_writing() {
+            let connection = fixture();
+            for view in ["saved", "read", "pinned"] {
+                let error = mark_read_scope(
+                    &connection,
+                    &MarkReadScopeRequest { smart_view: Some(view.into()), ..request() },
+                    MARK_READ_SCOPE_UNDO_LIMIT,
+                );
+                assert!(error.is_err(), "{view}");
+            }
+            assert!(mark_read_scope(&connection, &request(), MARK_READ_SCOPE_UNDO_LIMIT).is_err());
+            assert_eq!(unread_hashes(&connection).len(), 5);
+        }
+
+        #[test]
+        fn restore_unread_undoes_exactly_the_changed_articles() {
+            let connection = fixture();
+            let result = mark_read_scope(
+                &connection,
+                &MarkReadScopeRequest { feed_id: Some("f1".into()), ..request() },
+                MARK_READ_SCOPE_UNDO_LIMIT,
+            )
+            .unwrap();
+            let counts = restore_unread(&connection, &result.hashes).unwrap();
+
+            assert_eq!(
+                unread_hashes(&connection),
+                vec!["old", "other", "rust-new", "saved-one", "shared"],
+                "was-read stays read"
+            );
+            assert_eq!(stored_unread(&connection, "f1"), 3);
+            assert_eq!(stored_unread(&connection, "f3"), 2);
+            let mut counted: Vec<&str> = counts.iter().map(|entry| entry.feed_id.as_str()).collect();
+            counted.sort();
+            assert_eq!(counted, vec!["f1", "f3"]);
+        }
+
+        #[test]
+        fn batches_over_the_undo_limit_commit_without_hashes() {
+            let connection = fixture();
+            let result = mark_read_scope(
+                &connection,
+                &MarkReadScopeRequest { smart_view: Some("all".into()), ..request() },
+                2,
+            )
+            .unwrap();
+            assert_eq!(result.changed, 5);
+            assert!(!result.undoable);
+            assert!(result.hashes.is_empty());
+            assert!(unread_hashes(&connection).is_empty());
+        }
     }
 }

@@ -11,8 +11,8 @@ pub use articles::{
     articles_clean_old_across_feeds, articles_clean_old_by_feed, articles_count_by_feed,
     articles_count_unread_by_feed, articles_delete_by_feed, articles_delete_by_feeds,
     articles_exists, articles_get,
-    articles_get_content, articles_insert_batch, articles_query, articles_sync_feed_counts_batch,
-    articles_toggle_starred, articles_update_feed_meta, articles_update_last_read_at,
+    articles_get_content, articles_insert_batch, articles_mark_read_scope, articles_query,
+    articles_restore_unread, articles_sync_feed_counts_batch, articles_toggle_starred, articles_update_feed_meta, articles_update_last_read_at,
     articles_update_read, articles_update_saved_state, insert_articles_batch,
     sync_feed_article_counts_batch,
 };

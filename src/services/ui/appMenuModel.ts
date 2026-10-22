@@ -19,6 +19,7 @@ export type AppMenuItem =
       label: string;
       action: AppMenuAction;
       checked?: boolean;
+      disabled?: boolean;
       shortcutHint?: string;
     }
   | {
@@ -39,6 +40,8 @@ export interface AppMenuTopLevel {
 export function buildWindowsAppMenuTree(state: AppMenuState): AppMenuTopLevel[] {
   const theme = state.theme;
   const libraryView = state.libraryView;
+  // Saved has no read state and Read is already read (same rule as the native menu).
+  const markReadDisabled = libraryView === 'saved' || libraryView === 'read';
 
   return [
     {
@@ -186,6 +189,36 @@ export function buildWindowsAppMenuTree(state: AppMenuState): AppMenuTopLevel[] 
               checked: libraryView === 'read',
             },
           ],
+        },
+      ],
+    },
+    {
+      id: 'article',
+      label: 'Article',
+      accessKey: 'a',
+      items: [
+        {
+          kind: 'item',
+          id: 'mark-all-read',
+          label: 'Mark All as Read',
+          action: { type: 'markAllRead' },
+          disabled: markReadDisabled,
+          shortcutHint: 'Ctrl+Shift+K',
+        },
+        { kind: 'separator', id: 'article-sep-older' },
+        {
+          kind: 'item',
+          id: 'mark-older-day-read',
+          label: 'Mark Older Than a Day as Read',
+          action: { type: 'markAllRead', olderThanDays: 1 },
+          disabled: markReadDisabled,
+        },
+        {
+          kind: 'item',
+          id: 'mark-older-week-read',
+          label: 'Mark Older Than a Week as Read',
+          action: { type: 'markAllRead', olderThanDays: 7 },
+          disabled: markReadDisabled,
         },
       ],
     },

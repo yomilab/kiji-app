@@ -15,6 +15,7 @@ export const SHORTCUT_GROUPS: ReadonlyArray<ShortcutGroup> = [
     items: [
       { id: 'add-feed', label: 'Add New Feed', keys: SHORTCUT_LABELS.ADD_FEED },
       { id: 'search', label: 'Search Articles', keys: SHORTCUT_LABELS.SEARCH_ARTICLES },
+      { id: 'mark-all-read', label: 'Mark All as Read', keys: SHORTCUT_LABELS.MARK_ALL_READ },
       { id: 'feed-edit-view', label: 'Manage Feeds', keys: SHORTCUT_LABELS.OPEN_FEED_EDIT_VIEW },
     ],
   },

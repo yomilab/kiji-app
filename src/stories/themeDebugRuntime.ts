@@ -45,6 +45,7 @@ const baseCollectionActions = {
   syncArticleListViewport: noop,
   searchCurrentSource: asyncNoop,
   clearArticleListSearch: asyncNoop,
+  markCurrentSourceRead: asyncNoop,
 };
 
 const baseOverlay = {

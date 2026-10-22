@@ -50,6 +50,16 @@ import {
 import { logListRefreshAttribution } from '@/services/diagnostics/webKitAttribution';
 import { recordRobustnessEvent } from '@/services/diagnostics/robustnessMetrics';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
+import { appToastService } from '@/services/ui/appToastService';
+import {
+  applyRowReadPatch,
+  MARK_READ_UNDO_WINDOW_MS,
+  markReadCutoff,
+  markReadToastText,
+  toMarkReadScope,
+  type MarkReadOlderThanDays,
+  type RowReadPatch,
+} from '@/services/articles/markReadScope';
 import { subscribeAssistantLibraryChanges, toArticleListUpdate } from '@/services/assistant/assistantLibraryChanges';
 import { feedRefreshCoordinator } from '@/services/feeds/feedRefreshCoordinator';
 import { feedRefreshActivity } from '@/services/feeds/feedRefreshActivity';
@@ -392,6 +402,8 @@ interface CollectionActions {
   syncArticleListViewport: (snapshot: ArticleListViewportSnapshot) => void;
   searchCurrentSource: (query: string) => Promise<void>;
   clearArticleListSearch: () => Promise<void>;
+  /** Mark All as Read (optionally only older than a day/week) for the list on screen. */
+  markCurrentSourceRead: (options?: { olderThanDays?: MarkReadOlderThanDays }) => Promise<void>;
 }
 
 interface OverlayState {
@@ -518,6 +530,7 @@ type CollectionAction =
     };
   }
   | { type: 'APPEND_ARTICLES'; payload: { articles: Article[]; intentGeneration: number } }
+  | { type: 'PATCH_ROWS_READ'; payload: RowReadPatch }
   | { type: 'UPDATE_ARTICLE'; payload: { hash: string; updates: ArticleListUpdatePayload; removeFromUnread?: boolean; removeFromSaved?: boolean; removeFromRead?: boolean; insertOrMoveToTop?: boolean; article?: Article; intentGeneration?: number } }
   | { type: 'SET_LOADING'; payload: Partial<CollectionState> }
   | { type: 'SET_LIST_INTENT'; payload: { generation: number; searchStatus?: ArticleListSearchStatus } }
@@ -763,6 +776,10 @@ function collectionReducer(state: CollectionState, action: CollectionAction): Co
         articles: nextArticles,
         pageWasFull: true,
       };
+    }
+    case 'PATCH_ROWS_READ': {
+      const articles = applyRowReadPatch(state.articles, action.payload);
+      return articles === state.articles ? state : { ...state, articles };
     }
     case 'UPDATE_ARTICLE': {
       if (
@@ -4848,6 +4865,81 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, [advanceVisibleListIntent, enqueueSearchRequest, navigationState]);
 
+  // Scoped read changes patch the rows on screen (and the non-search snapshot)
+  // in one pass instead of per-row updates or a reload, so the list never
+  // flashes. A patch without exact hashes only applies to its own source.
+  const patchVisibleRowsRead = useCallback((patch: RowReadPatch, sourceKey: string) => {
+    if (!patch.hashes && activeSourceRef.current?.key !== sourceKey) {
+      return;
+    }
+    currentArticlesRef.current = applyRowReadPatch(currentArticlesRef.current, patch);
+    const snapshot = nonSearchSnapshotRef.current;
+    if (patch.hashes || snapshot.sourceKey === sourceKey) {
+      nonSearchSnapshotRef.current = { ...snapshot, list: applyRowReadPatch(snapshot.list, patch) };
+    }
+    collectionDispatch({ type: 'PATCH_ROWS_READ', payload: patch });
+  }, []);
+
+  const markReadInFlightRef = useRef(false);
+  const markCurrentSourceRead = useCallback(async (
+    options: { olderThanDays?: MarkReadOlderThanDays } = {},
+  ): Promise<void> => {
+    const source = activeSourceRef.current;
+    const scope = toMarkReadScope(source);
+    // The menu accelerator and the in-window shortcut can both fire; one run.
+    if (!source || !scope || markReadInFlightRef.current) {
+      return;
+    }
+    markReadInFlightRef.current = true;
+    const { olderThanDays } = options;
+    const olderThan = olderThanDays ? markReadCutoff(olderThanDays) : undefined;
+    const searchText = articleListSearchQueryRef.current?.trim() || undefined;
+    try {
+      const result = await articleStore.markReadScope({ ...scope, olderThan, searchText });
+      if (result.feedCounts.length > 0) {
+        feedLibraryMutationBus.publishFeedsCountsUpdated(result.feedCounts);
+      }
+      if (result.changed === 0) {
+        appToastService.show(markReadToastText(0, olderThanDays));
+        return;
+      }
+      const hashes = result.undoable ? new Set(result.hashes) : null;
+      patchVisibleRowsRead({ read: true, hashes, olderThan }, source.key);
+      const text = markReadToastText(result.changed, olderThanDays);
+      if (!hashes) {
+        appToastService.show(text);
+        return;
+      }
+      // The hashes live only in this closure, which the toast drops when it
+      // expires or is replaced: bounded by the native undo limit and window.
+      const undoHashes = result.hashes;
+      appToastService.showWithAction(text, {
+        label: 'Undo',
+        run: () => {
+          void (async () => {
+            try {
+              const counts = await articleStore.restoreUnread(undoHashes);
+              if (counts.length > 0) {
+                feedLibraryMutationBus.publishFeedsCountsUpdated(counts);
+              }
+              patchVisibleRowsRead({ read: false, hashes: new Set(undoHashes) }, source.key);
+            } catch (error) {
+              recordRobustnessEvent('feedContext.asyncPhaseFailed');
+              logger.warn('FeedContext', 'Undo mark as read failed', { error });
+              appToastService.show("Couldn't undo. Try again.");
+            }
+          })();
+        },
+      }, MARK_READ_UNDO_WINDOW_MS);
+    } catch (error) {
+      recordRobustnessEvent('feedContext.asyncPhaseFailed');
+      logger.warn('FeedContext', 'Mark as read failed', { sourceKey: source.key, error });
+      appToastService.show("Couldn't mark articles as read. Try again.");
+    } finally {
+      markReadInFlightRef.current = false;
+    }
+  }, [patchVisibleRowsRead]);
+
   const flushSchedulerUiUpdates = useCallback(async (forceLibraryRefresh = false): Promise<void> => {
     if (schedulerUiBatchTimerRef.current !== null) {
       window.clearTimeout(schedulerUiBatchTimerRef.current);
@@ -5149,6 +5241,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     syncArticleListViewport,
     searchCurrentSource,
     clearArticleListSearch,
+    markCurrentSourceRead,
   }), [
     refreshFeed,
     reloadCurrentSourceFromStore,
@@ -5157,6 +5250,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     syncArticleListViewport,
     searchCurrentSource,
     clearArticleListSearch,
+    markCurrentSourceRead,
   ]);
 
   const overlayValue = useMemo(() => ({

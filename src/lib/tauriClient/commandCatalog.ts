@@ -102,6 +102,8 @@ export const tauriCommandCatalog: Record<
     { apiMethod: "dbArticlesUnreadCount", ipcChannel: "db-articles-unread-count", kind: "invoke", targetCommand: "articles.countUnreadByFeed", rustCommand: "articles_count_unread_by_feed" },
     { apiMethod: "dbArticlesCount", ipcChannel: "db-articles-count", kind: "invoke", targetCommand: "articles.countByFeed", rustCommand: "articles_count_by_feed" },
     { apiMethod: "dbArticlesSyncFeedCountsBatch", ipcChannel: "db-articles-sync-feed-counts-batch", kind: "invoke", targetCommand: "articles.syncFeedCountsBatch", rustCommand: "articles_sync_feed_counts_batch" },
+    { apiMethod: "dbArticlesMarkReadScope", ipcChannel: "db-articles-mark-read-scope", kind: "invoke", targetCommand: "articles.markReadScope", rustCommand: "articles_mark_read_scope" },
+    { apiMethod: "dbArticlesRestoreUnread", ipcChannel: "db-articles-restore-unread", kind: "invoke", targetCommand: "articles.restoreUnread", rustCommand: "articles_restore_unread" },
     { apiMethod: "dbArticlesUpdateFeedMeta", ipcChannel: "db-articles-update-feed-meta", kind: "invoke", targetCommand: "articles.updateFeedMeta", rustCommand: "articles_update_feed_meta" },
   ],
   saved: [

@@ -75,6 +75,8 @@ function MenuItems({
               className="app-menu-item"
               role="menuitem"
               aria-checked={item.checked}
+              disabled={item.disabled}
+              aria-disabled={item.disabled || undefined}
               onClick={() => onAction(item)}
             >
               <span className="app-menu-item-check" aria-hidden="true">
