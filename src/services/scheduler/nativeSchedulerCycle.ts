@@ -61,6 +61,7 @@ export function buildNativeCycleRequest(input: {
   concurrency: number;
   now?: number;
   cycleId?: string;
+  background?: boolean;
 }): SchedulerNativeCyclePreviewRequest {
   return {
     boosts: buildNativeCycleBoosts(input.boosts),
@@ -74,6 +75,7 @@ export function buildNativeCycleRequest(input: {
     concurrency: input.concurrency,
     execute: true,
     cycleId: input.cycleId,
+    background: input.background === true ? true : undefined,
   };
 }
 

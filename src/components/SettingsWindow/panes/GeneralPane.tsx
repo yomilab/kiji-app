@@ -4,6 +4,7 @@ import type { BackgroundUpdateMode } from '@/services/scheduler/types';
 import { SettingsGroup, SettingsRow, SettingsSelect, SettingsSwitch } from '../settingsControls';
 import { FolderGlyph } from '../settingsIcons';
 import { BackgroundModeRow } from '../BackgroundModeRow';
+import { AttentionRows } from '../AttentionRows';
 import type { SettingsWindowState } from '../useSettingsWindowState';
 
 export const GeneralPane: React.FC<{ state: SettingsWindowState['general'] }> = ({ state }) => {
@@ -51,6 +52,10 @@ export const GeneralPane: React.FC<{ state: SettingsWindowState['general'] }> = 
 
       <SettingsGroup title="App">
         <BackgroundModeRow />
+      </SettingsGroup>
+
+      <SettingsGroup title="Notifications">
+        <AttentionRows />
       </SettingsGroup>
 
       <SettingsGroup title="Saved Articles">

@@ -30,7 +30,7 @@ export const SETTINGS_CATEGORIES: ReadonlyArray<{
   subtitle: string;
   icon: React.ReactNode;
 }> = [
-  { id: 'general', label: 'General', subtitle: 'Updates and saved articles.', icon: <GearGlyph /> },
+  { id: 'general', label: 'General', subtitle: 'Updates, notifications and saved articles.', icon: <GearGlyph /> },
   { id: 'appearance', label: 'Appearance', subtitle: 'Theme, interface font and app icon.', icon: <AppearanceGlyph /> },
   { id: 'reading', label: 'Reading', subtitle: 'Fonts and layout for articles.', icon: <BookGlyph /> },
   { id: 'shortcuts', label: 'Shortcuts', subtitle: 'Keyboard shortcuts for common actions.', icon: <KeyboardGlyph /> },
