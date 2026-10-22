@@ -77,6 +77,9 @@ export const pluralize = (count: number, singular: string, plural = `${singular}
 export const describeLinkError = (error: unknown): string => {
   const message = errorText(error).toLowerCase();
 
+  if (error instanceof Error && error.name === 'FeedNotFoundError') {
+    return 'We couldn\'t find a feed on this page.';
+  }
   if (message.includes('already exists')) {
     return 'This feed is already in your library.';
   }

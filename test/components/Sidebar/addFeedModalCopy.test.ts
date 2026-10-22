@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { FeedNotFoundError } from '@/services/feeds/feedAutodiscovery';
 import {
   describeFileImportError,
   describeLinkError,
@@ -30,6 +31,10 @@ describe('user-facing copy', () => {
     const raw = 'invoke error: FEED_NETWORK reqwest::Error { kind: Connect }';
     expect(describeLinkError(new Error(raw))).not.toContain('reqwest');
     expect(describeFileImportError(new Error(raw))).not.toContain('reqwest');
+  });
+
+  it('says plainly when a page has no feed', () => {
+    expect(describeLinkError(new FeedNotFoundError())).toBe('We couldn\'t find a feed on this page.');
   });
 
   it('names stations for an existing subscription', () => {

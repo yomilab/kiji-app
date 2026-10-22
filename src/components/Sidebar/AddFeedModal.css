@@ -206,6 +206,126 @@
   color: var(--theme-text-tertiary, var(--theme-text-secondary));
 }
 
+/* Pick list when a page offers several feeds */
+.add-feed-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: add-feed-fade-in 0.18s ease-out;
+}
+
+.add-feed-choices-intro {
+  margin: 2px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--theme-text-secondary);
+}
+
+.add-feed-choice-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 232px;
+  overflow-y: auto;
+  border: var(--border) solid var(--framework-input-border);
+  border-radius: var(--radius-box);
+  background-color: var(--framework-input-bg);
+}
+
+.add-feed-choice-list li + li {
+  border-top: var(--border) solid var(--framework-input-border);
+}
+
+.add-feed-choice {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--theme-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.add-feed-choice:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-primary) 6%, transparent);
+}
+
+.add-feed-choice:focus-visible,
+.add-feed-link-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.add-feed-choice:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.add-feed-choice-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-field);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background-color: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+}
+
+.add-feed-choice-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.add-feed-choice-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-feed-choice-meta {
+  font-size: 0.75rem;
+  color: var(--theme-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-feed-choice-chevron {
+  flex: none;
+  font-size: 14px;
+  color: var(--theme-text-secondary);
+}
+
+.add-feed-link-button {
+  appearance: none;
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.add-feed-link-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
 /* Import options */
 .add-feed-options {
   display: flex;
@@ -329,6 +449,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .add-feed-preview { animation: none; }
+  .add-feed-preview,
+  .add-feed-choices { animation: none; }
   .add-feed-spinner { animation-duration: 1.6s; }
 }
