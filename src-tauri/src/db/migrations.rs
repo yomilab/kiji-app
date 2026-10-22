@@ -216,6 +216,24 @@ fn migration_17(connection: &Connection) -> Result<(), String> {
     backfill_feed_tags_sort_order(connection)
 }
 
+/// Starred/saved lists sort by effective date + hash. The single-column flag
+/// indexes forced a table lookup per flagged row plus a temp B-tree sort;
+/// the partial `(effective date DESC, hash) WHERE flag = 1` replacements in
+/// `CREATE_INDEXES` let `ORDER BY ... LIMIT` stream off the index and only
+/// hold flagged rows. `query_articles` emits the flag as a literal so the
+/// partial index is usable.
+fn migration_18(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(
+            r#"
+            DROP INDEX IF EXISTS idx_articles_starred;
+            DROP INDEX IF EXISTS idx_articles_saved;
+            "#,
+        )
+        .map_err(|error| format!("Failed to drop legacy article flag indexes: {error}"))?;
+    ensure_query_indexes(connection)
+}
+
 static MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         version: 1,
@@ -284,6 +302,10 @@ static MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         version: 17,
         up: migration_17,
+    },
+    MigrationStep {
+        version: 18,
+        up: migration_18,
     },
 ];
 
@@ -633,6 +655,74 @@ mod tests {
             index_exists(&connection, "idx_articles_unsaved_hash").expect("query index"),
             "migration 16 should add idx_articles_unsaved_hash"
         );
+    }
+
+    #[test]
+    fn migration_18_swaps_flag_indexes_for_partial_date_indexes_on_v17_data() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+
+        // Rewind to the v17 shape: single-column flag indexes, no partial ones.
+        connection
+            .execute_batch(
+                r#"
+                DROP INDEX idx_articles_starred_date;
+                DROP INDEX idx_articles_saved_date;
+                CREATE INDEX idx_articles_starred ON articles(starred);
+                CREATE INDEX idx_articles_saved ON articles(saved);
+                DELETE FROM _migrations WHERE version >= 18;
+                INSERT INTO feeds (id, title, url, created_at)
+                  VALUES ('f1', 'Feed', 'https://example.com/rss', '2026-01-01T00:00:00Z');
+                "#,
+            )
+            .expect("simulate v17 database");
+        for index in 0..40 {
+            connection
+                .execute(
+                    "INSERT INTO articles (hash, feed_id, published_date, fetched_date, read, starred, saved)
+                     VALUES (?1, 'f1', ?2, ?2, ?3, ?4, ?5)",
+                    params![
+                        format!("h{index:02}"),
+                        format!("2026-01-{:02}T00:00:00Z", 1 + index % 5),
+                        index % 2,
+                        i64::from(index % 3 == 0),
+                        i64::from(index % 4 == 0)
+                    ],
+                )
+                .expect("insert v17 article");
+        }
+        assert_eq!(read_current_migration_version(&connection).expect("version"), 17);
+
+        run_migrations(&mut connection).expect("run migration 18");
+        assert_eq!(
+            read_current_migration_version(&connection).expect("version"),
+            SCHEMA_VERSION
+        );
+        for (name, expected) in [
+            ("idx_articles_starred", false),
+            ("idx_articles_saved", false),
+            ("idx_articles_starred_date", true),
+            ("idx_articles_saved_date", true),
+        ] {
+            assert_eq!(index_exists(&connection, name).expect("index"), expected, "{name}");
+        }
+        let count = |sql: &str| -> i64 {
+            connection.query_row(sql, [], |row| row.get(0)).expect("count")
+        };
+        assert_eq!(count("SELECT COUNT(*) FROM articles"), 40, "migration keeps every row");
+        assert_eq!(
+            count("SELECT COUNT(*) FROM articles INDEXED BY idx_articles_starred_date WHERE starred = 1"),
+            14
+        );
+        assert_eq!(
+            count("SELECT COUNT(*) FROM articles INDEXED BY idx_articles_saved_date WHERE saved = 1"),
+            10
+        );
+
+        // Startup self-healing must not bring the dropped indexes back.
+        run_migrations(&mut connection).expect("rerun at current version");
+        assert!(!index_exists(&connection, "idx_articles_starred").expect("index"));
+        assert!(!index_exists(&connection, "idx_articles_saved").expect("index"));
     }
 
     fn index_exists(connection: &Connection, name: &str) -> Result<bool, String> {

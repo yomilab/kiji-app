@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 17;
+pub const SCHEMA_VERSION: i64 = 18;
 
 /// `PRAGMA user_version` target for one-time data repairs run after startup
 /// (see `db::run_data_repairs`). 1 = per-subscription feed count recount;
@@ -122,9 +122,9 @@ pub const CREATE_INDEXES: &str = r#"
   CREATE INDEX IF NOT EXISTS idx_articles_effective_date ON articles(COALESCE(published_date, fetched_date) DESC);
   CREATE INDEX IF NOT EXISTS idx_articles_read           ON articles(read, COALESCE(published_date, fetched_date) DESC);
   CREATE INDEX IF NOT EXISTS idx_articles_read_last_read ON articles(read, last_read_at DESC, hash);
-  CREATE INDEX IF NOT EXISTS idx_articles_starred        ON articles(starred);
+  CREATE INDEX IF NOT EXISTS idx_articles_starred_date   ON articles(COALESCE(published_date, fetched_date) DESC, hash) WHERE starred = 1;
   CREATE INDEX IF NOT EXISTS idx_articles_feed_date      ON articles(feed_id, COALESCE(published_date, fetched_date) DESC);
-  CREATE INDEX IF NOT EXISTS idx_articles_saved          ON articles(saved);
+  CREATE INDEX IF NOT EXISTS idx_articles_saved_date     ON articles(COALESCE(published_date, fetched_date) DESC, hash) WHERE saved = 1;
   CREATE INDEX IF NOT EXISTS idx_feed_tags_tag_feed      ON feed_tags(tag_name, feed_id);
   CREATE INDEX IF NOT EXISTS idx_feed_tags_tag_sort      ON feed_tags(tag_name, sort_order, feed_id);
   CREATE INDEX IF NOT EXISTS idx_article_feed_items_hash ON article_feed_items(article_hash);
