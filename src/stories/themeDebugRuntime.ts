@@ -9,6 +9,7 @@ import {
 export type ThemeDebugVariant =
   | 'sidebar-default'
   | 'sidebar-overflow'
+  | 'sidebar-feed-health'
   | 'article-list-populated'
   | 'article-list-long'
   | 'article-list-loading'
@@ -128,6 +129,18 @@ const variants = {
     overlay: baseOverlay,
     ui: baseUi,
   },
+  'sidebar-feed-health': {
+    navigation: {
+      ...baseNavigation,
+      selectedFeedId: null,
+      selectedFeedTitle: 'Unread',
+      selectedSmartView: 'unread',
+    },
+    collection: populatedCollection,
+    actions: baseCollectionActions,
+    overlay: baseOverlay,
+    ui: baseUi,
+  },
   'sidebar-overflow': {
     navigation: {
       ...baseNavigation,
@@ -216,8 +229,25 @@ export function getThemeDebugState() {
   return variants[activeVariant];
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** One unstationed and one stationed feed that can't update (sidebar "can't update" marker). */
+const failingFeeds = () => {
+  const now = Date.now();
+  return THEME_DEBUG_FEEDS.map((feed) => (
+    feed.id === 'feed-world' || feed.id === 'feed-tech'
+      ? {
+        ...feed,
+        consecutiveFailures: 6,
+        lastFetched: new Date(now - 2 * DAY_MS - 60 * 60 * 1000),
+        lastFailedFetchAt: new Date(now - 20 * 60 * 1000),
+      }
+      : feed
+  ));
+};
+
 export function getThemeDebugFeeds() {
-  return THEME_DEBUG_FEEDS;
+  return activeVariant === 'sidebar-feed-health' ? failingFeeds() : THEME_DEBUG_FEEDS;
 }
 
 export function getThemeDebugTags() {

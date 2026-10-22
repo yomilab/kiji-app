@@ -8,6 +8,7 @@ import {
 } from '@/contexts/FeedContext';
 import { logger } from '@/services/logger';
 import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
+import { installFeedHealthSync } from '@/services/feeds/feedHealthSync';
 import type { FeedLibraryMutationMessage } from '@/services/ui/feedLibraryMutationBus';
 import {
   FEED_LIBRARY_STATUS_CHANGED_EVENT,
@@ -163,9 +164,13 @@ export function useManageFeedsWindowSync(): void {
       });
     });
 
+    // Sidebar "can't update" markers follow the same cycles (diffed, published on the bus).
+    const removeFeedHealthSync = installFeedHealthSync((listener) => feedScheduler.on(listener));
+
     return () => {
       removeBridge();
       removeSchedulerListener();
+      removeFeedHealthSync();
       if (reloadTimerRef.current !== null) {
         window.clearTimeout(reloadTimerRef.current);
         reloadTimerRef.current = null;
