@@ -61,6 +61,7 @@ import {
   keybindingService,
   withShortcutHint,
 } from '@/services/shortcuts/shortcutService';
+import { subscribeArticleViewCommand } from '@/services/ui/articleViewCommandBus';
 import { ARTICLE_VIEW_CLOSE_ANIMATION_MS, ARTICLE_VIEW_OPENING_MS } from '@/constants';
 import { isArticleReaderModeRenderable } from './articleViewReaderMode';
 import type { Article } from '@/types/article';
@@ -662,6 +663,20 @@ function useArticleViewKeyboardShortcuts(params: {
       animateArticleTo(scrollElement.scrollTop + delta);
     };
 
+    const toggleReaderMode = (): boolean => {
+      if (!canToggleReaderMode || !articleToShow?.link || !isFeedLinkedArticle) return false;
+      const nextStateIndex = articleDisplayMode === 'reader' ? 0 : 1;
+      void handleReaderModeToggle(nextStateIndex);
+      return true;
+    };
+
+    // Same guards as the `I` shortcut; the ⌘K palette sends this.
+    const unsubscribeCommands = subscribeArticleViewCommand((command) => {
+      if (command === 'toggleReaderMode') {
+        toggleReaderMode();
+      }
+    });
+
     const unregister = keybindingService.register({
       type: 'keydown',
       capture: true,
@@ -737,10 +752,8 @@ function useArticleViewKeyboardShortcuts(params: {
           void handleOpenInNewWindow();
         }
 
-        if (canToggleReaderMode && isToggleReaderModeShortcut(e) && articleToShow?.link && isFeedLinkedArticle) {
+        if (isToggleReaderModeShortcut(e) && toggleReaderMode()) {
           e.preventDefault();
-          const nextStateIndex = articleDisplayMode === 'reader' ? 0 : 1;
-          void handleReaderModeToggle(nextStateIndex);
         }
 
         if (isSaveArticleShortcut(e) && articleToShow && !clipboardLoading && !saveLoading) {
@@ -757,6 +770,7 @@ function useArticleViewKeyboardShortcuts(params: {
 
     return () => {
       unregister();
+      unsubscribeCommands();
       if (pendingTopSequenceTimerId !== null) {
         window.clearTimeout(pendingTopSequenceTimerId);
       }

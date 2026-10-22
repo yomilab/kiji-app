@@ -8,6 +8,7 @@ import { Sidebar } from './components/Sidebar/Sidebar';
 import { MainArea } from './components/MainArea/MainArea';
 import { ArticleView } from './components/MainArea/ArticleView';
 import { NotificationToast } from './components/common/NotificationToast';
+import { CommandPaletteHost } from './components/CommandPalette/CommandPaletteHost';
 import { useUserMessageChannel } from './hooks/useUserMessageChannel';
 import { useSystemAccentColor } from './hooks/useSystemAccentColor';
 import {
@@ -305,6 +306,7 @@ export const App: React.FC = () => {
       {appToastMessage && (
         <NotificationToast message={appToastMessage} data-component="app-toast" />
       )}
+      <CommandPaletteHost />
     </div>
   );
 };
