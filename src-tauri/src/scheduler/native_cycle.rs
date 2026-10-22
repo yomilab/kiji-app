@@ -243,11 +243,11 @@ pub async fn preview_native_refresh_cycle(
                             _ => {}
                         }
                         inserted_articles += outcome.inserted_count.unwrap_or(0);
-                        if outcome.inserted_count.unwrap_or(0) > 0 {
+                        if outcome.inserted_unread_count > 0 {
                             let feed_id = &entry.entry.feed_id;
                             feed_news.push(CycleFeedNews {
                                 title: entry.entry.feed_title.clone(),
-                                inserted: outcome.inserted_count.unwrap_or(0),
+                                inserted: outcome.inserted_unread_count,
                                 first_fetch: entry.entry.last_fetched_ms.is_none(),
                                 boosted: boosts.get(feed_id).is_some_and(|until| *until > now_ms),
                                 forced: force_refresh_feed_ids.contains(feed_id),
@@ -395,6 +395,8 @@ where
 struct NativeFeedRefreshOutcome {
     status: String,
     inserted_count: Option<i64>,
+    /// New articles still unread after mute words; drives the new-article notice.
+    inserted_unread_count: i64,
 }
 
 async fn refresh_single_feed_native(
@@ -438,6 +440,7 @@ async fn refresh_single_feed_native(
         return Ok(NativeFeedRefreshOutcome {
             status: "not-modified".to_string(),
             inserted_count: Some(0),
+            inserted_unread_count: 0,
         });
     }
 
@@ -475,6 +478,7 @@ async fn refresh_single_feed_native(
     Ok(NativeFeedRefreshOutcome {
         status: "changed".to_string(),
         inserted_count: Some(stored.inserted_count),
+        inserted_unread_count: stored.inserted_unread_count,
     })
 }
 
