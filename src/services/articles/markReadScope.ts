@@ -22,7 +22,7 @@ export function toMarkReadScope(source: MarkReadSource | null | undefined): Mark
   if (!source) return null;
   if (source.type === 'feed') return { feedId: source.feedId };
   if (source.type === 'tag') return { tagName: source.tagName };
-  if (source.viewType === 'all' || source.viewType === 'unread') return { smartView: source.viewType };
+  if (source.viewType === 'all' || source.viewType === 'unread' || source.viewType === 'today') return { smartView: source.viewType };
   if (source.viewType === 'pinned') return { tagName: 'pinned' };
   return null;
 }

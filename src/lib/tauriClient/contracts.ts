@@ -164,7 +164,7 @@ export interface FeedArticleCountsRecord {
 export interface MarkReadScopeRequest {
   feedId?: string;
   tagName?: string;
-  smartView?: 'all' | 'unread';
+  smartView?: 'all' | 'unread' | 'today';
   /** ISO timestamp; only articles dated before it. */
   olderThan?: string;
   searchText?: string;

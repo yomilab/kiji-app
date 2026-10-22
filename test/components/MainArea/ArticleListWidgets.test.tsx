@@ -66,7 +66,7 @@ describe('ArticleListWidgets', () => {
       expect(button.getAttribute('aria-expanded')).toBe('true');
       const items = screen.getAllByRole('menuitem').map((item) => item.textContent);
       expect(items).toEqual([
-        'Mark All as ReadCmd + Shift + K',
+        'Mark All as Read⌘⇧K',
         'Mark Older Than a Day as Read',
         'Mark Older Than a Week as Read',
       ]);

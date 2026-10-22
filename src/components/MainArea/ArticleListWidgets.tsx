@@ -10,6 +10,7 @@ import { DropdownMenu } from '@/components/common/DropdownMenu/DropdownMenu';
 import { useWindowChromeDragDismiss } from '@/hooks/useWindowChromeDragDismiss';
 import { TAURI_DRAG_REGION_FALSE } from '@/services/ui/windowChromeDragRegion';
 import './ArticleListWidgets.css';
+import { shortcutKeyGroups } from '@/components/SettingsWindow/settingsControls';
 
 interface ArticleListWidgetsProps {
   onToggleSearch: () => void;
@@ -41,6 +42,11 @@ const MARK_READ_ITEMS: ReadonlyArray<{ id: string; label: string; olderThanDays?
   { id: 'day', label: 'Mark Older Than a Day as Read', olderThanDays: 1 },
   { id: 'week', label: 'Mark Older Than a Week as Read', olderThanDays: 7 },
 ];
+
+/** Menu-style shortcut text: "⌘⇧K" on macOS, "Ctrl+Shift+K" elsewhere. */
+const formatMenuShortcut = (label: string): string => shortcutKeyGroups(label)
+  .map((keys) => keys.join(keys.some((key) => /^[⌘⇧⌃⌥]$/.test(key)) ? '' : '+'))
+  .join(' / ');
 
 /** Mark All as Read / Older Than… for the list on screen (hidden in Saved and Read). */
 const MarkReadMenu: React.FC = () => {
@@ -99,7 +105,7 @@ const MarkReadMenu: React.FC = () => {
             }}
           >
             <span>{item.label}</span>
-            {item.hint && <span className="article-list-mark-read-hint">{item.hint}</span>}
+            {item.hint && <span className="article-list-mark-read-hint">{formatMenuShortcut(item.hint)}</span>}
           </button>
         ))}
       </DropdownMenu>

@@ -143,6 +143,7 @@ export const SHORTCUT_LABELS = {
   REFRESH_FEED: 'Cmd + R',
   SEARCH_ARTICLES: 'Cmd + F',
   MARK_ALL_READ: 'Cmd + Shift + K',
+  COMMAND_PALETTE: 'Cmd + K',
   OPEN_SETTINGS: 'Cmd + ,',
   OPEN_ARTICLE_IN_NEW_WINDOW: 'N',
   CLOSE_ARTICLE_VIEW: 'Esc',
@@ -224,6 +225,14 @@ export const isMarkAllReadShortcut = (event: ShortcutKeyboardEvent): boolean =>
   isAppShortcutLayerActive()
   && isPrimaryModifierPressed(event)
   && event.shiftKey
+  && !event.altKey
+  && normalizedKey(event) === 'k';
+
+/** ⌘K (Ctrl+K off macOS). ⇧⌘K belongs to Mark All as Read, so Shift must be up. */
+export const isOpenCommandPaletteShortcut = (event: ShortcutKeyboardEvent): boolean =>
+  isAppShortcutLayerActive()
+  && isPrimaryModifierPressed(event)
+  && !event.shiftKey
   && !event.altKey
   && normalizedKey(event) === 'k';
 

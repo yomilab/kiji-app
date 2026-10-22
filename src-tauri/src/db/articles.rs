@@ -500,7 +500,8 @@ pub async fn articles_sync_feed_counts_batch(
 pub const MARK_READ_SCOPE_UNDO_LIMIT: i64 = 10_000;
 
 /// What the article list shows: one subscription, one station, or every
-/// article (the All and Unread views). Saved and Read are not scopes.
+/// article (the All and Unread views), or the last 24 hours (Today). Saved
+/// and Read are not scopes.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarkReadScopeRequest {
@@ -570,6 +571,10 @@ pub fn mark_read_scope(
     } else {
         match request.smart_view.as_deref() {
             Some("all") | Some("unread") => {}
+            Some("today") => {
+                conditions.push("COALESCE(a.published_date, a.fetched_date) >= ?".to_string());
+                bindings.push(Value::Text(today_cutoff(chrono::Utc::now())));
+            }
             _ => return Err("This list can't be marked as read.".to_string()),
         }
     }
@@ -2940,6 +2945,27 @@ mod tests {
             assert!(!result.undoable);
             assert!(result.hashes.is_empty());
             assert!(unread_hashes(&connection).is_empty());
+        }
+
+        #[test]
+        fn today_scope_marks_only_the_last_24_hours() {
+            let connection = setup_connection();
+            insert_feed(&connection, "f1");
+            let now = chrono::Utc::now();
+            let fmt = |d: chrono::DateTime<chrono::Utc>| d.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+            insert(&connection, "fresh", &["f1"], &fmt(now - chrono::Duration::hours(2)), 0, 0);
+            insert(&connection, "stale", &["f1"], &fmt(now - chrono::Duration::hours(30)), 0, 0);
+            let request = MarkReadScopeRequest {
+                feed_id: None,
+                tag_name: None,
+                smart_view: Some("today".into()),
+                older_than: None,
+                search_text: None,
+            };
+            let result = mark_read_scope(&connection, &request, MARK_READ_SCOPE_UNDO_LIMIT).expect("mark today");
+            assert_eq!(result.changed, 1);
+            assert_eq!(result.hashes, vec!["fresh".to_string()]);
+            assert_eq!(unread_hashes(&connection), vec!["stale".to_string()]);
         }
     }
 }

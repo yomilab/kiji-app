@@ -28,6 +28,7 @@ describe('markReadScope', () => {
     expect(toMarkReadScope({ type: 'tag', tagName: 'Tech' })).toEqual({ tagName: 'Tech' });
     expect(toMarkReadScope({ type: 'smart', viewType: 'all' })).toEqual({ smartView: 'all' });
     expect(toMarkReadScope({ type: 'smart', viewType: 'unread' })).toEqual({ smartView: 'unread' });
+    expect(toMarkReadScope({ type: 'smart', viewType: 'today' })).toEqual({ smartView: 'today' });
     expect(toMarkReadScope({ type: 'smart', viewType: 'pinned' })).toEqual({ tagName: 'pinned' });
     expect(canMarkSourceRead({ type: 'smart', viewType: 'saved' })).toBe(false);
     expect(canMarkSourceRead({ type: 'smart', viewType: 'read' })).toBe(false);
