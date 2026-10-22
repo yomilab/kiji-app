@@ -14,7 +14,7 @@ mod client_setup;
 mod current;
 mod endpoint;
 mod extension;
-mod format;
+pub(crate) mod format;
 mod http;
 mod protocol;
 mod query;

@@ -1,12 +1,13 @@
 use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tauri::State;
 
 use crate::diagnostics::robustness::{record_many, RobustnessCounter};
 
 use super::{
     models::{bool_to_i64, to_json_string, to_optional_json_string, SavedArticleRecord},
-    search::create_fts_prefix_query,
+    search::{body_snippet, create_fts_prefix_query, search_meta_cte_sql, search_tier_sql},
     DbState,
 };
 
@@ -26,6 +27,10 @@ pub struct SavedArticleQueryResponse {
     pub articles: Vec<SavedArticleRecord>,
     pub total: i64,
     pub cancelled: bool,
+    /// Search only: saved article id -> short excerpt of the body text for
+    /// rows that matched in the body but not in title, description or author.
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub search_snippets: HashMap<String, String>,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -59,6 +64,7 @@ pub async fn saved_query(
             articles: Vec::new(),
             total: 0,
             cancelled: true,
+            search_snippets: HashMap::new(),
         }),
     }
 }
@@ -360,9 +366,13 @@ pub fn query_saved_articles(
         .map(str::trim)
         .filter(|text| !text.is_empty());
 
-    if let Some(search_text) = normalized_search_text {
-        let search_query = create_fts_prefix_query(search_text)
-            .ok_or_else(|| "Search text did not contain searchable tokens.".to_string())?;
+    let search_query = normalized_search_text
+        .map(|search_text| {
+            create_fts_prefix_query(search_text)
+                .ok_or_else(|| "Search text did not contain searchable tokens.".to_string())
+        })
+        .transpose()?;
+    if let Some(search_query) = search_query.clone() {
         conditions.push("saved_articles_search MATCH ?".to_string());
         bindings.push(Value::Text(search_query));
     }
@@ -390,10 +400,20 @@ pub fn query_saved_articles(
         0
     };
 
+    // Title/description/author matches first, then body-only matches; each
+    // tier newest-saved first (see `search_tier_sql`).
+    let (search_meta_cte, tier_select, tier_order) = match &search_query {
+        Some(query) => (
+            search_meta_cte_sql("saved_articles_search", query),
+            format!("\n          {} AS search_tier,", search_tier_sql("sa.rowid")),
+            "search_tier ASC, ",
+        ),
+        None => (String::new(), String::new(), ""),
+    };
     let mut data_bindings = bindings;
     let mut data_sql = format!(
         r#"
-        SELECT
+        {search_meta_cte}SELECT{tier_select}
           sa.id,
           sa.article_hash,
           sa.title,
@@ -417,7 +437,7 @@ pub fn query_saved_articles(
           sa.notes
         FROM {from_sql}
         {where_sql}
-        ORDER BY sa.saved_date DESC
+        ORDER BY {tier_order}sa.saved_date DESC
         "#
     );
     if let Some(limit) = request.limit {
@@ -432,20 +452,38 @@ pub fn query_saved_articles(
     let mut statement = connection
         .prepare(&data_sql)
         .map_err(|error| format!("Failed to prepare saved article query: {error}"))?;
+    let is_search = normalized_search_text.is_some();
     let rows = statement
-        .query_map(
-            params_from_iter(data_bindings.iter()),
-            SavedArticleRecord::from_row,
-        )
+        .query_map(params_from_iter(data_bindings.iter()), |row| {
+            let tier = if is_search {
+                row.get::<_, i64>("search_tier")?
+            } else {
+                0
+            };
+            Ok((SavedArticleRecord::from_row(row)?, tier))
+        })
         .map_err(|error| format!("Failed to query saved articles: {error}"))?;
-    let articles = rows
+    let rows = rows
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("Failed to read saved article row: {error}"))?;
+    let mut search_snippets = HashMap::new();
+    if let Some(search_text) = normalized_search_text {
+        for (article, _) in rows.iter().filter(|(_, tier)| *tier == 1) {
+            let snippet = article
+                .content
+                .as_deref()
+                .and_then(|content| body_snippet(content, search_text));
+            if let Some(snippet) = snippet {
+                search_snippets.insert(article.id.clone(), snippet);
+            }
+        }
+    }
 
     Ok(SavedArticleQueryResponse {
-        articles,
+        articles: rows.into_iter().map(|(article, _)| article).collect(),
         total,
         cancelled: false,
+        search_snippets,
     })
 }
 

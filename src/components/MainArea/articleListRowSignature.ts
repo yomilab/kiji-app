@@ -9,6 +9,7 @@ export const getArticleListRowSignature = (article: Article): string => {
     article.hash,
     article.title,
     article.description,
+    article.searchSnippet ?? '',
     article.read ? '1' : '0',
     article.feedTitle ?? '',
     article.feedFavicon ?? '',

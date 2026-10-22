@@ -132,3 +132,22 @@ describe('ArticleListItem density', () => {
     expect(container.querySelector('.article-list-item--compact')).not.toBeNull();
   });
 });
+
+describe('ArticleListItem search snippet', () => {
+  it('shows the article-text excerpt in the description slot when the search matched only the text', () => {
+    const { container } = renderItem({
+      article: makeArticle({ searchSnippet: '...the pelican lands on the pier...' }),
+      searchQuery: 'pelican',
+    });
+    const description = container.querySelector('.article-list-item-description')!;
+
+    expect(description.textContent).toBe('...the pelican lands on the pier...');
+    expect(container.textContent).not.toContain('A description');
+  });
+
+  it('keeps the description when there is no excerpt', () => {
+    const { container } = renderItem({ searchQuery: 'title' });
+
+    expect(container.querySelector('.article-list-item-description')!.textContent).toBe('A description');
+  });
+});

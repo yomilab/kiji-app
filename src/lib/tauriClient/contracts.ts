@@ -256,6 +256,8 @@ export interface ArticleQueryResponse {
   total: number;
   hasMore: boolean;
   cancelled: boolean;
+  /** Search only: article hash -> article-text excerpt for rows that matched only in the text. */
+  searchSnippets?: Record<string, string>;
 }
 
 export interface SavedArticleRecord extends ArticleFeedMetadata {
@@ -321,6 +323,8 @@ export interface SavedArticleQueryResponse {
   articles: SavedArticleRecord[];
   total: number;
   cancelled: boolean;
+  /** Search only: saved article id -> article-text excerpt for rows that matched only in the text. */
+  searchSnippets?: Record<string, string>;
 }
 
 export interface FeedFetchRequest {

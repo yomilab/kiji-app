@@ -118,8 +118,13 @@ export async function query(q: ArticleQuery): Promise<ArticleQueryResult> {
     today: q.today,
   });
 
+  const snippets = result.searchSnippets;
   return {
-    articles: result.articles.map((record) => recordToArticle(record, { now, forList: true })),
+    articles: result.articles.map((record) => {
+      const article = recordToArticle(record, { now, forList: true });
+      const searchSnippet = snippets?.[record.hash];
+      return searchSnippet ? { ...article, searchSnippet } : article;
+    }),
     total: result.total,
     cancelled: result.cancelled,
   };

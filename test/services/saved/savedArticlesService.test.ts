@@ -134,3 +134,36 @@ describe("SavedArticlesService sync events", () => {
     });
   });
 });
+
+describe("SavedArticlesService.querySavedViewArticles", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("attaches article-text excerpts by saved article id", async () => {
+    const saved = (id: string, articleHash: string) => ({
+      id,
+      articleHash,
+      title: `Saved ${id}`,
+      description: "Saved description",
+      content: "<p>Saved content</p>",
+      savedDate: "2026-10-20T08:00:00.000Z",
+      feedId: "saved",
+      feedUrl: "https://example.com/post",
+      highlights: [],
+    });
+    vi.mocked(savedArticlesManager.querySavedArticles).mockResolvedValue({
+      articles: [saved("s-title", "hash-a"), saved("s-body", "hash-b")],
+      total: 2,
+      cancelled: false,
+      searchSnippets: { "s-body": "...slow-cooked cassoulet with beans." },
+    });
+
+    const result = await savedArticlesService.querySavedViewArticles(50, 0, "cassoulet");
+
+    expect(result.articles.map((article) => article.searchSnippet)).toEqual([
+      undefined,
+      "...slow-cooked cassoulet with beans.",
+    ]);
+  });
+});

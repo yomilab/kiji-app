@@ -53,6 +53,9 @@ export interface Article {
   duration?: number;
   episodeNumber?: number;
   seasonNumber?: number;
+  /** Search results only: excerpt of the article text around the match, shown in
+   * place of the description when the match is only in the text. */
+  searchSnippet?: string;
 }
 
 export interface ArticleHighlight {

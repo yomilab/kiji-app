@@ -31,7 +31,11 @@ class SavedArticlesService {
       searchEpoch,
     );
     return {
-      articles: result.articles.map((savedArticle) => this.toListArticle(savedArticle)),
+      articles: result.articles.map((savedArticle) => {
+        const article = this.toListArticle(savedArticle);
+        const searchSnippet = result.searchSnippets[savedArticle.id];
+        return searchSnippet ? { ...article, searchSnippet } : article;
+      }),
       total: result.total,
       cancelled: result.cancelled,
     };

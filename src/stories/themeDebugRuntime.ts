@@ -15,6 +15,7 @@ export type ThemeDebugVariant =
   | 'article-list-populated'
   | 'article-list-long'
   | 'article-list-loading'
+  | 'article-list-search-snippets'
   | 'article-view-standalone'
   | 'article-view-long'
   | 'article-view-images'
@@ -86,6 +87,22 @@ const populatedCollection = {
   newArticleCount: NEW_ARTICLE_HASHES.size,
   newArticleHashes: NEW_ARTICLE_HASHES,
   articleListScrollRequest: null,
+};
+
+// Search results where two rows matched only in the article text: the
+// description slot shows the excerpt around the match instead.
+const SEARCH_SNIPPETS: Record<string, string> = {
+  'theme-article-3': '...长篇阅读 (long-form reading) needs a measure near 35 characters per line so the eye finds the next line...',
+  'theme-article-4': '...your reading list opens instantly because every article already lives on this computer...',
+};
+
+const searchSnippetCollection = {
+  ...populatedCollection,
+  articles: THEME_DEBUG_ARTICLES.map((article) => (
+    SEARCH_SNIPPETS[article.hash] ? { ...article, searchSnippet: SEARCH_SNIPPETS[article.hash] } : article
+  )),
+  newArticleCount: 0,
+  newArticleHashes: EMPTY_HASHES,
 };
 
 const loadingCollection = {
@@ -184,6 +201,13 @@ const variants = {
       selectedFeedTitle: THEME_DEBUG_FEEDS[6].title,
     },
     collection: populatedCollection,
+    actions: baseCollectionActions,
+    overlay: baseOverlay,
+    ui: baseUi,
+  },
+  'article-list-search-snippets': {
+    navigation: baseNavigation,
+    collection: searchSnippetCollection,
     actions: baseCollectionActions,
     overlay: baseOverlay,
     ui: baseUi,

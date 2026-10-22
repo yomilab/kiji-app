@@ -5,7 +5,7 @@ use tauri::State;
 
 use super::{
     models::{bool_to_i64, to_optional_json_string, ArticleRecord},
-    search::create_fts_prefix_query,
+    search::{body_snippet, create_fts_prefix_query, search_meta_cte_sql, search_tier_sql},
     with_savepoint, DbState,
 };
 
@@ -50,6 +50,10 @@ pub struct ArticleQueryResponse {
     pub total: i64,
     pub has_more: bool,
     pub cancelled: bool,
+    /// Search only: article hash -> short excerpt of the body text for rows
+    /// that matched in the body but not in title, description or author.
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub search_snippets: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,6 +102,7 @@ pub async fn articles_query(
             total: 0,
             has_more: false,
             cancelled: true,
+            search_snippets: HashMap::new(),
         }),
     }
 }
@@ -717,6 +722,8 @@ pub async fn articles_update_feed_meta(
 /// SQL + bindings for one `articles_query` call, split from execution so tests
 /// can `EXPLAIN QUERY PLAN` the exact statements the list runs.
 struct ArticleQuerySql {
+    /// Search queries select a `search_tier` column (see `search_tier_sql`).
+    is_search: bool,
     count_sql: Option<String>,
     count_bindings: Vec<Value>,
     data_sql: String,
@@ -758,12 +765,25 @@ fn execute_article_query(
     let mut statement = connection
         .prepare(&sql.data_sql)
         .map_err(|error| format!("Failed to prepare article query: {error}"))?;
+    let is_search = sql.is_search;
     let rows = statement
-        .query_map(params_from_iter(sql.data_bindings.iter()), ArticleRecord::from_row)
+        .query_map(params_from_iter(sql.data_bindings.iter()), |row| {
+            let tier = if is_search {
+                row.get::<_, i64>("search_tier")?
+            } else {
+                0
+            };
+            Ok((ArticleRecord::from_row(row)?, tier))
+        })
         .map_err(|error| format!("Failed to query articles: {error}"))?;
-    let articles = rows
+    let rows = rows
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("Failed to read article row: {error}"))?;
+    let search_snippets = match request.search_text.as_deref() {
+        Some(search_text) if is_search => body_only_snippets(connection, &rows, search_text)?,
+        _ => HashMap::new(),
+    };
+    let articles: Vec<ArticleRecord> = rows.into_iter().map(|(article, _)| article).collect();
     let has_more = request
         .limit
         .map(|limit| {
@@ -776,7 +796,35 @@ fn execute_article_query(
         total,
         has_more,
         cancelled: false,
+        search_snippets,
     })
+}
+
+/// Body excerpts for the page's body-only matches (tier 1), so the row shows
+/// why it matched. Reads `content` for those rows only; the list query
+/// itself never selects it.
+fn body_only_snippets(
+    connection: &Connection,
+    rows: &[(ArticleRecord, i64)],
+    search_text: &str,
+) -> Result<HashMap<String, String>, String> {
+    let mut snippets = HashMap::new();
+    if rows.iter().all(|(_, tier)| *tier == 0) {
+        return Ok(snippets);
+    }
+    let mut statement = connection
+        .prepare_cached("SELECT content FROM articles WHERE hash = ?1")
+        .map_err(|error| format!("Failed to prepare search excerpt query: {error}"))?;
+    for (article, _) in rows.iter().filter(|(_, tier)| *tier == 1) {
+        let content: Option<String> = statement
+            .query_row(params![article.hash], |row| row.get(0))
+            .optional()
+            .map_err(|error| format!("Failed to read search excerpt: {error}"))?;
+        if let Some(snippet) = content.and_then(|content| body_snippet(&content, search_text)) {
+            snippets.insert(article.hash.clone(), snippet);
+        }
+    }
+    Ok(snippets)
 }
 
 /// `flag_fast_path` lets read/starred/saved filters on multi-feed/tag lists
@@ -884,12 +932,20 @@ fn build_article_query_sql(
         .as_deref()
         .map(str::trim)
         .filter(|text| !text.is_empty());
-    if let Some(search_text) = normalized_search_text {
-        let search_query = create_fts_prefix_query(search_text)
-            .ok_or_else(|| "Search text did not contain searchable tokens.".to_string())?;
+    let search_query = normalized_search_text
+        .map(|search_text| {
+            create_fts_prefix_query(search_text)
+                .ok_or_else(|| "Search text did not contain searchable tokens.".to_string())
+        })
+        .transpose()?;
+    if let Some(search_query) = search_query.clone() {
         conditions.push("articles_search MATCH ?".to_string());
         bindings.push(Value::Text(search_query));
     }
+    // Search results list title/description/author matches before body-only
+    // matches, each tier in the usual date order, so keyset paging stays
+    // (tier, date, hash).
+    let search_tier = search_query.as_ref().map(|_| search_tier_sql("a.rowid"));
 
     let sort_order = if request.sort_order.as_deref() == Some("asc") {
         "ASC"
@@ -919,6 +975,8 @@ fn build_article_query_sql(
     let count_bindings = bindings.clone();
 
     let mut having_conditions: Vec<String> = Vec::new();
+    let (cursor_conditions_len, cursor_having_len, cursor_bindings_start) =
+        (conditions.len(), having_conditions.len(), bindings.len());
     if let Some(cursor_hash) = request.cursor_hash.clone() {
         if sort_last_read {
             if let Some(cursor_date) = request.cursor_date.clone() {
@@ -952,6 +1010,33 @@ fn build_article_query_sql(
             bindings.push(Value::Text(cursor_date.clone()));
             bindings.push(Value::Text(cursor_date));
             bindings.push(Value::Text(cursor_hash));
+        }
+    }
+    // Search pages resume after the cursor row's tier: every later tier,
+    // plus the rest of the cursor's own tier by the date/hash keyset above.
+    if let (Some(tier), Some(cursor_hash)) = (&search_tier, request.cursor_hash.as_ref()) {
+        let cursor_row_tier = search_tier_sql("c.rowid");
+        let in_having = having_conditions.len() > cursor_having_len;
+        let target = if in_having {
+            Some(&mut having_conditions)
+        } else if conditions.len() > cursor_conditions_len {
+            Some(&mut conditions)
+        } else {
+            None
+        };
+        if let Some(target) = target {
+            let keyset = target.pop().expect("cursor condition was just added");
+            let keyset_bindings = bindings.split_off(cursor_bindings_start);
+            let row_tier = if in_having { "search_tier" } else { tier.as_str() };
+            // A cursor row deleted since the last page resumes at tier 0.
+            let cursor_tier =
+                format!("COALESCE((SELECT {cursor_row_tier} FROM articles c WHERE c.hash = ?), 0)");
+            target.push(format!(
+                "({row_tier} > {cursor_tier} OR ({row_tier} = {cursor_tier} AND {keyset}))"
+            ));
+            bindings.push(Value::Text(cursor_hash.clone()));
+            bindings.push(Value::Text(cursor_hash.clone()));
+            bindings.extend(keyset_bindings);
         }
     }
 
@@ -1013,6 +1098,14 @@ fn build_article_query_sql(
         } else {
             format!(" HAVING {}", having_conditions.join(" AND "))
         };
+        let (page_tier_select, inner_tier_select, inner_tier_order) = match &search_query {
+            Some(_) => (
+                "\n              page.search_tier AS search_tier,".to_string(),
+                format!("\n                MIN({}) AS search_tier,", search_tier_sql("search_article.rowid")),
+                "search_tier ASC, ",
+            ),
+            None => (String::new(), String::new(), ""),
+        };
         let page_from_sql = if normalized_search_text.is_some() {
             "articles_search \
              JOIN articles search_article ON search_article.rowid = articles_search.rowid \
@@ -1023,7 +1116,7 @@ fn build_article_query_sql(
         };
         format!(
             r#"
-            SELECT
+            SELECT{page_tier_select}
               a.hash,
               a.feed_id AS feed_id,
               a.title,
@@ -1048,13 +1141,13 @@ fn build_article_query_sql(
               COALESCE(f.image, a.feed_image) AS feed_image
             FROM (
               SELECT
-                afi.article_hash AS article_hash,
+                afi.article_hash AS article_hash,{inner_tier_select}
                 MAX({page_sort_expr}) AS sort_date
               FROM {page_from_sql}
               {data_where}
               GROUP BY afi.article_hash
               {having_sql}
-              ORDER BY sort_date {sort_order}, article_hash ASC
+              ORDER BY {inner_tier_order}sort_date {sort_order}, article_hash ASC
             "#
         )
     } else {
@@ -1063,9 +1156,13 @@ fn build_article_query_sql(
         } else {
             ""
         };
+        let (tier_select, tier_order) = match &search_tier {
+            Some(tier) => (format!("\n              {tier} AS search_tier,"), "search_tier ASC, "),
+            None => (String::new(), ""),
+        };
         format!(
             r#"
-            SELECT
+            SELECT{tier_select}
               a.hash,
               {display_feed_id_sql} AS feed_id,
               a.title,
@@ -1091,10 +1188,14 @@ fn build_article_query_sql(
             FROM {from_sql}
             LEFT JOIN feeds f ON f.id = {display_feed_id_sql}
             {data_where}{group_by}
-            ORDER BY {sort_expr} {sort_order}, {sort_hash_expr} ASC
+            ORDER BY {tier_order}{sort_expr} {sort_order}, {sort_hash_expr} ASC
             "#
         )
     };
+
+    if let Some(search_query) = &search_query {
+        data_sql.insert_str(0, &search_meta_cte_sql("articles_search", search_query));
+    }
 
     if let Some(limit) = request.limit {
         data_sql.push_str(" LIMIT ?");
@@ -1112,13 +1213,18 @@ fn build_article_query_sql(
             ) page
             JOIN articles a ON a.hash = page.article_hash
             LEFT JOIN feeds f ON f.id = a.feed_id
-            ORDER BY page.sort_date "#,
+            ORDER BY "#,
         );
+        if search_tier.is_some() {
+            data_sql.push_str("page.search_tier ASC, ");
+        }
+        data_sql.push_str("page.sort_date ");
         data_sql.push_str(sort_order);
         data_sql.push_str(", page.article_hash ASC");
     }
 
     Ok(ArticleQuerySql {
+        is_search: search_tier.is_some(),
         count_sql,
         count_bindings,
         data_sql,
@@ -2185,6 +2291,45 @@ mod tests {
             sql.count_sql.as_deref().expect("count sql"),
             &sql.count_bindings,
         )
+    }
+
+    #[test]
+    fn body_search_plans_drive_from_the_fts_index() {
+        let connection = setup_connection();
+        let search_request = |tag: Option<&str>, cursor: bool| {
+            let mut request = list_request();
+            request.search_text = Some("kestrel".to_string());
+            request.tag_name = tag.map(str::to_string);
+            if cursor {
+                request.cursor_date = Some("2026-05-01T00:00:00Z".to_string());
+                request.cursor_hash = Some("cursor".to_string());
+            }
+            request
+        };
+        let library = search_request(None, false);
+        let library_cursor = search_request(None, true);
+        let station = search_request(Some("Tech"), false);
+        let station_cursor = search_request(Some("Tech"), true);
+
+        for (label, request) in [
+            ("library", &library),
+            ("library cursor", &library_cursor),
+            ("station", &station),
+            ("station cursor", &station_cursor),
+        ] {
+            let plan = data_plan(&connection, request);
+            println!("{label} search plan: {plan}");
+            assert!(
+                plan.contains("articles_search VIRTUAL TABLE INDEX"),
+                "{label}: search must use the FTS index: {plan}"
+            );
+            assert!(
+                !plan.split(" | ").any(|step| step == "SCAN a" || step.starts_with("SCAN a ")),
+                "{label}: no full articles scan: {plan}"
+            );
+        }
+        let count = count_plan(&connection, &library);
+        assert!(count.contains("articles_search VIRTUAL TABLE INDEX"), "{count}");
     }
 
     #[test]
