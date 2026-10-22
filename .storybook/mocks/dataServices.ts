@@ -208,6 +208,7 @@ export const formatOpmlImportSummary = () => 'OPML import is disabled in Storybo
 export const importOpmlFromUrlIntoLibrary = async () => null;
 export const importOpmlTextIntoLibrary = async () => null;
 export const isLikelyOpmlUrl = () => false;
+export const fetchOpmlTextFromUrl = async (): Promise<string> => '';
 export const navigateAfterOpmlImport = asyncNoop;
 export const openOpmlFileForImport = async () => null;
 

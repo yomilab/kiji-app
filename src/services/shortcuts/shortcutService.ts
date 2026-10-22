@@ -162,6 +162,9 @@ export const SHORTCUT_LABELS = {
   PAGE_DOWN_OR_NEXT_UNREAD: 'Space',
   PAGE_UP: 'Shift + Space',
   RESET_SETTINGS: 'Cmd + Shift + R',
+  READER_TEXT_BIGGER: 'Cmd + +',
+  READER_TEXT_SMALLER: 'Cmd + -',
+  READER_TEXT_RESET: 'Cmd + 0',
 } as const;
 
 export const SHORTCUT_HINTS = {
@@ -282,3 +285,26 @@ export const isArticlePageUpShortcut = (event: ShortcutKeyboardEvent): boolean =
 /** Space in the list with no article open: open the next unread article. */
 export const isOpenNextUnreadShortcut = (event: ShortcutKeyboardEvent): boolean =>
   isAppShortcutLayerActive() && !hasArticleViewOpen() && isPlainKeyPress(event) && !event.shiftKey && isSpaceKey(event);
+
+/**
+ * ⌘+ (also ⌘=), ⌘− and ⌘0 (Ctrl on Windows/Linux) while an article is open.
+ * Returns which text size step the key asks for, or null.
+ */
+export const getReaderTextSizeShortcutAction = (
+  event: ShortcutKeyboardEvent,
+): 'bigger' | 'smaller' | 'reset' | null => {
+  if (!isArticleShortcutLayerActive() || !isPrimaryModifierPressed(event) || event.altKey) return null;
+  switch (event.key) {
+    case '+':
+    case '=':
+      return 'bigger';
+    case '-':
+    case '_':
+    case '\u2212':
+      return 'smaller';
+    case '0':
+      return event.shiftKey ? null : 'reset';
+    default:
+      return null;
+  }
+};

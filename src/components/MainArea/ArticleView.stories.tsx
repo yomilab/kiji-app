@@ -4,7 +4,9 @@ import {
   THEME_DEBUG_IMAGE_ARTICLE,
   THEME_DEBUG_LONG_ARTICLE,
 } from '@/stories/themeDebugFixtures';
+import type { CSSProperties } from 'react';
 import { ArticleView } from './ArticleView';
+import { ReaderTextSizeIndicator } from './ReaderTextSizeControl';
 
 const meta = {
   title: 'Theme Debug/Article View',
@@ -43,6 +45,27 @@ export const LongArticle: Story = {
     kiji: { variant: 'article-view-long' },
   },
   render: renderStandalone,
+};
+
+/** ⌘+ four times from the default size: 140% (25px) with the size indicator still showing. */
+export const TextSize140: Story = {
+  args: {
+    article: THEME_DEBUG_LONG_ARTICLE,
+  },
+  parameters: {
+    kiji: { variant: 'article-view-text-size-140' },
+  },
+  render: (args) => (
+    <div
+      className="theme-debug-article-frame"
+      style={{ '--article-content-font-size': '25px' } as CSSProperties}
+    >
+      <ArticleView key={args.article?.hash} {...args} />
+      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, pointerEvents: 'none' }}>
+        <ReaderTextSizeIndicator percent={140} visible />
+      </div>
+    </div>
+  ),
 };
 
 export const StandaloneImages: Story = {

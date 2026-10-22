@@ -24,6 +24,9 @@ const MENU_CLEAR_ALL_ARTICLES: &str = "menu-clear-all-articles";
 const MENU_THEME_AUTO: &str = "menu-theme-auto";
 const MENU_THEME_LIGHT: &str = "menu-theme-light";
 const MENU_THEME_DARK: &str = "menu-theme-dark";
+const MENU_TEXT_BIGGER: &str = "menu-text-bigger";
+const MENU_TEXT_SMALLER: &str = "menu-text-smaller";
+const MENU_TEXT_ACTUAL_SIZE: &str = "menu-text-actual-size";
 const MENU_LIBRARY_SAVED: &str = "menu-library-saved";
 const MENU_LIBRARY_UNREAD: &str = "menu-library-unread";
 const MENU_LIBRARY_ALL: &str = "menu-library-all";
@@ -61,6 +64,12 @@ pub enum AppMenuCommand {
     MarkAllRead {
         #[serde(rename = "olderThanDays", default, skip_serializing_if = "Option::is_none")]
         older_than_days: Option<u16>,
+    },
+    /// Article text size step; `window` is the window the renderer should apply it in.
+    ReaderTextSize {
+        action: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        window: Option<String>,
     },
 }
 
@@ -246,9 +255,44 @@ impl ApplicationMenu {
         )
         .map_err(menu_error)?;
 
-        let view_submenu =
-            Submenu::with_items(app, "View", true, &[&theme_submenu, &library_submenu])
-                .map_err(menu_error)?;
+        // Same keys as the renderer article shortcuts. The renderer handles the key
+        // first and prevents default, so the menu item only runs on a click or when
+        // no article is open (then the renderer ignores the command).
+        let view_submenu = Submenu::with_items(
+            app,
+            "View",
+            true,
+            &[
+                &MenuItem::with_id(
+                    app,
+                    MENU_TEXT_BIGGER,
+                    "Make Text Bigger",
+                    true,
+                    Some("CmdOrCtrl+="),
+                )
+                .map_err(menu_error)?,
+                &MenuItem::with_id(
+                    app,
+                    MENU_TEXT_SMALLER,
+                    "Make Text Smaller",
+                    true,
+                    Some("CmdOrCtrl+-"),
+                )
+                .map_err(menu_error)?,
+                &MenuItem::with_id(
+                    app,
+                    MENU_TEXT_ACTUAL_SIZE,
+                    "Actual Text Size",
+                    true,
+                    Some("CmdOrCtrl+0"),
+                )
+                .map_err(menu_error)?,
+                &PredefinedMenuItem::separator(app).map_err(menu_error)?,
+                &theme_submenu,
+                &library_submenu,
+            ],
+        )
+        .map_err(menu_error)?;
 
         let article_submenu = Submenu::with_items(
             app,
@@ -469,6 +513,9 @@ impl ApplicationMenu {
                     older_than_days: Some(7),
                 },
             ),
+            MENU_TEXT_BIGGER => emit_reader_text_size_command(app, "bigger"),
+            MENU_TEXT_SMALLER => emit_reader_text_size_command(app, "smaller"),
+            MENU_TEXT_ACTUAL_SIZE => emit_reader_text_size_command(app, "reset"),
             MENU_ADD_SUBSCRIPTION => emit_menu_command(app, AppMenuCommand::OpenAddSubscription),
             MENU_IMPORT_FEEDS => emit_menu_command(app, AppMenuCommand::ImportFeeds),
             MENU_MANAGE_FEEDS => {
@@ -585,6 +632,38 @@ fn mark_read_available(library_view: Option<&str>) -> bool {
     !matches!(library_view, Some("saved") | Some("read"))
 }
 
+/// Text size applies to the focused reading window (main or the article window)
+/// without raising the main window. Every webview hears `app-menu:command`, so the
+/// payload names the target window and the others ignore it.
+fn emit_reader_text_size_command(app: &AppHandle, action: &str) {
+    let window = reader_text_size_target(
+        app.webview_windows()
+            .values()
+            .filter(|window| window.is_focused().unwrap_or(false))
+            .map(|window| window.label()),
+    );
+    let Some(target) = app.get_webview_window(window) else {
+        return;
+    };
+    let _ = target.emit(
+        "app-menu:command",
+        AppMenuCommand::ReaderTextSize {
+            action: action.to_string(),
+            window: Some(window.to_string()),
+        },
+    );
+}
+
+fn reader_text_size_target<'a>(mut focused: impl Iterator<Item = &'a str>) -> &'static str {
+    match focused.next() {
+        Some(ARTICLE_WINDOW_LABEL) => ARTICLE_WINDOW_LABEL,
+        _ => MAIN_WINDOW_LABEL,
+    }
+}
+
+const MAIN_WINDOW_LABEL: &str = "main";
+const ARTICLE_WINDOW_LABEL: &str = "article";
+
 fn menu_check(
     app: &AppHandle,
     id: &str,
@@ -654,11 +733,46 @@ mod tests {
         assert!(mark_read_available(Some("unread")));
         assert!(!mark_read_available(Some("saved")));
         assert!(!mark_read_available(Some("read")));
+    }
+
+    #[test]
+    fn reader_text_size_command_names_its_window() {
+        let value = serde_json::to_value(AppMenuCommand::ReaderTextSize {
+            action: "bigger".into(),
+            window: Some("article".into()),
+        })
+        .expect("serialize");
+        assert_eq!(
+            value,
+            serde_json::json!({ "type": "readerTextSize", "action": "bigger", "window": "article" })
+        );
+        let from_renderer: AppMenuCommand =
+            serde_json::from_value(serde_json::json!({ "type": "readerTextSize", "action": "reset" }))
+                .expect("renderer payload");
+        assert!(matches!(
+            from_renderer,
+            AppMenuCommand::ReaderTextSize { ref action, window: None } if action == "reset"
+        ));
+    }
+
+    #[test]
+    fn reader_text_size_targets_focused_article_window_else_main() {
+        assert_eq!(reader_text_size_target(["article"].into_iter()), "article");
+        assert_eq!(reader_text_size_target(["main"].into_iter()), "main");
+        assert_eq!(reader_text_size_target(["settings"].into_iter()), "main");
+        assert_eq!(reader_text_size_target(std::iter::empty()), "main");
+    }
+
+    #[test]
+    fn view_menu_binds_text_size_keys() {
         let production = include_str!("menu.rs")
             .split("#[cfg(test)]")
             .next()
             .expect("production source");
         assert!(production.contains("Some(\"CmdOrCtrl+Shift+K\")"));
+        for accelerator in ["Some(\"CmdOrCtrl+=\")", "Some(\"CmdOrCtrl+-\")", "Some(\"CmdOrCtrl+0\")"] {
+            assert!(production.contains(accelerator), "missing {accelerator}");
+        }
     }
 
     #[test]

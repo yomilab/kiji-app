@@ -36,6 +36,7 @@ import { StatefulButtonGroup, type ButtonState } from '@/components/common/State
 import { ArticleContent, ArticleContentSkeleton, type ArticleContentMetricsDetail, type ArticleImageOpenDetail } from '@/components/common/ArticleContent';
 import { estimateReadingMinutes, formatArticleDate } from '@/utils/readingTime';
 import { ArticleImageLightbox } from './ArticleImageLightbox';
+import { ReaderTextSizeControl } from './ReaderTextSizeControl';
 import { ArticlePdfViewer } from '@/components/common/ArticlePdf';
 import { InteractionProfiler } from '@/components/common/InteractionProfiler';
 import {
@@ -2678,6 +2679,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
         {lightboxDetail && (
           <ArticleImageLightbox detail={lightboxDetail} onClose={handleLightboxClose} />
         )}
+        <ReaderTextSizeControl scrollContainerRef={scrollContainerRef} />
       </motion.div>
     </InteractionProfiler>
   );

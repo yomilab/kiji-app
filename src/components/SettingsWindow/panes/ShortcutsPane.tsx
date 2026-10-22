@@ -31,6 +31,9 @@ export const SHORTCUT_GROUPS: ReadonlyArray<ShortcutGroup> = [
       { id: 'page-up', label: 'Previous Page', keys: SHORTCUT_LABELS.PAGE_UP },
       { id: 'save-article', label: 'Save/Unsave Article', keys: SHORTCUT_LABELS.SAVE_ARTICLE },
       { id: 'copy-article-url', label: 'Copy Article URL', keys: SHORTCUT_LABELS.COPY_ARTICLE_URL },
+      { id: 'text-bigger', label: 'Make Text Bigger', keys: SHORTCUT_LABELS.READER_TEXT_BIGGER },
+      { id: 'text-smaller', label: 'Make Text Smaller', keys: SHORTCUT_LABELS.READER_TEXT_SMALLER },
+      { id: 'text-actual-size', label: 'Actual Text Size', keys: SHORTCUT_LABELS.READER_TEXT_RESET },
       { id: 'vim-scroll-top', label: 'Scroll to Top', keys: SHORTCUT_LABELS.VIM_SCROLL_TOP },
       { id: 'vim-scroll-bottom', label: 'Scroll to Bottom', keys: SHORTCUT_LABELS.VIM_SCROLL_BOTTOM },
       {

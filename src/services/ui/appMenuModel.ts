@@ -128,6 +128,28 @@ export function buildWindowsAppMenuTree(state: AppMenuState): AppMenuTopLevel[] 
       accessKey: 'v',
       items: [
         {
+          kind: 'item',
+          id: 'text-bigger',
+          label: 'Make Text Bigger',
+          action: { type: 'readerTextSize', action: 'bigger' },
+          shortcutHint: 'Ctrl++',
+        },
+        {
+          kind: 'item',
+          id: 'text-smaller',
+          label: 'Make Text Smaller',
+          action: { type: 'readerTextSize', action: 'smaller' },
+          shortcutHint: 'Ctrl+-',
+        },
+        {
+          kind: 'item',
+          id: 'text-actual-size',
+          label: 'Actual Text Size',
+          action: { type: 'readerTextSize', action: 'reset' },
+          shortcutHint: 'Ctrl+0',
+        },
+        { kind: 'separator', id: 'view-sep-text-size' },
+        {
           kind: 'submenu',
           id: 'theme',
           label: 'Theme',

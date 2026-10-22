@@ -547,7 +547,9 @@ export type AppMenuCommand =
   | { type: "selectLibraryView"; libraryView: Exclude<AppMenuLibraryView, null> }
   | { type: "openAddSubscription" }
   | { type: "importFeeds" }
-  | { type: "markAllRead"; olderThanDays?: 1 | 7 };
+  | { type: "markAllRead"; olderThanDays?: 1 | 7 }
+
+  | { type: "readerTextSize"; action: "bigger" | "smaller" | "reset"; window?: "main" | "article" };
 
 export interface ArticleWindowPayload {
   article: ArticleRecord;
