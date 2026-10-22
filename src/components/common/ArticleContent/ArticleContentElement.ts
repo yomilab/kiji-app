@@ -34,6 +34,7 @@ import {
   resolveLiteYoutubeWatchUrl,
 } from './liteYoutubeActivation';
 import '../AudioPlayer/FeedAudioPlayerElement';
+import { findReadingAnchorElement } from './readingAnchor';
 
 import { staticResourceService } from '@/services/system/staticResourceService';
 import { wrapNonAsciiTextNodes } from '@/utils/nonAsciiTypography';
@@ -656,6 +657,12 @@ class ArticleContentElement extends HTMLElement {
       this.scheduleMediaEnhancements(container, options?.deferMediaProcessingMs ?? 0, options?.baseUrl);
       this.dispatchContentMetrics(container, html);
     }
+  }
+
+  /** Text block at viewport y `top`, used to keep the reading position across text size changes. */
+  findReadingAnchor(top: number): Element | null {
+    const container = this.root.querySelector('.article-content-container');
+    return container ? findReadingAnchorElement(container, top) : null;
   }
 
   cancelPendingWork(): void {

@@ -10,7 +10,8 @@ const tauriMock = resolveLocal('./mocks/tauri.ts');
 const storyAliases = [
   { find: '@/contexts/FeedContext', replacement: resolveLocal('./mocks/feedContext.tsx') },
   { find: '@/contexts/ThemeContext', replacement: resolveLocal('./mocks/themeContext.tsx') },
-  { find: '@/services/settings', replacement: dataServicesMock },
+  // Exact match: settings submodules (pure helpers) load the real files.
+  { find: /^@\/services\/settings$/, replacement: dataServicesMock },
   { find: '@/services/storage/storageFactory', replacement: dataServicesMock },
   { find: '@/services/feeds/feedMetadataCache', replacement: dataServicesMock },
   { find: '@/services/feeds/feedsManager', replacement: dataServicesMock },

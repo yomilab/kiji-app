@@ -12,7 +12,9 @@ export type AppMenuCommand =
   | { type: 'clearArticles' }
   | { type: 'clearArticlesOlderThan'; months: 3 }
   | { type: 'setTheme'; theme: Theme }
-  | { type: 'selectLibraryView'; libraryView: SmartViewId };
+  | { type: 'selectLibraryView'; libraryView: SmartViewId }
+  /** Article text size; `window` names the window it is for (absent = the window that receives it). */
+  | { type: 'readerTextSize'; action: 'bigger' | 'smaller' | 'reset'; window?: 'main' | 'article' };
 
 export interface AppMenuState {
   theme: Theme;

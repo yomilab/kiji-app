@@ -31,6 +31,16 @@ describe('appMenuModel', () => {
     });
   });
 
+  it('lists article text size commands at the top of View', () => {
+    const tree = buildWindowsAppMenuTree({ theme: 'auto', libraryView: null });
+    const view = tree.find((menu) => menu.id === 'view');
+    expect(view?.items.slice(0, 3)).toEqual([
+      expect.objectContaining({ label: 'Make Text Bigger', action: { type: 'readerTextSize', action: 'bigger' }, shortcutHint: 'Ctrl++' }),
+      expect.objectContaining({ label: 'Make Text Smaller', action: { type: 'readerTextSize', action: 'smaller' }, shortcutHint: 'Ctrl+-' }),
+      expect.objectContaining({ label: 'Actual Text Size', action: { type: 'readerTextSize', action: 'reset' }, shortcutHint: 'Ctrl+0' }),
+    ]);
+  });
+
   it('marks theme and library check items from state', () => {
     const tree = buildWindowsAppMenuTree({ theme: 'dark', libraryView: 'unread' });
     const view = tree.find((menu) => menu.id === 'view');

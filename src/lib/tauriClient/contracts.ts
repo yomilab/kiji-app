@@ -526,7 +526,8 @@ export type AppMenuCommand =
   | { type: "setTheme"; theme: AppSettings["theme"] }
   | { type: "selectLibraryView"; libraryView: Exclude<AppMenuLibraryView, null> }
   | { type: "openAddSubscription" }
-  | { type: "importFeeds" };
+  | { type: "importFeeds" }
+  | { type: "readerTextSize"; action: "bigger" | "smaller" | "reset"; window?: "main" | "article" };
 
 export interface ArticleWindowPayload {
   article: ArticleRecord;

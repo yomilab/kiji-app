@@ -2,6 +2,7 @@ import React from 'react';
 import { DEFAULT_SETTINGS } from '@/services/settings';
 import type { ReadingLayoutSettings } from '@/services/settings';
 import { CJK_FONT_OPTIONS, COMMON_FONT_OPTIONS } from '@/services/settings/fontFamilies';
+import { getReaderFontSizeBounds } from '@/services/settings/readerTextSize';
 import {
   SettingsGroup,
   SettingsRow,
@@ -55,12 +56,14 @@ const formatDelta = (value: number, defaultValue: number, stepSize: number): str
 /** Built per render: DEFAULT_SETTINGS can be swapped by tests and stories. */
 export const getReadingSliderConfigs = (): ReadingSliderConfig[] => {
   const defaults = DEFAULT_SETTINGS.readingLayout;
+  // Same range as ⌘+ / ⌘− in an article, so the slider can show any size set there.
+  const fontSizeBounds = getReaderFontSizeBounds(defaults.fontSize);
   return [
     {
       key: 'fontSize',
       label: 'Font size',
-      min: -3,
-      max: 7,
+      min: fontSizeBounds.min - defaults.fontSize,
+      max: fontSizeBounds.max - defaults.fontSize,
       step: 1,
       icon: <TextSizeGlyph />,
       formatValue: (value) => (

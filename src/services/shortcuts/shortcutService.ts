@@ -157,6 +157,9 @@ export const SHORTCUT_LABELS = {
   ARTICLE_LIST_STEP_DOWN: 'J / ↓',
   ARTICLE_LIST_STEP_UP: 'K / ↑',
   RESET_SETTINGS: 'Cmd + Shift + R',
+  READER_TEXT_BIGGER: 'Cmd + +',
+  READER_TEXT_SMALLER: 'Cmd + -',
+  READER_TEXT_RESET: 'Cmd + 0',
 } as const;
 
 export const SHORTCUT_HINTS = {
@@ -245,3 +248,26 @@ export const isVimScrollHalfDownShortcut = (event: ShortcutKeyboardEvent): boole
 
 export const isVimScrollHalfUpShortcut = (event: ShortcutKeyboardEvent): boolean =>
   isScrollableShortcutLayerActive() && !event.metaKey && event.ctrlKey && !event.altKey && !event.shiftKey && normalizedKey(event) === 'u';
+
+/**
+ * ⌘+ (also ⌘=), ⌘− and ⌘0 (Ctrl on Windows/Linux) while an article is open.
+ * Returns which text size step the key asks for, or null.
+ */
+export const getReaderTextSizeShortcutAction = (
+  event: ShortcutKeyboardEvent,
+): 'bigger' | 'smaller' | 'reset' | null => {
+  if (!isArticleShortcutLayerActive() || !isPrimaryModifierPressed(event) || event.altKey) return null;
+  switch (event.key) {
+    case '+':
+    case '=':
+      return 'bigger';
+    case '-':
+    case '_':
+    case '\u2212':
+      return 'smaller';
+    case '0':
+      return event.shiftKey ? null : 'reset';
+    default:
+      return null;
+  }
+};
