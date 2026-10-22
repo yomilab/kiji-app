@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => ({
   updateSavedStatus: vi.fn(),
 }));
 
+vi.mock('@/components/MainArea/ReaderTextSizeControl', () => ({
+  ReaderTextSizeControl: () => null,
+}));
+
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({ label: 'article-test' }),
 }));
