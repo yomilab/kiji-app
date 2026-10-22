@@ -1,5 +1,6 @@
 import type { Article } from '../../src/types/article';
 import {
+  getThemeDebugListDensity,
   getThemeDebugFeeds,
   getThemeDebugTags,
 } from '../../src/stories/themeDebugRuntime';
@@ -33,7 +34,8 @@ export const settingsManager = {
   getSidebarLibrary: async () => ({ title: 'Library', visible: true }),
   getSidebarSectionFold: async () => ({ libraryExpanded: true, stationsExpanded: true }),
   getSmartViews: async () => DEFAULT_SETTINGS.smartViews,
-  getSettings: async () => DEFAULT_SETTINGS,
+  getSettings: async () => ({ ...DEFAULT_SETTINGS, articleListDensity: getThemeDebugListDensity() }),
+  getArticleListDensityNow: () => getThemeDebugListDensity(),
   setSidebarWidth: asyncNoop,
   setArticleListWidth: asyncNoop,
   setSidebarSectionFold: asyncNoop,
@@ -188,6 +190,7 @@ export const opmlWorkflowService = {
 
 export const formatOpmlImportSummary = () => 'OPML import is disabled in Storybook.';
 export const importOpmlFromUrlIntoLibrary = async () => null;
+export const fetchOpmlTextFromUrl = async () => null;
 export const importOpmlTextIntoLibrary = async () => null;
 export const isLikelyOpmlUrl = () => false;
 export const navigateAfterOpmlImport = asyncNoop;

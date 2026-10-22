@@ -1,4 +1,5 @@
 import type { Theme } from '@/services/settings/types';
+import type { ArticleListDensity } from '@/lib/articleListDensity';
 import {
   THEME_DEBUG_ARTICLES,
   THEME_DEBUG_FEEDS,
@@ -199,6 +200,7 @@ const variants = {
 
 let activeVariant: ThemeDebugVariant = 'sidebar-default';
 let activeTheme: Theme = 'light';
+let activeListDensity: ArticleListDensity = 'comfortable';
 
 export function selectThemeDebugVariant(variant: ThemeDebugVariant): void {
   activeVariant = variant;
@@ -206,6 +208,15 @@ export function selectThemeDebugVariant(variant: ThemeDebugVariant): void {
 
 export function selectThemeDebugTheme(theme: Theme): void {
   activeTheme = theme;
+}
+
+/** Article list density the Storybook settings mock reports (story `kiji.listDensity`). */
+export function selectThemeDebugListDensity(density: ArticleListDensity): void {
+  activeListDensity = density;
+}
+
+export function getThemeDebugListDensity(): ArticleListDensity {
+  return activeListDensity;
 }
 
 export function getThemeDebugTheme(): Theme {

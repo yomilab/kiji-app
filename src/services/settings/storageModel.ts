@@ -1,4 +1,5 @@
 import type { AppSettings, AppSettingsPatch } from '@/lib/settings';
+import type { ArticleListDensity } from '@/lib/articleListDensity';
 import type {
   FontFamilySettings,
   ReadingLayoutSettings,
@@ -43,6 +44,7 @@ export interface RendererPreferences {
   smartViews: SmartViewSettings[];
   uiThemeVariant: UiThemeVariant;
   readerTheme: string;
+  articleListDensity: ArticleListDensity;
   surfaceFillOpacity?: number;
   windowPosition?: Pick<WindowSize, 'x' | 'y'>;
 }
@@ -82,6 +84,7 @@ export function toRendererPreferences(settings: UserSettings): RendererPreferenc
     smartViews: settings.smartViews,
     uiThemeVariant: settings.uiThemeVariant,
     readerTheme: settings.readerTheme,
+    articleListDensity: settings.articleListDensity,
     ...(settings.surfaceFillOpacity !== undefined
       ? { surfaceFillOpacity: settings.surfaceFillOpacity }
       : {}),
@@ -120,6 +123,7 @@ export function mergeUserSettings(
     smartViews: renderer.smartViews,
     uiThemeVariant: renderer.uiThemeVariant,
     readerTheme: renderer.readerTheme,
+    articleListDensity: renderer.articleListDensity,
     ...(renderer.surfaceFillOpacity !== undefined
       ? { surfaceFillOpacity: renderer.surfaceFillOpacity }
       : {}),

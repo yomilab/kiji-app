@@ -6,6 +6,7 @@ import type { Article } from '@/types/article';
 import { renderHighlightedTextWithNonAsciiFont } from '@/utils/nonAsciiTypography';
 import { getArticleListRowSignature } from './articleListRowSignature';
 import { isUsableImageUrl } from '@/utils/mediaUrl';
+import { DEFAULT_ARTICLE_LIST_DENSITY, type ArticleListDensity } from '@/lib/articleListDensity';
 
 const isBase64DataUrl = (str: string): boolean => str.startsWith('data:');
 
@@ -55,6 +56,7 @@ interface ArticleListItemProps {
   readStateMode?: 'normal' | 'none';
   searchQuery?: string;
   deferPreviewImages?: boolean;
+  density?: ArticleListDensity;
   onSelect: (hash: string) => void;
   formatDateDisplay: (dateString: string) => string;
 }
@@ -69,6 +71,7 @@ export const ArticleListItem = memo<ArticleListItemProps>(
     readStateMode = 'normal',
     searchQuery = '',
     deferPreviewImages = false,
+    density = DEFAULT_ARTICLE_LIST_DENSITY,
     onSelect,
     formatDateDisplay
   }) => {
@@ -81,7 +84,10 @@ export const ArticleListItem = memo<ArticleListItemProps>(
         : 'is-unread';
 
     // Stored rows may still carry a podcast/video file as previewImage; never load it as an <img>.
-    const previewImageUrl = isUsableImageUrl(article.previewImage) ? article.previewImage : undefined;
+    // Compact never renders a preview, so it never requests one either.
+    const previewImageUrl = density !== 'compact' && isUsableImageUrl(article.previewImage)
+      ? article.previewImage
+      : undefined;
     const [imageError, setImageError] = useState(false);
     const [previewLoaded, setPreviewLoaded] = useState(false);
 
@@ -112,10 +118,58 @@ export const ArticleListItem = memo<ArticleListItemProps>(
       previewLoaded ? 'is-loaded' : 'is-placeholder',
     ].join(' ');
     const publishedDateLabel = article.publishedDate ? formatDateDisplay(article.publishedDate) : '';
+    const publishedTimeLabel = article.publishedDate
+      ? new Date(article.publishedDate).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+      : '';
+    const hasPreviewImage = !!previewImageUrl && !imageError;
+    // Large Images only changes rows that have an image; the rest stay Comfortable.
+    const isLargeImageRow = density === 'large-images' && hasPreviewImage;
+    const densityClass = density === 'compact'
+      ? ' article-list-item--compact'
+      : isLargeImageRow
+        ? ' article-list-item--large-image'
+        : '';
+
+    const favicon = (
+      <ArticleListFavicon
+        localFavicon={article.feedFavicon}
+        alt={article.feedTitle || article.title}
+        itemId={article.hash}
+      />
+    );
+    const title = (
+      <h3 className="article-list-item-title">
+        {renderHighlightedTextWithNonAsciiFont(article.title, searchQuery, `${article.hash}-title`)}
+      </h3>
+    );
+    const feedTitle = article.feedTitle
+      ? renderHighlightedTextWithNonAsciiFont(article.feedTitle, searchQuery, `${article.hash}-feed-title`)
+      : null;
+    const previewImage = hasPreviewImage ? (
+      <div
+        className={isLargeImageRow ? `${previewImageClassName} article-list-item-preview-image--large` : previewImageClassName}
+        aria-hidden="true"
+      >
+        <img
+          ref={previewImageRef}
+          className="article-list-item-preview-image-content"
+          src={previewImageSrc}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onLoad={() => setPreviewLoaded(true)}
+          onError={() => setImageError(true)}
+        />
+      </div>
+    ) : null;
 
     return (
       <div
-        className={`article-list-item ${isActive ? 'is-active' : ''} ${readClass} ${isNew ? 'is-new-article' : ''}`}
+        className={`article-list-item ${isActive ? 'is-active' : ''} ${readClass} ${isNew ? 'is-new-article' : ''}${densityClass}`}
         onClick={() => {
           onSelect(article.hash);
         }}
@@ -144,58 +198,59 @@ export const ArticleListItem = memo<ArticleListItemProps>(
           }}
           className="article-list-item-content"
         >
-          {article.feedTitle && (
-            <div className="article-list-item-source-wrapper" data-section="article-item-source-name">
-              <div className="article-list-item-source-left">
-                <span className="article-list-item-source-text" data-section="article-source-title">
-                  {renderHighlightedTextWithNonAsciiFont(article.feedTitle, searchQuery, `${article.hash}-feed-title`)}
-                </span>
-              </div>
-              {article.publishedDate && (
-                <span className="article-list-item-date">
-                  {new Date(article.publishedDate).toLocaleTimeString('en-US', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: false,
-                  })}
-                  {publishedDateLabel ? ` ${publishedDateLabel}` : ''}
+          {density === 'compact' ? (
+            <div className="article-list-item-compact-row">
+              {favicon}
+              {title}
+              {(feedTitle || article.publishedDate) && (
+                <span className="article-list-item-compact-meta">
+                  {feedTitle && (
+                    <span className="article-list-item-source-text" data-section="article-source-title">
+                      {feedTitle}
+                    </span>
+                  )}
+                  {article.publishedDate && (
+                    <span className="article-list-item-date">
+                      {publishedDateLabel || publishedTimeLabel}
+                    </span>
+                  )}
                 </span>
               )}
             </div>
-          )}
-          <div className="article-list-item-main">
-            <div className="article-list-item-text">
-              <div className="article-list-item-header">
-                <ArticleListFavicon
-                  localFavicon={article.feedFavicon}
-                  alt={article.feedTitle || article.title}
-                  itemId={article.hash}
-                />
-                <h3 className="article-list-item-title">
-                  {renderHighlightedTextWithNonAsciiFont(article.title, searchQuery, `${article.hash}-title`)}
-                </h3>
-              </div>
-              {article.description && (
-                <div className="article-list-item-description">
-                  {renderHighlightedTextWithNonAsciiFont(article.description, searchQuery, `${article.hash}-description`)}
+          ) : (
+            <>
+              {isLargeImageRow && previewImage}
+              {feedTitle && (
+                <div className="article-list-item-source-wrapper" data-section="article-item-source-name">
+                  <div className="article-list-item-source-left">
+                    <span className="article-list-item-source-text" data-section="article-source-title">
+                      {feedTitle}
+                    </span>
+                  </div>
+                  {article.publishedDate && (
+                    <span className="article-list-item-date">
+                      {publishedTimeLabel}
+                      {publishedDateLabel ? ` ${publishedDateLabel}` : ''}
+                    </span>
+                  )}
                 </div>
               )}
-            </div>
-            {previewImageUrl && !imageError && (
-              <div className={previewImageClassName} aria-hidden="true">
-                <img
-                  ref={previewImageRef}
-                  className="article-list-item-preview-image-content"
-                  src={previewImageSrc}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  onLoad={() => setPreviewLoaded(true)}
-                  onError={() => setImageError(true)}
-                />
+              <div className="article-list-item-main">
+                <div className="article-list-item-text">
+                  <div className="article-list-item-header">
+                    {favicon}
+                    {title}
+                  </div>
+                  {article.description && (
+                    <div className="article-list-item-description">
+                      {renderHighlightedTextWithNonAsciiFont(article.description, searchQuery, `${article.hash}-description`)}
+                    </div>
+                  )}
+                </div>
+                {!isLargeImageRow && previewImage}
               </div>
-            )}
-          </div>
+            </>
+          )}
         </motion.div>
       </div>
     );
@@ -214,6 +269,7 @@ export const ArticleListItem = memo<ArticleListItemProps>(
       prevProps.readStateMode === nextProps.readStateMode &&
       prevProps.searchQuery === nextProps.searchQuery &&
       prevProps.deferPreviewImages === nextProps.deferPreviewImages &&
+      prevProps.density === nextProps.density &&
       prevProps.newAnimationOrder === nextProps.newAnimationOrder
     );
   }

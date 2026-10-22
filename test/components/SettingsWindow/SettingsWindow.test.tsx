@@ -83,6 +83,7 @@ vi.mock("@/services/settings", () => ({
     setBackgroundUpdate: vi.fn().mockResolvedValue(undefined),
     setContentParser: vi.fn().mockResolvedValue(undefined),
     setUiThemeVariant: vi.fn().mockResolvedValue(undefined),
+    setArticleListDensity: vi.fn().mockResolvedValue(undefined),
     setSurfaceFillOpacity: vi.fn().mockResolvedValue(undefined),
     setSurfaceFillOpacityNow: vi.fn(),
     saveSettings: vi.fn().mockResolvedValue(undefined),
@@ -439,6 +440,31 @@ describe("SettingsWindow", () => {
     });
     expect(within(alignment).getByRole("button", { name: "Left" })).toBeDisabled();
     expect(screen.getByRole("slider", { name: "Font size" })).toBeDisabled();
+  });
+
+  it("shows the saved article list density and saves a new one, then tells the main window", async () => {
+    vi.mocked(settingsManager.getSettings).mockResolvedValue({
+      backgroundUpdate: "every-15m",
+      savedArticlesSyncFolder: null,
+      contentParser: "defuddle",
+      articleListDensity: "large-images",
+    } as unknown as Awaited<ReturnType<typeof settingsManager.getSettings>>);
+    render(<SettingsWindow />);
+    clickSidebarCategory("Appearance");
+
+    const density = screen.getByRole("group", { name: "Article list density" });
+    await waitFor(() => {
+      expect(within(density).getByRole("button", { name: "Large Images" })).toHaveAttribute("aria-pressed", "true");
+    });
+
+    fireEvent.click(within(density).getByRole("button", { name: "Compact" }));
+    await waitFor(() => {
+      expect(settingsManager.setArticleListDensity).toHaveBeenCalledWith("compact");
+    });
+    expect(within(density).getByRole("button", { name: "Compact" })).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => {
+      expect(window.kijiAPI.notifySettingsChanged).toHaveBeenCalled();
+    });
   });
 
   it("shows shortcuts as keycaps with macOS symbols", () => {

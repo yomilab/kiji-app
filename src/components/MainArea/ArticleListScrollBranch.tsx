@@ -10,6 +10,7 @@ import {
 } from '@/contexts/FeedContext';
 import { ArticleListVirtualScrollPane } from './ArticleListVirtualScrollPane';
 import { useTransientNewArticleHashes } from './hooks/useTransientNewArticleHashes';
+import { useArticleListDensity } from './hooks/useArticleListDensity';
 
 export interface ArticleListScrollBranchProps {
   variant: 'common' | 'saved';
@@ -57,6 +58,7 @@ export const ArticleListScrollBranch = memo(function ArticleListScrollBranch({
     articleViewOverlayPhase,
   } = useFeedOverlay();
   const { totalFeeds } = useFeedUI();
+  const density = useArticleListDensity();
 
   const isSavedView = variant === 'saved';
   const isListLoading = isSavedView ? isSavedListLoading : isLoadingArticles;
@@ -102,6 +104,7 @@ export const ArticleListScrollBranch = memo(function ArticleListScrollBranch({
       newArticleHashes={newArticleHashes}
       articleListScrollRequest={articleListScrollRequest}
       totalFeeds={totalFeeds}
+      density={density}
       selectArticle={selectArticle}
       loadMoreArticles={handleLoadMoreArticles}
       syncArticleListViewport={syncArticleListViewport}
