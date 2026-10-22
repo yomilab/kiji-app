@@ -45,7 +45,11 @@ import {
 } from '@/services/ui/windowChromeDragRegion';
 import { TOOLTIPS } from '@/config/tooltips';
 import {
+  getShortcutPriorityLayer,
+  isArticlePageDownShortcut,
+  isArticlePageUpShortcut,
   isCloseArticleViewShortcut,
+  isToggleReadShortcut,
   isCopyArticleUrlShortcut,
   isOpenInBrowserShortcut,
   isOpenInNewWindowShortcut,
@@ -63,6 +67,9 @@ import {
 } from '@/services/shortcuts/shortcutService';
 import { ARTICLE_VIEW_CLOSE_ANIMATION_MS, ARTICLE_VIEW_OPENING_MS } from '@/constants';
 import { isArticleReaderModeRenderable } from './articleViewReaderMode';
+import { NO_MORE_UNREAD_MESSAGE, NO_MORE_UNREAD_TOAST_MS, resolveNextUnreadArticleHash } from './articleNextUnread';
+import { canToggleArticleRead, setArticleReadState } from '@/services/articles/articleReadState';
+import { articleListHasMore } from '@/services/articles/articleListTotal';
 import type { Article } from '@/types/article';
 import { animateElementScrollTop, getScrollableBottom } from '@/utils/fixedTimeScroll';
 import { useDependencyEffect, useMountEffect, useUnmountEffect } from '@/hooks/useLifecycleEffects';
@@ -90,6 +97,9 @@ type ArticleEnclosure = NonNullable<Article['enclosures']>[number];
 
 const STANDALONE_CONTENT_GUARD_THRESHOLD = 400000;
 const ARTICLE_VIEW_TITLE_PRESS_FEEDBACK_MS = 140;
+/** Space keeps a little of the previous page in view, like a browser. */
+const ARTICLE_PAGE_SCROLL_OVERLAP_PX = 48;
+const ARTICLE_PAGE_BOTTOM_TOLERANCE_PX = 4;
 const ARTICLE_VIEW_ELEMENT_TRANSITION = {
   type: 'tween' as const,
   ease: [0.22, 0.61, 0.36, 1] as const,
@@ -602,6 +612,8 @@ function useArticleViewKeyboardShortcuts(params: {
   handleCopyArticleUrl: () => Promise<void>;
   handleOpenInBrowser: (withPressedFeedback?: boolean) => void;
   handleOpenInNewWindow: () => Promise<void>;
+  handleToggleRead: () => void;
+  handleOpenNextUnread: () => void;
   scrollContainerRef: React.MutableRefObject<HTMLDivElement | null>;
 }): void {
   const {
@@ -620,6 +632,8 @@ function useArticleViewKeyboardShortcuts(params: {
     handleCopyArticleUrl,
     handleOpenInBrowser,
     handleOpenInNewWindow,
+    handleToggleRead,
+    handleOpenNextUnread,
     scrollContainerRef,
   } = params;
 
@@ -714,6 +728,42 @@ function useArticleViewKeyboardShortcuts(params: {
 
         if (handleVimScrollShortcut()) return;
 
+        // Space pages through the article; at the bottom it moves on to the
+        // next unread article of the current list (embedded view only).
+        if ((isArticlePageDownShortcut(e) || isArticlePageUpShortcut(e)) && !isEditableTarget(e.target)) {
+          const scrollElement = scrollContainerRef.current;
+          if (!scrollElement || !articleToShow || isClosing) return;
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          const pageStep = Math.max(1, scrollElement.clientHeight - ARTICLE_PAGE_SCROLL_OVERLAP_PX);
+          if (isArticlePageUpShortcut(e)) {
+            animateArticleBy(-pageStep);
+            return;
+          }
+          const isAtBottom = scrollElement.scrollTop + scrollElement.clientHeight
+            >= scrollElement.scrollHeight - ARTICLE_PAGE_BOTTOM_TOLERANCE_PX;
+          if (isAtBottom) {
+            if (!standalone) handleOpenNextUnread();
+            return;
+          }
+          animateArticleBy(pageStep);
+          return;
+        }
+
+        if (
+          !standalone
+          && isToggleReadShortcut(e)
+          && getShortcutPriorityLayer() === 'article'
+          && articleToShow
+          && !isClosing
+          && !isEditableTarget(e.target)
+        ) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          handleToggleRead();
+          return;
+        }
+
         if (!standalone) {
           if (isCloseArticleViewShortcut(e) && articleToShow && !isClosing) {
             e.preventDefault();
@@ -778,6 +828,8 @@ function useArticleViewKeyboardShortcuts(params: {
     handleCopyArticleUrl,
     handleOpenInBrowser,
     handleOpenInNewWindow,
+    handleToggleRead,
+    handleOpenNextUnread,
     scrollContainerRef,
   ]);
 }
@@ -1068,6 +1120,8 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   const articleOpenTrigger = overlay?.articleOpenTrigger ?? 0;
   const articleCloseRequest = overlay?.articleCloseRequest ?? 0;
   const requestCloseArticle = overlay?.requestCloseArticle ?? (() => {});
+  const selectArticle = overlay?.selectArticle ?? (() => {});
+  const loadMoreArticles = collectionActions?.loadMoreArticles;
   const completeArticleClose = overlay?.completeArticleClose ?? (() => {});
   const articleViewOverlayPhase = overlay?.articleViewOverlayPhase ?? 'closed';
 
@@ -1105,6 +1159,20 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   const currentBodyTaskCancelRef = useRef<null | (() => Promise<void>)>(null);
   const modeRequestVersionRef = useRef(0);
   const pendingArticleListUpdateRef = useRef<{ hash: string; updates: ArticleListUpdatePayload; article: Article | null } | null>(null);
+  // The user's own read/unread choice for the open article (m key). It wins
+  // over the automatic mark-as-read on open, and is reset by the next open.
+  const readOverrideRef = useRef<{ hash: string; read: boolean } | null>(null);
+  const openMarkReadPromiseRef = useRef<Promise<void> | null>(null);
+  const nextUnreadInFlightRef = useRef(false);
+  const articlesRef = useRef(articles);
+  articlesRef.current = articles;
+  const hasMoreArticlesRef = useRef(false);
+  hasMoreArticlesRef.current = !!articlesState && articleListHasMore({
+    loadedCount: articles.length,
+    totalCount: articlesState.articlesTotalCount,
+    totalKnown: articlesState.articlesTotalKnown ?? true,
+    pageWasFull: articlesState.pageWasFull ?? false,
+  });
   const readerContentHashRef = useRef<string | null>(null);
   const readerFetchKeyRef = useRef<string | null>(null);
 
@@ -1554,6 +1622,14 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     }
   }, [articleToShow?.hash, isClosing]);
 
+  // Space can move straight to the next article while the view stays open:
+  // start it at the top rather than at the previous article's offset.
+  useDependencyEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [articleToShow?.hash]);
+
   const updateLastReadTime = useCallback(async (article: Article) => {
     const lastReadAt = new Date().toISOString();
     const isFeedLinked = article.isFeedLinked ?? (article.feedId !== 'clipboard' && article.feedId !== 'saved');
@@ -1576,19 +1652,89 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     if (selectedSmartView === 'saved' || !isFeedLinked || article.read) {
       return;
     }
-
-    try {
-      await articlesManager.updateReadStatus(article.feedId, article.hash, true);
-      queueOrApplyArticleListUpdate(article.hash, { read: true });
-      setArticleToShow((prev) => (
-        prev && prev.hash === article.hash
-          ? { ...prev, read: true }
-          : prev
-      ));
-    } catch (error) {
-      console.error('Error marking article as read:', error);
+    // The user already chose read/unread for this article (m before the
+    // automatic mark ran): keep their choice.
+    if (readOverrideRef.current?.hash === article.hash) {
+      return;
     }
+
+    const markRead = (async () => {
+      try {
+        await articlesManager.updateReadStatus(article.feedId, article.hash, true);
+        if (readOverrideRef.current?.hash === article.hash) return;
+        queueOrApplyArticleListUpdate(article.hash, { read: true });
+        setArticleToShow((prev) => (
+          prev && prev.hash === article.hash
+            ? { ...prev, read: true }
+            : prev
+        ));
+      } catch (error) {
+        console.error('Error marking article as read:', error);
+      }
+    })();
+    openMarkReadPromiseRef.current = markRead;
+    await markRead;
   }, [queueOrApplyArticleListUpdate, selectedSmartView]);
+
+  // A new open (including reopening the same article) starts from the
+  // automatic mark-as-read again.
+  useDependencyEffect(() => {
+    readOverrideRef.current = null;
+  }, [articleOpenTrigger]);
+
+  const handleToggleRead = useCallback(() => {
+    const article = articleToShow;
+    if (standalone || !canToggleArticleRead(article, selectedSmartView)) return;
+
+    const hash = article.hash;
+    // An open feed article counts as read even before the automatic mark lands.
+    const currentRead = readOverrideRef.current?.hash === hash
+      ? readOverrideRef.current.read
+      : true;
+    const nextRead = !currentRead;
+    readOverrideRef.current = { hash, read: nextRead };
+    setArticleToShow((prev) => (prev && prev.hash === hash ? { ...prev, read: nextRead } : prev));
+
+    void (async () => {
+      try {
+        // Let an in-flight automatic mark land first so this write is the last one.
+        await openMarkReadPromiseRef.current;
+        await setArticleReadState(article, nextRead);
+        // Queued while the article stays open; applied to the row on close.
+        queueOrApplyArticleListUpdate(hash, { read: nextRead });
+      } catch (error) {
+        logger.warn('ArticleView', 'Failed to change read state', { hash, error });
+      }
+    })();
+  }, [articleToShow, queueOrApplyArticleListUpdate, selectedSmartView, standalone]);
+
+  const handleOpenNextUnread = useCallback(() => {
+    const fromHash = currentArticleHashRef.current;
+    if (standalone || !fromHash || !loadMoreArticles || nextUnreadInFlightRef.current) return;
+    nextUnreadInFlightRef.current = true;
+
+    void (async () => {
+      try {
+        const nextHash = await resolveNextUnreadArticleHash({
+          fromHash,
+          getArticles: () => articlesRef.current,
+          hasMore: () => hasMoreArticlesRef.current,
+          loadMore: () => loadMoreArticles({ showLoadingIndicator: false, priority: 'urgent' }),
+        });
+        // The user moved on while more rows were loading.
+        if (currentArticleHashRef.current !== fromHash) return;
+        if (nextHash) {
+          selectArticle(nextHash);
+        } else {
+          appToastService.show(NO_MORE_UNREAD_MESSAGE, NO_MORE_UNREAD_TOAST_MS);
+        }
+      } catch (error) {
+        logger.warn('ArticleView', 'Failed to open the next unread article', { error });
+      } finally {
+        nextUnreadInFlightRef.current = false;
+      }
+    })();
+  }, [loadMoreArticles, selectArticle, standalone]);
 
   const fetchReaderContent = useCallback(async (article: Article, requestVersion: number) => {
     const { link: url, hash, title, author, description, feedTitle, feedUrl } = article;
@@ -2038,6 +2184,8 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
     handleCopyArticleUrl,
     handleOpenInBrowser,
     handleOpenInNewWindow,
+    handleToggleRead,
+    handleOpenNextUnread,
     scrollContainerRef,
   });
 

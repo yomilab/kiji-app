@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type RefObject,
   type UIEvent,
 } from 'react';
@@ -15,6 +16,7 @@ import type { Article } from '@/types/article';
 import type {
   ArticleListScrollRequest,
   ArticleListSearchStatus,
+  ArticleListUpdatePayload,
   ArticleViewOverlayPhase,
 } from '@/contexts/FeedContext';
 import { ArticleListItem } from './ArticleListItem';
@@ -23,6 +25,8 @@ import { FeedLineLoader } from '@/components/common/FeedLineLoader';
 import { InteractionProfiler } from '@/components/common/InteractionProfiler';
 import { useArticleListScrollOffset } from './hooks/articleListScrollOffsetContext';
 import { useArticleListKeyboardNavigation } from './hooks/useArticleListKeyboardNavigation';
+import { useArticleListReadActions } from './hooks/useArticleListReadActions';
+import { isNativeContextMenuAvailable, showArticleRowContextMenu } from '@/services/ui/articleRowContextMenu';
 import { useArticleListScrollReset } from './hooks/useArticleListScrollReset';
 import { useArticleListScrollOffsetSync } from './hooks/useArticleListScrollOffsetSync';
 import { useArticleListBackgroundScrollSync } from './hooks/useArticleListBackgroundScrollSync';
@@ -39,6 +43,8 @@ import {
   type ArticleListScrollVelocitySample,
 } from './articleListLoadMore';
 import { articleListHasMore } from '@/services/articles/articleListTotal';
+
+const noopUpdateArticleInList = (): void => {};
 
 const measureArticleRowHeight = (
   element: Element,
@@ -71,6 +77,8 @@ export interface ArticleListVirtualScrollPaneProps {
   totalFeeds: number;
   selectArticle: (hash: string) => void;
   loadMoreArticles: (options: { showLoadingIndicator: boolean; priority: 'prefetch' | 'urgent' }) => Promise<void>;
+  selectedSmartView?: string | null;
+  updateArticleInList?: (hash: string, updates?: ArticleListUpdatePayload) => void;
   syncArticleListViewport: (snapshot: {
     isSearchActive: boolean;
     isAtTop: boolean;
@@ -104,6 +112,8 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   totalFeeds,
   selectArticle,
   loadMoreArticles,
+  selectedSmartView = null,
+  updateArticleInList = noopUpdateArticleInList,
   syncArticleListViewport,
 }: ArticleListVirtualScrollPaneProps) {
   const { setHasListScrollOffset } = useArticleListScrollOffset();
@@ -238,6 +248,15 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
     };
   }, [sourceKey]);
 
+  const { canToggleRead, toggleArticleRead, openNextUnread } = useArticleListReadActions({
+    articles: filteredArticles,
+    hasMoreArticles,
+    selectedSmartView: isSavedView ? 'saved' : selectedSmartView,
+    updateArticleInList,
+    loadMoreArticles,
+    selectArticle: handleOpenArticle,
+  });
+
   useArticleListKeyboardNavigation({
     articleListRef,
     filteredArticles,
@@ -247,7 +266,22 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
     selectArticle: handleOpenArticle,
     setKeyboardFocusHash,
     scrollKeyboardFocusIntoView,
+    toggleArticleRead,
+    openNextUnread,
   });
+
+  // Row menu (native, like the article body's link/image menu): Mark as Read / Unread.
+  const handleArticleRowContextMenu = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!isNativeContextMenuAvailable() || !(event.target instanceof Element)) return;
+    const hash = event.target.closest<HTMLElement>('[data-entity-id]')?.dataset.entityId;
+    const article = hash ? filteredArticles.find((entry) => entry.hash === hash) : undefined;
+    if (!article || !canToggleRead(article.hash)) return;
+    event.preventDefault();
+    void showArticleRowContextMenu({
+      read: article.read,
+      onToggleRead: () => toggleArticleRead(article.hash),
+    });
+  }, [canToggleRead, filteredArticles, toggleArticleRead]);
 
   useArticleListScrollReset({
     sourceKey,
@@ -396,6 +430,7 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
           handleScrollPerformanceEvent(event.currentTarget.scrollTop);
           handleArticleListScroll(event);
         }}
+        onContextMenu={handleArticleRowContextMenu}
       >
         {isInitialLoading ? (
           <ArticleListSkeletonGroup key="skeleton" />
@@ -498,6 +533,8 @@ function areArticleListVirtualScrollPanePropsEqual(
     && previous.totalFeeds === next.totalFeeds
     && previous.selectArticle === next.selectArticle
     && previous.loadMoreArticles === next.loadMoreArticles
+    && previous.selectedSmartView === next.selectedSmartView
+    && previous.updateArticleInList === next.updateArticleInList
     && previous.syncArticleListViewport === next.syncArticleListViewport
     && previous.articleListRef === next.articleListRef
   );
