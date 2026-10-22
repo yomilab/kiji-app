@@ -9,7 +9,7 @@ import {
   DEFAULT_SETTINGS,
   isContentParser,
 } from './types';
-import { DEFAULT_SMART_VIEW_DEFINITIONS } from '@/constants';
+import { mergeSmartViewSettings } from './smartViewOrder';
 import {
   SETTINGS_STORAGE_KEYS,
   mergeUserSettings,
@@ -25,18 +25,9 @@ import { normalizeReaderTheme } from './readerThemes';
 /** Pre-pairing builds stored `readerThemes: { light, dark }`; read it once to carry the choice over. */
 const legacyReaderThemes = (value: object): unknown => Reflect.get(value, 'readerThemes');
 
-export const normalizeSmartViews = (smartViews: UserSettings['smartViews'] | undefined): UserSettings['smartViews'] => {
-  const smartViewMap = new Map((smartViews ?? []).map((view) => [view.id, view]));
-
-  return DEFAULT_SMART_VIEW_DEFINITIONS.map((definition, index) => {
-    const existing = smartViewMap.get(definition.id);
-    return {
-      id: definition.id,
-      visible: existing?.visible ?? true,
-      sortOrder: existing?.sortOrder ?? index,
-    };
-  }).sort((a, b) => a.sortOrder - b.sortOrder);
-};
+export const normalizeSmartViews = (smartViews: UserSettings['smartViews'] | undefined): UserSettings['smartViews'] => (
+  mergeSmartViewSettings(smartViews)
+);
 
 const normalizeUiThemeVariant = (variant: unknown): UiThemeVariant => (
   variant === 'classic' || variant === 'modern' ? variant : DEFAULT_SETTINGS.uiThemeVariant

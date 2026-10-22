@@ -9,6 +9,7 @@ import {
 export type ThemeDebugVariant =
   | 'sidebar-default'
   | 'sidebar-overflow'
+  | 'sidebar-today'
   | 'article-list-populated'
   | 'article-list-long'
   | 'article-list-loading'
@@ -122,6 +123,18 @@ const variants = {
       selectedFeedId: null,
       selectedFeedTitle: 'Unread',
       selectedSmartView: 'unread',
+    },
+    collection: populatedCollection,
+    actions: baseCollectionActions,
+    overlay: baseOverlay,
+    ui: baseUi,
+  },
+  'sidebar-today': {
+    navigation: {
+      ...baseNavigation,
+      selectedFeedId: null,
+      selectedFeedTitle: 'Today',
+      selectedSmartView: 'today',
     },
     collection: populatedCollection,
     actions: baseCollectionActions,

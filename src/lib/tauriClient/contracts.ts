@@ -230,6 +230,7 @@ export interface ArticleQueryRequest {
   cursorDate?: ISODateString;
   cursorHash?: string;
   includeTotal?: boolean;
+  today?: boolean;
 }
 
 export interface ArticleQueryResponse {

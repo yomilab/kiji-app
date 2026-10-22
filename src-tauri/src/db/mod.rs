@@ -760,6 +760,7 @@ mod tests {
                 cursor_date: None,
                 cursor_hash: None,
                 include_total: None,
+                today: None,
             },
         )
         .expect("query articles");
@@ -1207,6 +1208,7 @@ mod tests {
                 cursor_date: None,
                 cursor_hash: None,
                 include_total: None,
+                today: None,
             },
         )
         .expect("query articles");
@@ -1344,6 +1346,7 @@ mod tests {
                 cursor_date: None,
                 cursor_hash: None,
                 include_total: None,
+                today: None,
             },
         )
         .expect("query runtime feed");
@@ -1377,6 +1380,7 @@ mod tests {
                 cursor_date: None,
                 cursor_hash: None,
                 include_total: None,
+                today: None,
             },
         )
         .expect("query hn feed");
@@ -1488,6 +1492,7 @@ mod tests {
                 cursor_date: None,
                 cursor_hash: None,
                 include_total: Some(false),
+                today: None,
             },
         )
         .expect("query station tag page");
@@ -1518,6 +1523,7 @@ mod tests {
                 cursor_date: Some("2026-07-14T20:00:00.000Z".to_string()),
                 cursor_hash: Some("station-hash-00".to_string()),
                 include_total: Some(false),
+                today: None,
             },
         )
         .expect("query station feed_ids cursor page");

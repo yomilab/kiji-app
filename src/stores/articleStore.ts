@@ -111,6 +111,7 @@ export async function query(q: ArticleQuery): Promise<ArticleQueryResult> {
     cursorDate: q.cursor?.effectiveDate ?? undefined,
     cursorHash: q.cursor?.hash,
     includeTotal: q.includeTotal,
+    today: q.today,
   });
 
   return {

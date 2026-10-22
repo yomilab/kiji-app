@@ -22,6 +22,8 @@ export interface ArticleQuery {
     hash: string;
   };
   includeTotal?: boolean;
+  /** Today view: effective date within the last 24 hours, measured natively per query. */
+  today?: boolean;
 }
 
 export interface ArticleQueryResult {
