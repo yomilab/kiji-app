@@ -7,17 +7,32 @@ import {
 const FILE_APP_CLUSTER_IDS = ['about', 'check-updates', 'settings', 'quit'] as const;
 
 describe('appMenuModel', () => {
-  it('builds Windows Reader/File/View/Subscriptions/Help top-level menus', () => {
+  it('builds Windows Reader/File/View/Article/Subscriptions/Help top-level menus', () => {
     const tree = buildWindowsAppMenuTree({ theme: 'auto', libraryView: null });
     expect(tree.map((menu) => menu.id)).toEqual([
       'kiji',
       'file',
       'view',
+      'article',
       'subscriptions',
       'help',
     ]);
     expect(tree[0]?.label).toBe('Reader');
     expect(tree[0]?.accessKey).toBe('k');
+  });
+
+  it('lists Mark All as Read and Older Than under Article, off in Saved and Read', () => {
+    const items = (libraryView: 'saved' | 'read' | 'unread' | null) => buildWindowsAppMenuTree({ theme: 'auto', libraryView })
+      .find((menu) => menu.id === 'article')!
+      .items.filter((item) => item.kind === 'item');
+    expect(items(null)).toEqual([
+      expect.objectContaining({ label: 'Mark All as Read', action: { type: 'markAllRead' }, shortcutHint: 'Ctrl+Shift+K', disabled: false }),
+      expect.objectContaining({ label: 'Mark Older Than a Day as Read', action: { type: 'markAllRead', olderThanDays: 1 } }),
+      expect.objectContaining({ label: 'Mark Older Than a Week as Read', action: { type: 'markAllRead', olderThanDays: 7 } }),
+    ]);
+    expect(items('unread').every((item) => item.kind === 'item' && !item.disabled)).toBe(true);
+    expect(items('saved').every((item) => item.kind === 'item' && item.disabled)).toBe(true);
+    expect(items('read').every((item) => item.kind === 'item' && item.disabled)).toBe(true);
   });
 
   it('lists Manage Feeds under Subscriptions with its shortcut', () => {

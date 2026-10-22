@@ -14,3 +14,26 @@
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
+
+.notification-toast-has-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 6px;
+}
+
+.notification-toast-action {
+  pointer-events: auto;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--system-accent-color, var(--theme-primary-color));
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.notification-toast-action:hover {
+  background: var(--theme-hover-overlay);
+}

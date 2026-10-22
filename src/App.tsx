@@ -8,7 +8,7 @@ import { Sidebar } from './components/Sidebar/Sidebar';
 import { MainArea } from './components/MainArea/MainArea';
 import { ArticleView } from './components/MainArea/ArticleView';
 import { NotificationToast } from './components/common/NotificationToast';
-import { useUserMessageChannel } from './hooks/useUserMessageChannel';
+import { useUserMessage } from './hooks/useUserMessageChannel';
 import { useSystemAccentColor } from './hooks/useSystemAccentColor';
 import {
   useAppShortcuts,
@@ -104,14 +104,19 @@ export const App: React.FC = () => {
 
   useE2eHarness();
 
-  const { refreshFeed, updateArticleInList, reloadCurrentSourceFromStore } = useFeedCollectionActions();
+  const {
+    refreshFeed,
+    updateArticleInList,
+    reloadCurrentSourceFromStore,
+    markCurrentSourceRead,
+  } = useFeedCollectionActions();
   const { refreshTotalFeeds, notifyFeedLibraryChanged } = useFeedUIActions();
 
   const sidebarLayerRef = useRef<HTMLDivElement>(null);
   const sidebarLayerWidth = useElementWidth(sidebarLayerRef);
   const opmlDragDepthRef = useRef(0);
   const [isOpmlDragActive, setIsOpmlDragActive] = useState(false);
-  const appToastMessage = useUserMessageChannel(APP_TOAST_CHANNEL);
+  const appToast = useUserMessage(APP_TOAST_CHANNEL);
   const isDeckOpen = useArticleDeckState({
     activeArticleHash,
     articleOpenTrigger,
@@ -137,6 +142,7 @@ export const App: React.FC = () => {
     notifyFeedLibraryChanged,
     updateArticleInList,
     reloadCurrentSourceFromStore,
+    markCurrentSourceRead,
     theme,
     setTheme,
   });
@@ -302,8 +308,18 @@ export const App: React.FC = () => {
           </div>
         )}
       </div>
-      {appToastMessage && (
-        <NotificationToast message={appToastMessage} data-component="app-toast" />
+      {appToast && (
+        <NotificationToast
+          message={appToast.text}
+          data-component="app-toast"
+          actionLabel={appToast.action?.label}
+          onAction={appToast.action
+            ? () => {
+              appToastService.clear();
+              appToast.action?.run();
+            }
+            : undefined}
+        />
       )}
     </div>
   );

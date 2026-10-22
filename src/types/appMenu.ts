@@ -12,7 +12,8 @@ export type AppMenuCommand =
   | { type: 'clearArticles' }
   | { type: 'clearArticlesOlderThan'; months: 3 }
   | { type: 'setTheme'; theme: Theme }
-  | { type: 'selectLibraryView'; libraryView: SmartViewId };
+  | { type: 'selectLibraryView'; libraryView: SmartViewId }
+  | { type: 'markAllRead'; olderThanDays?: 1 | 7 };
 
 export interface AppMenuState {
   theme: Theme;

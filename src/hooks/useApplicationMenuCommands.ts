@@ -46,6 +46,7 @@ interface UseApplicationMenuCommandsInput {
   notifyFeedLibraryChanged: () => void;
   updateArticleInList: (hash: string, updates?: ArticleListUpdatePayload) => void;
   reloadCurrentSourceFromStore: () => Promise<void>;
+  markCurrentSourceRead: (options?: { olderThanDays?: 1 | 7 }) => Promise<void>;
   theme: Theme;
   setTheme: (theme: Theme) => void;
 }
@@ -62,6 +63,7 @@ export const useApplicationMenuCommands = ({
   notifyFeedLibraryChanged,
   updateArticleInList,
   reloadCurrentSourceFromStore,
+  markCurrentSourceRead,
   theme,
   setTheme,
 }: UseApplicationMenuCommandsInput): void => {
@@ -375,6 +377,9 @@ export const useApplicationMenuCommands = ({
         case 'selectLibraryView':
           void selectSmartView(command.libraryView);
           break;
+        case 'markAllRead':
+          void markCurrentSourceRead({ olderThanDays: command.olderThanDays });
+          break;
         default:
           break;
       }
@@ -386,6 +391,7 @@ export const useApplicationMenuCommands = ({
     handleImportFeeds,
     handleClearSavedArticles,
     handleExportFeeds,
+    markCurrentSourceRead,
     selectSmartView,
     setTheme,
   ]);
