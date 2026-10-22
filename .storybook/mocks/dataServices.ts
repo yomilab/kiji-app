@@ -3,6 +3,7 @@ import {
   getThemeDebugFeeds,
   getThemeDebugTags,
 } from '../../src/stories/themeDebugRuntime';
+import { getStoryFeedResponse } from '../../src/stories/storyFeedResponses';
 
 const asyncNoop = async (): Promise<void> => {};
 const noop = (): void => {};
@@ -76,6 +77,13 @@ export const feedsFetcher = {
     items: [],
     notModified: false,
   }),
+  fetchFeedNetworkWithCache: async (url: string) => {
+    const data = getStoryFeedResponse(url);
+    if (data === undefined) {
+      throw new Error('Feed fetching is disabled in Storybook.');
+    }
+    return { notModified: false, data };
+  },
 };
 
 export function parseFeed() {
@@ -190,6 +198,7 @@ export const formatOpmlImportSummary = () => 'OPML import is disabled in Storybo
 export const importOpmlFromUrlIntoLibrary = async () => null;
 export const importOpmlTextIntoLibrary = async () => null;
 export const isLikelyOpmlUrl = () => false;
+export const fetchOpmlTextFromUrl = async () => '';
 export const navigateAfterOpmlImport = asyncNoop;
 export const openOpmlFileForImport = async () => null;
 
