@@ -8,6 +8,7 @@ import {
   WindowSize,
   DEFAULT_SETTINGS,
   isContentParser,
+  isArticleRetention,
 } from './types';
 import { DEFAULT_SMART_VIEW_DEFINITIONS } from '@/constants';
 import {
@@ -97,6 +98,9 @@ const normalizeSettings = (settings: Partial<UserSettings>): UserSettings => ({
     ? settings.contentParser
     : DEFAULT_SETTINGS.contentParser,
   savedArticlesSyncFolder: settings.savedArticlesSyncFolder ?? DEFAULT_SETTINGS.savedArticlesSyncFolder,
+  articleRetention: isArticleRetention(settings.articleRetention)
+    ? settings.articleRetention
+    : DEFAULT_SETTINGS.articleRetention,
   sidebarLibrary: {
     ...DEFAULT_SETTINGS.sidebarLibrary,
     ...settings.sidebarLibrary,
@@ -510,6 +514,10 @@ class SettingsManager {
 
   async setContentParser(parser: UserSettings['contentParser']): Promise<void> {
     await this.updateNativeSettings({ contentParser: parser });
+  }
+
+  async setArticleRetention(retention: UserSettings['articleRetention']): Promise<void> {
+    await this.updateNativeSettings({ articleRetention: retention });
   }
 
   async resetSettings(): Promise<void> {

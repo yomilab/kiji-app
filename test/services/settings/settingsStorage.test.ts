@@ -13,6 +13,7 @@ describe("settings storage model", () => {
   it("maps native app settings fields documented in architecture-tauri-app.md", () => {
     expect(Object.keys(toNativeAppSettings(DEFAULT_SETTINGS)).sort()).toEqual([
       "articleListWidth",
+      "articleRetention",
       "backgroundUpdate",
       "contentParser",
       "layout",

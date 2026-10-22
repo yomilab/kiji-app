@@ -33,6 +33,7 @@ export const NATIVE_APP_SETTING_KEYS = [
   'backgroundUpdate',
   'contentParser',
   'savedArticlesSyncFolder',
+  'articleRetention',
 ] as const satisfies readonly (keyof AppSettings)[];
 
 export interface RendererPreferences {
@@ -62,6 +63,7 @@ export function toNativeAppSettings(settings: UserSettings): AppSettings {
     backgroundUpdate: settings.backgroundUpdate,
     contentParser: settings.contentParser,
     savedArticlesSyncFolder: settings.savedArticlesSyncFolder,
+    articleRetention: settings.articleRetention,
   };
 }
 
@@ -113,6 +115,7 @@ export function mergeUserSettings(
     backgroundUpdate: native.backgroundUpdate,
     contentParser: native.contentParser,
     savedArticlesSyncFolder: native.savedArticlesSyncFolder,
+    articleRetention: native.articleRetention,
     fontFamilies: renderer.fontFamilies,
     readingLayout: renderer.readingLayout,
     sidebarLibrary: renderer.sidebarLibrary,
@@ -140,6 +143,7 @@ export function extractNativeFieldsFromPartial(
   if (settings.savedArticlesSyncFolder !== undefined) {
     patch.savedArticlesSyncFolder = settings.savedArticlesSyncFolder;
   }
+  if (settings.articleRetention !== undefined) patch.articleRetention = settings.articleRetention;
   if (settings.windowSize !== undefined) {
     patch.windowSize = {
       width: settings.windowSize.width,

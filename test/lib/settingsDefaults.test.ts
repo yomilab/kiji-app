@@ -15,6 +15,7 @@ describe("default settings", () => {
       backgroundUpdate: "every-15m",
       contentParser: "defuddle",
       savedArticlesSyncFolder: null,
+      articleRetention: "never",
     });
   });
 });

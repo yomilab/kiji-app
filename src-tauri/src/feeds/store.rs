@@ -10,6 +10,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::db::retention::{drop_purged_items, RetentionState};
 use crate::db::{with_savepoint, DbState};
 use crate::diagnostics::robustness::{record, RobustnessCounter};
 
@@ -109,6 +110,7 @@ fn prepare_parsed_feed_content(
 fn write_prepared_feed_content(
     connection: &Connection,
     prepared: PreparedFeedStore,
+    retention: &RetentionState,
 ) -> Result<StoreParsedFeedResponse, String> {
     let PreparedFeedStore {
         feed_id,
@@ -123,6 +125,8 @@ fn write_prepared_feed_content(
     } = prepared;
 
     let result = with_savepoint(connection, "store_parsed_feed", |connection| {
+        // Items removed by automatic cleanup must not return as new unread.
+        let articles = drop_purged_items(connection, retention, &feed_id, articles)?;
         // Articles first, then etag: order is kept inside the transaction too.
         let inserted_count = if articles.is_empty() {
             0
@@ -207,7 +211,8 @@ pub async fn store_parsed_feed_content(
     })
     .await
     .map_err(|error| format!("Feed parse task failed: {error}"))??;
-    db.write(move |connection| write_prepared_feed_content(connection, prepared))
+    let retention = db.retention().snapshot();
+    db.write(move |connection| write_prepared_feed_content(connection, prepared, &retention))
         .await
 }
 
@@ -257,7 +262,15 @@ mod tests {
         connection: &Connection,
         request: StoreParsedFeedRequest,
     ) -> Result<StoreParsedFeedResponse, String> {
-        write_prepared_feed_content(connection, prepare_parsed_feed_content(request)?)
+        store_with_retention(connection, request, &RetentionState::default())
+    }
+
+    fn store_with_retention(
+        connection: &Connection,
+        request: StoreParsedFeedRequest,
+        retention: &RetentionState,
+    ) -> Result<StoreParsedFeedResponse, String> {
+        write_prepared_feed_content(connection, prepare_parsed_feed_content(request)?, retention)
     }
 
     fn open_test_connection() -> Connection {
@@ -406,6 +419,44 @@ mod tests {
         assert_eq!(first.inserted_count, 2);
         assert_eq!(second.inserted_count, 0);
         assert_eq!(second.article_count, 2);
+    }
+
+    #[test]
+    fn retention_cleanup_does_not_resurrect_items_still_in_the_feed() {
+        use crate::db::retention::{run_retention, RetentionOutcome};
+        use crate::settings::ArticleRetention;
+
+        let connection = open_test_connection();
+        insert_test_feed(&connection, "feed-1", "https://example.com/rss.xml");
+        let db = DbState::for_tests(connection);
+        let request = minimal_request("feed-1", None);
+
+        db.with_writer(|connection| {
+            assert_eq!(store_parsed_feed_content(connection, request.clone())?.inserted_count, 2);
+            connection
+                .execute("UPDATE articles SET read = 1", [])
+                .map_err(|error| error.to_string())?;
+            Ok(())
+        })
+        .expect("first store");
+
+        let outcome = run_retention(&db, ArticleRetention::OneMonth, chrono::Utc::now())
+            .expect("run retention");
+        assert_eq!(outcome, RetentionOutcome::Ran { removed: 2 });
+
+        let guard = db.retention().snapshot();
+        db.with_writer(|connection| {
+            // Same XML again: without the guard both items would return unread.
+            let response = store_with_retention(connection, request.clone(), &guard)?;
+            assert_eq!(response.inserted_count, 0);
+            assert_eq!(response.unread_count, 0);
+            assert_eq!(response.article_count, 0);
+            let unguarded =
+                store_with_retention(connection, request.clone(), &RetentionState::default())?;
+            assert_eq!(unguarded.inserted_count, 2, "control: old behavior re-adds them");
+            Ok(())
+        })
+        .expect("refresh after cleanup");
     }
 
     #[test]

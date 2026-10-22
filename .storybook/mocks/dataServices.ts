@@ -187,6 +187,7 @@ export const opmlWorkflowService = {
 };
 
 export const formatOpmlImportSummary = () => 'OPML import is disabled in Storybook.';
+export const fetchOpmlTextFromUrl = async () => '';
 export const importOpmlFromUrlIntoLibrary = async () => null;
 export const importOpmlTextIntoLibrary = async () => null;
 export const isLikelyOpmlUrl = () => false;

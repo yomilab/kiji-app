@@ -8,6 +8,7 @@ import { FontStack } from './fontFamilies';
 import { DEFAULT_READER_THEME } from './readerThemes';
 import type { BackgroundUpdateMode } from '../scheduler/types';
 import { DEFAULT_SMART_VIEW_DEFINITIONS, type SmartViewId } from '@/constants';
+import type { ArticleRetention } from '@/lib/settings';
 import {
   type ContentParser,
   DEFAULT_CONTENT_PARSER,
@@ -24,6 +25,8 @@ export const UI_THEME_VARIANT_OPTIONS: { value: UiThemeVariant; label: string }[
   { value: 'classic', label: 'Classic' },
 ];
 export type { ContentParser } from '@/services/articles/extractors/types';
+export type { ArticleRetention } from '@/lib/settings';
+export { isArticleRetention } from '@/lib/settings';
 export { DEFAULT_CONTENT_PARSER, isContentParser } from '@/services/articles/extractors/types';
 
 export interface WindowSize {
@@ -79,6 +82,7 @@ export interface UserSettings {
   backgroundUpdate: BackgroundUpdateMode; // Background feed update mode
   contentParser: ContentParser; // Engine used to extract article content from a page URL
   savedArticlesSyncFolder: string | null; // Optional folder that mirrors saved articles as markdown files
+  articleRetention: ArticleRetention; // Remove old read articles (never for every install unless chosen)
   sidebarLibrary: SidebarLibrarySettings;
   sidebarSectionFold: SidebarSectionFoldSettings;
   smartViews: SmartViewSettings[];
@@ -117,6 +121,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   backgroundUpdate: 'every-15m',
   contentParser: DEFAULT_CONTENT_PARSER,
   savedArticlesSyncFolder: null,
+  articleRetention: 'never',
   sidebarLibrary: {
     title: 'Library',
     visible: true,
