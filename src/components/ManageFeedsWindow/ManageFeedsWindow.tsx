@@ -23,6 +23,7 @@ import {
 import type { SmartViewId } from '@/constants';
 import type { ManageFeedsTarget } from '@/types/manageFeeds';
 import { FeedsPane } from './FeedsPane';
+import { FiltersGlyph, FiltersPane, type MuteRulesService } from './FiltersPane';
 import { ImportExportPane, IMPORT_EXPORT_COPY, runInMainWindow } from './ImportExportPane';
 import { LibraryPane } from './LibraryPane';
 import { needsAttention, pluralize, type ManageFeedsTab } from './manageFeedsModel';
@@ -37,6 +38,7 @@ export const MANAGE_FEEDS_TABS: ReadonlyArray<{ id: ManageFeedsTab; label: strin
   { id: 'feeds', label: 'Feeds', icon: <FeedsGlyph /> },
   { id: 'stations', label: 'Stations', icon: <StationsGlyph /> },
   { id: 'library', label: 'Library', icon: <SidebarItemsGlyph /> },
+  { id: 'filters', label: 'Filters', icon: <FiltersGlyph /> },
   { id: 'import-export', label: 'Import & Export', icon: <ImportExportGlyph /> },
 ];
 
@@ -64,10 +66,16 @@ const handleWindowDragMouseDown = (event: React.MouseEvent<HTMLElement>) => {
  * import/export. It edits SQLite directly and keeps the main window in step through the
  * feed-library window bridge; the scheduler and article loading stay in the main window.
  */
-export const ManageFeedsWindow: React.FC = () => {
+interface ManageFeedsWindowProps {
+  /** Stories open a given tab; the app always starts on Feeds or the sidebar target. */
+  initialTab?: ManageFeedsTab;
+  muteRulesService?: MuteRulesService;
+}
+
+export const ManageFeedsWindow: React.FC<ManageFeedsWindowProps> = ({ initialTab = 'feeds', muteRulesService }) => {
   useSystemAccentColor();
   const library = useManageFeedsLibrary();
-  const [activeTab, setActiveTab] = useState<ManageFeedsTab>('feeds');
+  const [activeTab, setActiveTab] = useState<ManageFeedsTab>(initialTab);
   const [target, setTarget] = useState<ManageFeedsTarget | null>(null);
   const toastMessage = useUserMessageChannel(APP_TOAST_CHANNEL);
 
@@ -124,7 +132,7 @@ export const ManageFeedsWindow: React.FC = () => {
         openAddFeed();
         return;
       }
-      if (primary && !event.altKey && !event.shiftKey && /^[1-4]$/.test(event.key) && !document.querySelector('.modal-backdrop')) {
+      if (primary && !event.altKey && !event.shiftKey && /^[1-9]$/.test(event.key) && Number(event.key) <= MANAGE_FEEDS_TABS.length && !document.querySelector('.modal-backdrop')) {
         event.preventDefault();
         setActiveTab(MANAGE_FEEDS_TABS[Number(event.key) - 1].id);
       }
@@ -150,6 +158,8 @@ export const ManageFeedsWindow: React.FC = () => {
           title: 'Library',
           subtitle: `${pluralize(library.libraryItems.length, 'view')} · ${library.libraryItems.filter((item) => item.visible).length} shown`,
         };
+      case 'filters':
+        return { title: 'Filters', subtitle: 'Mute words' };
       case 'import-export':
       default:
         return { title: 'Import & Export', subtitle: 'Add, import and back up subscriptions' };
@@ -208,6 +218,8 @@ export const ManageFeedsWindow: React.FC = () => {
             onRevealHandled={clearTarget}
           />
         );
+      case 'filters':
+        return <FiltersPane feeds={library.feeds} stations={library.stations} service={muteRulesService} />;
       case 'import-export':
       default:
         return <ImportExportPane feedCount={library.feeds.length} stationCount={library.stations.length} />;

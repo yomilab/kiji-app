@@ -186,6 +186,7 @@ export const opmlWorkflowService = {
   scheduleMissingFaviconsAfterStationSelection: noop,
 };
 
+export const fetchOpmlTextFromUrl = async () => null;
 export const formatOpmlImportSummary = () => 'OPML import is disabled in Storybook.';
 export const importOpmlFromUrlIntoLibrary = async () => null;
 export const importOpmlTextIntoLibrary = async () => null;

@@ -1274,3 +1274,33 @@ html[data-os="other"] .mf-dialog-backdrop.modal-backdrop {
     transition: none;
   }
 }
+
+/* Filters (mute words) */
+.mf-mute-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background-color: var(--mf-chip-bg);
+  color: var(--settings-text-secondary);
+  font-size: 16px;
+}
+
+.mf-mute-preview {
+  min-height: 1.45em;
+}
+
+.mf-mute-check {
+  margin-top: 2px;
+}
+
+.mf-mute-select {
+  width: 100%;
+}
+
+.mf-mute-error {
+  color: var(--mf-danger);
+}

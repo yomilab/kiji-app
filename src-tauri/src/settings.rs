@@ -1,3 +1,4 @@
+use crate::feeds::{normalize_mute_rules, MuteRule};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -114,6 +115,8 @@ pub struct AppSettings {
     /// Closing the main window hides it instead of quitting (feeds keep
     /// refreshing, assistants can connect). On by default on macOS only.
     pub keep_running_in_background: bool,
+    /// Mute words: matching new articles are marked read when stored.
+    pub mute_rules: Vec<MuteRule>,
 }
 
 /// macOS apps keep running after their window closes; Windows/Linux users
@@ -134,6 +137,7 @@ impl Default for AppSettings {
             content_parser: ContentParser::Defuddle,
             saved_articles_sync_folder: None,
             keep_running_in_background: default_keep_running_in_background(),
+            mute_rules: Vec::new(),
         }
     }
 }
@@ -186,6 +190,10 @@ impl AppSettings {
             self.keep_running_in_background = keep_running;
         }
 
+        if let Some(mute_rules) = patch.mute_rules {
+            self.mute_rules = normalize_mute_rules(mute_rules)?;
+        }
+
         Ok(())
     }
 }
@@ -211,6 +219,7 @@ pub struct AppSettingsPatch {
     pub content_parser: Option<ContentParser>,
     pub saved_articles_sync_folder: Option<Option<String>>,
     pub keep_running_in_background: Option<bool>,
+    pub mute_rules: Option<Vec<MuteRule>>,
 }
 
 pub struct SettingsState {
@@ -277,6 +286,15 @@ impl SettingsState {
             ..Default::default()
         })?;
         Ok(())
+    }
+
+    pub fn set_mute_rules(&self, rules: Vec<MuteRule>) -> Result<Vec<MuteRule>, String> {
+        Ok(self
+            .update(AppSettingsPatch {
+                mute_rules: Some(rules),
+                ..Default::default()
+            })?
+            .mute_rules)
     }
 
     pub fn update_window_bounds(
@@ -435,6 +453,21 @@ mod tests {
             .apply_patch(AppSettingsPatch { keep_running_in_background: Some(true), ..Default::default() })
             .unwrap();
         assert!(settings.keep_running_in_background);
+    }
+
+    #[test]
+    fn mute_rules_default_empty_and_patch_normalizes() {
+        let parsed: AppSettings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert!(parsed.mute_rules.is_empty());
+
+        let mut settings = AppSettings::default();
+        let rules: Vec<MuteRule> =
+            serde_json::from_str(r#"[{"id":"1","text":"  crypto "},{"id":"2","text":" "}]"#).unwrap();
+        settings
+            .apply_patch(AppSettingsPatch { mute_rules: Some(rules), ..Default::default() })
+            .unwrap();
+        assert_eq!(settings.mute_rules.len(), 1);
+        assert_eq!(settings.mute_rules[0].text, "crypto");
     }
 
     #[test]
