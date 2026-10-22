@@ -25,6 +25,10 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
+vi.mock('@/components/MainArea/ReaderTextSizeControl', () => ({
+  ReaderTextSizeControl: () => null,
+}));
+
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({ label: 'main' }),
 }));
