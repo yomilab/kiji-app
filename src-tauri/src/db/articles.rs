@@ -9,7 +9,7 @@ use super::{
     with_savepoint, DbState,
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArticleQueryRequest {
     pub feed_id: Option<String>,
@@ -29,6 +29,18 @@ pub struct ArticleQueryRequest {
     pub cursor_date: Option<String>,
     pub cursor_hash: Option<String>,
     pub include_total: Option<bool>,
+    /// Today view: effective date within the last 24 hours, measured when the query runs.
+    pub today: Option<bool>,
+}
+
+/// Rolling window for the Today view (NetNewsWire-style "last 24 hours", not calendar day).
+const TODAY_WINDOW_HOURS: i64 = 24;
+
+/// Inclusive lower bound for the Today view, in the stored `…Z` millisecond format so the
+/// comparison against `COALESCE(published_date, fetched_date)` is a plain index range.
+fn today_cutoff(now: chrono::DateTime<chrono::Utc>) -> String {
+    (now - chrono::Duration::hours(TODAY_WINDOW_HOURS))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
 #[derive(Debug, Serialize)]
@@ -497,6 +509,14 @@ pub fn query_articles(
     connection: &Connection,
     request: ArticleQueryRequest,
 ) -> Result<ArticleQueryResponse, String> {
+    query_articles_at(connection, request, chrono::Utc::now())
+}
+
+fn query_articles_at(
+    connection: &Connection,
+    request: ArticleQueryRequest,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<ArticleQueryResponse, String> {
     let mut conditions: Vec<String> = Vec::new();
     let mut bindings: Vec<Value> = Vec::new();
     let feed_ids = request
@@ -517,6 +537,18 @@ pub fn query_articles(
         conditions
             .push("afi.feed_id IN (SELECT feed_id FROM feed_tags WHERE tag_name = ?)".to_string());
         bindings.push(Value::Text(tag_name));
+    }
+
+    if request.today == Some(true) {
+        // Same expression as the effective-date indexes (`idx_articles_effective_date`,
+        // `idx_articles_read`, `idx_article_feed_items_feed_date`) so SQLite can range-seek.
+        let effective_date_expr = if has_source_filter {
+            "COALESCE(afi.published_date, afi.fetched_date)"
+        } else {
+            "COALESCE(a.published_date, a.fetched_date)"
+        };
+        conditions.push(format!("{effective_date_expr} >= ?"));
+        bindings.push(Value::Text(today_cutoff(now)));
     }
 
     let read_filter = request
@@ -1316,6 +1348,7 @@ mod tests {
                 cursor_date: None,
                 cursor_hash: None,
                 include_total: Some(false),
+                today: None,
             },
         )
         .expect("query station search");
@@ -1477,6 +1510,7 @@ mod tests {
             cursor_date: cursor_date.map(str::to_string),
             cursor_hash: cursor_hash.map(str::to_string),
             include_total: Some(true),
+            today: None,
         }
     }
 
@@ -1715,5 +1749,128 @@ mod tests {
             .expect("count rows");
         assert_eq!(rows, 0, "the earlier article in the batch must roll back");
         assert!(connection.is_autocommit());
+    }
+
+    fn insert_dated_article(
+        connection: &Connection,
+        hash: &str,
+        feed_id: &str,
+        published_date: Option<&str>,
+        fetched_date: &str,
+        read: i64,
+    ) {
+        connection
+            .execute(
+                "INSERT INTO articles (hash, feed_id, published_date, fetched_date, read) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![hash, feed_id, published_date, fetched_date, read],
+            )
+            .expect("insert dated article");
+        connection
+            .execute(
+                "INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date) VALUES (?1, ?2, ?3, ?4)",
+                params![feed_id, hash, published_date, fetched_date],
+            )
+            .expect("insert dated mapping");
+    }
+
+    fn fixed_now() -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339("2026-10-22T12:00:00.000Z")
+            .expect("parse fixed now")
+            .with_timezone(&chrono::Utc)
+    }
+
+    fn today_query(read: Option<bool>) -> ArticleQueryRequest {
+        ArticleQueryRequest {
+            read,
+            limit: Some(100),
+            include_total: Some(true),
+            today: Some(true),
+            ..ArticleQueryRequest::default()
+        }
+    }
+
+    #[test]
+    fn today_query_keeps_last_24_hours_across_feeds_newest_first() {
+        let connection = setup_connection();
+        insert_feed(&connection, "f1");
+        insert_feed(&connection, "f2");
+        let fetched = "2026-10-22T11:59:00.000Z";
+        insert_dated_article(&connection, "edge-in", "f1", Some("2026-10-21T12:00:00.000Z"), fetched, 0);
+        insert_dated_article(&connection, "edge-out", "f1", Some("2026-10-21T11:59:59.999Z"), fetched, 0);
+        insert_dated_article(&connection, "fresh-read", "f2", Some("2026-10-22T11:00:00.000Z"), fetched, 1);
+        insert_dated_article(&connection, "fetched-only", "f2", None, "2026-10-22T06:00:00.000Z", 0);
+        // Effective date is the published date, so an old post fetched today stays out.
+        insert_dated_article(&connection, "old-post", "f1", Some("2026-10-01T00:00:00.000Z"), fetched, 0);
+        insert_dated_article(&connection, "shared", "f1", Some("2026-10-22T09:00:00.000Z"), fetched, 0);
+        connection
+            .execute(
+                "INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date) VALUES ('f2', 'shared', '2026-10-22T09:00:00.000Z', ?1)",
+                params![fetched],
+            )
+            .expect("second subscription for shared article");
+
+        let all = query_articles_at(&connection, today_query(None), fixed_now()).expect("today");
+        assert_eq!(
+            all.articles.iter().map(|article| article.hash.as_str()).collect::<Vec<_>>(),
+            vec!["fresh-read", "shared", "fetched-only", "edge-in"],
+            "read and unread from every feed, newest first, shared article once, 24h boundary inclusive"
+        );
+        assert_eq!(all.total, 4);
+
+        let unread = query_articles_at(
+            &connection,
+            ArticleQueryRequest { limit: Some(0), ..today_query(Some(false)) },
+            fixed_now(),
+        )
+        .expect("today unread count");
+        assert_eq!(unread.total, 3, "sidebar count is Today's unread articles");
+
+        let later = fixed_now() + chrono::Duration::hours(3);
+        let shifted = query_articles_at(&connection, today_query(None), later).expect("later");
+        assert_eq!(
+            shifted.articles.iter().map(|article| article.hash.as_str()).collect::<Vec<_>>(),
+            vec!["fresh-read", "shared", "fetched-only"],
+            "the window slides with the query time"
+        );
+    }
+
+    #[test]
+    fn today_queries_use_effective_date_indexes_not_scans() {
+        let connection = setup_connection();
+        let plan = |sql: &str, bindings: &[&dyn rusqlite::ToSql]| -> String {
+            connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .expect("prepare plan")
+                .query_map(bindings, |row| row.get::<_, String>(3))
+                .expect("query plan")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("plan rows")
+                .join(" | ")
+        };
+        let cutoff = today_cutoff(fixed_now());
+        // Same shape query_articles builds for `today: true` with no feed/tag source.
+        let page = plan(
+            "SELECT a.hash, COALESCE(f.title, a.feed_title) \
+             FROM articles a LEFT JOIN feeds f ON f.id = a.feed_id \
+             WHERE COALESCE(a.published_date, a.fetched_date) >= ?1 \
+             ORDER BY COALESCE(a.published_date, a.fetched_date) DESC, a.hash ASC LIMIT 100",
+            &[&cutoff],
+        );
+        let unread_count = plan(
+            "SELECT COUNT(*) FROM articles a \
+             WHERE COALESCE(a.published_date, a.fetched_date) >= ?1 AND a.read = ?2",
+            &[&cutoff, &0_i64],
+        );
+        println!("today page plan: {page}");
+        println!("today unread count plan: {unread_count}");
+        assert!(page.contains("idx_articles_effective_date"), "page must seek the effective-date index: {page}");
+        assert!(unread_count.contains("idx_articles_read"), "count must seek (read, effective date): {unread_count}");
+        for current in [&page, &unread_count] {
+            assert!(!current.contains("SCAN a"), "today query must not full-scan articles: {current}");
+            assert!(
+                !current.contains("USE TEMP B-TREE FOR ORDER BY"),
+                "today query must not sort the whole window: {current}"
+            );
+        }
     }
 }

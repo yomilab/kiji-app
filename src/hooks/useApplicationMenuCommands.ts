@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
-import { isLibrarySmartViewId, type SmartViewId } from '@/constants';
+import type { SmartViewId } from '@/constants';
+import { toAppMenuLibraryView } from '@/types/appMenu';
 import type { Theme } from '@/services/settings';
 import type { ArticleListUpdatePayload } from '@/contexts/FeedContext';
 import { articlesManager } from '@/services/articles/articlesManager';
@@ -38,7 +39,7 @@ interface UseApplicationMenuCommandsInput {
   activeArticleHash: string | null;
   requestCloseArticle: () => void;
   selectedSmartView: SmartViewId | 'pinned' | null;
-  selectSmartView: (viewType: 'saved' | 'unread' | 'all' | 'read' | 'pinned') => Promise<void>;
+  selectSmartView: (viewType: SmartViewId | 'pinned') => Promise<void>;
   clearFeedSelection: () => void;
   selectFeed: (feedId: string, feedUrl: string, feedTitle: string, options?: { forceNetwork?: boolean }) => Promise<void>;
   selectTag: (tagName: string) => Promise<void>;
@@ -326,7 +327,7 @@ export const useApplicationMenuCommands = ({
 
     void window.kijiAPI.updateAppMenuState({
       theme,
-      libraryView: isLibrarySmartViewId(selectedSmartView) ? selectedSmartView : null,
+      libraryView: toAppMenuLibraryView(selectedSmartView),
     });
   }, [selectedSmartView, theme]);
 

@@ -14,6 +14,7 @@ import { storage } from '@/services/storage/storageFactory';
 import type { SmartViewSettings } from '@/services/settings/types';
 import { persistSmartViewOrder } from '@/services/feeds/libraryOrderPersist';
 import { useSidebarReorder } from './useSidebarReorder';
+import { useTodayUnreadCount } from './useTodayUnreadCount';
 import './SmartViews.css';
 
 interface SmartView {
@@ -23,9 +24,30 @@ interface SmartView {
   emoji?: string;
 }
 
+/** SF Symbols–style `sun.max`, drawn bold to sit with the filled Library glyphs. */
+const TodayIcon: SmartView['icon'] = ({ sx }) => (
+  <svg
+    className="smart-view-glyph"
+    data-glyph="today"
+    width={sx?.fontSize ?? '1em'}
+    height={sx?.fontSize ?? '1em'}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <circle cx="12" cy="12" r="4.2" fill="currentColor" stroke="none" />
+    <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.35 5.35l1.55 1.55M17.1 17.1l1.55 1.55M5.35 18.65l1.55-1.55M17.1 6.9l1.55-1.55" />
+  </svg>
+);
+
 const SMART_VIEW_ICONS: Record<SmartViewId, SmartView['icon']> = {
   saved: ArchiveIcon,
   unread: MarkEmailUnreadIcon,
+  today: TodayIcon,
   all: InventoryIcon,
   read: MarkEmailReadIcon,
 };
@@ -59,6 +81,7 @@ const buildSmartViews = (
 interface SmartViewItemProps {
   view: SmartView;
   isSelected: boolean;
+  unreadCount?: number | null;
   onSelectView: (viewId: SmartViewId) => void;
   onOpenFeedEditView: (viewId: SmartViewId) => void;
   setRowRef: (id: string, node: HTMLElement | null) => void;
@@ -71,6 +94,7 @@ interface SmartViewItemProps {
 const SmartViewItem = React.memo<SmartViewItemProps>(({
   view,
   isSelected,
+  unreadCount,
   onSelectView,
   onOpenFeedEditView,
   setRowRef,
@@ -119,6 +143,11 @@ const SmartViewItem = React.memo<SmartViewItemProps>(({
         <span className="smart-view-label" data-section="smart-view-name">
           {view.label}
         </span>
+        {unreadCount ? (
+          <span className="smart-view-badge" data-section="smart-view-unread-count">
+            {unreadCount}
+          </span>
+        ) : null}
       </div>
       <ButtonStack
         buttons={buttons}
@@ -135,6 +164,7 @@ export const SmartViews: React.FC = () => {
   const [smartViews, setSmartViews] = useState<SmartView[]>([]);
   const smartViewsPatched = useSmartViewsPatchedMutation();
   const emojisRef = useRef<Record<string, string>>({});
+  const todayUnreadCount = useTodayUnreadCount(smartViews.some((view) => view.id === 'today'));
 
   useEffect(() => {
     const loadSmartViews = async () => {
@@ -213,6 +243,7 @@ export const SmartViews: React.FC = () => {
             key={view.id}
             view={view}
             isSelected={selectedSmartView === view.id}
+            unreadCount={view.id === 'today' ? todayUnreadCount : undefined}
             onSelectView={handleSmartViewClick}
             onOpenFeedEditView={handleOpenFeedEditView}
             setRowRef={setRowRef}

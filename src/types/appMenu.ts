@@ -1,6 +1,13 @@
 import type { SmartViewId } from '@/constants';
 import type { Theme } from '@/services/settings';
 
+/** Library views with an app menu item (Today is sidebar-only for now). */
+export type AppMenuLibraryView = Exclude<SmartViewId, 'today'>;
+
+export const toAppMenuLibraryView = (view: string | null | undefined): AppMenuLibraryView | null => (
+  view === 'saved' || view === 'unread' || view === 'all' || view === 'read' ? view : null
+);
+
 export type AppMenuCommand =
   | { type: 'openAddSubscription' }
   | { type: 'importFeeds' }
@@ -12,11 +19,11 @@ export type AppMenuCommand =
   | { type: 'clearArticles' }
   | { type: 'clearArticlesOlderThan'; months: 3 }
   | { type: 'setTheme'; theme: Theme }
-  | { type: 'selectLibraryView'; libraryView: SmartViewId };
+  | { type: 'selectLibraryView'; libraryView: AppMenuLibraryView };
 
 export interface AppMenuState {
   theme: Theme;
-  libraryView: SmartViewId | null;
+  libraryView: AppMenuLibraryView | null;
   /** When true, Check for Updates becomes Update KiJi Reader. */
   updateAvailable?: boolean;
 }

@@ -18,8 +18,9 @@ export const DEFAULT_SETTINGS = {
   smartViews: [
     { id: 'saved', visible: true, sortOrder: 0 },
     { id: 'unread', visible: true, sortOrder: 1 },
-    { id: 'all', visible: true, sortOrder: 2 },
-    { id: 'read', visible: true, sortOrder: 3 },
+    { id: 'today', visible: true, sortOrder: 2 },
+    { id: 'all', visible: true, sortOrder: 3 },
+    { id: 'read', visible: true, sortOrder: 4 },
   ],
 };
 
@@ -122,6 +123,11 @@ export async function getByHash(): Promise<Article | null> {
   return null;
 }
 
+/** articleStore.query: only the sidebar Today count reads it in stories. */
+export async function query() {
+  return { articles: [], total: 12, cancelled: false };
+}
+
 export async function syncFeedCountsBatch() {
   return [];
 }
@@ -196,6 +202,7 @@ export const opmlWorkflowService = {
 
 export const fetchOpmlTextFromUrl = async () => '';
 export const formatOpmlImportSummary = () => 'OPML import is disabled in Storybook.';
+export const fetchOpmlTextFromUrl = async () => null;
 export const importOpmlFromUrlIntoLibrary = async () => null;
 export const importOpmlTextIntoLibrary = async () => null;
 export const isLikelyOpmlUrl = () => false;

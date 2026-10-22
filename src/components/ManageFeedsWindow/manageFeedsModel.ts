@@ -1,6 +1,7 @@
 import { DEFAULT_SMART_VIEW_DEFINITIONS, type SmartViewId } from '@/constants';
 import type { Feed } from '@/services/feeds/feedsManager';
 import type { SmartViewSettings } from '@/services/settings/types';
+import { mergeSmartViewSettings } from '@/services/settings/smartViewOrder';
 import type { Tag } from '@/types/tag';
 import type { FeedLibraryMutationMessage } from '@/services/ui/feedLibraryMutationBus';
 
@@ -170,16 +171,11 @@ export const sortStations = (stations: Tag[]): Tag[] => [...stations].sort((left
 });
 
 export const buildLibraryItems = (smartViews: SmartViewSettings[]): LibraryItemRow[] => {
-  const byId = new Map(smartViews.map((view) => [view.id, view]));
-  return DEFAULT_SMART_VIEW_DEFINITIONS.map((definition, index) => {
-    const existing = byId.get(definition.id);
-    return {
-      id: definition.id,
-      label: definition.label,
-      visible: existing?.visible ?? true,
-      sortOrder: existing?.sortOrder ?? index,
-    };
-  }).sort((left, right) => left.sortOrder - right.sortOrder);
+  const labels = new Map(DEFAULT_SMART_VIEW_DEFINITIONS.map((definition) => [definition.id, definition.label]));
+  return mergeSmartViewSettings(smartViews).map((view) => ({
+    ...view,
+    label: labels.get(view.id) ?? view.id,
+  }));
 };
 
 export const moveItem = <T,>(items: T[], fromIndex: number, toIndex: number): T[] => {

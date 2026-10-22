@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Sidebar } from './Sidebar';
+import { SharedArticleList } from '@/components/MainArea/SharedArticleList';
 
 const meta = {
   title: 'Theme Debug/Sidebar',
@@ -38,3 +39,19 @@ export const Overflow: Story = {
   ),
 };
 
+
+export const TodaySelected: Story = {
+  parameters: {
+    kiji: { variant: 'sidebar-today' },
+  },
+  render: () => (
+    <div className="theme-debug-surface" style={{ display: 'flex' }}>
+      <div className="theme-debug-sidebar-frame">
+        <Sidebar />
+      </div>
+      <div className="main-area theme-debug-list-frame">
+        <SharedArticleList layout="3-column" variant="common" />
+      </div>
+    </div>
+  ),
+};
