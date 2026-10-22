@@ -1,6 +1,10 @@
 /* Article List Container */
 .article-list {
   --article-list-horizontal-padding: 36px;
+  /* Minimum space between the list's side edges and the centered column, so
+     a narrow list keeps a margin instead of running text into the edges. */
+  --article-list-edge-gutter: 24px;
+  --article-list-column-width: calc(100% - var(--article-list-edge-gutter) * 2);
   --article-list-favicon-chip-size: calc(var(--leading-item-icon-size) + 2px);
   /* Former absolute hang: chip sat at -(leading * 1.35) from the title start. */
   --article-list-favicon-hang: calc(var(--leading-item-icon-size) * 1.35);
@@ -168,7 +172,7 @@ html[data-os="other"] .article-list {
 /* Title content wrapper - centered with max-width */
 .article-list-title-content {
   max-width: var(--max-article-width);
-  width: 100%;
+  width: var(--article-list-column-width);
   margin: 0 auto;
   padding: 0 var(--article-list-horizontal-padding);
   position: relative;
@@ -251,7 +255,7 @@ html[data-os="other"] .article-list {
 /* Article item content wrapper - centered with max-width */
 .article-list-item-content {
   max-width: var(--max-article-width);
-  width: 100%;
+  width: var(--article-list-column-width);
   margin: 0 auto;
   padding: 10px var(--article-list-content-padding-x);
   position: relative;
