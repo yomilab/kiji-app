@@ -78,6 +78,16 @@ describe("nativeFeedRefresh", () => {
     expect(beginQueuedFeeds).toHaveBeenCalledWith(["feed-1"], "foreground");
   });
 
+  it("flags scheduler cycles as background and switches/manual refreshes as not", async () => {
+    await runNativeFeedRefresh({ scope: {}, activityKind: "background", cycleId: "native-8" });
+    expect(previewNativeCycle).toHaveBeenLastCalledWith(expect.objectContaining({ background: true }));
+
+    await runNativeFeedRefresh({ feedIds: ["feed-1"], forceRefreshFeedIds: new Set(["feed-1"]) });
+    expect(previewNativeCycle).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ background: true }),
+    );
+  });
+
   it("ignores START/FEED events for a different cycleId", async () => {
     const { listen } = await import("@tauri-apps/api/event");
     const handlers: Array<(event: { payload: unknown }) => void> = [];

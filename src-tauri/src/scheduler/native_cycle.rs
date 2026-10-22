@@ -15,6 +15,7 @@ use crate::scheduler::types::{
     SCHEDULER_NATIVE_CYCLE_START_EVENT,
 };
 use crate::scheduler::webview_delivery::emit_scheduler_payload_to_main_webview;
+use crate::shell::attention::{self, CycleFeedNews};
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -173,6 +174,7 @@ pub async fn preview_native_refresh_cycle(
     let mut failed_feeds = 0usize;
     let mut inserted_articles = 0i64;
     let mut cancelled = false;
+    let mut feed_news: Vec<CycleFeedNews> = Vec::new();
 
     if execute && queued_count > 0 {
         let force_refresh_feed_ids: HashSet<String> = options
@@ -183,6 +185,8 @@ pub async fn preview_native_refresh_cycle(
             .collect();
 
         let force_refresh_feed_ids = &force_refresh_feed_ids;
+        let boosts = &boosts;
+        let feed_news = &mut feed_news;
         let cycle_id_ref = &cycle_id;
         // Sliding window: a slow or timing-out feed holds one slot only, and
         // each feed reports its FEED event as soon as it settles (the old
@@ -233,6 +237,16 @@ pub async fn preview_native_refresh_cycle(
                             _ => {}
                         }
                         inserted_articles += outcome.inserted_count.unwrap_or(0);
+                        if outcome.inserted_count.unwrap_or(0) > 0 {
+                            let feed_id = &entry.entry.feed_id;
+                            feed_news.push(CycleFeedNews {
+                                title: entry.entry.feed_title.clone(),
+                                inserted: outcome.inserted_count.unwrap_or(0),
+                                first_fetch: entry.entry.last_fetched_ms.is_none(),
+                                boosted: boosts.get(feed_id).is_some_and(|until| *until > now_ms),
+                                forced: force_refresh_feed_ids.contains(feed_id),
+                            });
+                        }
                         SchedulerNativeCycleFeedResult {
                             feed_id: entry.entry.feed_id.clone(),
                             status: outcome.status,
@@ -288,6 +302,10 @@ pub async fn preview_native_refresh_cycle(
             },
             "Scheduler",
         );
+
+        // Inserts are committed even when the cycle was cancelled midway, and
+        // the next cycle won't see them as new, so they still count.
+        attention::after_refresh_cycle(app, request.background.unwrap_or(false), &feed_news);
     }
 
     Ok(SchedulerNativeCyclePreviewResponse {

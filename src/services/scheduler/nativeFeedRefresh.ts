@@ -199,6 +199,7 @@ export async function runNativeFeedRefresh(
           forceRefreshFeedIds,
           concurrency: request.concurrency ?? getSchedulerConcurrency(),
           cycleId: request.cycleId,
+          background: activityKind === "background",
         }),
       );
 

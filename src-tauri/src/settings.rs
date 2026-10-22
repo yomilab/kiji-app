@@ -114,6 +114,11 @@ pub struct AppSettings {
     /// Closing the main window hides it instead of quitting (feeds keep
     /// refreshing, assistants can connect). On by default on macOS only.
     pub keep_running_in_background: bool,
+    /// Total unread count on the Dock / launcher icon (macOS, Linux).
+    pub show_unread_badge: bool,
+    /// One summary notification after a background refresh finds new
+    /// articles. Opt-in.
+    pub notify_new_articles: bool,
 }
 
 /// macOS apps keep running after their window closes; Windows/Linux users
@@ -134,6 +139,8 @@ impl Default for AppSettings {
             content_parser: ContentParser::Defuddle,
             saved_articles_sync_folder: None,
             keep_running_in_background: default_keep_running_in_background(),
+            show_unread_badge: true,
+            notify_new_articles: false,
         }
     }
 }
@@ -186,6 +193,14 @@ impl AppSettings {
             self.keep_running_in_background = keep_running;
         }
 
+        if let Some(show_unread_badge) = patch.show_unread_badge {
+            self.show_unread_badge = show_unread_badge;
+        }
+
+        if let Some(notify_new_articles) = patch.notify_new_articles {
+            self.notify_new_articles = notify_new_articles;
+        }
+
         Ok(())
     }
 }
@@ -211,6 +226,8 @@ pub struct AppSettingsPatch {
     pub content_parser: Option<ContentParser>,
     pub saved_articles_sync_folder: Option<Option<String>>,
     pub keep_running_in_background: Option<bool>,
+    pub show_unread_badge: Option<bool>,
+    pub notify_new_articles: Option<bool>,
 }
 
 pub struct SettingsState {
@@ -279,6 +296,18 @@ impl SettingsState {
         Ok(())
     }
 
+    pub fn set_attention(
+        &self,
+        show_unread_badge: Option<bool>,
+        notify_new_articles: Option<bool>,
+    ) -> Result<AppSettings, String> {
+        self.update(AppSettingsPatch {
+            show_unread_badge,
+            notify_new_articles,
+            ..Default::default()
+        })
+    }
+
     pub fn update_window_bounds(
         &self,
         width: u32,
@@ -319,8 +348,10 @@ pub fn settings_update(
 }
 
 #[tauri::command]
-pub fn settings_reset(state: State<'_, Arc<SettingsState>>) -> Result<AppSettings, String> {
-    state.reset()
+pub fn settings_reset(app: AppHandle, state: State<'_, Arc<SettingsState>>) -> Result<AppSettings, String> {
+    let settings = state.reset()?;
+    crate::shell::attention::request_badge_refresh(&app);
+    Ok(settings)
 }
 
 fn resolve_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -435,6 +466,27 @@ mod tests {
             .apply_patch(AppSettingsPatch { keep_running_in_background: Some(true), ..Default::default() })
             .unwrap();
         assert!(settings.keep_running_in_background);
+    }
+
+    #[test]
+    fn attention_defaults_badge_on_notifications_off_and_survive_old_files() {
+        let defaults = AppSettings::default();
+        assert!(defaults.show_unread_badge);
+        assert!(!defaults.notify_new_articles);
+        let parsed: AppSettings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert!(parsed.show_unread_badge);
+        assert!(!parsed.notify_new_articles);
+
+        let mut settings = AppSettings::default();
+        settings
+            .apply_patch(AppSettingsPatch {
+                show_unread_badge: Some(false),
+                notify_new_articles: Some(true),
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(!settings.show_unread_badge);
+        assert!(settings.notify_new_articles);
     }
 
     #[test]

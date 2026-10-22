@@ -56,6 +56,19 @@ describe("nativeSchedulerCycle", () => {
     expect(request.options?.excludeFeedIds).toEqual(["feed-skip"]);
   });
 
+  it("marks only background passes as eligible for the new-articles notification", () => {
+    const base = {
+      boosts: new Map<string, number>(),
+      scope: {},
+      frontloadFeedIds: undefined,
+      skipFeedIdsForThisCycle: undefined,
+      concurrency: 4,
+    };
+    expect(buildNativeCycleRequest({ ...base, background: true }).background).toBe(true);
+    expect(buildNativeCycleRequest(base).background).toBeUndefined();
+    expect(buildNativeCycleRequest({ ...base, background: false }).background).toBeUndefined();
+  });
+
   it("collects changed feeds for count sync", () => {
     expect(
       collectFeedIdsNeedingCountSync([
