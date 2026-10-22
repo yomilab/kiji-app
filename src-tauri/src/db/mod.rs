@@ -3,6 +3,7 @@ pub(crate) mod feeds;
 mod migrations;
 mod models;
 pub(crate) mod saved;
+pub(crate) mod retention;
 pub(crate) mod schema;
 pub(crate) mod search;
 mod tags;
@@ -82,6 +83,7 @@ struct DbStateInner {
     /// queries never queue behind the UI readers or live search.
     assistant_reader: Mutex<Connection>,
     previous_shutdown_unclean: bool,
+    retention: retention::RetentionStore,
 }
 
 #[derive(Clone)]
@@ -121,6 +123,7 @@ impl DbState {
         let search_reader = Mutex::new(open_reader_connection(&path)?);
         let assistant_reader = Mutex::new(open_reader_connection(&path)?);
         let data_repair_version = read_user_version(&writer)?;
+        let retention = retention::RetentionStore::load(&path);
 
         let state = Self {
             inner: Arc::new(DbStateInner {
@@ -132,6 +135,7 @@ impl DbState {
                 search_epoch: AtomicU64::new(0),
                 assistant_reader,
                 previous_shutdown_unclean,
+                retention,
             }),
         };
         state.spawn_feed_count_repair_if_needed(data_repair_version);
@@ -376,6 +380,11 @@ impl DbState {
             .map_err(|error| format!("Database write task failed: {error}"))?
     }
 
+    /// Automatic cleanup state (once-a-day gate + refresh resurrection guard).
+    pub(crate) fn retention(&self) -> &retention::RetentionStore {
+        &self.inner.retention
+    }
+
     pub fn database_path(&self) -> PathBuf {
         self.inner.path.clone()
     }
@@ -411,6 +420,7 @@ impl DbState {
                 search_epoch: AtomicU64::new(0),
                 assistant_reader: Mutex::new(Connection::open_in_memory().expect("open assistant reader")),
                 previous_shutdown_unclean: false,
+                retention: retention::RetentionStore::in_memory(),
             }),
         }
     }
@@ -676,6 +686,7 @@ mod tests {
                 search_epoch: AtomicU64::new(0),
                 assistant_reader: Mutex::new(Connection::open_in_memory().expect("open assistant reader")),
                 previous_shutdown_unclean: false,
+                retention: super::retention::RetentionStore::in_memory(),
             }),
         };
         let epoch = db.inner.search_epoch.fetch_add(1, Ordering::AcqRel) + 1;
@@ -727,6 +738,7 @@ mod tests {
                 search_epoch: AtomicU64::new(0),
                 assistant_reader: Mutex::new(Connection::open_in_memory().expect("open assistant reader")),
                 previous_shutdown_unclean: false,
+                retention: super::retention::RetentionStore::in_memory(),
             }),
         };
 

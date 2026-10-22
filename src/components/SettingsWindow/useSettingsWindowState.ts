@@ -8,7 +8,7 @@ import {
   defaultSurfaceFillOpacityForOs,
   endSurfaceFillDrag,
 } from '@/services/settings/surfaceFillOpacity';
-import type { ContentParser, ReadingLayoutSettings, UiThemeVariant } from '@/services/settings';
+import type { ArticleRetention, ContentParser, ReadingLayoutSettings, UiThemeVariant } from '@/services/settings';
 import type { BackgroundUpdateMode } from '@/services/scheduler/types';
 import { DEFAULT_READER_THEME, normalizeReaderTheme } from '@/services/settings/readerThemes';
 import {
@@ -59,6 +59,7 @@ export function useSettingsWindowState() {
     DEFAULT_SETTINGS.backgroundUpdate,
   );
   const [contentParser, setContentParser] = useState<ContentParser>(DEFAULT_SETTINGS.contentParser);
+  const [articleRetention, setArticleRetention] = useState<ArticleRetention>('never');
   const [uiThemeVariant, setUiThemeVariant] = useState<UiThemeVariant>(DEFAULT_SETTINGS.uiThemeVariant);
   const [readerTheme, setReaderTheme] = useState<string>(DEFAULT_READER_THEME);
   const [articleListDensity, setArticleListDensity] = useState<ArticleListDensity>(DEFAULT_ARTICLE_LIST_DENSITY);
@@ -111,6 +112,7 @@ export function useSettingsWindowState() {
 
         setBackgroundUpdate(settings.backgroundUpdate ?? DEFAULT_SETTINGS.backgroundUpdate);
         setContentParser(settings.contentParser ?? DEFAULT_SETTINGS.contentParser);
+        setArticleRetention(settings.articleRetention ?? 'never');
         setUiThemeVariant(settings.uiThemeVariant ?? DEFAULT_SETTINGS.uiThemeVariant);
         setReaderTheme(normalizeReaderTheme(settings.readerTheme));
         setArticleListDensity(normalizeArticleListDensity(settings.articleListDensity));
@@ -215,6 +217,16 @@ export function useSettingsWindowState() {
       notifySettingsChanged();
     } catch (error) {
       console.error('Error saving content parser:', error);
+    }
+  };
+
+  const handleArticleRetentionChange = async (retention: ArticleRetention) => {
+    try {
+      await settingsManager.setArticleRetention(retention);
+      setArticleRetention(retention);
+      notifySettingsChanged();
+    } catch (error) {
+      console.error('Error saving article retention:', error);
     }
   };
 
@@ -564,10 +576,12 @@ export function useSettingsWindowState() {
     general: {
       backgroundUpdate,
       contentParser,
+      articleRetention,
       savedArticlesSyncFolder,
       isPickingSavedArticlesSyncFolder,
       onBackgroundUpdateChange: handleBackgroundUpdateChange,
       onContentParserChange: handleContentParserChange,
+      onArticleRetentionChange: handleArticleRetentionChange,
       onSavedArticlesSyncToggle: handleSavedArticlesSyncToggle,
       onSavedArticlesSyncFolderPick: handleSavedArticlesSyncFolderPick,
     },

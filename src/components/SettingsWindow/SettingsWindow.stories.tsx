@@ -21,10 +21,12 @@ const NAV = [
 const GENERAL_STATE: SettingsWindowState['general'] = {
   backgroundUpdate: 'every-15m',
   contentParser: 'defuddle',
+  articleRetention: 'never',
   savedArticlesSyncFolder: null,
   isPickingSavedArticlesSyncFolder: false,
   onBackgroundUpdateChange: fn(),
   onContentParserChange: fn(),
+  onArticleRetentionChange: fn(),
   onSavedArticlesSyncToggle: fn(),
   onSavedArticlesSyncFolderPick: fn(),
 };

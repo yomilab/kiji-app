@@ -1,5 +1,5 @@
 import React from 'react';
-import type { ContentParser } from '@/services/settings';
+import type { ArticleRetention, ContentParser } from '@/services/settings';
 import type { BackgroundUpdateMode } from '@/services/scheduler/types';
 import { SettingsGroup, SettingsRow, SettingsSelect, SettingsSwitch } from '../settingsControls';
 import { FolderGlyph } from '../settingsIcons';
@@ -45,6 +45,27 @@ export const GeneralPane: React.FC<{ state: SettingsWindowState['general'] }> = 
             >
               <option value="defuddle">Defuddle (cleans up more)</option>
               <option value="readability">Readability (like Firefox Reader View)</option>
+            </SettingsSelect>
+          )}
+        />
+      </SettingsGroup>
+
+      <SettingsGroup title="Storage">
+        <SettingsRow
+          label="Remove old read articles"
+          description="Frees up space by removing articles you've read. Saved, starred, and unread articles are always kept."
+          htmlFor="settings-article-retention"
+          control={(
+            <SettingsSelect
+              id="settings-article-retention"
+              value={state.articleRetention}
+              onChange={(e) => void state.onArticleRetentionChange(e.target.value as ArticleRetention)}
+            >
+              <option value="never">Never</option>
+              <option value="1m">After 1 month</option>
+              <option value="3m">After 3 months</option>
+              <option value="6m">After 6 months</option>
+              <option value="1y">After 1 year</option>
             </SettingsSelect>
           )}
         />

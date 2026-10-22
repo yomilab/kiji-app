@@ -54,6 +54,35 @@ pub enum ContentParser {
     Readability,
 }
 
+/// "Remove old read articles" (Settings → General). Default `Never` for every
+/// install: removing data is opt-in, so nothing disappears after an update.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum ArticleRetention {
+    #[default]
+    #[serde(rename = "never")]
+    Never,
+    #[serde(rename = "1m")]
+    OneMonth,
+    #[serde(rename = "3m")]
+    ThreeMonths,
+    #[serde(rename = "6m")]
+    SixMonths,
+    #[serde(rename = "1y")]
+    OneYear,
+}
+
+impl ArticleRetention {
+    pub fn months(self) -> Option<u32> {
+        match self {
+            Self::Never => None,
+            Self::OneMonth => Some(1),
+            Self::ThreeMonths => Some(3),
+            Self::SixMonths => Some(6),
+            Self::OneYear => Some(12),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct WindowSize {
@@ -119,6 +148,7 @@ pub struct AppSettings {
     /// One summary notification after a background refresh finds new
     /// articles. Opt-in.
     pub notify_new_articles: bool,
+    pub article_retention: ArticleRetention,
 }
 
 /// macOS apps keep running after their window closes; Windows/Linux users
@@ -141,6 +171,7 @@ impl Default for AppSettings {
             keep_running_in_background: default_keep_running_in_background(),
             show_unread_badge: true,
             notify_new_articles: false,
+            article_retention: ArticleRetention::Never,
         }
     }
 }
@@ -201,6 +232,10 @@ impl AppSettings {
             self.notify_new_articles = notify_new_articles;
         }
 
+        if let Some(article_retention) = patch.article_retention {
+            self.article_retention = article_retention;
+        }
+
         Ok(())
     }
 }
@@ -228,6 +263,7 @@ pub struct AppSettingsPatch {
     pub keep_running_in_background: Option<bool>,
     pub show_unread_badge: Option<bool>,
     pub notify_new_articles: Option<bool>,
+    pub article_retention: Option<ArticleRetention>,
 }
 
 pub struct SettingsState {
@@ -487,6 +523,18 @@ mod tests {
             .unwrap();
         assert!(!settings.show_unread_badge);
         assert!(settings.notify_new_articles);
+    }
+
+    #[test]
+    fn article_retention_defaults_to_never_for_existing_files() {
+        let parsed: AppSettings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert_eq!(parsed.article_retention, ArticleRetention::Never);
+        let mut settings = AppSettings::default();
+        settings
+            .apply_patch(serde_json::from_str(r#"{"articleRetention":"3m"}"#).unwrap())
+            .unwrap();
+        assert_eq!(settings.article_retention, ArticleRetention::ThreeMonths);
+        assert_eq!(ArticleRetention::OneYear.months(), Some(12));
     }
 
     #[test]
