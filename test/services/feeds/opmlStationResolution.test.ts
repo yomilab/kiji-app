@@ -18,6 +18,13 @@ describe('opmlStationResolution', () => {
     })).toBeUndefined();
   });
 
+  it('does not derive a station for KiJi\'s own export', () => {
+    expect(deriveOpmlDefaultStationName({
+      fileName: 'Feeds.opml',
+      opmlHeadTitle: 'KiJi Feeds',
+    })).toBeUndefined();
+  });
+
   it('groups flat root feeds under the flat import station', () => {
     expect(isFlatOpmlRoot([true, true, true])).toBe(true);
     expect(resolveOutlineStationName({

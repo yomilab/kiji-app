@@ -2,6 +2,7 @@ import { feedsManager, type Feed } from '@/services/feeds/feedsManager';
 import { tagsManager } from '@/services/tags/tagsManager';
 import type { Tag } from '@/types/tag';
 import {
+  KIJI_OPML_EXPORT_TITLE,
   OPML_EMOJI_ATTRIBUTE,
   OPML_STATION_NAME_ATTRIBUTE,
 } from './opmlAttributes';
@@ -140,7 +141,7 @@ class OpmlExportService {
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<opml version="2.0">',
       '<head>',
-      '<title>KiJi Feeds</title>',
+      `<title>${KIJI_OPML_EXPORT_TITLE}</title>`,
       '</head>',
       '<body>',
       ...bodyLines,

@@ -1,5 +1,6 @@
 export const OPML_EMOJI_ATTRIBUTE = 'kijiEmoji';
 export const OPML_STATION_NAME_ATTRIBUTE = 'kijiStationName';
+export const KIJI_OPML_EXPORT_TITLE = 'KiJi Feeds';
 
 export const LEGACY_OPML_FEED_EMOJI_ATTRIBUTE = 'kijiFeedEmoji';
 export const LEGACY_OPML_STATION_EMOJI_ATTRIBUTE = 'kijiStationEmoji';

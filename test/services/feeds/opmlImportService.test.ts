@@ -270,6 +270,28 @@ describe('opmlImportService', () => {
       stationName: 'Football',
     });
   });
+  it('keeps loose feeds out of stations when re-importing a KiJi export', async () => {
+    const opmlText = `<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+<head>
+<title>KiJi Feeds</title>
+</head>
+<body>
+  <outline type="rss" title="Feed A" text="Feed A" xmlUrl="https://a.com/rss" htmlUrl="https://a.com/rss" />
+  <outline type="rss" title="Feed B" text="Feed B" xmlUrl="https://b.com/rss" htmlUrl="https://b.com/rss" />
+</body>
+</opml>`;
+
+    expect(parseOpmlEntries(opmlText, { fileName: 'Feeds.opml' })).toEqual([
+      expect.objectContaining({ title: 'Feed A', station: undefined }),
+      expect.objectContaining({ title: 'Feed B', station: undefined }),
+    ]);
+    expect(parseOpmlEntries(opmlText, { fileName: 'Feeds.opml', defaultStationName: 'Reading' })).toEqual([
+      expect.objectContaining({ title: 'Feed A', station: 'Reading' }),
+      expect.objectContaining({ title: 'Feed B', station: 'Reading' }),
+    ]);
+  });
+
   it('assigns untagged sort orders from one library read instead of re-reading per feed', async () => {
     vi.mocked(feedsManager.getAllFeeds).mockResolvedValue([
       { id: 'u-1', url: 'https://u1.com/feed', tags: [], sortOrder: 4 } as never,

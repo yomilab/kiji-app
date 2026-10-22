@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Importing a feed list that KiJi exported no longer puts feeds that weren't in a station into a new station named after the file (such as "Feeds").
+
 ## [1.7.0] - 2026-10-19
 
 ### Added

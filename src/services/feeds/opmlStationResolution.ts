@@ -1,3 +1,5 @@
+import { KIJI_OPML_EXPORT_TITLE } from './opmlAttributes';
+
 const GENERIC_OPML_HEAD_TITLES = new Set([
   'export from plenary',
   'feeds',
@@ -20,6 +22,11 @@ export const deriveOpmlDefaultStationName = (source: {
   url?: string;
   opmlHeadTitle?: string;
 }): string | undefined => {
+  // KiJi's own export writes stations as folders, so its top-level feeds belong to no station.
+  if (source.opmlHeadTitle?.trim() === KIJI_OPML_EXPORT_TITLE) {
+    return undefined;
+  }
+
   if (source.fileName) {
     const fromFile = normalizeStationName(source.fileName);
     if (fromFile) {
