@@ -24,9 +24,9 @@ Free, native builds for macOS, Windows, and Linux. Quick to open, light to keep 
 
 ## Preview
 
-![KiJi article list with stations sidebar](screenshots/preview-article-list.png)
+![KiJi article list with stations sidebar, light and dark](screenshots/preview-article-list.png)
 
-![KiJi reader mode](screenshots/preview-reader-mode.png)
+![KiJi reader mode, light and dark](screenshots/preview-reader-mode.png)
 
 ## Theme development
 
