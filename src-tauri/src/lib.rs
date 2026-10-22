@@ -45,7 +45,10 @@ use net::{
     feeds_abort_request, feeds_fetch, feeds_fetch_data_url, feeds_fetch_html_safe,
     feeds_fetch_pdf_data_url, feeds_fetch_with_cache,
 };
-use feeds::{feeds_parse_preview, feeds_store_parsed_content};
+use feeds::{
+    feeds_parse_preview, feeds_store_parsed_content, mute_rules_apply_to_existing,
+    mute_rules_get, mute_rules_preview, mute_rules_set,
+};
 use saved::{
     saved_export_preflight, saved_export_start, saved_sync_queue, SavedExportState, SavedSyncState,
 };
@@ -259,6 +262,10 @@ pub fn run() {
             feeds_fetch_with_cache,
             feeds_parse_preview,
             feeds_store_parsed_content,
+            mute_rules_apply_to_existing,
+            mute_rules_get,
+            mute_rules_preview,
+            mute_rules_set,
             feeds_get,
             feeds_get_by_url,
             feeds_get_favicons,

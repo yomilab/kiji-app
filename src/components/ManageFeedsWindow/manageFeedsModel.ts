@@ -11,7 +11,7 @@ import { feedFailureCount, feedPatchFromHealth, isFeedFailing } from '@/services
  * and the station delete plan. Kept free of React and IPC so they are unit-tested directly.
  */
 
-export type ManageFeedsTab = 'feeds' | 'stations' | 'library' | 'import-export';
+export type ManageFeedsTab = 'feeds' | 'stations' | 'library' | 'filters' | 'import-export';
 
 export type FeedSortKey = 'recent' | 'name' | 'articles' | 'status';
 export type FeedFilterKey = 'all' | 'attention' | 'unstationed';

@@ -1,3 +1,4 @@
+use crate::feeds::{normalize_mute_rules, MuteRule};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -149,6 +150,8 @@ pub struct AppSettings {
     /// articles. Opt-in.
     pub notify_new_articles: bool,
     pub article_retention: ArticleRetention,
+    /// Mute words: matching new articles are marked read when stored.
+    pub mute_rules: Vec<MuteRule>,
 }
 
 /// macOS apps keep running after their window closes; Windows/Linux users
@@ -172,6 +175,7 @@ impl Default for AppSettings {
             show_unread_badge: true,
             notify_new_articles: false,
             article_retention: ArticleRetention::Never,
+            mute_rules: Vec::new(),
         }
     }
 }
@@ -236,6 +240,10 @@ impl AppSettings {
             self.article_retention = article_retention;
         }
 
+        if let Some(mute_rules) = patch.mute_rules {
+            self.mute_rules = normalize_mute_rules(mute_rules)?;
+        }
+
         Ok(())
     }
 }
@@ -264,6 +272,7 @@ pub struct AppSettingsPatch {
     pub show_unread_badge: Option<bool>,
     pub notify_new_articles: Option<bool>,
     pub article_retention: Option<ArticleRetention>,
+    pub mute_rules: Option<Vec<MuteRule>>,
 }
 
 pub struct SettingsState {
@@ -342,6 +351,15 @@ impl SettingsState {
             notify_new_articles,
             ..Default::default()
         })
+    }
+
+    pub fn set_mute_rules(&self, rules: Vec<MuteRule>) -> Result<Vec<MuteRule>, String> {
+        Ok(self
+            .update(AppSettingsPatch {
+                mute_rules: Some(rules),
+                ..Default::default()
+            })?
+            .mute_rules)
     }
 
     pub fn update_window_bounds(
@@ -535,6 +553,21 @@ mod tests {
             .unwrap();
         assert_eq!(settings.article_retention, ArticleRetention::ThreeMonths);
         assert_eq!(ArticleRetention::OneYear.months(), Some(12));
+    }
+
+    #[test]
+    fn mute_rules_default_empty_and_patch_normalizes() {
+        let parsed: AppSettings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert!(parsed.mute_rules.is_empty());
+
+        let mut settings = AppSettings::default();
+        let rules: Vec<MuteRule> =
+            serde_json::from_str(r#"[{"id":"1","text":"  crypto "},{"id":"2","text":" "}]"#).unwrap();
+        settings
+            .apply_patch(AppSettingsPatch { mute_rules: Some(rules), ..Default::default() })
+            .unwrap();
+        assert_eq!(settings.mute_rules.len(), 1);
+        assert_eq!(settings.mute_rules[0].text, "crypto");
     }
 
     #[test]
