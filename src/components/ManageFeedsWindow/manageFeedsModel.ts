@@ -4,6 +4,7 @@ import type { SmartViewSettings } from '@/services/settings/types';
 import { mergeSmartViewSettings } from '@/services/settings/smartViewOrder';
 import type { Tag } from '@/types/tag';
 import type { FeedLibraryMutationMessage } from '@/services/ui/feedLibraryMutationBus';
+import { feedFailureCount, feedPatchFromHealth, isFeedFailing } from '@/services/feeds/feedHealth';
 
 /**
  * Pure helpers for the Manage Feeds window: list ordering, filters, plain-language status,
@@ -42,11 +43,10 @@ const timeOf = (value?: Date | string): number => {
   return Number.isNaN(time) ? 0 : time;
 };
 
-export const feedFailureCount = (feed: Pick<Feed, 'consecutiveFailures'>): number => (
-  Math.max(0, feed.consecutiveFailures ?? 0)
-);
+export { feedFailureCount };
 
-export const needsAttention = (feed: Pick<Feed, 'consecutiveFailures'>): boolean => feedFailureCount(feed) > 0;
+/** Same "can't update" rule as the sidebar marker (see `feedHealth`). */
+export const needsAttention = isFeedFailing;
 
 /** "example.com" from a feed address; falls back to the raw text. */
 export const feedSiteLabel = (url: string): string => {
@@ -85,7 +85,7 @@ export const describeFeedStatus = (
 ): FeedStatus => {
   const failures = feedFailureCount(feed);
   const updated = formatRelativeTime(feed.lastFetched, now);
-  if (failures > 0) {
+  if (isFeedFailing(feed)) {
     const tried = formatRelativeTime(feed.lastFailedFetchAt, now);
     const times = failures === 1 ? 'once' : `${failures} times in a row`;
     const lastGood = updated ? ` Last updated ${updated}.` : '';
@@ -308,11 +308,20 @@ export const applyLibraryMessage = (
       let changed = false;
       const feeds = library.feeds.map((feed) => {
         const entry = counts.get(feed.id);
-        if (!entry || (entry.articleCount === feed.articleCount && entry.unreadCount === feed.unreadCount)) {
+        if (!entry || (
+          entry.articleCount === feed.articleCount
+          && entry.unreadCount === feed.unreadCount
+          && !entry.health
+        )) {
           return feed;
         }
         changed = true;
-        return { ...feed, articleCount: entry.articleCount, unreadCount: entry.unreadCount };
+        return {
+          ...feed,
+          articleCount: entry.articleCount,
+          unreadCount: entry.unreadCount,
+          ...(entry.health ? feedPatchFromHealth(entry.health) : {}),
+        };
       });
       return { library: changed ? { ...library, feeds } : library, reload: false };
     }

@@ -1,0 +1,36 @@
+/* Quiet "can't update" hint on sidebar feed and station rows. */
+.feed-health-marker {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--theme-text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.feed-health-marker:hover,
+.feed-health-marker:focus-visible {
+  color: var(--theme-primary-color);
+}
+
+.feed-health-marker:focus-visible {
+  outline: 2px solid var(--system-accent-color, currentColor);
+  outline-offset: 1px;
+}
+
+/* Selected rows paint on the accent fill; follow the row text so the hint stays legible. */
+.feed-list-item-selected .feed-health-marker,
+.station-feed-item-selected .feed-health-marker,
+.tag-item.is-selected .feed-health-marker {
+  color: currentColor;
+  opacity: 0.75;
+}

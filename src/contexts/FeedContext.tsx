@@ -60,6 +60,7 @@ import {
   type MarkReadOlderThanDays,
   type RowReadPatch,
 } from '@/services/articles/markReadScope';
+import { syncFeedHealthAfterRefresh } from '@/services/feeds/feedHealthSync';
 import { subscribeAssistantLibraryChanges, toArticleListUpdate } from '@/services/assistant/assistantLibraryChanges';
 import { feedRefreshCoordinator } from '@/services/feeds/feedRefreshCoordinator';
 import { feedRefreshActivity } from '@/services/feeds/feedRefreshActivity';
@@ -1209,6 +1210,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
 
           await feedsManager.updateFeed(feed.id, updates);
+          syncFeedHealthAfterRefresh(feed, false);
           return { inserted };
         } catch (error) {
           settleFetch();
@@ -1234,6 +1236,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           etag: networkResult.etag,
           lastModifiedHeader: networkResult.lastModified,
         });
+        syncFeedHealthAfterRefresh(feed, false);
         return { inserted: 0 };
       }
 
@@ -1283,6 +1286,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       await feedsManager.updateFeed(feed.id, updates);
+      syncFeedHealthAfterRefresh(feed, false);
       return { inserted: stored.insertedCount };
     }, { signal });
   }, []);
@@ -1305,6 +1309,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       consecutiveFailures: nextFailures,
       lastFailedFetchAt: failedAt,
     });
+    syncFeedHealthAfterRefresh(feed, true);
   }, []);
   const prevNavRef = useRef<{ id: string | null, tag: string | null, smart: string | null }>({ id: null, tag: null, smart: null });
   const hasBootstrappedTotalFeedsRef = useRef(false);
