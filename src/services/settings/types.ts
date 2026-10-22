@@ -9,6 +9,10 @@ import { DEFAULT_READER_THEME } from './readerThemes';
 import type { BackgroundUpdateMode } from '../scheduler/types';
 import { DEFAULT_SMART_VIEW_DEFINITIONS, type SmartViewId } from '@/constants';
 import {
+  type ArticleListDensity,
+  DEFAULT_ARTICLE_LIST_DENSITY,
+} from '@/lib/articleListDensity';
+import {
   type ContentParser,
   DEFAULT_CONTENT_PARSER,
 } from '@/services/articles/extractors/types';
@@ -24,6 +28,7 @@ export const UI_THEME_VARIANT_OPTIONS: { value: UiThemeVariant; label: string }[
   { value: 'classic', label: 'Classic' },
 ];
 export type { ContentParser } from '@/services/articles/extractors/types';
+export type { ArticleListDensity } from '@/lib/articleListDensity';
 export { DEFAULT_CONTENT_PARSER, isContentParser } from '@/services/articles/extractors/types';
 
 export interface WindowSize {
@@ -85,6 +90,8 @@ export interface UserSettings {
   uiThemeVariant: UiThemeVariant;
   /** Reader theme id (`default` = built-in palette); Light/Dark/Auto picks its light or dark version. */
   readerTheme: string;
+  /** Article list row density: Compact, Comfortable (default) or Large Images. */
+  articleListDensity: ArticleListDensity;
   /** Renderer-only pane fill. Absent = per-OS CSS defaults. Never persist a cross-OS literal. */
   surfaceFillOpacity?: number;
 }
@@ -132,4 +139,5 @@ export const DEFAULT_SETTINGS: UserSettings = {
   })),
   uiThemeVariant: 'modern',
   readerTheme: DEFAULT_READER_THEME,
+  articleListDensity: DEFAULT_ARTICLE_LIST_DENSITY,
 };

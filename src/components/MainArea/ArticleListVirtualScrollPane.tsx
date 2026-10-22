@@ -2,6 +2,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -43,6 +44,16 @@ import {
   type ArticleListScrollVelocitySample,
 } from './articleListLoadMore';
 import { articleListHasMore } from '@/services/articles/articleListTotal';
+import { isUsableImageUrl } from '@/utils/mediaUrl';
+import {
+  ARTICLE_LIST_DENSITY_ESTIMATED_ROW_HEIGHT,
+  DEFAULT_ARTICLE_LIST_DENSITY,
+  type ArticleListDensity,
+} from '@/lib/articleListDensity';
+import {
+  captureArticleListScrollAnchor,
+  resolveArticleListAnchorScrollTop,
+} from './articleListDensityAnchor';
 
 const noopUpdateArticleInList = (): void => {};
 
@@ -75,6 +86,7 @@ export interface ArticleListVirtualScrollPaneProps {
   newArticleHashes: Set<string>;
   articleListScrollRequest: ArticleListScrollRequest | null;
   totalFeeds: number;
+  density?: ArticleListDensity;
   selectArticle: (hash: string) => void;
   loadMoreArticles: (options: { showLoadingIndicator: boolean; priority: 'prefetch' | 'urgent' }) => Promise<void>;
   selectedSmartView?: string | null;
@@ -110,6 +122,7 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   newArticleHashes,
   articleListScrollRequest,
   totalFeeds,
+  density = DEFAULT_ARTICLE_LIST_DENSITY,
   selectArticle,
   loadMoreArticles,
   selectedSmartView = null,
@@ -120,6 +133,8 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   const [keyboardFocusHash, setKeyboardFocusHash] = useState<string | null>(null);
   const [deferPreviewImages, setDeferPreviewImages] = useState(false);
   const articleListItemsRef = useRef<HTMLDivElement>(null);
+  const virtualSpacerRef = useRef<HTMLDivElement>(null);
+  const previousDensityRef = useRef(density);
   const previewImageScrollIdleTimerRef = useRef<number | null>(null);
   const scrollVelocitySampleRef = useRef<ArticleListScrollVelocitySample | null>(null);
   const scrollVelocityPxPerMsRef = useRef(0);
@@ -151,7 +166,11 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   const rowVirtualizer = useVirtualizer({
     count: virtualRowCount,
     getScrollElement: () => articleListItemsRef.current,
-    estimateSize: () => ARTICLE_LIST_ESTIMATED_ROW_HEIGHT,
+    estimateSize: (index) => (
+      density === 'large-images' && !isUsableImageUrl(filteredArticles[index]?.previewImage)
+        ? ARTICLE_LIST_ESTIMATED_ROW_HEIGHT
+        : ARTICLE_LIST_DENSITY_ESTIMATED_ROW_HEIGHT[density]
+    ),
     overscan: deferPreviewImages ? 28 : 16,
     getItemKey: (index) => filteredArticles[index]?.hash ?? index,
     measureElement: measureArticleRowHeight,
@@ -161,6 +180,54 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   const lastVirtualIndex = virtualItems[virtualItems.length - 1]?.index ?? -1;
 
   const highlightedArticleHash = keyboardFocusHash ?? activeArticleHash;
+
+  // Density change: every row changes height. Re-measure all rows, then put the
+  // active row (or the top visible row) back where it was instead of jumping.
+  useLayoutEffect(() => {
+    if (previousDensityRef.current === density) return;
+    previousDensityRef.current = density;
+
+    const listElement = articleListItemsRef.current;
+    const activeIndex = highlightedArticleHash
+      ? filteredArticles.findIndex((article) => article.hash === highlightedArticleHash)
+      : -1;
+    const anchor = listElement
+      ? captureArticleListScrollAnchor(
+        rowVirtualizer.getVirtualItems(),
+        listElement.scrollTop,
+        listElement.clientHeight,
+        activeIndex,
+      )
+      : null;
+
+    rowVirtualizer.measure();
+    if (!listElement) return;
+
+    // Mounted rows keep their measure ref, so read their new heights now. The
+    // virtualizer's own above-viewport scroll nudges are skipped: the anchor
+    // below sets the final position in one step.
+    const previousShouldAdjust = rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange;
+    rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
+    try {
+      listElement.querySelectorAll<HTMLDivElement>('.article-list-virtual-row').forEach((row) => {
+        rowVirtualizer.measureElement(row);
+      });
+    } finally {
+      rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = previousShouldAdjust;
+    }
+
+    if (!anchor) return;
+    const totalSize = rowVirtualizer.getTotalSize();
+    // The spacer re-renders next; size it now so the target offset is not clamped.
+    if (virtualSpacerRef.current) {
+      virtualSpacerRef.current.style.height = `${totalSize + ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px`;
+    }
+    const anchorItem = rowVirtualizer.measurementsCache[anchor.index];
+    if (!anchorItem) return;
+    rowVirtualizer.scrollToOffset(
+      resolveArticleListAnchorScrollTop(anchor, anchorItem.start, anchorItem.size),
+    );
+  }, [density, filteredArticles, highlightedArticleHash, rowVirtualizer]);
 
   const ensureHashInView = useCallback((hash: string) => {
     const index = filteredArticles.findIndex((article) => article.hash === hash);
@@ -454,6 +521,7 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
           ) : null
         ) : (
           <div
+            ref={virtualSpacerRef}
             className="article-list-virtual-spacer"
             style={{ height: `${rowVirtualizer.getTotalSize() + ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px` }}
           >
@@ -477,6 +545,7 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
                     readStateMode={isSavedView ? 'none' : 'normal'}
                     searchQuery={debouncedSearchQuery}
                     deferPreviewImages={deferPreviewImages}
+                    density={density}
                     onSelect={handleOpenArticle}
                     formatDateDisplay={formatDateDisplay}
                     enableLayoutAnimation={false}
@@ -531,6 +600,7 @@ function areArticleListVirtualScrollPanePropsEqual(
     && previous.debouncedSearchQuery === next.debouncedSearchQuery
     && previous.isSavedView === next.isSavedView
     && previous.totalFeeds === next.totalFeeds
+    && previous.density === next.density
     && previous.selectArticle === next.selectArticle
     && previous.loadMoreArticles === next.loadMoreArticles
     && previous.selectedSmartView === next.selectedSmartView

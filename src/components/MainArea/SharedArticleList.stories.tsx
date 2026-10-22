@@ -31,6 +31,20 @@ export const Populated: Story = {
   render: renderList,
 };
 
+export const CompactDensity: Story = {
+  parameters: {
+    kiji: { variant: 'article-list-populated', listDensity: 'compact' },
+  },
+  render: renderList,
+};
+
+export const LargeImagesDensity: Story = {
+  parameters: {
+    kiji: { variant: 'article-list-populated', listDensity: 'large-images' },
+  },
+  render: renderList,
+};
+
 export const LongContent: Story = {
   parameters: {
     kiji: { variant: 'article-list-long' },

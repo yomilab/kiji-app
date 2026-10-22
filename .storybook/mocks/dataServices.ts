@@ -1,5 +1,6 @@
 import type { Article } from '../../src/types/article';
 import {
+  getThemeDebugListDensity,
   getThemeDebugFeeds,
   getThemeDebugTags,
 } from '../../src/stories/themeDebugRuntime';
@@ -35,7 +36,8 @@ export const settingsManager = {
   getSidebarLibrary: async () => ({ title: 'Library', visible: true }),
   getSidebarSectionFold: async () => ({ libraryExpanded: true, stationsExpanded: true }),
   getSmartViews: async () => DEFAULT_SETTINGS.smartViews,
-  getSettings: async () => DEFAULT_SETTINGS,
+  getSettings: async () => ({ ...DEFAULT_SETTINGS, articleListDensity: getThemeDebugListDensity() }),
+  getArticleListDensityNow: () => getThemeDebugListDensity(),
   setSidebarWidth: asyncNoop,
   setArticleListWidth: asyncNoop,
   setSidebarSectionFold: asyncNoop,

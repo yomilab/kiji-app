@@ -5,7 +5,8 @@ import { SURFACE_FILL_OPACITY_MAX, SURFACE_FILL_OPACITY_MIN } from '@/services/s
 import { COMMON_FONT_OPTIONS } from '@/services/settings/fontFamilies';
 import { DEFAULT_READER_THEME, READER_THEMES } from '@/services/settings/readerThemes';
 import { APP_ICON_VARIANT_OPTIONS, getDefaultAppIconPreview } from '../appIcons';
-import { SettingsGroup, SettingsRow, SettingsSelect, SettingsSlider } from '../settingsControls';
+import { ARTICLE_LIST_DENSITY_OPTIONS } from '@/lib/articleListDensity';
+import { SettingsGroup, SettingsRow, SettingsSegmented, SettingsSelect, SettingsSlider } from '../settingsControls';
 import { DropGlyph, PhotoGlyph, RelaunchGlyph, ResetGlyph } from '../settingsIcons';
 import type { SettingsWindowState } from '../useSettingsWindowState';
 
@@ -69,6 +70,21 @@ export const AppearancePane: React.FC<{ state: SettingsWindowState['appearance']
           onCommit={state.onSurfaceFillOpacityCommit}
           onReset={state.onSurfaceFillOpacityReset}
           resetLabel="Reset surface opacity"
+        />
+      </SettingsGroup>
+
+      <SettingsGroup title="Article List">
+        <SettingsRow
+          label="Density"
+          description="Compact fits more titles; Large Images shows bigger pictures."
+          control={(
+            <SettingsSegmented
+              ariaLabel="Article list density"
+              options={ARTICLE_LIST_DENSITY_OPTIONS}
+              value={state.articleListDensity}
+              onChange={(value) => void state.onArticleListDensityChange(value)}
+            />
+          )}
         />
       </SettingsGroup>
 

@@ -11,6 +11,11 @@ import {
 import type { ContentParser, ReadingLayoutSettings, UiThemeVariant } from '@/services/settings';
 import type { BackgroundUpdateMode } from '@/services/scheduler/types';
 import { DEFAULT_READER_THEME, normalizeReaderTheme } from '@/services/settings/readerThemes';
+import {
+  DEFAULT_ARTICLE_LIST_DENSITY,
+  normalizeArticleListDensity,
+  type ArticleListDensity,
+} from '@/lib/articleListDensity';
 import { useTheme } from '@/contexts/ThemeContext';
 import { logger } from '@/services/logger';
 import { APP_OFFICIAL_NAME, CONTACT_EMAIL_ADDRESS } from '@/config/appIdentity';
@@ -56,6 +61,7 @@ export function useSettingsWindowState() {
   const [contentParser, setContentParser] = useState<ContentParser>(DEFAULT_SETTINGS.contentParser);
   const [uiThemeVariant, setUiThemeVariant] = useState<UiThemeVariant>(DEFAULT_SETTINGS.uiThemeVariant);
   const [readerTheme, setReaderTheme] = useState<string>(DEFAULT_READER_THEME);
+  const [articleListDensity, setArticleListDensity] = useState<ArticleListDensity>(DEFAULT_ARTICLE_LIST_DENSITY);
   const chromeDefaultFillOpacity = defaultSurfaceFillOpacityForOs(
     typeof document === 'undefined' ? 'macos' : document.documentElement.getAttribute('data-os'),
   );
@@ -107,6 +113,7 @@ export function useSettingsWindowState() {
         setContentParser(settings.contentParser ?? DEFAULT_SETTINGS.contentParser);
         setUiThemeVariant(settings.uiThemeVariant ?? DEFAULT_SETTINGS.uiThemeVariant);
         setReaderTheme(normalizeReaderTheme(settings.readerTheme));
+        setArticleListDensity(normalizeArticleListDensity(settings.articleListDensity));
         const storedFill = clampSurfaceFillOpacity(settings.surfaceFillOpacity);
         const nextFill = storedFill ?? defaultSurfaceFillOpacityForOs(
           document.documentElement.getAttribute('data-os'),
@@ -282,6 +289,19 @@ export function useSettingsWindowState() {
       console.error('Error saving UI theme variant:', error);
       setUiThemeVariant(previousVariant);
       document.documentElement.setAttribute('data-ui-theme', previousVariant);
+    }
+  };
+
+  const handleArticleListDensityChange = async (density: ArticleListDensity) => {
+    const previousDensity = articleListDensity;
+    try {
+      // The main window re-reads density on the settings-changed broadcast.
+      setArticleListDensity(density);
+      await settingsManager.setArticleListDensity(density);
+      notifySettingsChanged();
+    } catch (error) {
+      console.error('Error saving article list density:', error);
+      setArticleListDensity(previousDensity);
     }
   };
 
@@ -555,6 +575,7 @@ export function useSettingsWindowState() {
       uiFont: localFonts.uiFont,
       uiThemeVariant,
       readerTheme,
+      articleListDensity,
       surfaceFillOpacity,
       systemAppIcon,
       appIconStatus,
@@ -564,6 +585,7 @@ export function useSettingsWindowState() {
       onFontChange: handleFontChange,
       onUiThemeVariantChange: handleUiThemeVariantChange,
       onReaderThemeChange: handleReaderThemeChange,
+      onArticleListDensityChange: handleArticleListDensityChange,
       onSurfaceFillOpacityInput: handleSurfaceFillOpacityInput,
       onSurfaceFillOpacityCommit: commitSurfaceFillOpacity,
       onSurfaceFillOpacityReset: handleSurfaceFillOpacityReset,

@@ -21,6 +21,7 @@ import {
 import { loadNativeAppSettings, saveNativeAppSettings } from './nativeSettingsBackend';
 import { clampSurfaceFillOpacity } from './surfaceFillOpacity';
 import { normalizeReaderTheme } from './readerThemes';
+import { normalizeArticleListDensity, type ArticleListDensity } from '@/lib/articleListDensity';
 
 /** Pre-pairing builds stored `readerThemes: { light, dark }`; read it once to carry the choice over. */
 const legacyReaderThemes = (value: object): unknown => Reflect.get(value, 'readerThemes');
@@ -62,6 +63,7 @@ const normalizeRendererPreferences = (preferences: Partial<RendererPreferences>)
   smartViews: normalizeSmartViews(preferences.smartViews),
   uiThemeVariant: normalizeUiThemeVariant(preferences.uiThemeVariant),
   readerTheme: normalizeReaderTheme(preferences.readerTheme, legacyReaderThemes(preferences)),
+  articleListDensity: normalizeArticleListDensity(preferences.articleListDensity),
   windowPosition: preferences.windowPosition,
   ...optionalSurfaceFillOpacity(preferences.surfaceFillOpacity),
 });
@@ -96,6 +98,7 @@ const normalizeSettings = (settings: Partial<UserSettings>): UserSettings => ({
   smartViews: normalizeSmartViews(settings.smartViews),
   uiThemeVariant: normalizeUiThemeVariant(settings.uiThemeVariant),
   readerTheme: normalizeReaderTheme(settings.readerTheme, legacyReaderThemes(settings)),
+  articleListDensity: normalizeArticleListDensity(settings.articleListDensity),
   ...optionalSurfaceFillOpacity(settings.surfaceFillOpacity),
 });
 
@@ -392,6 +395,20 @@ class SettingsManager {
 
   async setReaderTheme(readerTheme: string): Promise<void> {
     await this.updateRendererPreferences({ readerTheme: normalizeReaderTheme(readerTheme) });
+  }
+
+  async getArticleListDensity(): Promise<ArticleListDensity> {
+    const settings = await this.getSettings();
+    return settings.articleListDensity;
+  }
+
+  /** Sync read for the list's first render, so a saved density does not flash Comfortable. */
+  getArticleListDensityNow(): ArticleListDensity {
+    return this.readRendererPreferencesSync().articleListDensity;
+  }
+
+  async setArticleListDensity(density: ArticleListDensity): Promise<void> {
+    await this.updateRendererPreferences({ articleListDensity: normalizeArticleListDensity(density) });
   }
 
   async getSurfaceFillOpacity(): Promise<number | undefined> {
