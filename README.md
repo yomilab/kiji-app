@@ -8,7 +8,7 @@
 
 **[kiji.yomilab.app](https://kiji.yomilab.app)** · [Download](https://kiji.yomilab.app/download/) · [Changelog](./CHANGELOG.md)
 
-Free, native builds for macOS, Windows, and Linux. Quick to open, light to keep around, and your reading never leaves your device.
+Free for Mac, Windows, and Linux. Opens fast, barely uses your computer, and everything you read stays on your machine.
 
 
 ## Features
