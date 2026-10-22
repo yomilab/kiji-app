@@ -30,6 +30,7 @@ import { FaviconImage } from '@/components/common/FaviconImage';
 import { appendPromotedFeedsToUnstationed, persistUnstationedOrder } from '@/services/feeds/libraryOrderPersist';
 import { mergeUnstationedSortIntoFeeds } from '@/services/feeds/libraryRank';
 import { useSidebarReorder } from './useSidebarReorder';
+import { sidebarRowLabel } from './sidebarKeyboardNav';
 import './FeedList.css';
 
 interface Feed {
@@ -103,13 +104,20 @@ const FeedListItem = React.memo<FeedListItemProps>(({
       data-action="select-feed"
       data-entity-id={feed.id}
     >
-      <div className="feed-list-item-content">
-        <div className="feed-list-item-favicon-wrapper">
+      <div
+        className="feed-list-item-content"
+        role="button"
+        tabIndex={isSelected ? 0 : -1}
+        aria-current={isSelected ? 'page' : undefined}
+        aria-label={sidebarRowLabel(feed.title, feed.unreadCount)}
+        data-sidebar-nav-item=""
+      >
+        <div className="feed-list-item-favicon-wrapper" aria-hidden="true">
           <FaviconImage
             localFavicon={feed.favicon}
             hasTransparency={feed.faviconHasTransparency}
             emoji={feed.emoji}
-            alt={feed.title}
+            alt=""
             itemId={feed.id}
           />
         </div>
@@ -493,6 +501,7 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
         maxWidth="450px"
         closeOnBackdrop={true}
         closeOnEscape={true}
+        ariaLabel="Delete Feed"
       >
         <div className="feed-delete-modal-body">
           <h2 className="add-feed-modal-title">Delete Feed</h2>

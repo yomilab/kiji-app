@@ -479,6 +479,13 @@ html[data-os="other"] .article-list {
   outline-offset: -1px;
 }
 
+/* Keyboard focus (Tab, j/k with a row focused, back from the reader): accent
+   ring on the visible card. */
+.article-list-item:focus-visible > .article-list-item-content {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: -2px;
+}
+
 /* Read/Unread States */
 .article-list-item.is-read .article-list-item-title {
   color: var(--theme-text-subdued);

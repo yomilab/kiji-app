@@ -109,6 +109,7 @@ export const TagEditModal: React.FC<TagEditModalProps> = ({ feedId, onClose, onT
       maxWidth="480px"
       closeOnBackdrop={!isLoading}
       closeOnEscape={!isLoading}
+      ariaLabel="Edit Tags"
     >
       <section className="tag-edit-modal-body">
         {currentTags.length > 0 && (

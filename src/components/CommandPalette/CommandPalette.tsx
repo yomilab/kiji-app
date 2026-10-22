@@ -227,8 +227,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             className="command-palette-input"
             type="text"
             role="combobox"
-            aria-expanded="true"
-            aria-controls={LISTBOX_ID}
+            aria-label="Go to a feed, station, or action"
+            aria-expanded={results.length > 0}
+            aria-controls={results.length > 0 ? LISTBOX_ID : undefined}
             aria-autocomplete="list"
             aria-activedescendant={activeEntry ? optionId(activeIndex) : undefined}
             placeholder="Go to a feed, station, or action"
@@ -279,8 +280,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             })}
           </ul>
         ) : (
-          <div className="command-palette-empty" data-component="command-palette-empty">No matches</div>
+          <div className="command-palette-empty" data-component="command-palette-empty" aria-hidden="true">No matches</div>
         )}
+        <span className="visually-hidden" role="status">
+          {results.length === 0
+            ? 'No matches'
+            : `${results.length} ${results.length === 1 ? 'result' : 'results'}`}
+        </span>
       </div>
     </div>,
     document.body,
