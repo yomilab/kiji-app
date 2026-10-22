@@ -70,6 +70,8 @@ pub struct DatabaseStatus {
 const READER_POOL_SIZE: usize = 3;
 const BUSY_TIMEOUT_MS: u64 = 5_000;
 const SEARCH_PROGRESS_VM_OP_INTERVAL: i32 = 5_000;
+/// Gap between search backfill batches so queued writes get the writer.
+const SEARCH_BACKFILL_PAUSE: Duration = Duration::from_millis(25);
 
 struct DbStateInner {
     path: PathBuf,
@@ -135,6 +137,7 @@ impl DbState {
             }),
         };
         state.spawn_feed_count_repair_if_needed(data_repair_version);
+        state.spawn_search_backfill_if_needed();
         Ok(state)
     }
 
@@ -390,6 +393,36 @@ impl DbState {
         std::thread::spawn(move || {
             if let Err(error) = db.with_writer(run_data_repairs) {
                 eprintln!("[KiJi] Feed count repair failed: {error}");
+            }
+        });
+    }
+
+    /// Fills the v19 body search index in short batches on a background
+    /// thread. Each batch takes the writer briefly, so feed refreshes and
+    /// user actions interleave; title/description search keeps working on
+    /// the v18 index until the finished index is swapped in. The thread
+    /// exits when the backfill is done (or on error; the next launch resumes
+    /// from the saved cursor).
+    fn spawn_search_backfill_if_needed(&self) {
+        match self.with_writer(search::body_search_backfill_pending) {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(error) => {
+                eprintln!("[KiJi] Search backfill check failed: {error}");
+                return;
+            }
+        }
+        let db = self.clone();
+        std::thread::spawn(move || loop {
+            match db.with_writer(|connection| {
+                search::run_body_search_backfill_batch(connection, search::SEARCH_BACKFILL_BATCH_SIZE)
+            }) {
+                Ok(true) => break,
+                Ok(false) => std::thread::sleep(SEARCH_BACKFILL_PAUSE),
+                Err(error) => {
+                    eprintln!("[KiJi] Search backfill failed: {error}");
+                    break;
+                }
             }
         });
     }
@@ -714,6 +747,51 @@ mod tests {
     }
 
     #[test]
+    fn search_backfill_runs_to_completion_on_a_background_thread() {
+        let mut writer = Connection::open_in_memory().expect("open writer");
+        run_migrations(&mut writer).expect("migrate");
+        super::migrations::rewind_to_v18_search(&writer);
+        writer
+            .execute(
+                "INSERT INTO feeds (id, title, url, created_at) VALUES ('f1', 'Feed', 'https://example.com/rss', '2026-01-01')",
+                [],
+            )
+            .expect("feed");
+        for index in 0..(super::search::SEARCH_BACKFILL_BATCH_SIZE * 2 + 7) {
+            writer
+                .execute(
+                    "INSERT INTO articles (hash, feed_id, title, content, fetched_date) VALUES (?1, 'f1', 't', '<p>needle</p>', '2026-01-01')",
+                    params![format!("h{index}")],
+                )
+                .expect("insert article");
+        }
+        run_migrations(&mut writer).expect("migrate to v19");
+        assert!(super::search::body_search_backfill_pending(&writer).expect("pending"));
+        let state = DbState::for_tests(writer);
+        state.spawn_search_backfill_if_needed();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let pending = state
+                .with_writer(super::search::body_search_backfill_pending)
+                .expect("check pending");
+            if !pending {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "backfill thread did not finish");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let indexed: i64 = state
+            .with_writer(|connection| {
+                connection
+                    .query_row("SELECT COUNT(*) FROM articles_search WHERE articles_search MATCH 'needle'", [], |row| row.get(0))
+                    .map_err(|error| error.to_string())
+            })
+            .expect("count");
+        assert_eq!(indexed, super::search::SEARCH_BACKFILL_BATCH_SIZE * 2 + 7);
+    }
+
+    #[test]
     fn stale_search_cancellation_does_not_invalidate_a_newer_epoch() {
         let db = DbState {
             inner: Arc::new(DbStateInner {
@@ -930,6 +1008,7 @@ mod tests {
     }
 
     fn seed_repository_fixture(connection: &Connection) {
+        super::search::register_search_functions(connection).expect("register search functions");
         connection
             .execute_batch(CREATE_SEARCH_INDEXES)
             .expect("create search indexes");

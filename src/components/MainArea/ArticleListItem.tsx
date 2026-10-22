@@ -241,9 +241,13 @@ export const ArticleListItem = memo<ArticleListItemProps>(
                     {favicon}
                     {title}
                   </div>
-                  {article.description && (
+                  {(article.searchSnippet || article.description) && (
                     <div className="article-list-item-description">
-                      {renderHighlightedTextWithNonAsciiFont(article.description, searchQuery, `${article.hash}-description`)}
+                      {renderHighlightedTextWithNonAsciiFont(
+                        article.searchSnippet || article.description,
+                        searchQuery,
+                        `${article.hash}-description`,
+                      )}
                     </div>
                   )}
                 </div>
