@@ -24,6 +24,9 @@ export const SHORTCUT_GROUPS: ReadonlyArray<ShortcutGroup> = [
     items: [
       { id: 'toggle-feed-view-mode', label: 'Toggle Feed View Mode', keys: SHORTCUT_LABELS.TOGGLE_READER_MODE },
       { id: 'close-article', label: 'Close Article View', keys: SHORTCUT_LABELS.CLOSE_ARTICLE_VIEW },
+      { id: 'toggle-read', label: 'Mark as Read/Unread', keys: SHORTCUT_LABELS.TOGGLE_READ },
+      { id: 'page-down-next-unread', label: 'Next Page, Then Next Unread', keys: SHORTCUT_LABELS.PAGE_DOWN_OR_NEXT_UNREAD },
+      { id: 'page-up', label: 'Previous Page', keys: SHORTCUT_LABELS.PAGE_UP },
       { id: 'save-article', label: 'Save/Unsave Article', keys: SHORTCUT_LABELS.SAVE_ARTICLE },
       { id: 'copy-article-url', label: 'Copy Article URL', keys: SHORTCUT_LABELS.COPY_ARTICLE_URL },
       { id: 'vim-scroll-top', label: 'Scroll to Top', keys: SHORTCUT_LABELS.VIM_SCROLL_TOP },

@@ -156,6 +156,9 @@ export const SHORTCUT_LABELS = {
   VIM_SCROLL_HALF_UP: 'Ctrl + U',
   ARTICLE_LIST_STEP_DOWN: 'J / ↓',
   ARTICLE_LIST_STEP_UP: 'K / ↑',
+  TOGGLE_READ: 'M',
+  PAGE_DOWN_OR_NEXT_UNREAD: 'Space',
+  PAGE_UP: 'Shift + Space',
   RESET_SETTINGS: 'Cmd + Shift + R',
 } as const;
 
@@ -245,3 +248,20 @@ export const isVimScrollHalfDownShortcut = (event: ShortcutKeyboardEvent): boole
 
 export const isVimScrollHalfUpShortcut = (event: ShortcutKeyboardEvent): boolean =>
   isScrollableShortcutLayerActive() && !event.metaKey && event.ctrlKey && !event.altKey && !event.shiftKey && normalizedKey(event) === 'u';
+
+const isSpaceKey = (event: ShortcutKeyboardEvent): boolean => event.key === ' ' || event.key === 'Spacebar';
+
+/** `m` flips read/unread: the open article, or the focused list row. */
+export const isToggleReadShortcut = (event: ShortcutKeyboardEvent): boolean =>
+  isAppShortcutLayerActive() && isPlainKeyPress(event) && !event.shiftKey && normalizedKey(event) === 'm';
+
+/** Space in the open article: one page down, then the next unread article at the bottom. */
+export const isArticlePageDownShortcut = (event: ShortcutKeyboardEvent): boolean =>
+  isArticleShortcutLayerActive() && isPlainKeyPress(event) && !event.shiftKey && isSpaceKey(event);
+
+export const isArticlePageUpShortcut = (event: ShortcutKeyboardEvent): boolean =>
+  isArticleShortcutLayerActive() && isPlainKeyPress(event) && event.shiftKey && isSpaceKey(event);
+
+/** Space in the list with no article open: open the next unread article. */
+export const isOpenNextUnreadShortcut = (event: ShortcutKeyboardEvent): boolean =>
+  isAppShortcutLayerActive() && !hasArticleViewOpen() && isPlainKeyPress(event) && !event.shiftKey && isSpaceKey(event);
