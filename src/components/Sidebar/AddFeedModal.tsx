@@ -751,9 +751,10 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
       maxWidth="460px"
       closeOnBackdrop={!isBusy}
       closeOnEscape={!isBusy}
+      ariaLabelledBy={`${baseId}-title`}
     >
       <div className="add-feed-modal-body" aria-busy={isBusy}>
-        <h2 className="add-feed-modal-title">Add Feeds</h2>
+        <h2 className="add-feed-modal-title" id={`${baseId}-title`}>Add Feeds</h2>
 
         <div className="add-feed-tabs" role="tablist" aria-label="How to add">
           {TABS.map((tab) => {

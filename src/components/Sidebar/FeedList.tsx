@@ -33,6 +33,7 @@ import { useSidebarReorder } from './useSidebarReorder';
 import { FeedHealthMarker } from './FeedHealthMarker';
 import { describeFeedOutage, feedPatchFromHealth } from '@/services/feeds/feedHealth';
 import { appToastService } from '@/services/ui/appToastService';
+import { sidebarRowLabel } from './sidebarKeyboardNav';
 import './FeedList.css';
 
 export const FEED_DELETE_FAILED_TOAST = 'Couldn’t delete this feed. Try again.';
@@ -113,23 +114,30 @@ const FeedListItem = React.memo<FeedListItemProps>(({
       data-action="select-feed"
       data-entity-id={feed.id}
     >
-      <div className="feed-list-item-content">
-        <div className="feed-list-item-favicon-wrapper">
+      <div
+        className="feed-list-item-content"
+        role="button"
+        tabIndex={isSelected ? 0 : -1}
+        aria-current={isSelected ? 'page' : undefined}
+        aria-label={sidebarRowLabel(feed.title, feed.unreadCount)}
+        data-sidebar-nav-item=""
+      >
+        <div className="feed-list-item-favicon-wrapper" aria-hidden="true">
           <FaviconImage
             localFavicon={feed.favicon}
             hasTransparency={feed.faviconHasTransparency}
             emoji={feed.emoji}
-            alt={feed.title}
+            alt=""
             itemId={feed.id}
           />
         </div>
         <span className="feed-list-item-title" data-section="unstationed-feed-name" data-component="feed-name">
           <span className="feed-list-item-title-text">{feed.title}</span>
         </span>
-        {outage && (
-          <FeedHealthMarker message={outage} onShowInManageFeeds={() => onOpenFeedEdit(feed.id)} />
-        )}
       </div>
+      {outage && (
+        <FeedHealthMarker message={outage} onShowInManageFeeds={() => onOpenFeedEdit(feed.id)} />
+      )}
       <ButtonStack
         buttons={buttons}
         direction="left"
@@ -508,6 +516,7 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
         maxWidth="450px"
         closeOnBackdrop={true}
         closeOnEscape={true}
+        ariaLabel="Delete Feed"
       >
         <div className="feed-delete-modal-body">
           <h2 className="add-feed-modal-title">Delete Feed</h2>

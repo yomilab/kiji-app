@@ -2480,6 +2480,8 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
         data-section="article-view"
         data-component="article-view"
         data-entity-id={articleToShow?.hash}
+        role="region"
+        aria-label="Article"
         initial={standalone ? { opacity: 0 } : false}
         animate={
           standalone
@@ -2627,7 +2629,8 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
                   }}
                   role="button"
                   tabIndex={0}
-                  aria-label={withShortcutHint(TOOLTIPS.articleView.titleOpenInBrowser, SHORTCUT_LABELS.OPEN_IN_BROWSER)}
+                  // Title first: this block is the article's heading for VoiceOver too.
+                  aria-label={`${articleToShow.title}, ${withShortcutHint(TOOLTIPS.articleView.titleOpenInBrowser, SHORTCUT_LABELS.OPEN_IN_BROWSER)}`}
                   title={withShortcutHint(TOOLTIPS.articleView.titleOpenInBrowser, SHORTCUT_LABELS.OPEN_IN_BROWSER)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {

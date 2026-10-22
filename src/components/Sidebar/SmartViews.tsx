@@ -15,6 +15,7 @@ import type { SmartViewSettings } from '@/services/settings/types';
 import { persistSmartViewOrder } from '@/services/feeds/libraryOrderPersist';
 import { useSidebarReorder } from './useSidebarReorder';
 import { useTodayUnreadCount } from './useTodayUnreadCount';
+import { sidebarRowLabel } from './sidebarKeyboardNav';
 import './SmartViews.css';
 
 interface SmartView {
@@ -81,6 +82,7 @@ const buildSmartViews = (
 interface SmartViewItemProps {
   view: SmartView;
   isSelected: boolean;
+  isTabStop: boolean;
   unreadCount?: number | null;
   onSelectView: (viewId: SmartViewId) => void;
   onOpenFeedEditView: (viewId: SmartViewId) => void;
@@ -94,6 +96,7 @@ interface SmartViewItemProps {
 const SmartViewItem = React.memo<SmartViewItemProps>(({
   view,
   isSelected,
+  isTabStop,
   unreadCount,
   onSelectView,
   onOpenFeedEditView,
@@ -132,9 +135,16 @@ const SmartViewItem = React.memo<SmartViewItemProps>(({
       data-entity-id={view.id}
       data-smart-view-id={view.id}
     >
-      <div className="smart-view-content">
+      <div
+        className="smart-view-content"
+        role="button"
+        tabIndex={isTabStop ? 0 : -1}
+        aria-current={isSelected ? 'page' : undefined}
+        aria-label={sidebarRowLabel(view.label, unreadCount)}
+        data-sidebar-nav-item=""
+      >
         {view.emoji ? (
-          <span className="smart-view-emoji">{view.emoji}</span>
+          <span className="smart-view-emoji" aria-hidden="true">{view.emoji}</span>
         ) : (
           <span className="smart-view-icon">
             <Icon sx={{ fontSize: 'var(--smart-view-icon-size)', fontWeight: 'bold' }} />
@@ -144,7 +154,7 @@ const SmartViewItem = React.memo<SmartViewItemProps>(({
           {view.label}
         </span>
         {unreadCount ? (
-          <span className="smart-view-badge" data-section="smart-view-unread-count">
+          <span className="smart-view-badge" data-section="smart-view-unread-count" aria-hidden="true">
             {unreadCount}
           </span>
         ) : null}
@@ -238,11 +248,12 @@ export const SmartViews: React.FC = () => {
   return (
     <div className="smart-views" data-section="smart-views">
       <ul className="smart-views-list" data-section="smart-views-group">
-        {smartViews.map((view) => (
+        {smartViews.map((view, index) => (
           <SmartViewItem
             key={view.id}
             view={view}
             isSelected={selectedSmartView === view.id}
+            isTabStop={selectedSmartView ? selectedSmartView === view.id : index === 0}
             unreadCount={view.id === 'today' ? todayUnreadCount : undefined}
             onSelectView={handleSmartViewClick}
             onOpenFeedEditView={handleOpenFeedEditView}

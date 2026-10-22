@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type FocusEvent as ReactFocusEvent,
   type MouseEvent as ReactMouseEvent,
   type RefObject,
   type UIEvent,
@@ -27,6 +28,7 @@ import { InteractionProfiler } from '@/components/common/InteractionProfiler';
 import { useArticleListScrollOffset } from './hooks/articleListScrollOffsetContext';
 import { useArticleListKeyboardNavigation } from './hooks/useArticleListKeyboardNavigation';
 import { useArticleListReadActions } from './hooks/useArticleListReadActions';
+import { useArticleListRowFocus } from './hooks/useArticleListRowFocus';
 import { isNativeContextMenuAvailable, showArticleRowContextMenu } from '@/services/ui/articleRowContextMenu';
 import { useArticleListScrollReset } from './hooks/useArticleListScrollReset';
 import { useArticleListScrollOffsetSync } from './hooks/useArticleListScrollOffsetSync';
@@ -180,6 +182,15 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   const lastVirtualIndex = virtualItems[virtualItems.length - 1]?.index ?? -1;
 
   const highlightedArticleHash = keyboardFocusHash ?? activeArticleHash;
+  // One Tab stop for the whole list: the highlighted row, else the first row.
+  const tabStopHash = useMemo(() => (
+    highlightedArticleHash && filteredArticles.some((article) => article.hash === highlightedArticleHash)
+      ? highlightedArticleHash
+      : filteredArticles[0]?.hash ?? null
+  ), [filteredArticles, highlightedArticleHash]);
+  // Rows mount in a window; screen readers get the real position and size.
+  // While more pages can load the size is unknown (-1).
+  const listSetSize = hasMoreArticles ? -1 : filteredArticles.length;
 
   // Density change: every row changes height. Re-measure all rows, then put the
   // active row (or the top visible row) back where it was instead of jumping.
@@ -323,6 +334,29 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
     loadMoreArticles,
     selectArticle: handleOpenArticle,
   });
+
+  useArticleListRowFocus({
+    listRef: articleListItemsRef,
+    highlightedHash: highlightedArticleHash,
+    activeArticleHash,
+    overlayPhase: articleViewOverlayPhase,
+    mountedRowsKey: `${firstVirtualIndex}:${lastVirtualIndex}`,
+  });
+
+  // Tab / VoiceOver focus on a row makes it the keyboard row, so m, Space and
+  // the arrows act on what is being read.
+  const handleRowFocus = useCallback((event: ReactFocusEvent<HTMLDivElement>) => {
+    const row = event.target;
+    if (!(row instanceof HTMLElement) || !row.matches('.article-list-item[data-entity-id]')) return;
+    const hash = row.dataset.entityId;
+    if (!hash || hash === highlightedArticleHash) return;
+    try {
+      if (!row.matches(':focus-visible')) return;
+    } catch {
+      // Engines without :focus-visible: treat as keyboard focus.
+    }
+    setKeyboardFocusHash(hash);
+  }, [highlightedArticleHash]);
 
   useArticleListKeyboardNavigation({
     articleListRef,
@@ -498,6 +532,7 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
           handleArticleListScroll(event);
         }}
         onContextMenu={handleArticleRowContextMenu}
+        onFocus={handleRowFocus}
       >
         {isInitialLoading ? (
           <ArticleListSkeletonGroup key="skeleton" />
@@ -523,6 +558,8 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
           <div
             ref={virtualSpacerRef}
             className="article-list-virtual-spacer"
+            role="listbox"
+            aria-label={sourceLabel ? `${sourceLabel} articles` : 'Articles'}
             style={{ height: `${rowVirtualizer.getTotalSize() + ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px` }}
           >
             {virtualItems.map((virtualRow) => {
@@ -546,6 +583,9 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
                     searchQuery={debouncedSearchQuery}
                     deferPreviewImages={deferPreviewImages}
                     density={density}
+                    posInSet={virtualRow.index + 1}
+                    setSize={listSetSize}
+                    isTabStop={tabStopHash === article.hash}
                     onSelect={handleOpenArticle}
                     formatDateDisplay={formatDateDisplay}
                     enableLayoutAnimation={false}
