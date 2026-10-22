@@ -73,6 +73,19 @@ const BUSY_TIMEOUT_MS: u64 = 5_000;
 const SEARCH_PROGRESS_VM_OP_INTERVAL: i32 = 5_000;
 /// Gap between search backfill batches so queued writes get the writer.
 const SEARCH_BACKFILL_PAUSE: Duration = Duration::from_millis(25);
+/// A failed batch (e.g. a full disk) is retried after a growing wait instead
+/// of stopping the backfill for the rest of the session.
+const SEARCH_BACKFILL_MAX_RETRIES: u32 = 6;
+
+/// Wait before retry number `failures` (1-based): 30 s doubling to a 10 min cap,
+/// or `None` once the retries are used up (the next launch resumes the cursor).
+fn search_backfill_retry_delay(failures: u32) -> Option<Duration> {
+    if failures == 0 || failures > SEARCH_BACKFILL_MAX_RETRIES {
+        return None;
+    }
+    let seconds = 30u64.saturating_mul(1 << (failures - 1)).min(600);
+    Some(Duration::from_secs(seconds))
+}
 
 struct DbStateInner {
     path: PathBuf,
@@ -422,15 +435,26 @@ impl DbState {
             }
         }
         let db = self.clone();
-        std::thread::spawn(move || loop {
-            match db.with_writer(|connection| {
-                search::run_body_search_backfill_batch(connection, search::SEARCH_BACKFILL_BATCH_SIZE)
-            }) {
-                Ok(true) => break,
-                Ok(false) => std::thread::sleep(SEARCH_BACKFILL_PAUSE),
-                Err(error) => {
-                    eprintln!("[KiJi] Search backfill failed: {error}");
-                    break;
+        std::thread::spawn(move || {
+            let mut failures = 0;
+            loop {
+                match db.with_writer(|connection| {
+                    search::run_body_search_backfill_batch(connection, search::SEARCH_BACKFILL_BATCH_SIZE)
+                }) {
+                    Ok(true) => break,
+                    Ok(false) => {
+                        failures = 0;
+                        std::thread::sleep(SEARCH_BACKFILL_PAUSE);
+                    }
+                    Err(error) => {
+                        failures += 1;
+                        let Some(delay) = search_backfill_retry_delay(failures) else {
+                            eprintln!("[KiJi] Search backfill stopped after {failures} failures: {error}");
+                            break;
+                        };
+                        eprintln!("[KiJi] Search backfill failed, retrying in {}s: {error}", delay.as_secs());
+                        std::thread::sleep(delay);
+                    }
                 }
             }
         });
@@ -688,6 +712,25 @@ fn read_foreign_keys_enabled(connection: &Connection) -> Result<bool, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn search_backfill_retries_with_growing_waits_then_stops() {
+        use std::time::Duration;
+        let delays: Vec<_> = (1..=7).map(super::search_backfill_retry_delay).collect();
+        assert_eq!(
+            delays,
+            vec![
+                Some(Duration::from_secs(30)),
+                Some(Duration::from_secs(60)),
+                Some(Duration::from_secs(120)),
+                Some(Duration::from_secs(240)),
+                Some(Duration::from_secs(480)),
+                Some(Duration::from_secs(600)),
+                None,
+            ]
+        );
+        assert_eq!(super::search_backfill_retry_delay(0), None);
+    }
+
     use super::{
         articles::{get_article, query_articles, sync_feed_article_counts_batch, ArticleQueryRequest},
         feeds::{list_feeds, list_feeds_sidebar, list_library_sidebar_snapshot},
