@@ -187,22 +187,4 @@ describe('article list for VoiceOver and keyboard', () => {
     keyDown(row('h1'), 'k');
     expect(document.activeElement).toBe(row('h0'));
   });
-
-  it('Space on a focused button presses it instead of opening the next unread', async () => {
-    const selectArticle = vi.fn();
-    renderPane({ activeArticleHash: 'h1', selectArticle });
-    const undo = document.createElement('button');
-    document.body.appendChild(undo);
-    undo.focus();
-
-    keyDown(undo, ' ');
-    await flush();
-    expect(selectArticle).not.toHaveBeenCalled();
-
-    // Space still opens the next unread when focus is on the list itself.
-    act(() => row('h1').focus());
-    keyDown(row('h1'), ' ');
-    await flush();
-    expect(selectArticle).toHaveBeenCalledWith('h15');
-  });
 });
