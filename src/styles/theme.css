@@ -10,6 +10,8 @@
 
   /* System accent color (macOS highlight color) - will be set dynamically */
   --system-accent-color: #007AFF; /* Fallback color */
+  /* Keyboard focus ring (macOS draws it in the accent color) */
+  --focus-ring-color: color-mix(in srgb, var(--system-accent-color) 75%, transparent);
 
   /* Layout */
   --max-article-width: 750px;

@@ -14,6 +14,7 @@ import { storage } from '@/services/storage/storageFactory';
 import type { SmartViewSettings } from '@/services/settings/types';
 import { persistSmartViewOrder } from '@/services/feeds/libraryOrderPersist';
 import { useSidebarReorder } from './useSidebarReorder';
+import { sidebarRowLabel } from './sidebarKeyboardNav';
 import './SmartViews.css';
 
 interface SmartView {
@@ -23,9 +24,30 @@ interface SmartView {
   emoji?: string;
 }
 
+/** SF Symbols–style `sun.max`, drawn bold to sit with the filled Library glyphs. */
+const TodayIcon: SmartView['icon'] = ({ sx }) => (
+  <svg
+    className="smart-view-glyph"
+    data-glyph="today"
+    width={sx?.fontSize ?? '1em'}
+    height={sx?.fontSize ?? '1em'}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <circle cx="12" cy="12" r="4.2" fill="currentColor" stroke="none" />
+    <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.35 5.35l1.55 1.55M17.1 17.1l1.55 1.55M5.35 18.65l1.55-1.55M17.1 6.9l1.55-1.55" />
+  </svg>
+);
+
 const SMART_VIEW_ICONS: Record<SmartViewId, SmartView['icon']> = {
   saved: ArchiveIcon,
   unread: MarkEmailUnreadIcon,
+  today: TodayIcon,
   all: InventoryIcon,
   read: MarkEmailReadIcon,
 };
@@ -59,6 +81,7 @@ const buildSmartViews = (
 interface SmartViewItemProps {
   view: SmartView;
   isSelected: boolean;
+  isTabStop: boolean;
   onSelectView: (viewId: SmartViewId) => void;
   onOpenFeedEditView: (viewId: SmartViewId) => void;
   setRowRef: (id: string, node: HTMLElement | null) => void;
@@ -71,6 +94,7 @@ interface SmartViewItemProps {
 const SmartViewItem = React.memo<SmartViewItemProps>(({
   view,
   isSelected,
+  isTabStop,
   onSelectView,
   onOpenFeedEditView,
   setRowRef,
@@ -108,9 +132,16 @@ const SmartViewItem = React.memo<SmartViewItemProps>(({
       data-entity-id={view.id}
       data-smart-view-id={view.id}
     >
-      <div className="smart-view-content">
+      <div
+        className="smart-view-content"
+        role="button"
+        tabIndex={isTabStop ? 0 : -1}
+        aria-current={isSelected ? 'page' : undefined}
+        aria-label={sidebarRowLabel(view.label)}
+        data-sidebar-nav-item=""
+      >
         {view.emoji ? (
-          <span className="smart-view-emoji">{view.emoji}</span>
+          <span className="smart-view-emoji" aria-hidden="true">{view.emoji}</span>
         ) : (
           <span className="smart-view-icon">
             <Icon sx={{ fontSize: 'var(--smart-view-icon-size)', fontWeight: 'bold' }} />
@@ -208,11 +239,12 @@ export const SmartViews: React.FC = () => {
   return (
     <div className="smart-views" data-section="smart-views">
       <ul className="smart-views-list" data-section="smart-views-group">
-        {smartViews.map((view) => (
+        {smartViews.map((view, index) => (
           <SmartViewItem
             key={view.id}
             view={view}
             isSelected={selectedSmartView === view.id}
+            isTabStop={selectedSmartView ? selectedSmartView === view.id : index === 0}
             onSelectView={handleSmartViewClick}
             onOpenFeedEditView={handleOpenFeedEditView}
             setRowRef={setRowRef}

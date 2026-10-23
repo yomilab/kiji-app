@@ -334,7 +334,7 @@ pub fn tool_definitions() -> Vec<Value> {
         json!({
             "name": "search_articles",
             "title": "Search articles",
-            "description": "Keyword search over article titles, descriptions and authors, with the same scope and time filters as list_articles.",
+            "description": "Keyword search over article titles, descriptions, authors and article text, with the same scope and time filters as list_articles.",
             "inputSchema": {
                 "type": "object",
                 "properties": merge(&[json!({ "query": { "type": "string" } }), scope_properties(), range_properties(), paging_properties()]),

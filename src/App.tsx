@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { motion } from 'motion/react';
+import { MotionConfig, motion } from 'motion/react';
 
 import './styles/base.css';
 import './styles/view.css';
@@ -8,8 +8,10 @@ import { Sidebar } from './components/Sidebar/Sidebar';
 import { MainArea } from './components/MainArea/MainArea';
 import { ArticleView } from './components/MainArea/ArticleView';
 import { NotificationToast } from './components/common/NotificationToast';
+import { CommandPaletteHost } from './components/CommandPalette/CommandPaletteHost';
 import { useUserMessageChannel } from './hooks/useUserMessageChannel';
 import { useSystemAccentColor } from './hooks/useSystemAccentColor';
+import { useDeckLayerInert } from './hooks/useDeckLayerInert';
 import {
   useAppShortcuts,
   useArticleDeckState,
@@ -109,6 +111,8 @@ export const App: React.FC = () => {
 
   const sidebarLayerRef = useRef<HTMLDivElement>(null);
   const sidebarLayerWidth = useElementWidth(sidebarLayerRef);
+  const mainLayerRef = useRef<HTMLDivElement>(null);
+  const articleLayerRef = useRef<HTMLDivElement>(null);
   const opmlDragDepthRef = useRef(0);
   const [isOpmlDragActive, setIsOpmlDragActive] = useState(false);
   const appToastMessage = useUserMessageChannel(APP_TOAST_CHANNEL);
@@ -256,10 +260,20 @@ export const App: React.FC = () => {
   // the overlay lifecycle hook to flip isDeckOpen on the next effect pass.
   const isDeckVisuallyOpen = isDeckOpen && !isArticleClosing;
 
+  useDeckLayerInert({
+    libraryLayerRefs: [sidebarLayerRef, mainLayerRef],
+    articleLayerRef,
+    overlayPhase: articleViewOverlayPhase,
+    isDeckOpen,
+  });
+
   return (
-    // Pointer-event suppression for the library panes is keyed off overlay
-    // phase, not a raw closing boolean, so shortcut-driven closes cannot leave
-    // the app stuck in a permanently non-interactive state.
+    // Reduce Motion (System Settings > Accessibility): motion drops the deck
+    // slide and other transform animations; opacity fades stay.
+    <MotionConfig reducedMotion="user">
+    {/* Pointer-event suppression for the library panes is keyed off overlay
+        phase, not a raw closing boolean, so shortcut-driven closes cannot leave
+        the app stuck in a permanently non-interactive state. */}
     <div className={`app-container ${articleViewOverlayPhase !== 'closed' ? 'article-view-active' : ''} ${articleViewOverlayPhase === 'opening' || articleViewOverlayPhase === 'closing' ? 'article-view-transitioning' : ''}`} data-section="app-root">
       <div
         className={`app-deck-root ${isOpmlDragActive ? 'opml-drop-active' : ''}`}
@@ -281,6 +295,7 @@ export const App: React.FC = () => {
           <Sidebar />
         </motion.div>
         <motion.div
+          ref={mainLayerRef}
           className="app-layer app-layer-main"
           animate={isDeckVisuallyOpen ? { x: mainOpenShift } : { x: 0 }}
           transition={mainTransition}
@@ -289,6 +304,7 @@ export const App: React.FC = () => {
           <MainArea />
         </motion.div>
         <motion.div
+          ref={articleLayerRef}
           className="app-layer app-layer-article"
           animate={isDeckVisuallyOpen ? { x: 0 } : { x: '100%' }}
           transition={articleTransition}
@@ -305,6 +321,8 @@ export const App: React.FC = () => {
       {appToastMessage && (
         <NotificationToast message={appToastMessage} data-component="app-toast" />
       )}
+      <CommandPaletteHost />
     </div>
+    </MotionConfig>
   );
 };

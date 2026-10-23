@@ -18,6 +18,7 @@ import { beginLayoutColumnResize, endLayoutColumnResize } from '@/services/ui/la
 import { abortSidebarListDrag } from './sidebarListDrag';
 import { resolveHoveredSidebarSection } from './sidebarSectionHover';
 import { SidebarSyncIndicator } from './SidebarSyncIndicator';
+import { handleSidebarNavKeyDown } from './sidebarKeyboardNav';
 import './Sidebar.css';
 
 const MIN_SIDEBAR_WIDTH = 250;
@@ -309,11 +310,11 @@ export const Sidebar: React.FC = () => {
     });
   }, [syncHoveredSection]);
 
-  const handleNavPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+  const handleNavPointerMove = (event: React.PointerEvent<HTMLElement>) => {
     syncHoveredSection(event.clientX, event.clientY);
   };
 
-  const handleNavPointerLeave = (event: React.PointerEvent<HTMLDivElement>) => {
+  const handleNavPointerLeave = (event: React.PointerEvent<HTMLElement>) => {
     const related = event.relatedTarget;
     if (related instanceof Node && event.currentTarget.contains(related)) {
       return;
@@ -322,7 +323,7 @@ export const Sidebar: React.FC = () => {
     setHoveredSection(null);
   };
 
-  const handleNavTransitionEnd = (event: React.TransitionEvent<HTMLDivElement>) => {
+  const handleNavTransitionEnd = (event: React.TransitionEvent<HTMLElement>) => {
     if (event.propertyName !== 'grid-template-rows' && event.propertyName !== 'flex-grow') {
       return;
     }
@@ -393,9 +394,13 @@ export const Sidebar: React.FC = () => {
 
         {/* Library chrome stays put. Stations, nested station feeds, and
             unstationed feeds share one scroller down to Settings. */}
-        <div
+        <nav
           className="sidebar-content"
+          aria-label="Sources"
           data-component="sidebar-nav"
+          onKeyDown={(event) => {
+            handleSidebarNavKeyDown(event, event.currentTarget);
+          }}
           onPointerMove={handleNavPointerMove}
           onPointerLeave={handleNavPointerLeave}
           onTransitionEnd={handleNavTransitionEnd}
@@ -457,7 +462,7 @@ export const Sidebar: React.FC = () => {
               </div>
             </div>
           </SidebarSection>
-        </div>
+        </nav>
 
         {/* Settings stack + independent SyncIndicator share this bottom row. */}
         <BottomWidget>

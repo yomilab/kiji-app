@@ -54,6 +54,35 @@ pub enum ContentParser {
     Readability,
 }
 
+/// "Remove old read articles" (Settings → General). Default `Never` for every
+/// install: removing data is opt-in, so nothing disappears after an update.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum ArticleRetention {
+    #[default]
+    #[serde(rename = "never")]
+    Never,
+    #[serde(rename = "1m")]
+    OneMonth,
+    #[serde(rename = "3m")]
+    ThreeMonths,
+    #[serde(rename = "6m")]
+    SixMonths,
+    #[serde(rename = "1y")]
+    OneYear,
+}
+
+impl ArticleRetention {
+    pub fn months(self) -> Option<u32> {
+        match self {
+            Self::Never => None,
+            Self::OneMonth => Some(1),
+            Self::ThreeMonths => Some(3),
+            Self::SixMonths => Some(6),
+            Self::OneYear => Some(12),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct WindowSize {
@@ -114,6 +143,7 @@ pub struct AppSettings {
     /// Closing the main window hides it instead of quitting (feeds keep
     /// refreshing, assistants can connect). On by default on macOS only.
     pub keep_running_in_background: bool,
+    pub article_retention: ArticleRetention,
 }
 
 /// macOS apps keep running after their window closes; Windows/Linux users
@@ -134,6 +164,7 @@ impl Default for AppSettings {
             content_parser: ContentParser::Defuddle,
             saved_articles_sync_folder: None,
             keep_running_in_background: default_keep_running_in_background(),
+            article_retention: ArticleRetention::Never,
         }
     }
 }
@@ -186,6 +217,10 @@ impl AppSettings {
             self.keep_running_in_background = keep_running;
         }
 
+        if let Some(article_retention) = patch.article_retention {
+            self.article_retention = article_retention;
+        }
+
         Ok(())
     }
 }
@@ -211,6 +246,7 @@ pub struct AppSettingsPatch {
     pub content_parser: Option<ContentParser>,
     pub saved_articles_sync_folder: Option<Option<String>>,
     pub keep_running_in_background: Option<bool>,
+    pub article_retention: Option<ArticleRetention>,
 }
 
 pub struct SettingsState {
@@ -435,6 +471,18 @@ mod tests {
             .apply_patch(AppSettingsPatch { keep_running_in_background: Some(true), ..Default::default() })
             .unwrap();
         assert!(settings.keep_running_in_background);
+    }
+
+    #[test]
+fn article_retention_defaults_to_never_for_existing_files() {
+        let parsed: AppSettings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert_eq!(parsed.article_retention, ArticleRetention::Never);
+        let mut settings = AppSettings::default();
+        settings
+            .apply_patch(serde_json::from_str(r#"{"articleRetention":"3m"}"#).unwrap())
+            .unwrap();
+        assert_eq!(settings.article_retention, ArticleRetention::ThreeMonths);
+        assert_eq!(ArticleRetention::OneYear.months(), Some(12));
     }
 
     #[test]

@@ -3,6 +3,7 @@ pub(crate) mod feeds;
 mod migrations;
 mod models;
 pub(crate) mod saved;
+pub(crate) mod retention;
 pub(crate) mod schema;
 pub(crate) mod search;
 mod tags;
@@ -70,6 +71,21 @@ pub struct DatabaseStatus {
 const READER_POOL_SIZE: usize = 3;
 const BUSY_TIMEOUT_MS: u64 = 5_000;
 const SEARCH_PROGRESS_VM_OP_INTERVAL: i32 = 5_000;
+/// Gap between search backfill batches so queued writes get the writer.
+const SEARCH_BACKFILL_PAUSE: Duration = Duration::from_millis(25);
+/// A failed batch (e.g. a full disk) is retried after a growing wait instead
+/// of stopping the backfill for the rest of the session.
+const SEARCH_BACKFILL_MAX_RETRIES: u32 = 6;
+
+/// Wait before retry number `failures` (1-based): 30 s doubling to a 10 min cap,
+/// or `None` once the retries are used up (the next launch resumes the cursor).
+fn search_backfill_retry_delay(failures: u32) -> Option<Duration> {
+    if failures == 0 || failures > SEARCH_BACKFILL_MAX_RETRIES {
+        return None;
+    }
+    let seconds = 30u64.saturating_mul(1 << (failures - 1)).min(600);
+    Some(Duration::from_secs(seconds))
+}
 
 struct DbStateInner {
     path: PathBuf,
@@ -82,6 +98,7 @@ struct DbStateInner {
     /// queries never queue behind the UI readers or live search.
     assistant_reader: Mutex<Connection>,
     previous_shutdown_unclean: bool,
+    retention: retention::RetentionStore,
 }
 
 #[derive(Clone)]
@@ -121,6 +138,7 @@ impl DbState {
         let search_reader = Mutex::new(open_reader_connection(&path)?);
         let assistant_reader = Mutex::new(open_reader_connection(&path)?);
         let data_repair_version = read_user_version(&writer)?;
+        let retention = retention::RetentionStore::load(&path);
 
         let state = Self {
             inner: Arc::new(DbStateInner {
@@ -132,9 +150,11 @@ impl DbState {
                 search_epoch: AtomicU64::new(0),
                 assistant_reader,
                 previous_shutdown_unclean,
+                retention,
             }),
         };
         state.spawn_feed_count_repair_if_needed(data_repair_version);
+        state.spawn_search_backfill_if_needed();
         Ok(state)
     }
 
@@ -361,6 +381,11 @@ impl DbState {
             .map_err(|error| format!("Database write task failed: {error}"))?
     }
 
+    /// Automatic cleanup state (once-a-day gate + refresh resurrection guard).
+    pub(crate) fn retention(&self) -> &retention::RetentionStore {
+        &self.inner.retention
+    }
+
     pub fn database_path(&self) -> PathBuf {
         self.inner.path.clone()
     }
@@ -375,6 +400,47 @@ impl DbState {
         std::thread::spawn(move || {
             if let Err(error) = db.with_writer(run_data_repairs) {
                 eprintln!("[KiJi] Feed count repair failed: {error}");
+            }
+        });
+    }
+
+    /// Fills the v19 body search index in short batches on a background
+    /// thread. Each batch takes the writer briefly, so feed refreshes and
+    /// user actions interleave; title/description search keeps working on
+    /// the v18 index until the finished index is swapped in. The thread
+    /// exits when the backfill is done (or on error; the next launch resumes
+    /// from the saved cursor).
+    fn spawn_search_backfill_if_needed(&self) {
+        match self.with_writer(search::body_search_backfill_pending) {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(error) => {
+                eprintln!("[KiJi] Search backfill check failed: {error}");
+                return;
+            }
+        }
+        let db = self.clone();
+        std::thread::spawn(move || {
+            let mut failures = 0;
+            loop {
+                match db.with_writer(|connection| {
+                    search::run_body_search_backfill_batch(connection, search::SEARCH_BACKFILL_BATCH_SIZE)
+                }) {
+                    Ok(true) => break,
+                    Ok(false) => {
+                        failures = 0;
+                        std::thread::sleep(SEARCH_BACKFILL_PAUSE);
+                    }
+                    Err(error) => {
+                        failures += 1;
+                        let Some(delay) = search_backfill_retry_delay(failures) else {
+                            eprintln!("[KiJi] Search backfill stopped after {failures} failures: {error}");
+                            break;
+                        };
+                        eprintln!("[KiJi] Search backfill failed, retrying in {}s: {error}", delay.as_secs());
+                        std::thread::sleep(delay);
+                    }
+                }
             }
         });
     }
@@ -396,6 +462,7 @@ impl DbState {
                 search_epoch: AtomicU64::new(0),
                 assistant_reader: Mutex::new(Connection::open_in_memory().expect("open assistant reader")),
                 previous_shutdown_unclean: false,
+                retention: retention::RetentionStore::in_memory(),
             }),
         }
     }
@@ -630,6 +697,25 @@ fn read_foreign_keys_enabled(connection: &Connection) -> Result<bool, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn search_backfill_retries_with_growing_waits_then_stops() {
+        use std::time::Duration;
+        let delays: Vec<_> = (1..=7).map(super::search_backfill_retry_delay).collect();
+        assert_eq!(
+            delays,
+            vec![
+                Some(Duration::from_secs(30)),
+                Some(Duration::from_secs(60)),
+                Some(Duration::from_secs(120)),
+                Some(Duration::from_secs(240)),
+                Some(Duration::from_secs(480)),
+                Some(Duration::from_secs(600)),
+                None,
+            ]
+        );
+        assert_eq!(super::search_backfill_retry_delay(0), None);
+    }
+
     use super::{
         articles::{get_article, query_articles, sync_feed_article_counts_batch, ArticleQueryRequest},
         feeds::{list_feeds, list_feeds_sidebar, list_library_sidebar_snapshot},
@@ -661,6 +747,7 @@ mod tests {
                 search_epoch: AtomicU64::new(0),
                 assistant_reader: Mutex::new(Connection::open_in_memory().expect("open assistant reader")),
                 previous_shutdown_unclean: false,
+                retention: super::retention::RetentionStore::in_memory(),
             }),
         };
         let epoch = db.inner.search_epoch.fetch_add(1, Ordering::AcqRel) + 1;
@@ -699,6 +786,51 @@ mod tests {
     }
 
     #[test]
+    fn search_backfill_runs_to_completion_on_a_background_thread() {
+        let mut writer = Connection::open_in_memory().expect("open writer");
+        run_migrations(&mut writer).expect("migrate");
+        super::migrations::rewind_to_v18_search(&writer);
+        writer
+            .execute(
+                "INSERT INTO feeds (id, title, url, created_at) VALUES ('f1', 'Feed', 'https://example.com/rss', '2026-01-01')",
+                [],
+            )
+            .expect("feed");
+        for index in 0..(super::search::SEARCH_BACKFILL_BATCH_SIZE * 2 + 7) {
+            writer
+                .execute(
+                    "INSERT INTO articles (hash, feed_id, title, content, fetched_date) VALUES (?1, 'f1', 't', '<p>needle</p>', '2026-01-01')",
+                    params![format!("h{index}")],
+                )
+                .expect("insert article");
+        }
+        run_migrations(&mut writer).expect("migrate to v19");
+        assert!(super::search::body_search_backfill_pending(&writer).expect("pending"));
+        let state = DbState::for_tests(writer);
+        state.spawn_search_backfill_if_needed();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let pending = state
+                .with_writer(super::search::body_search_backfill_pending)
+                .expect("check pending");
+            if !pending {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "backfill thread did not finish");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let indexed: i64 = state
+            .with_writer(|connection| {
+                connection
+                    .query_row("SELECT COUNT(*) FROM articles_search WHERE articles_search MATCH 'needle'", [], |row| row.get(0))
+                    .map_err(|error| error.to_string())
+            })
+            .expect("count");
+        assert_eq!(indexed, super::search::SEARCH_BACKFILL_BATCH_SIZE * 2 + 7);
+    }
+
+    #[test]
     fn stale_search_cancellation_does_not_invalidate_a_newer_epoch() {
         let db = DbState {
             inner: Arc::new(DbStateInner {
@@ -712,6 +844,7 @@ mod tests {
                 search_epoch: AtomicU64::new(0),
                 assistant_reader: Mutex::new(Connection::open_in_memory().expect("open assistant reader")),
                 previous_shutdown_unclean: false,
+                retention: super::retention::RetentionStore::in_memory(),
             }),
         };
 
@@ -760,6 +893,7 @@ mod tests {
                 cursor_date: None,
                 cursor_hash: None,
                 include_total: None,
+                today: None,
             },
         )
         .expect("query articles");
@@ -914,6 +1048,7 @@ mod tests {
     }
 
     fn seed_repository_fixture(connection: &Connection) {
+        super::search::register_search_functions(connection).expect("register search functions");
         connection
             .execute_batch(CREATE_SEARCH_INDEXES)
             .expect("create search indexes");
@@ -1207,6 +1342,7 @@ mod tests {
                 cursor_date: None,
                 cursor_hash: None,
                 include_total: None,
+                today: None,
             },
         )
         .expect("query articles");
@@ -1344,6 +1480,7 @@ mod tests {
                 cursor_date: None,
                 cursor_hash: None,
                 include_total: None,
+                today: None,
             },
         )
         .expect("query runtime feed");
@@ -1377,6 +1514,7 @@ mod tests {
                 cursor_date: None,
                 cursor_hash: None,
                 include_total: None,
+                today: None,
             },
         )
         .expect("query hn feed");
@@ -1488,6 +1626,7 @@ mod tests {
                 cursor_date: None,
                 cursor_hash: None,
                 include_total: Some(false),
+                today: None,
             },
         )
         .expect("query station tag page");
@@ -1518,6 +1657,7 @@ mod tests {
                 cursor_date: Some("2026-07-14T20:00:00.000Z".to_string()),
                 cursor_hash: Some("station-hash-00".to_string()),
                 include_total: Some(false),
+                today: None,
             },
         )
         .expect("query station feed_ids cursor page");

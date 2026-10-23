@@ -168,10 +168,73 @@ body.layout-col-resizing {
   flex: 1;
 }
 
-/* Global focus reset for all focusable elements */
-:focus,
-:focus-visible {
+/* Mouse focus stays quiet; keyboard focus (:focus-visible) gets a macOS-style
+   accent ring. Containers focused only by code (tabindex="-1", e.g. the
+   article scroller) never show a ring. */
+:focus {
   outline: none;
+}
+
+/* Zero specificity, so components with their own focus style keep it. Text
+   fields are left out: they show a caret and their own focus border. */
+:where(:focus-visible:not([tabindex="-1"]):not(input:not([type="checkbox"], [type="radio"], [type="range"]), textarea)) {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* Main-window controls whose own rules reset the outline. */
+.article-view-back-button.button.is-text.is-small:focus-visible,
+.article-view-action-button.button.is-text.is-small:focus-visible,
+.article-view-action-button:focus-visible,
+.notification-toast-action:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* Rows sit inside clipped scrollers: draw their ring inside the row. Sidebar
+   rows take focus on their label part, so the ring goes on the whole row
+   (article rows: ArticleList.css). */
+.smart-view-item:has(> .smart-view-content:focus-visible),
+.tag-item:has(> .tag-item-content:focus-visible),
+.feed-list-item:has(> .feed-list-item-content:focus-visible),
+.station-feed-item:has(> .station-feed-item-content:focus-visible) {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: -2px;
+}
+
+.article-list-item:focus-visible,
+.smart-view-content:focus-visible,
+.tag-item-content:focus-visible,
+.feed-list-item-content:focus-visible,
+.station-feed-item-content:focus-visible {
+  outline: none;
+}
+
+/* Text for screen readers only (live counts, row state). */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Reduce Motion: the deck slide and list entrance are turned off in script
+   (MotionConfig reducedMotion="user"); this catches CSS transitions and
+   keyframes app-wide. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Fix tooltips: prevent nested elements from blocking button hover */

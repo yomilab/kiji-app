@@ -13,6 +13,7 @@ describe("settings storage model", () => {
   it("maps native app settings fields documented in architecture-tauri-app.md", () => {
     expect(Object.keys(toNativeAppSettings(DEFAULT_SETTINGS)).sort()).toEqual([
       "articleListWidth",
+      "articleRetention",
       "backgroundUpdate",
       "contentParser",
       "layout",
@@ -273,6 +274,50 @@ describe("settingsManager storage boundaries", () => {
     const stored = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEYS.renderer) as string);
     expect(stored.readerTheme).toBe("solarized");
     expect(stored.readerThemes).toBeUndefined();
+  });
+
+  it("persists article list density in renderer preferences, not native settings", async () => {
+    const updateMock = vi.fn().mockResolvedValue(DEFAULT_NATIVE_SETTINGS);
+    vi.doMock("@/lib/tauriClient", () => ({
+      tauriClient: {
+        settings: {
+          get: vi.fn().mockResolvedValue(DEFAULT_NATIVE_SETTINGS),
+          update: updateMock,
+        },
+      },
+    }));
+
+    const { settingsManager } = await import("@/services/settings/settingsManager");
+    expect(await settingsManager.getArticleListDensity()).toBe("comfortable");
+
+    await settingsManager.setArticleListDensity("compact");
+    const stored = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEYS.renderer) as string);
+    expect(stored.articleListDensity).toBe("compact");
+    expect(await settingsManager.getArticleListDensity()).toBe("compact");
+    expect((await settingsManager.getSettings()).articleListDensity).toBe("compact");
+    expect(settingsManager.getArticleListDensityNow()).toBe("compact");
+    for (const [patch] of updateMock.mock.calls) {
+      expect(Object.keys(patch as object)).not.toContain("articleListDensity");
+    }
+  });
+
+  it("falls back to Comfortable for a missing or unknown stored density", async () => {
+    vi.doMock("@/lib/tauriClient", () => ({
+      tauriClient: {
+        settings: {
+          get: vi.fn().mockResolvedValue(DEFAULT_NATIVE_SETTINGS),
+          update: vi.fn().mockResolvedValue(DEFAULT_NATIVE_SETTINGS),
+        },
+      },
+    }));
+    localStorage.setItem(
+      SETTINGS_STORAGE_KEYS.renderer,
+      JSON.stringify({ articleListDensity: "tiny" }),
+    );
+
+    const { settingsManager } = await import("@/services/settings/settingsManager");
+    expect(await settingsManager.getArticleListDensity()).toBe("comfortable");
+    expect(settingsManager.getArticleListDensityNow()).toBe("comfortable");
   });
 
   it("clamps surface fill opacity and keeps it out of native settings", async () => {

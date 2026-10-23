@@ -96,6 +96,17 @@ export const useArticleListKeyboardNavigation = ({
 
     const isArticleListCovered = (): boolean => articleViewOverlayPhaseRef.current !== 'closed';
 
+    // Keys a focused control handles itself: Space presses a button (toast
+    // Undo, sidebar actions) and the arrows / Space move within the sidebar.
+    const isOwnedByFocusedControl = (e: KeyboardEvent): boolean => {
+      if (!(e.target instanceof Element)) return false;
+      const isSpace = e.key === ' ' || e.code === 'Space';
+      if (e.target.closest('[data-sidebar-nav-item]')) {
+        return isSpace || e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End';
+      }
+      return isSpace && e.target.closest('button, a[href], [role="button"], [role="link"]') !== null;
+    };
+
     // Raw key match for hold release: deliberately ignores shortcut layer and
     // modifiers so a held j/k released under an overlay/modal or with
     // Cmd/Shift down still stops the hold loop.
@@ -295,6 +306,7 @@ export const useArticleListKeyboardNavigation = ({
       if (!articleListRef.current) return;
       if (isEditableTarget(e.target)) return;
       if (isArticleListCovered()) return;
+      if (isOwnedByFocusedControl(e)) return;
 
       if (handleVimScrollShortcut(e)) return;
 

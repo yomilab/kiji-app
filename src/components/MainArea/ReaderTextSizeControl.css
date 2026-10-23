@@ -1,0 +1,32 @@
+/* Brief "120%" pill while the article text size changes (⌘+ / ⌘− / ⌘0). */
+.reader-text-size-indicator {
+  position: absolute;
+  top: 14px; /* centered in the 52px header bar, clear of the title */
+  left: 50%;
+  z-index: 20;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--theme-text-primary) 80%, transparent);
+  color: var(--theme-article-view-solid-bg);
+  font-family: var(--font-family-ui);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 0.2s ease-out;
+}
+
+.reader-text-size-indicator.is-visible {
+  opacity: 1;
+  transition-duration: 0.08s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reader-text-size-indicator {
+    transition: none;
+  }
+}

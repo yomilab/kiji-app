@@ -142,6 +142,7 @@ export const SHORTCUT_LABELS = {
   OPEN_FEED_EDIT_VIEW: 'Cmd + E',
   REFRESH_FEED: 'Cmd + R',
   SEARCH_ARTICLES: 'Cmd + F',
+  COMMAND_PALETTE: 'Cmd + K',
   OPEN_SETTINGS: 'Cmd + ,',
   OPEN_ARTICLE_IN_NEW_WINDOW: 'N',
   CLOSE_ARTICLE_VIEW: 'Esc',
@@ -157,6 +158,9 @@ export const SHORTCUT_LABELS = {
   ARTICLE_LIST_STEP_DOWN: 'J / ↓',
   ARTICLE_LIST_STEP_UP: 'K / ↑',
   RESET_SETTINGS: 'Cmd + Shift + R',
+  READER_TEXT_BIGGER: 'Cmd + +',
+  READER_TEXT_SMALLER: 'Cmd + -',
+  READER_TEXT_RESET: 'Cmd + 0',
 } as const;
 
 export const SHORTCUT_HINTS = {
@@ -216,6 +220,14 @@ export const isSaveArticleShortcut = (event: ShortcutKeyboardEvent): boolean =>
 export const isLoadFromClipboardShortcut = (event: ShortcutKeyboardEvent): boolean =>
   isArticleShortcutLayerActive() && isPlainKeyPress(event) && normalizedKey(event) === 'p';
 
+/** ⌘K (Ctrl+K off macOS). Shift must be up. */
+export const isOpenCommandPaletteShortcut = (event: ShortcutKeyboardEvent): boolean =>
+  isAppShortcutLayerActive()
+  && isPrimaryModifierPressed(event)
+  && !event.shiftKey
+  && !event.altKey
+  && normalizedKey(event) === 'k';
+
 export const isArticleListSearchShortcut = (event: ShortcutKeyboardEvent): boolean =>
   isAppShortcutLayerActive() && isPrimaryModifierPressed(event) && normalizedKey(event) === 'f';
 
@@ -245,3 +257,26 @@ export const isVimScrollHalfDownShortcut = (event: ShortcutKeyboardEvent): boole
 
 export const isVimScrollHalfUpShortcut = (event: ShortcutKeyboardEvent): boolean =>
   isScrollableShortcutLayerActive() && !event.metaKey && event.ctrlKey && !event.altKey && !event.shiftKey && normalizedKey(event) === 'u';
+
+/**
+ * ⌘+ (also ⌘=), ⌘− and ⌘0 (Ctrl on Windows/Linux) while an article is open.
+ * Returns which text size step the key asks for, or null.
+ */
+export const getReaderTextSizeShortcutAction = (
+  event: ShortcutKeyboardEvent,
+): 'bigger' | 'smaller' | 'reset' | null => {
+  if (!isArticleShortcutLayerActive() || !isPrimaryModifierPressed(event) || event.altKey) return null;
+  switch (event.key) {
+    case '+':
+    case '=':
+      return 'bigger';
+    case '-':
+    case '_':
+    case '\u2212':
+      return 'smaller';
+    case '0':
+      return event.shiftKey ? null : 'reset';
+    default:
+      return null;
+  }
+};

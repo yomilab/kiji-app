@@ -8,8 +8,9 @@ import {
   WindowSize,
   DEFAULT_SETTINGS,
   isContentParser,
+  isArticleRetention,
 } from './types';
-import { DEFAULT_SMART_VIEW_DEFINITIONS } from '@/constants';
+import { mergeSmartViewSettings } from './smartViewOrder';
 import {
   SETTINGS_STORAGE_KEYS,
   mergeUserSettings,
@@ -21,22 +22,14 @@ import {
 import { loadNativeAppSettings, saveNativeAppSettings } from './nativeSettingsBackend';
 import { clampSurfaceFillOpacity } from './surfaceFillOpacity';
 import { normalizeReaderTheme } from './readerThemes';
+import { normalizeArticleListDensity, type ArticleListDensity } from '@/lib/articleListDensity';
 
 /** Pre-pairing builds stored `readerThemes: { light, dark }`; read it once to carry the choice over. */
 const legacyReaderThemes = (value: object): unknown => Reflect.get(value, 'readerThemes');
 
-export const normalizeSmartViews = (smartViews: UserSettings['smartViews'] | undefined): UserSettings['smartViews'] => {
-  const smartViewMap = new Map((smartViews ?? []).map((view) => [view.id, view]));
-
-  return DEFAULT_SMART_VIEW_DEFINITIONS.map((definition, index) => {
-    const existing = smartViewMap.get(definition.id);
-    return {
-      id: definition.id,
-      visible: existing?.visible ?? true,
-      sortOrder: existing?.sortOrder ?? index,
-    };
-  }).sort((a, b) => a.sortOrder - b.sortOrder);
-};
+export const normalizeSmartViews = (smartViews: UserSettings['smartViews'] | undefined): UserSettings['smartViews'] => (
+  mergeSmartViewSettings(smartViews)
+);
 
 const normalizeUiThemeVariant = (variant: unknown): UiThemeVariant => (
   variant === 'classic' || variant === 'modern' ? variant : DEFAULT_SETTINGS.uiThemeVariant
@@ -71,6 +64,7 @@ const normalizeRendererPreferences = (preferences: Partial<RendererPreferences>)
   smartViews: normalizeSmartViews(preferences.smartViews),
   uiThemeVariant: normalizeUiThemeVariant(preferences.uiThemeVariant),
   readerTheme: normalizeReaderTheme(preferences.readerTheme, legacyReaderThemes(preferences)),
+  articleListDensity: normalizeArticleListDensity(preferences.articleListDensity),
   windowPosition: preferences.windowPosition,
   ...optionalSurfaceFillOpacity(preferences.surfaceFillOpacity),
 });
@@ -97,6 +91,9 @@ const normalizeSettings = (settings: Partial<UserSettings>): UserSettings => ({
     ? settings.contentParser
     : DEFAULT_SETTINGS.contentParser,
   savedArticlesSyncFolder: settings.savedArticlesSyncFolder ?? DEFAULT_SETTINGS.savedArticlesSyncFolder,
+  articleRetention: isArticleRetention(settings.articleRetention)
+    ? settings.articleRetention
+    : DEFAULT_SETTINGS.articleRetention,
   sidebarLibrary: {
     ...DEFAULT_SETTINGS.sidebarLibrary,
     ...settings.sidebarLibrary,
@@ -105,6 +102,7 @@ const normalizeSettings = (settings: Partial<UserSettings>): UserSettings => ({
   smartViews: normalizeSmartViews(settings.smartViews),
   uiThemeVariant: normalizeUiThemeVariant(settings.uiThemeVariant),
   readerTheme: normalizeReaderTheme(settings.readerTheme, legacyReaderThemes(settings)),
+  articleListDensity: normalizeArticleListDensity(settings.articleListDensity),
   ...optionalSurfaceFillOpacity(settings.surfaceFillOpacity),
 });
 
@@ -403,6 +401,20 @@ class SettingsManager {
     await this.updateRendererPreferences({ readerTheme: normalizeReaderTheme(readerTheme) });
   }
 
+  async getArticleListDensity(): Promise<ArticleListDensity> {
+    const settings = await this.getSettings();
+    return settings.articleListDensity;
+  }
+
+  /** Sync read for the list's first render, so a saved density does not flash Comfortable. */
+  getArticleListDensityNow(): ArticleListDensity {
+    return this.readRendererPreferencesSync().articleListDensity;
+  }
+
+  async setArticleListDensity(density: ArticleListDensity): Promise<void> {
+    await this.updateRendererPreferences({ articleListDensity: normalizeArticleListDensity(density) });
+  }
+
   async getSurfaceFillOpacity(): Promise<number | undefined> {
     const settings = await this.getSettings();
     return clampSurfaceFillOpacity(settings.surfaceFillOpacity);
@@ -510,6 +522,10 @@ class SettingsManager {
 
   async setContentParser(parser: UserSettings['contentParser']): Promise<void> {
     await this.updateNativeSettings({ contentParser: parser });
+  }
+
+  async setArticleRetention(retention: UserSettings['articleRetention']): Promise<void> {
+    await this.updateNativeSettings({ articleRetention: retention });
   }
 
   async resetSettings(): Promise<void> {

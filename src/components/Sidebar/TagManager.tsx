@@ -41,6 +41,7 @@ import {
   rememberFeedsInCache,
   trimTagManagerFeedCache,
 } from './tagManagerFeedCache';
+import { sidebarRowLabel } from './sidebarKeyboardNav';
 import './TagManager.css';
 
 interface StationFeedItemProps {
@@ -96,13 +97,20 @@ const StationFeedItem = React.memo<StationFeedItemProps>(({
       data-action="select-feed"
       data-entity-id={feed.id}
     >
-      <div className="station-feed-item-content">
-        <div className="station-feed-item-favicon-wrapper">
+      <div
+        className="station-feed-item-content"
+        role="button"
+        tabIndex={isSelected ? 0 : -1}
+        aria-current={isSelected ? 'page' : undefined}
+        aria-label={sidebarRowLabel(feed.title, feed.unreadCount)}
+        data-sidebar-nav-item=""
+      >
+        <div className="station-feed-item-favicon-wrapper" aria-hidden="true">
           <FaviconImage
             localFavicon={feed.favicon}
             hasTransparency={feed.faviconHasTransparency}
             emoji={feed.emoji}
-            alt={feed.title}
+            alt=""
             itemId={feed.id}
           />
         </div>
@@ -208,9 +216,24 @@ const StationListItem = React.memo<StationListItemProps>(({
         data-entity-id={tag.name}
         data-station-name={tag.name}
       >
-        <div className="tag-item-content">
+        <div
+          className="tag-item-content"
+          role="button"
+          tabIndex={isSelected ? 0 : -1}
+          aria-current={isSelected ? 'page' : undefined}
+          aria-expanded={isExpanded}
+          aria-label={tag.name}
+          data-sidebar-nav-item=""
+          onKeyDown={(event) => {
+            // Source-list convention: Right opens a station's feeds, Left folds them.
+            if ((event.key === 'ArrowRight' && !isExpanded) || (event.key === 'ArrowLeft' && isExpanded)) {
+              event.preventDefault();
+              onToggleStation(tag.name);
+            }
+          }}
+        >
           {tag.emoji ? (
-            <span className="tag-item-emoji">{tag.emoji}</span>
+            <span className="tag-item-emoji" aria-hidden="true">{tag.emoji}</span>
           ) : (
             <span className="tag-item-icon" aria-hidden="true" />
           )}

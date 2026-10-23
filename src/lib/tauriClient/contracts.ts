@@ -230,6 +230,7 @@ export interface ArticleQueryRequest {
   cursorDate?: ISODateString;
   cursorHash?: string;
   includeTotal?: boolean;
+  today?: boolean;
 }
 
 export interface ArticleQueryResponse {
@@ -237,6 +238,8 @@ export interface ArticleQueryResponse {
   total: number;
   hasMore: boolean;
   cancelled: boolean;
+  /** Search only: article hash -> article-text excerpt for rows that matched only in the text. */
+  searchSnippets?: Record<string, string>;
 }
 
 export interface SavedArticleRecord extends ArticleFeedMetadata {
@@ -302,6 +305,8 @@ export interface SavedArticleQueryResponse {
   articles: SavedArticleRecord[];
   total: number;
   cancelled: boolean;
+  /** Search only: saved article id -> article-text excerpt for rows that matched only in the text. */
+  searchSnippets?: Record<string, string>;
 }
 
 export interface FeedFetchRequest {
@@ -526,7 +531,8 @@ export type AppMenuCommand =
   | { type: "setTheme"; theme: AppSettings["theme"] }
   | { type: "selectLibraryView"; libraryView: Exclude<AppMenuLibraryView, null> }
   | { type: "openAddSubscription" }
-  | { type: "importFeeds" };
+  | { type: "importFeeds" }
+  | { type: "readerTextSize"; action: "bigger" | "smaller" | "reset"; window?: "main" | "article" };
 
 export interface ArticleWindowPayload {
   article: ArticleRecord;

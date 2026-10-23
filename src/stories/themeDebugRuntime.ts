@@ -1,4 +1,5 @@
 import type { Theme } from '@/services/settings/types';
+import type { ArticleListDensity } from '@/lib/articleListDensity';
 import {
   THEME_DEBUG_ARTICLES,
   THEME_DEBUG_FEEDS,
@@ -9,9 +10,11 @@ import {
 export type ThemeDebugVariant =
   | 'sidebar-default'
   | 'sidebar-overflow'
+  | 'sidebar-today'
   | 'article-list-populated'
   | 'article-list-long'
   | 'article-list-loading'
+  | 'article-list-search-snippets'
   | 'article-view-standalone'
   | 'article-view-long'
   | 'article-view-images'
@@ -84,6 +87,22 @@ const populatedCollection = {
   articleListScrollRequest: null,
 };
 
+// Search results where two rows matched only in the article text: the
+// description slot shows the excerpt around the match instead.
+const SEARCH_SNIPPETS: Record<string, string> = {
+  'theme-article-3': '...长篇阅读 (long-form reading) needs a measure near 35 characters per line so the eye finds the next line...',
+  'theme-article-4': '...your reading list opens instantly because every article already lives on this computer...',
+};
+
+const searchSnippetCollection = {
+  ...populatedCollection,
+  articles: THEME_DEBUG_ARTICLES.map((article) => (
+    SEARCH_SNIPPETS[article.hash] ? { ...article, searchSnippet: SEARCH_SNIPPETS[article.hash] } : article
+  )),
+  newArticleCount: 0,
+  newArticleHashes: EMPTY_HASHES,
+};
+
 const loadingCollection = {
   articles: [],
   articlesTotalCount: 0,
@@ -128,6 +147,18 @@ const variants = {
     overlay: baseOverlay,
     ui: baseUi,
   },
+  'sidebar-today': {
+    navigation: {
+      ...baseNavigation,
+      selectedFeedId: null,
+      selectedFeedTitle: 'Today',
+      selectedSmartView: 'today',
+    },
+    collection: populatedCollection,
+    actions: baseCollectionActions,
+    overlay: baseOverlay,
+    ui: baseUi,
+  },
   'sidebar-overflow': {
     navigation: {
       ...baseNavigation,
@@ -156,6 +187,13 @@ const variants = {
       selectedFeedTitle: THEME_DEBUG_FEEDS[6].title,
     },
     collection: populatedCollection,
+    actions: baseCollectionActions,
+    overlay: baseOverlay,
+    ui: baseUi,
+  },
+  'article-list-search-snippets': {
+    navigation: baseNavigation,
+    collection: searchSnippetCollection,
     actions: baseCollectionActions,
     overlay: baseOverlay,
     ui: baseUi,
@@ -199,6 +237,7 @@ const variants = {
 
 let activeVariant: ThemeDebugVariant = 'sidebar-default';
 let activeTheme: Theme = 'light';
+let activeListDensity: ArticleListDensity = 'comfortable';
 
 export function selectThemeDebugVariant(variant: ThemeDebugVariant): void {
   activeVariant = variant;
@@ -206,6 +245,15 @@ export function selectThemeDebugVariant(variant: ThemeDebugVariant): void {
 
 export function selectThemeDebugTheme(theme: Theme): void {
   activeTheme = theme;
+}
+
+/** Article list density the Storybook settings mock reports (story `kiji.listDensity`). */
+export function selectThemeDebugListDensity(density: ArticleListDensity): void {
+  activeListDensity = density;
+}
+
+export function getThemeDebugListDensity(): ArticleListDensity {
+  return activeListDensity;
 }
 
 export function getThemeDebugTheme(): Theme {

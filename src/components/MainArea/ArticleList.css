@@ -479,6 +479,13 @@ html[data-os="other"] .article-list {
   outline-offset: -1px;
 }
 
+/* Keyboard focus (Tab, j/k with a row focused, back from the reader): accent
+   ring on the visible card. */
+.article-list-item:focus-visible > .article-list-item-content {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: -2px;
+}
+
 /* Read/Unread States */
 .article-list-item.is-read .article-list-item-title {
   color: var(--theme-text-subdued);
@@ -663,6 +670,61 @@ html[data-os="other"] .article-list {
 
 .article-list-item-preview-image.is-loaded .article-list-item-preview-image-content {
   opacity: 1;
+}
+
+/* Density: Compact — one line per row (favicon, title, source, time); no description or preview. */
+.article-list-item--compact .article-list-item-content {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.article-list-item-compact-row {
+  display: flex;
+  align-items: center;
+  gap: var(--article-list-favicon-title-gap);
+  min-width: 0;
+}
+
+.article-list-item--compact .article-list-item-title {
+  display: block;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.article-list-item-compact-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  max-width: 40%;
+  min-width: 0;
+}
+
+.article-list-item-compact-meta .article-list-item-source-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Density: Large Images — the preview spans the row above the text. Rows
+   without an image keep the Comfortable layout. */
+.article-list-item-preview-image.article-list-item-preview-image--large {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  max-height: 220px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+}
+
+.article-list-item-preview-image--large .article-list-item-preview-image-content {
+  border-radius: 8px;
+}
+
+.article-list-item--large-image .article-list-item-description {
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
 
 /* Article Meta (author + date) */

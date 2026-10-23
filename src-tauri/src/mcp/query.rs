@@ -783,6 +783,7 @@ pub(crate) mod tests {
 
     pub(crate) fn fixture() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
+        crate::db::search::register_search_functions(&conn).unwrap();
         conn.execute_batch(CREATE_TABLES).unwrap();
         conn.execute_batch(CREATE_INDEXES).unwrap();
         conn.execute_batch(CREATE_SEARCH_INDEXES).unwrap();
@@ -988,6 +989,37 @@ pub(crate) mod tests {
         )
         .unwrap();
         assert_eq!(page.items.iter().map(|row| row.hash.as_str()).collect::<Vec<_>>(), vec!["t1"]);
+    }
+
+    #[test]
+    fn search_finds_article_and_saved_body_text() {
+        let conn = fixture();
+        let hashes = |search: &str| {
+            list_articles(
+                &conn,
+                &Exposure::everything(),
+                &ListArticlesRequest { scope: &ArticleScope::All, since: None, until: None, search: Some(search), cursor: None, limit: 10 },
+            )
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|row| row.hash)
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(hashes("fallback"), vec!["t2"], "body-only word");
+        let tech = list_articles(
+            &conn,
+            &tech_only(),
+            &ListArticlesRequest { scope: &ArticleScope::All, since: None, until: None, search: Some("body"), cursor: None, limit: 10 },
+        )
+        .unwrap();
+        assert_eq!(
+            tech.items.iter().map(|row| row.hash.as_str()).collect::<Vec<_>>(),
+            vec!["t1", "b1", "t3"],
+            "exposure scope still applies to body matches"
+        );
+        let saved = list_saved(&conn, None, None, Some("health"), None, 10).unwrap();
+        assert_eq!(saved.items.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(), vec!["s2"]);
     }
 
     #[test]

@@ -1,8 +1,10 @@
 import type { Article } from '../../src/types/article';
 import {
+  getThemeDebugListDensity,
   getThemeDebugFeeds,
   getThemeDebugTags,
 } from '../../src/stories/themeDebugRuntime';
+import { getStoryFeedResponse } from '../../src/stories/storyFeedResponses';
 
 const asyncNoop = async (): Promise<void> => {};
 const noop = (): void => {};
@@ -17,8 +19,9 @@ export const DEFAULT_SETTINGS = {
   smartViews: [
     { id: 'saved', visible: true, sortOrder: 0 },
     { id: 'unread', visible: true, sortOrder: 1 },
-    { id: 'all', visible: true, sortOrder: 2 },
-    { id: 'read', visible: true, sortOrder: 3 },
+    { id: 'today', visible: true, sortOrder: 2 },
+    { id: 'all', visible: true, sortOrder: 3 },
+    { id: 'read', visible: true, sortOrder: 4 },
   ],
 };
 
@@ -33,7 +36,8 @@ export const settingsManager = {
   getSidebarLibrary: async () => ({ title: 'Library', visible: true }),
   getSidebarSectionFold: async () => ({ libraryExpanded: true, stationsExpanded: true }),
   getSmartViews: async () => DEFAULT_SETTINGS.smartViews,
-  getSettings: async () => DEFAULT_SETTINGS,
+  getSettings: async () => ({ ...DEFAULT_SETTINGS, articleListDensity: getThemeDebugListDensity() }),
+  getArticleListDensityNow: () => getThemeDebugListDensity(),
   setSidebarWidth: asyncNoop,
   setArticleListWidth: asyncNoop,
   setSidebarSectionFold: asyncNoop,
@@ -76,6 +80,13 @@ export const feedsFetcher = {
     items: [],
     notModified: false,
   }),
+  fetchFeedNetworkWithCache: async (url: string) => {
+    const data = getStoryFeedResponse(url);
+    if (data === undefined) {
+      throw new Error('Feed fetching is disabled in Storybook.');
+    }
+    return { notModified: false, data };
+  },
 };
 
 export function parseFeed() {
@@ -112,6 +123,11 @@ export async function getContent(): Promise<string | null> {
 
 export async function getByHash(): Promise<Article | null> {
   return null;
+}
+
+/** articleStore.query: only the sidebar Today count reads it in stories. */
+export async function query() {
+  return { articles: [], total: 12, cancelled: false };
 }
 
 export async function syncFeedCountsBatch() {
@@ -186,6 +202,7 @@ export const opmlWorkflowService = {
   scheduleMissingFaviconsAfterStationSelection: noop,
 };
 
+export const fetchOpmlTextFromUrl = async (): Promise<string> => '';
 export const formatOpmlImportSummary = () => 'OPML import is disabled in Storybook.';
 export const importOpmlFromUrlIntoLibrary = async () => null;
 export const importOpmlTextIntoLibrary = async () => null;

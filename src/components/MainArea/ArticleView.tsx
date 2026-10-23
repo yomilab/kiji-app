@@ -36,6 +36,7 @@ import { StatefulButtonGroup, type ButtonState } from '@/components/common/State
 import { ArticleContent, ArticleContentSkeleton, type ArticleContentMetricsDetail, type ArticleImageOpenDetail } from '@/components/common/ArticleContent';
 import { estimateReadingMinutes, formatArticleDate } from '@/utils/readingTime';
 import { ArticleImageLightbox } from './ArticleImageLightbox';
+import { ReaderTextSizeControl } from './ReaderTextSizeControl';
 import { ArticlePdfViewer } from '@/components/common/ArticlePdf';
 import { InteractionProfiler } from '@/components/common/InteractionProfiler';
 import {
@@ -61,6 +62,7 @@ import {
   keybindingService,
   withShortcutHint,
 } from '@/services/shortcuts/shortcutService';
+import { subscribeArticleViewCommand } from '@/services/ui/articleViewCommandBus';
 import { ARTICLE_VIEW_CLOSE_ANIMATION_MS, ARTICLE_VIEW_OPENING_MS } from '@/constants';
 import { isArticleReaderModeRenderable } from './articleViewReaderMode';
 import type { Article } from '@/types/article';
@@ -662,6 +664,20 @@ function useArticleViewKeyboardShortcuts(params: {
       animateArticleTo(scrollElement.scrollTop + delta);
     };
 
+    const toggleReaderMode = (): boolean => {
+      if (!canToggleReaderMode || !articleToShow?.link || !isFeedLinkedArticle) return false;
+      const nextStateIndex = articleDisplayMode === 'reader' ? 0 : 1;
+      void handleReaderModeToggle(nextStateIndex);
+      return true;
+    };
+
+    // Same guards as the `I` shortcut; the ⌘K palette sends this.
+    const unsubscribeCommands = subscribeArticleViewCommand((command) => {
+      if (command === 'toggleReaderMode') {
+        toggleReaderMode();
+      }
+    });
+
     const unregister = keybindingService.register({
       type: 'keydown',
       capture: true,
@@ -737,10 +753,8 @@ function useArticleViewKeyboardShortcuts(params: {
           void handleOpenInNewWindow();
         }
 
-        if (canToggleReaderMode && isToggleReaderModeShortcut(e) && articleToShow?.link && isFeedLinkedArticle) {
+        if (isToggleReaderModeShortcut(e) && toggleReaderMode()) {
           e.preventDefault();
-          const nextStateIndex = articleDisplayMode === 'reader' ? 0 : 1;
-          void handleReaderModeToggle(nextStateIndex);
         }
 
         if (isSaveArticleShortcut(e) && articleToShow && !clipboardLoading && !saveLoading) {
@@ -757,6 +771,7 @@ function useArticleViewKeyboardShortcuts(params: {
 
     return () => {
       unregister();
+      unsubscribeCommands();
       if (pendingTopSequenceTimerId !== null) {
         window.clearTimeout(pendingTopSequenceTimerId);
       }
@@ -2317,6 +2332,8 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
         data-section="article-view"
         data-component="article-view"
         data-entity-id={articleToShow?.hash}
+        role="region"
+        aria-label="Article"
         initial={standalone ? { opacity: 0 } : false}
         animate={
           standalone
@@ -2464,7 +2481,8 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
                   }}
                   role="button"
                   tabIndex={0}
-                  aria-label={withShortcutHint(TOOLTIPS.articleView.titleOpenInBrowser, SHORTCUT_LABELS.OPEN_IN_BROWSER)}
+                  // Title first: this block is the article's heading for VoiceOver too.
+                  aria-label={`${articleToShow.title}, ${withShortcutHint(TOOLTIPS.articleView.titleOpenInBrowser, SHORTCUT_LABELS.OPEN_IN_BROWSER)}`}
                   title={withShortcutHint(TOOLTIPS.articleView.titleOpenInBrowser, SHORTCUT_LABELS.OPEN_IN_BROWSER)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -2516,6 +2534,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
         {lightboxDetail && (
           <ArticleImageLightbox detail={lightboxDetail} onClose={handleLightboxClose} />
         )}
+        <ReaderTextSizeControl scrollContainerRef={scrollContainerRef} />
       </motion.div>
     </InteractionProfiler>
   );

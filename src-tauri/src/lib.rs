@@ -192,6 +192,7 @@ pub fn run() {
             app.manage(diagnostics_arc);
             app.manage(Arc::new(FeedSchedulerState::new()));
             app.manage(app_icon_state);
+            db::retention::spawn_retention_loop(&app.handle());
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())

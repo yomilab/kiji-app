@@ -21,6 +21,14 @@ export type BackgroundUpdateMode =
 
 export type ContentParser = "defuddle" | "readability";
 
+/** "Remove old read articles" (Settings → General). */
+export type ArticleRetention = "never" | "1m" | "3m" | "6m" | "1y";
+
+export const ARTICLE_RETENTION_VALUES: readonly ArticleRetention[] = ["never", "1m", "3m", "6m", "1y"];
+
+export const isArticleRetention = (value: unknown): value is ArticleRetention =>
+  typeof value === "string" && (ARTICLE_RETENTION_VALUES as readonly string[]).includes(value);
+
 export interface WindowSize {
   width: number;
   height: number;
@@ -37,6 +45,7 @@ export interface AppSettings {
   backgroundUpdate: BackgroundUpdateMode;
   contentParser: ContentParser;
   savedArticlesSyncFolder: string | null;
+  articleRetention: ArticleRetention;
 }
 
 export interface AppSettingsPatch {
@@ -48,6 +57,7 @@ export interface AppSettingsPatch {
   backgroundUpdate?: BackgroundUpdateMode;
   contentParser?: ContentParser;
   savedArticlesSyncFolder?: string | null;
+  articleRetention?: ArticleRetention;
 }
 
 export const THEME_OPTIONS: ReadonlyArray<{ value: Theme; label: string }> = [
@@ -94,5 +104,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   backgroundUpdate: "every-15m",
   contentParser: "defuddle",
   savedArticlesSyncFolder: null,
+  articleRetention: "never",
 };
 

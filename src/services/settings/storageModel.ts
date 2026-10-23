@@ -1,4 +1,5 @@
 import type { AppSettings, AppSettingsPatch } from '@/lib/settings';
+import type { ArticleListDensity } from '@/lib/articleListDensity';
 import type {
   FontFamilySettings,
   ReadingLayoutSettings,
@@ -33,6 +34,7 @@ export const NATIVE_APP_SETTING_KEYS = [
   'backgroundUpdate',
   'contentParser',
   'savedArticlesSyncFolder',
+  'articleRetention',
 ] as const satisfies readonly (keyof AppSettings)[];
 
 export interface RendererPreferences {
@@ -43,6 +45,7 @@ export interface RendererPreferences {
   smartViews: SmartViewSettings[];
   uiThemeVariant: UiThemeVariant;
   readerTheme: string;
+  articleListDensity: ArticleListDensity;
   surfaceFillOpacity?: number;
   windowPosition?: Pick<WindowSize, 'x' | 'y'>;
 }
@@ -62,6 +65,7 @@ export function toNativeAppSettings(settings: UserSettings): AppSettings {
     backgroundUpdate: settings.backgroundUpdate,
     contentParser: settings.contentParser,
     savedArticlesSyncFolder: settings.savedArticlesSyncFolder,
+    articleRetention: settings.articleRetention,
   };
 }
 
@@ -82,6 +86,7 @@ export function toRendererPreferences(settings: UserSettings): RendererPreferenc
     smartViews: settings.smartViews,
     uiThemeVariant: settings.uiThemeVariant,
     readerTheme: settings.readerTheme,
+    articleListDensity: settings.articleListDensity,
     ...(settings.surfaceFillOpacity !== undefined
       ? { surfaceFillOpacity: settings.surfaceFillOpacity }
       : {}),
@@ -113,6 +118,7 @@ export function mergeUserSettings(
     backgroundUpdate: native.backgroundUpdate,
     contentParser: native.contentParser,
     savedArticlesSyncFolder: native.savedArticlesSyncFolder,
+    articleRetention: native.articleRetention,
     fontFamilies: renderer.fontFamilies,
     readingLayout: renderer.readingLayout,
     sidebarLibrary: renderer.sidebarLibrary,
@@ -120,6 +126,7 @@ export function mergeUserSettings(
     smartViews: renderer.smartViews,
     uiThemeVariant: renderer.uiThemeVariant,
     readerTheme: renderer.readerTheme,
+    articleListDensity: renderer.articleListDensity,
     ...(renderer.surfaceFillOpacity !== undefined
       ? { surfaceFillOpacity: renderer.surfaceFillOpacity }
       : {}),
@@ -140,6 +147,7 @@ export function extractNativeFieldsFromPartial(
   if (settings.savedArticlesSyncFolder !== undefined) {
     patch.savedArticlesSyncFolder = settings.savedArticlesSyncFolder;
   }
+  if (settings.articleRetention !== undefined) patch.articleRetention = settings.articleRetention;
   if (settings.windowSize !== undefined) {
     patch.windowSize = {
       width: settings.windowSize.width,

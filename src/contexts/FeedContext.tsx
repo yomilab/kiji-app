@@ -217,7 +217,7 @@ const yieldToArticleListPrefetchFrame = async (): Promise<void> => {
     }
   });
 };
-type SmartViewType = 'saved' | 'pinned' | 'unread' | 'all' | 'read';
+type SmartViewType = 'saved' | 'pinned' | 'unread' | 'today' | 'all' | 'read';
 
 const smartViewSourceLabel = (viewType: SmartViewType): string => {
   switch (viewType) {
@@ -227,6 +227,8 @@ const smartViewSourceLabel = (viewType: SmartViewType): string => {
       return 'Pinned';
     case 'unread':
       return 'Unread';
+    case 'today':
+      return 'Today';
     case 'read':
       return 'Read';
     default:
@@ -1822,6 +1824,14 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
     }
 
+    if (source.viewType === 'today') {
+      return withSearchText({
+        today: true,
+        limit,
+        sort: DEFAULT_ARTICLE_LIST_SORT,
+      });
+    }
+
     if (source.viewType === 'read') {
       return withSearchText({
         filter: { read: true },
@@ -2104,7 +2114,7 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return hasAnyNewArticles();
     }
 
-    if (source.viewType === 'unread') {
+    if (source.viewType === 'unread' || source.viewType === 'today') {
       return hasAnyNewArticles();
     }
 
@@ -3963,7 +3973,9 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           ? createArticleListQuery({ filter: { read: true } }, READ_ARTICLE_LIST_SORT)
           : type === 'pinned'
             ? createArticleListQuery({ tagName: 'pinned' })
-            : createArticleListQuery({});
+            : type === 'today'
+              ? createArticleListQuery({ today: true })
+              : createArticleListQuery({});
       lastQueryRef.current = query;
       lastQuerySourceKeyRef.current = `smart:${type}`;
 

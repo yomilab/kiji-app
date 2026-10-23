@@ -2,9 +2,11 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type FocusEvent as ReactFocusEvent,
   type RefObject,
   type UIEvent,
 } from 'react';
@@ -23,6 +25,7 @@ import { FeedLineLoader } from '@/components/common/FeedLineLoader';
 import { InteractionProfiler } from '@/components/common/InteractionProfiler';
 import { useArticleListScrollOffset } from './hooks/articleListScrollOffsetContext';
 import { useArticleListKeyboardNavigation } from './hooks/useArticleListKeyboardNavigation';
+import { useArticleListRowFocus } from './hooks/useArticleListRowFocus';
 import { useArticleListScrollReset } from './hooks/useArticleListScrollReset';
 import { useArticleListScrollOffsetSync } from './hooks/useArticleListScrollOffsetSync';
 import { useArticleListBackgroundScrollSync } from './hooks/useArticleListBackgroundScrollSync';
@@ -39,6 +42,16 @@ import {
   type ArticleListScrollVelocitySample,
 } from './articleListLoadMore';
 import { articleListHasMore } from '@/services/articles/articleListTotal';
+import { isUsableImageUrl } from '@/utils/mediaUrl';
+import {
+  ARTICLE_LIST_DENSITY_ESTIMATED_ROW_HEIGHT,
+  DEFAULT_ARTICLE_LIST_DENSITY,
+  type ArticleListDensity,
+} from '@/lib/articleListDensity';
+import {
+  captureArticleListScrollAnchor,
+  resolveArticleListAnchorScrollTop,
+} from './articleListDensityAnchor';
 
 const measureArticleRowHeight = (
   element: Element,
@@ -69,6 +82,7 @@ export interface ArticleListVirtualScrollPaneProps {
   newArticleHashes: Set<string>;
   articleListScrollRequest: ArticleListScrollRequest | null;
   totalFeeds: number;
+  density?: ArticleListDensity;
   selectArticle: (hash: string) => void;
   loadMoreArticles: (options: { showLoadingIndicator: boolean; priority: 'prefetch' | 'urgent' }) => Promise<void>;
   syncArticleListViewport: (snapshot: {
@@ -102,6 +116,7 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   newArticleHashes,
   articleListScrollRequest,
   totalFeeds,
+  density = DEFAULT_ARTICLE_LIST_DENSITY,
   selectArticle,
   loadMoreArticles,
   syncArticleListViewport,
@@ -110,6 +125,8 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   const [keyboardFocusHash, setKeyboardFocusHash] = useState<string | null>(null);
   const [deferPreviewImages, setDeferPreviewImages] = useState(false);
   const articleListItemsRef = useRef<HTMLDivElement>(null);
+  const virtualSpacerRef = useRef<HTMLDivElement>(null);
+  const previousDensityRef = useRef(density);
   const previewImageScrollIdleTimerRef = useRef<number | null>(null);
   const scrollVelocitySampleRef = useRef<ArticleListScrollVelocitySample | null>(null);
   const scrollVelocityPxPerMsRef = useRef(0);
@@ -141,7 +158,11 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   const rowVirtualizer = useVirtualizer({
     count: virtualRowCount,
     getScrollElement: () => articleListItemsRef.current,
-    estimateSize: () => ARTICLE_LIST_ESTIMATED_ROW_HEIGHT,
+    estimateSize: (index) => (
+      density === 'large-images' && !isUsableImageUrl(filteredArticles[index]?.previewImage)
+        ? ARTICLE_LIST_ESTIMATED_ROW_HEIGHT
+        : ARTICLE_LIST_DENSITY_ESTIMATED_ROW_HEIGHT[density]
+    ),
     overscan: deferPreviewImages ? 28 : 16,
     getItemKey: (index) => filteredArticles[index]?.hash ?? index,
     measureElement: measureArticleRowHeight,
@@ -151,6 +172,63 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
   const lastVirtualIndex = virtualItems[virtualItems.length - 1]?.index ?? -1;
 
   const highlightedArticleHash = keyboardFocusHash ?? activeArticleHash;
+  // One Tab stop for the whole list: the highlighted row, else the first row.
+  const tabStopHash = useMemo(() => (
+    highlightedArticleHash && filteredArticles.some((article) => article.hash === highlightedArticleHash)
+      ? highlightedArticleHash
+      : filteredArticles[0]?.hash ?? null
+  ), [filteredArticles, highlightedArticleHash]);
+  // Rows mount in a window; screen readers get the real position and size.
+  // While more pages can load the size is unknown (-1).
+  const listSetSize = hasMoreArticles ? -1 : filteredArticles.length;
+
+  // Density change: every row changes height. Re-measure all rows, then put the
+  // active row (or the top visible row) back where it was instead of jumping.
+  useLayoutEffect(() => {
+    if (previousDensityRef.current === density) return;
+    previousDensityRef.current = density;
+
+    const listElement = articleListItemsRef.current;
+    const activeIndex = highlightedArticleHash
+      ? filteredArticles.findIndex((article) => article.hash === highlightedArticleHash)
+      : -1;
+    const anchor = listElement
+      ? captureArticleListScrollAnchor(
+        rowVirtualizer.getVirtualItems(),
+        listElement.scrollTop,
+        listElement.clientHeight,
+        activeIndex,
+      )
+      : null;
+
+    rowVirtualizer.measure();
+    if (!listElement) return;
+
+    // Mounted rows keep their measure ref, so read their new heights now. The
+    // virtualizer's own above-viewport scroll nudges are skipped: the anchor
+    // below sets the final position in one step.
+    const previousShouldAdjust = rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange;
+    rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
+    try {
+      listElement.querySelectorAll<HTMLDivElement>('.article-list-virtual-row').forEach((row) => {
+        rowVirtualizer.measureElement(row);
+      });
+    } finally {
+      rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = previousShouldAdjust;
+    }
+
+    if (!anchor) return;
+    const totalSize = rowVirtualizer.getTotalSize();
+    // The spacer re-renders next; size it now so the target offset is not clamped.
+    if (virtualSpacerRef.current) {
+      virtualSpacerRef.current.style.height = `${totalSize + ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px`;
+    }
+    const anchorItem = rowVirtualizer.measurementsCache[anchor.index];
+    if (!anchorItem) return;
+    rowVirtualizer.scrollToOffset(
+      resolveArticleListAnchorScrollTop(anchor, anchorItem.start, anchorItem.size),
+    );
+  }, [density, filteredArticles, highlightedArticleHash, rowVirtualizer]);
 
   const ensureHashInView = useCallback((hash: string) => {
     const index = filteredArticles.findIndex((article) => article.hash === hash);
@@ -237,6 +315,29 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
       window.clearTimeout(timer);
     };
   }, [sourceKey]);
+
+  useArticleListRowFocus({
+    listRef: articleListItemsRef,
+    highlightedHash: highlightedArticleHash,
+    activeArticleHash,
+    overlayPhase: articleViewOverlayPhase,
+    mountedRowsKey: `${firstVirtualIndex}:${lastVirtualIndex}`,
+  });
+
+  // Tab / VoiceOver focus on a row makes it the keyboard row, so the arrows
+  // act on what is being read.
+  const handleRowFocus = useCallback((event: ReactFocusEvent<HTMLDivElement>) => {
+    const row = event.target;
+    if (!(row instanceof HTMLElement) || !row.matches('.article-list-item[data-entity-id]')) return;
+    const hash = row.dataset.entityId;
+    if (!hash || hash === highlightedArticleHash) return;
+    try {
+      if (!row.matches(':focus-visible')) return;
+    } catch {
+      // Engines without :focus-visible: treat as keyboard focus.
+    }
+    setKeyboardFocusHash(hash);
+  }, [highlightedArticleHash]);
 
   useArticleListKeyboardNavigation({
     articleListRef,
@@ -396,6 +497,7 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
           handleScrollPerformanceEvent(event.currentTarget.scrollTop);
           handleArticleListScroll(event);
         }}
+        onFocus={handleRowFocus}
       >
         {isInitialLoading ? (
           <ArticleListSkeletonGroup key="skeleton" />
@@ -419,7 +521,10 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
           ) : null
         ) : (
           <div
+            ref={virtualSpacerRef}
             className="article-list-virtual-spacer"
+            role="listbox"
+            aria-label={sourceLabel ? `${sourceLabel} articles` : 'Articles'}
             style={{ height: `${rowVirtualizer.getTotalSize() + ARTICLE_LIST_BOTTOM_SPACER_HEIGHT}px` }}
           >
             {virtualItems.map((virtualRow) => {
@@ -442,6 +547,10 @@ export const ArticleListVirtualScrollPane = memo(function ArticleListVirtualScro
                     readStateMode={isSavedView ? 'none' : 'normal'}
                     searchQuery={debouncedSearchQuery}
                     deferPreviewImages={deferPreviewImages}
+                    density={density}
+                    posInSet={virtualRow.index + 1}
+                    setSize={listSetSize}
+                    isTabStop={tabStopHash === article.hash}
                     onSelect={handleOpenArticle}
                     formatDateDisplay={formatDateDisplay}
                     enableLayoutAnimation={false}
@@ -496,6 +605,7 @@ function areArticleListVirtualScrollPanePropsEqual(
     && previous.debouncedSearchQuery === next.debouncedSearchQuery
     && previous.isSavedView === next.isSavedView
     && previous.totalFeeds === next.totalFeeds
+    && previous.density === next.density
     && previous.selectArticle === next.selectArticle
     && previous.loadMoreArticles === next.loadMoreArticles
     && previous.syncArticleListViewport === next.syncArticleListViewport

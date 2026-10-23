@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 17;
+pub const SCHEMA_VERSION: i64 = 19;
 
 /// `PRAGMA user_version` target for one-time data repairs run after startup
 /// (see `db::run_data_repairs`). 1 = per-subscription feed count recount;
@@ -122,9 +122,9 @@ pub const CREATE_INDEXES: &str = r#"
   CREATE INDEX IF NOT EXISTS idx_articles_effective_date ON articles(COALESCE(published_date, fetched_date) DESC);
   CREATE INDEX IF NOT EXISTS idx_articles_read           ON articles(read, COALESCE(published_date, fetched_date) DESC);
   CREATE INDEX IF NOT EXISTS idx_articles_read_last_read ON articles(read, last_read_at DESC, hash);
-  CREATE INDEX IF NOT EXISTS idx_articles_starred        ON articles(starred);
+  CREATE INDEX IF NOT EXISTS idx_articles_starred_date   ON articles(COALESCE(published_date, fetched_date) DESC, hash) WHERE starred = 1;
   CREATE INDEX IF NOT EXISTS idx_articles_feed_date      ON articles(feed_id, COALESCE(published_date, fetched_date) DESC);
-  CREATE INDEX IF NOT EXISTS idx_articles_saved          ON articles(saved);
+  CREATE INDEX IF NOT EXISTS idx_articles_saved_date     ON articles(COALESCE(published_date, fetched_date) DESC, hash) WHERE saved = 1;
   CREATE INDEX IF NOT EXISTS idx_feed_tags_tag_feed      ON feed_tags(tag_name, feed_id);
   CREATE INDEX IF NOT EXISTS idx_feed_tags_tag_sort      ON feed_tags(tag_name, sort_order, feed_id);
   CREATE INDEX IF NOT EXISTS idx_article_feed_items_hash ON article_feed_items(article_hash);
@@ -133,29 +133,41 @@ pub const CREATE_INDEXES: &str = r#"
   CREATE INDEX IF NOT EXISTS idx_saved_articles_date     ON saved_articles(saved_date DESC);
 "#;
 
+/// Search index DDL: contentless FTS5 tables (the index only, no copy of the
+/// text) over title, description, author and the article body as plain
+/// text (`kiji_search_body`, see `db::search`). `contentless_delete=1` lets
+/// the triggers delete by rowid. The leading UNINDEXED key column keeps
+/// column positions aligned with the v18 tables. No `prefix=` indexes: on a
+/// synthetic 100k-article library (~3 KB bodies) `prefix='2 3 4'` grew the
+/// index from 206 MB to 750 MB (64% of the database) and was slower for
+/// short prefixes than scanning the term range; without them the index is
+/// 33% of the database. v19 backfills a `_next` staging copy (see
+/// [`staging_search_indexes_sql`]) off the startup thread before swapping it in.
 pub const CREATE_SEARCH_INDEXES: &str = r#"
   CREATE VIRTUAL TABLE IF NOT EXISTS articles_search USING fts5(
     hash UNINDEXED,
     title,
     description,
     author,
-    tokenize='unicode61',
-    prefix='2 3 4'
+    body,
+    content='',
+    contentless_delete=1,
+    tokenize='unicode61'
   );
 
   CREATE TRIGGER IF NOT EXISTS articles_search_ai AFTER INSERT ON articles BEGIN
-    INSERT INTO articles_search(rowid, hash, title, description, author)
-    VALUES (new.rowid, new.hash, new.title, new.description, COALESCE(new.author, ''));
+    INSERT INTO articles_search(rowid, title, description, author, body)
+    VALUES (new.rowid, new.title, new.description, COALESCE(new.author, ''), kiji_search_body(new.content));
   END;
 
   CREATE TRIGGER IF NOT EXISTS articles_search_ad AFTER DELETE ON articles BEGIN
     DELETE FROM articles_search WHERE rowid = old.rowid;
   END;
 
-  CREATE TRIGGER IF NOT EXISTS articles_search_au AFTER UPDATE OF hash, title, description, author ON articles BEGIN
+  CREATE TRIGGER IF NOT EXISTS articles_search_au AFTER UPDATE OF hash, title, description, author, content ON articles BEGIN
     DELETE FROM articles_search WHERE rowid = old.rowid;
-    INSERT INTO articles_search(rowid, hash, title, description, author)
-    VALUES (new.rowid, new.hash, new.title, new.description, COALESCE(new.author, ''));
+    INSERT INTO articles_search(rowid, title, description, author, body)
+    VALUES (new.rowid, new.title, new.description, COALESCE(new.author, ''), kiji_search_body(new.content));
   END;
 
   CREATE VIRTUAL TABLE IF NOT EXISTS saved_articles_search USING fts5(
@@ -163,22 +175,31 @@ pub const CREATE_SEARCH_INDEXES: &str = r#"
     title,
     description,
     author,
-    tokenize='unicode61',
-    prefix='2 3 4'
+    body,
+    content='',
+    contentless_delete=1,
+    tokenize='unicode61'
   );
 
   CREATE TRIGGER IF NOT EXISTS saved_articles_search_ai AFTER INSERT ON saved_articles BEGIN
-    INSERT INTO saved_articles_search(rowid, id, title, description, author)
-    VALUES (new.rowid, new.id, COALESCE(new.title, ''), COALESCE(new.description, ''), COALESCE(new.author, ''));
+    INSERT INTO saved_articles_search(rowid, title, description, author, body)
+    VALUES (new.rowid, COALESCE(new.title, ''), COALESCE(new.description, ''), COALESCE(new.author, ''), kiji_search_body(new.content));
   END;
 
   CREATE TRIGGER IF NOT EXISTS saved_articles_search_ad AFTER DELETE ON saved_articles BEGIN
     DELETE FROM saved_articles_search WHERE rowid = old.rowid;
   END;
 
-  CREATE TRIGGER IF NOT EXISTS saved_articles_search_au AFTER UPDATE OF id, title, description, author ON saved_articles BEGIN
+  CREATE TRIGGER IF NOT EXISTS saved_articles_search_au AFTER UPDATE OF id, title, description, author, content ON saved_articles BEGIN
     DELETE FROM saved_articles_search WHERE rowid = old.rowid;
-    INSERT INTO saved_articles_search(rowid, id, title, description, author)
-    VALUES (new.rowid, new.id, COALESCE(new.title, ''), COALESCE(new.description, ''), COALESCE(new.author, ''));
+    INSERT INTO saved_articles_search(rowid, title, description, author, body)
+    VALUES (new.rowid, COALESCE(new.title, ''), COALESCE(new.description, ''), COALESCE(new.author, ''), kiji_search_body(new.content));
   END;
 "#;
+
+/// Same DDL with every table and trigger renamed to the `_next` staging
+/// copy (`articles_search` -> `articles_search_next`, which also covers
+/// `saved_articles_search`).
+pub fn staging_search_indexes_sql() -> String {
+    CREATE_SEARCH_INDEXES.replace("articles_search", "articles_search_next")
+}

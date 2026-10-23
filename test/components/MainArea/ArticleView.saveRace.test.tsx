@@ -61,6 +61,10 @@ vi.mock('@/components/common/ArticleContent', () => ({
   ArticleContentSkeleton: () => null,
 }));
 
+vi.mock('@/components/MainArea/ReaderTextSizeControl', () => ({
+  ReaderTextSizeControl: () => null,
+}));
+
 vi.mock('@/components/common/ArticlePdf', () => ({
   ArticlePdfViewer: () => null,
 }));

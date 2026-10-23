@@ -96,6 +96,7 @@
     "@types/react": "^18.3.30",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.6.0",
+    "axe-core": "^4.10.3",
     "jsdom": "^26.1.0",
     "storybook": "10.6.1",
     "typescript": "~5.8.3",

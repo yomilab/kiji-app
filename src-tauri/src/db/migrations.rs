@@ -1,6 +1,7 @@
 use rusqlite::{params, Connection};
 
 use super::schema::{CREATE_INDEXES, CREATE_SEARCH_INDEXES, CREATE_TABLES, SCHEMA_VERSION};
+use super::search::{register_search_functions, start_body_search_migration};
 
 type MigrationFn = fn(&Connection) -> Result<(), String>;
 
@@ -10,6 +11,8 @@ struct MigrationStep {
 }
 
 pub fn run_migrations(connection: &mut Connection) -> Result<(), String> {
+    // The search triggers call this function on every article write.
+    register_search_functions(connection)?;
     create_migration_ledger(connection)?;
     let current_version = read_current_migration_version(connection)?;
 
@@ -82,6 +85,8 @@ fn ensure_schema_shape(connection: &Connection) -> Result<(), String> {
     ensure_article_feed_items(connection)?;
     ensure_saved_article_metadata_column(connection)?;
     ensure_query_indexes(connection)?;
+    // No-op while a v19 body backfill is pending: the v18 table and its
+    // triggers keep these names until the staging index is swapped in.
     connection
         .execute_batch(CREATE_SEARCH_INDEXES)
         .map_err(|error| format!("Failed to ensure search indexes: {error}"))?;
@@ -216,6 +221,32 @@ fn migration_17(connection: &Connection) -> Result<(), String> {
     backfill_feed_tags_sort_order(connection)
 }
 
+/// Starred/saved lists sort by effective date + hash. The single-column flag
+/// indexes forced a table lookup per flagged row plus a temp B-tree sort;
+/// the partial `(effective date DESC, hash) WHERE flag = 1` replacements in
+/// `CREATE_INDEXES` let `ORDER BY ... LIMIT` stream off the index and only
+/// hold flagged rows. `query_articles` emits the flag as a literal so the
+/// partial index is usable.
+fn migration_18(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(
+            r#"
+            DROP INDEX IF EXISTS idx_articles_starred;
+            DROP INDEX IF EXISTS idx_articles_saved;
+            "#,
+        )
+        .map_err(|error| format!("Failed to drop legacy article flag indexes: {error}"))?;
+    ensure_query_indexes(connection)
+}
+
+/// Article body search. FTS5 tables cannot gain a column in place, so
+/// libraries with rows get a staging index that `db::search` backfills in
+/// batches off the startup thread (see `DbState::spawn_search_backfill_if_needed`)
+/// while the v18 index keeps title/description/author search working.
+fn migration_19(connection: &Connection) -> Result<(), String> {
+    start_body_search_migration(connection)
+}
+
 static MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         version: 1,
@@ -284,6 +315,14 @@ static MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         version: 17,
         up: migration_17,
+    },
+    MigrationStep {
+        version: 18,
+        up: migration_18,
+    },
+    MigrationStep {
+        version: 19,
+        up: migration_19,
     },
 ];
 
@@ -503,9 +542,66 @@ fn clamp_future_published_dates(connection: &Connection) -> Result<(), String> {
         .map_err(|error| format!("Failed to clamp future published dates: {error}"))
 }
 
+/// Title/description/author search index as of v1–v18. Migrations 1 and 12
+/// still build this shape; v19 replaces it with `create_search_indexes_sql`.
+const LEGACY_SEARCH_INDEXES: &str = r#"
+  CREATE VIRTUAL TABLE IF NOT EXISTS articles_search USING fts5(
+    hash UNINDEXED,
+    title,
+    description,
+    author,
+    tokenize='unicode61',
+    prefix='2 3 4'
+  );
+
+  CREATE TRIGGER IF NOT EXISTS articles_search_ai AFTER INSERT ON articles BEGIN
+    INSERT INTO articles_search(rowid, hash, title, description, author)
+    VALUES (new.rowid, new.hash, new.title, new.description, COALESCE(new.author, ''));
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS articles_search_ad AFTER DELETE ON articles BEGIN
+    DELETE FROM articles_search WHERE rowid = old.rowid;
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS articles_search_au AFTER UPDATE OF hash, title, description, author ON articles BEGIN
+    DELETE FROM articles_search WHERE rowid = old.rowid;
+    INSERT INTO articles_search(rowid, hash, title, description, author)
+    VALUES (new.rowid, new.hash, new.title, new.description, COALESCE(new.author, ''));
+  END;
+
+  CREATE VIRTUAL TABLE IF NOT EXISTS saved_articles_search USING fts5(
+    id UNINDEXED,
+    title,
+    description,
+    author,
+    tokenize='unicode61',
+    prefix='2 3 4'
+  );
+
+  CREATE TRIGGER IF NOT EXISTS saved_articles_search_ai AFTER INSERT ON saved_articles BEGIN
+    INSERT INTO saved_articles_search(rowid, id, title, description, author)
+    VALUES (new.rowid, new.id, COALESCE(new.title, ''), COALESCE(new.description, ''), COALESCE(new.author, ''));
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS saved_articles_search_ad AFTER DELETE ON saved_articles BEGIN
+    DELETE FROM saved_articles_search WHERE rowid = old.rowid;
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS saved_articles_search_au AFTER UPDATE OF id, title, description, author ON saved_articles BEGIN
+    DELETE FROM saved_articles_search WHERE rowid = old.rowid;
+    INSERT INTO saved_articles_search(rowid, id, title, description, author)
+    VALUES (new.rowid, new.id, COALESCE(new.title, ''), COALESCE(new.description, ''), COALESCE(new.author, ''));
+  END;
+"#;
+
 fn rebuild_search_indexes(connection: &Connection) -> Result<(), String> {
+    // A database already on the v19 body index (ledger rewound in tests)
+    // keeps it; v19 itself is a no-op there.
+    if has_column(connection, "articles_search", "body")? {
+        return Ok(());
+    }
     connection
-        .execute_batch(CREATE_SEARCH_INDEXES)
+        .execute_batch(LEGACY_SEARCH_INDEXES)
         .map_err(|error| format!("Failed to create search indexes: {error}"))?;
     connection
         .execute_batch(
@@ -574,6 +670,22 @@ fn table_exists(connection: &Connection, table: &str) -> Result<bool, String> {
 }
 
 #[cfg(test)]
+/// Rewinds a migrated database to the v18 search shape: the
+/// title/description/author tables and triggers, ledger at 18.
+pub(crate) fn rewind_to_v18_search(connection: &Connection) {
+    let mut sql = String::new();
+    for table in ["articles_search", "saved_articles_search"] {
+        for trigger in ["ai", "ad", "au"] {
+            sql.push_str(&format!("DROP TRIGGER {table}_{trigger};\n"));
+        }
+        sql.push_str(&format!("DROP TABLE {table};\n"));
+    }
+    sql.push_str(LEGACY_SEARCH_INDEXES);
+    sql.push_str("DELETE FROM _migrations WHERE version >= 19;");
+    connection.execute_batch(&sql).expect("rewind to v18 search index");
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -633,6 +745,216 @@ mod tests {
             index_exists(&connection, "idx_articles_unsaved_hash").expect("query index"),
             "migration 16 should add idx_articles_unsaved_hash"
         );
+    }
+
+    #[test]
+    fn migration_18_swaps_flag_indexes_for_partial_date_indexes_on_v17_data() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+
+        // Rewind to the v17 shape: single-column flag indexes, no partial ones.
+        connection
+            .execute_batch(
+                r#"
+                DROP INDEX idx_articles_starred_date;
+                DROP INDEX idx_articles_saved_date;
+                CREATE INDEX idx_articles_starred ON articles(starred);
+                CREATE INDEX idx_articles_saved ON articles(saved);
+                DELETE FROM _migrations WHERE version >= 18;
+                INSERT INTO feeds (id, title, url, created_at)
+                  VALUES ('f1', 'Feed', 'https://example.com/rss', '2026-01-01T00:00:00Z');
+                "#,
+            )
+            .expect("simulate v17 database");
+        for index in 0..40 {
+            connection
+                .execute(
+                    "INSERT INTO articles (hash, feed_id, published_date, fetched_date, read, starred, saved)
+                     VALUES (?1, 'f1', ?2, ?2, ?3, ?4, ?5)",
+                    params![
+                        format!("h{index:02}"),
+                        format!("2026-01-{:02}T00:00:00Z", 1 + index % 5),
+                        index % 2,
+                        i64::from(index % 3 == 0),
+                        i64::from(index % 4 == 0)
+                    ],
+                )
+                .expect("insert v17 article");
+        }
+        assert_eq!(read_current_migration_version(&connection).expect("version"), 17);
+
+        run_migrations(&mut connection).expect("run migration 18");
+        assert_eq!(
+            read_current_migration_version(&connection).expect("version"),
+            SCHEMA_VERSION
+        );
+        for (name, expected) in [
+            ("idx_articles_starred", false),
+            ("idx_articles_saved", false),
+            ("idx_articles_starred_date", true),
+            ("idx_articles_saved_date", true),
+        ] {
+            assert_eq!(index_exists(&connection, name).expect("index"), expected, "{name}");
+        }
+        let count = |sql: &str| -> i64 {
+            connection.query_row(sql, [], |row| row.get(0)).expect("count")
+        };
+        assert_eq!(count("SELECT COUNT(*) FROM articles"), 40, "migration keeps every row");
+        assert_eq!(
+            count("SELECT COUNT(*) FROM articles INDEXED BY idx_articles_starred_date WHERE starred = 1"),
+            14
+        );
+        assert_eq!(
+            count("SELECT COUNT(*) FROM articles INDEXED BY idx_articles_saved_date WHERE saved = 1"),
+            10
+        );
+
+        // Startup self-healing must not bring the dropped indexes back.
+        run_migrations(&mut connection).expect("rerun at current version");
+        assert!(!index_exists(&connection, "idx_articles_starred").expect("index"));
+        assert!(!index_exists(&connection, "idx_articles_saved").expect("index"));
+    }
+
+    fn matches(connection: &Connection, table: &str, query: &str) -> i64 {
+        connection
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {table} WHERE {table} MATCH ?1"),
+                params![query],
+                |row| row.get(0),
+            )
+            .expect("count matches")
+    }
+
+    fn search_triggers(connection: &Connection) -> Vec<String> {
+        let mut statement = connection
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%search%' ORDER BY name")
+            .expect("prepare");
+        statement
+            .query_map([], |row| row.get(0))
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("read")
+    }
+
+    #[test]
+    fn migration_19_backfills_body_text_in_batches_from_v18_data() {
+        use crate::db::search::{body_search_backfill_pending, run_body_search_backfill_batch};
+
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+        rewind_to_v18_search(&connection);
+        connection
+            .execute(
+                "INSERT INTO feeds (id, title, url, created_at) VALUES ('f1', 'Feed', 'https://example.com/rss', '2026-01-01T00:00:00Z')",
+                [],
+            )
+            .expect("feed");
+        for index in 0..1_200 {
+            connection
+                .execute(
+                    "INSERT INTO articles (hash, feed_id, title, content, fetched_date) VALUES (?1, 'f1', ?2, ?3, '2026-01-01T00:00:00Z')",
+                    params![
+                        format!("h{index:04}"),
+                        format!("headline{index}"),
+                        format!("<p class=\"markup\">bodyword{index} common</p>")
+                    ],
+                )
+                .expect("article");
+        }
+        connection
+            .execute(
+                "INSERT INTO saved_articles (id, article_hash, title, content, saved_date) VALUES ('s1', 'h0001', 'Kept', '<p>savedbody</p>', '2026-01-01')",
+                [],
+            )
+            .expect("saved");
+        assert_eq!(read_current_migration_version(&connection).expect("version"), 18);
+        assert_eq!(matches(&connection, "articles_search", "headline7"), 1, "v18 title search");
+
+        run_migrations(&mut connection).expect("run migration 19");
+        assert_eq!(read_current_migration_version(&connection).expect("version"), SCHEMA_VERSION);
+        assert!(body_search_backfill_pending(&connection).expect("pending"), "large library backfills later");
+        // Startup is done; title search still works, body search not yet.
+        assert_eq!(matches(&connection, "articles_search", "headline7"), 1);
+        assert_eq!(matches(&connection, "articles_search", "common"), 0);
+        // Restarting before the backfill finishes keeps the v18 index serving.
+        run_migrations(&mut connection).expect("rerun during backfill");
+        assert_eq!(matches(&connection, "articles_search", "headline7"), 1);
+
+        let mut batches = 0;
+        while !run_body_search_backfill_batch(&connection, 500).expect("backfill batch") {
+            batches += 1;
+            if batches == 1 {
+                // Writes during the backfill reach the staging index through
+                // its triggers and stay correct when the batch reaches them.
+                connection
+                    .execute(
+                        "INSERT INTO articles (hash, feed_id, title, content, fetched_date) VALUES ('late', 'f1', 'Late', '<p>latebody</p>', '2026-01-02T00:00:00Z')",
+                        [],
+                    )
+                    .expect("insert during backfill");
+                connection
+                    .execute("UPDATE articles SET content = '<p>editedbody</p>' WHERE hash = 'h1100'", [])
+                    .expect("update during backfill");
+                connection
+                    .execute("DELETE FROM articles WHERE hash = 'h1101'", [])
+                    .expect("delete during backfill");
+                assert_eq!(matches(&connection, "articles_search", "headline5"), 1, "title search mid-backfill");
+                let page = crate::db::articles::query_articles(
+                    &connection,
+                    crate::db::articles::ArticleQueryRequest {
+                        search_text: Some("headline5".to_string()),
+                        limit: Some(5),
+                        ..Default::default()
+                    },
+                )
+                .expect("list search mid-backfill");
+                assert_eq!(page.articles[0].hash, "h0005");
+            }
+            assert!(batches < 20, "backfill must finish");
+        }
+        assert!(batches >= 3, "1,200 rows at 500 per batch take several batches: {batches}");
+
+        assert!(!body_search_backfill_pending(&connection).expect("pending"));
+        assert!(has_column(&connection, "articles_search", "body").expect("body column"));
+        assert!(!table_exists(&connection, "articles_search_next").expect("staging gone"));
+        assert_eq!(matches(&connection, "articles_search", "common"), 1_198, "one edited, one deleted");
+        assert_eq!(matches(&connection, "articles_search", "bodyword7"), 1);
+        assert_eq!(matches(&connection, "articles_search", "headline7"), 1);
+        assert_eq!(matches(&connection, "articles_search", "latebody"), 1);
+        assert_eq!(matches(&connection, "articles_search", "editedbody"), 1);
+        assert_eq!(matches(&connection, "articles_search", "bodyword1100"), 0);
+        assert_eq!(matches(&connection, "articles_search", "bodyword1101"), 0);
+        assert_eq!(matches(&connection, "articles_search", "markup"), 0);
+        assert_eq!(matches(&connection, "saved_articles_search", "savedbody"), 1);
+        assert_eq!(
+            search_triggers(&connection),
+            vec![
+                "articles_search_ad", "articles_search_ai", "articles_search_au",
+                "saved_articles_search_ad", "saved_articles_search_ai", "saved_articles_search_au",
+            ]
+        );
+
+        // The swapped-in index is live: triggers index new rows' bodies.
+        connection
+            .execute(
+                "INSERT INTO articles (hash, feed_id, title, content, fetched_date) VALUES ('after', 'f1', 'After', '<p>afterbody</p>', '2026-01-03T00:00:00Z')",
+                [],
+            )
+            .expect("insert after swap");
+        assert_eq!(matches(&connection, "articles_search", "afterbody"), 1);
+        run_migrations(&mut connection).expect("rerun after backfill");
+        assert_eq!(matches(&connection, "articles_search", "common"), 1_198, "one edited, one deleted");
+    }
+
+    #[test]
+    fn migration_19_switches_an_empty_v18_library_immediately() {
+        let mut connection = Connection::open_in_memory().expect("open in-memory database");
+        run_migrations(&mut connection).expect("run migrations");
+        rewind_to_v18_search(&connection);
+
+        run_migrations(&mut connection).expect("run migration 19");
+        assert!(has_column(&connection, "articles_search", "body").expect("body column"));
+        assert!(!table_exists(&connection, "search_backfill").expect("no backfill"));
     }
 
     fn index_exists(connection: &Connection, name: &str) -> Result<bool, String> {

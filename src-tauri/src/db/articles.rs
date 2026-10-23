@@ -5,11 +5,11 @@ use tauri::State;
 
 use super::{
     models::{bool_to_i64, to_optional_json_string, ArticleRecord},
-    search::create_fts_prefix_query,
+    search::{body_snippet, create_fts_prefix_query, search_meta_cte_sql, search_tier_sql},
     with_savepoint, DbState,
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArticleQueryRequest {
     pub feed_id: Option<String>,
@@ -29,6 +29,18 @@ pub struct ArticleQueryRequest {
     pub cursor_date: Option<String>,
     pub cursor_hash: Option<String>,
     pub include_total: Option<bool>,
+    /// Today view: effective date within the last 24 hours, measured when the query runs.
+    pub today: Option<bool>,
+}
+
+/// Rolling window for the Today view (NetNewsWire-style "last 24 hours", not calendar day).
+const TODAY_WINDOW_HOURS: i64 = 24;
+
+/// Inclusive lower bound for the Today view, in the stored `…Z` millisecond format so the
+/// comparison against `COALESCE(published_date, fetched_date)` is a plain index range.
+fn today_cutoff(now: chrono::DateTime<chrono::Utc>) -> String {
+    (now - chrono::Duration::hours(TODAY_WINDOW_HOURS))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
 #[derive(Debug, Serialize)]
@@ -38,6 +50,10 @@ pub struct ArticleQueryResponse {
     pub total: i64,
     pub has_more: bool,
     pub cancelled: bool,
+    /// Search only: article hash -> short excerpt of the body text for rows
+    /// that matched in the body but not in title, description or author.
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub search_snippets: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,6 +102,7 @@ pub async fn articles_query(
             total: 0,
             has_more: false,
             cancelled: true,
+            search_snippets: HashMap::new(),
         }),
     }
 }
@@ -493,10 +510,122 @@ pub async fn articles_update_feed_meta(
         .await
 }
 
+/// SQL + bindings for one `articles_query` call, split from execution so tests
+/// can `EXPLAIN QUERY PLAN` the exact statements the list runs.
+struct ArticleQuerySql {
+    /// Search queries select a `search_tier` column (see `search_tier_sql`).
+    is_search: bool,
+    count_sql: Option<String>,
+    count_bindings: Vec<Value>,
+    data_sql: String,
+    data_bindings: Vec<Value>,
+}
+
 pub fn query_articles(
     connection: &Connection,
     request: ArticleQueryRequest,
 ) -> Result<ArticleQueryResponse, String> {
+    query_articles_at(connection, request, chrono::Utc::now())
+}
+
+fn query_articles_at(
+    connection: &Connection,
+    request: ArticleQueryRequest,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<ArticleQueryResponse, String> {
+    execute_article_query(connection, &request, true, now)
+}
+
+fn execute_article_query(
+    connection: &Connection,
+    request: &ArticleQueryRequest,
+    flag_fast_path: bool,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<ArticleQueryResponse, String> {
+    let sql = build_article_query_sql(request, flag_fast_path, now)?;
+    let total = if let Some(count_sql) = sql.count_sql.as_deref() {
+        connection
+            .query_row(count_sql, params_from_iter(sql.count_bindings.iter()), |row| {
+                row.get::<_, i64>(0)
+            })
+            .map_err(|error| format!("Failed to count articles: {error}"))?
+    } else {
+        0
+    };
+
+    let mut statement = connection
+        .prepare(&sql.data_sql)
+        .map_err(|error| format!("Failed to prepare article query: {error}"))?;
+    let is_search = sql.is_search;
+    let rows = statement
+        .query_map(params_from_iter(sql.data_bindings.iter()), |row| {
+            let tier = if is_search {
+                row.get::<_, i64>("search_tier")?
+            } else {
+                0
+            };
+            Ok((ArticleRecord::from_row(row)?, tier))
+        })
+        .map_err(|error| format!("Failed to query articles: {error}"))?;
+    let rows = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to read article row: {error}"))?;
+    let search_snippets = match request.search_text.as_deref() {
+        Some(search_text) if is_search => body_only_snippets(connection, &rows, search_text)?,
+        _ => HashMap::new(),
+    };
+    let articles: Vec<ArticleRecord> = rows.into_iter().map(|(article, _)| article).collect();
+    let has_more = request
+        .limit
+        .map(|limit| {
+            articles.len() >= limit as usize && total > (request.offset.unwrap_or(0) + limit)
+        })
+        .unwrap_or(false);
+
+    Ok(ArticleQueryResponse {
+        articles,
+        total,
+        has_more,
+        cancelled: false,
+        search_snippets,
+    })
+}
+
+/// Body excerpts for the page's body-only matches (tier 1), so the row shows
+/// why it matched. Reads `content` for those rows only; the list query
+/// itself never selects it.
+fn body_only_snippets(
+    connection: &Connection,
+    rows: &[(ArticleRecord, i64)],
+    search_text: &str,
+) -> Result<HashMap<String, String>, String> {
+    let mut snippets = HashMap::new();
+    if rows.iter().all(|(_, tier)| *tier == 0) {
+        return Ok(snippets);
+    }
+    let mut statement = connection
+        .prepare_cached("SELECT content FROM articles WHERE hash = ?1")
+        .map_err(|error| format!("Failed to prepare search excerpt query: {error}"))?;
+    for (article, _) in rows.iter().filter(|(_, tier)| *tier == 1) {
+        let content: Option<String> = statement
+            .query_row(params![article.hash], |row| row.get(0))
+            .optional()
+            .map_err(|error| format!("Failed to read search excerpt: {error}"))?;
+        if let Some(snippet) = content.and_then(|content| body_snippet(&content, search_text)) {
+            snippets.insert(article.hash.clone(), snippet);
+        }
+    }
+    Ok(snippets)
+}
+
+/// `flag_fast_path` lets read/starred/saved filters on multi-feed/tag lists
+/// use the grouped-source fast path. Always `true` in production; tests pass
+/// `false` to compare against the legacy joined shape.
+fn build_article_query_sql(
+    request: &ArticleQueryRequest,
+    flag_fast_path: bool,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<ArticleQuerySql, String> {
     let mut conditions: Vec<String> = Vec::new();
     let mut bindings: Vec<Value> = Vec::new();
     let feed_ids = request
@@ -506,6 +635,7 @@ pub fn query_articles(
         .unwrap_or_default();
     let has_source_filter = !feed_ids.is_empty() || request.tag_name.is_some();
     let single_feed_only = feed_ids.len() == 1 && request.tag_name.is_none();
+    let sort_last_read = request.sort_field.as_deref() == Some("last_read_at");
 
     if !feed_ids.is_empty() {
         let placeholders = repeat_placeholders(feed_ids.len());
@@ -513,29 +643,79 @@ pub fn query_articles(
         bindings.extend(feed_ids.into_iter().map(Value::Text));
     }
 
-    if let Some(tag_name) = request.tag_name {
+    if let Some(tag_name) = request.tag_name.clone() {
         conditions
             .push("afi.feed_id IN (SELECT feed_id FROM feed_tags WHERE tag_name = ?)".to_string());
         bindings.push(Value::Text(tag_name));
     }
 
+    if request.today == Some(true) {
+        // Same expression as the effective-date indexes (`idx_articles_effective_date`,
+        // `idx_articles_read`, `idx_article_feed_items_feed_date`) so SQLite can range-seek.
+        let effective_date_expr = if has_source_filter {
+            "COALESCE(afi.published_date, afi.fetched_date)"
+        } else {
+            "COALESCE(a.published_date, a.fetched_date)"
+        };
+        conditions.push(format!("{effective_date_expr} >= ?"));
+        bindings.push(Value::Text(today_cutoff(now)));
+    }
+
     let read_filter = request
         .read
         .or_else(|| request.unread_only.map(|unread| !unread));
-    if let Some(read) = read_filter {
-        conditions.push("a.read = ?".to_string());
-        bindings.push(Value::Integer(bool_to_i64(read)));
-    }
-
-    if let Some(starred) = request.starred {
-        conditions.push("a.starred = ?".to_string());
-        bindings.push(Value::Integer(bool_to_i64(starred)));
-    }
-
     let saved_filter = request.saved.or(request.saved_only);
-    if let Some(saved) = saved_filter {
-        conditions.push("a.saved = ?".to_string());
-        bindings.push(Value::Integer(bool_to_i64(saved)));
+    let has_flag_filter =
+        read_filter.is_some() || request.starred.is_some() || saved_filter.is_some();
+
+    // Multi-feed/tag lists can dedupe and sort on the covering
+    // `idx_article_feed_items_feed_date` index alone, then join article/feed
+    // metadata for the final page only. The legacy shape joined `articles` +
+    // `feeds` for every station row before GROUP BY/ORDER BY — 0.3–0.9s per
+    // switch on a multi-GB library (H17: cold-switch skeleton stuck while the
+    // deferred page query sorted ~65k joined rows). Read/starred/saved filters
+    // stay on the fast path as a per-mapping EXISTS probe by hash.
+    let grouped_source_fast_path = has_source_filter
+        && !single_feed_only
+        && !sort_last_read
+        && (flag_fast_path || !has_flag_filter);
+
+    if grouped_source_fast_path && has_flag_filter {
+        // EXISTS scales with the station's mapping rows, not with how many
+        // articles in the whole library share the flag (an `IN (SELECT ...)`
+        // set would read every unread hash for a two-feed station).
+        let mut flag_terms: Vec<&str> = Vec::new();
+        if let Some(read) = read_filter {
+            flag_terms.push("flag_article.read = ?");
+            bindings.push(Value::Integer(bool_to_i64(read)));
+        }
+        if let Some(starred) = request.starred {
+            flag_terms.push("flag_article.starred = ?");
+            bindings.push(Value::Integer(bool_to_i64(starred)));
+        }
+        if let Some(saved) = saved_filter {
+            flag_terms.push("flag_article.saved = ?");
+            bindings.push(Value::Integer(bool_to_i64(saved)));
+        }
+        conditions.push(format!(
+            "EXISTS (SELECT 1 FROM articles flag_article \
+             WHERE flag_article.hash = afi.article_hash AND {})",
+            flag_terms.join(" AND ")
+        ));
+    } else {
+        if let Some(read) = read_filter {
+            conditions.push("a.read = ?".to_string());
+            bindings.push(Value::Integer(bool_to_i64(read)));
+        }
+        // Literal 0/1 (not a bound parameter) so the planner can pick the
+        // partial `idx_articles_starred_date` / `idx_articles_saved_date`
+        // (`WHERE flag = 1`) and `idx_articles_unsaved_hash` (`saved = 0`).
+        if let Some(starred) = request.starred {
+            conditions.push(format!("a.starred = {}", bool_to_i64(starred)));
+        }
+        if let Some(saved) = saved_filter {
+            conditions.push(format!("a.saved = {}", bool_to_i64(saved)));
+        }
     }
 
     let normalized_search_text = request
@@ -543,19 +723,26 @@ pub fn query_articles(
         .as_deref()
         .map(str::trim)
         .filter(|text| !text.is_empty());
-    if let Some(search_text) = normalized_search_text {
-        let search_query = create_fts_prefix_query(search_text)
-            .ok_or_else(|| "Search text did not contain searchable tokens.".to_string())?;
+    let search_query = normalized_search_text
+        .map(|search_text| {
+            create_fts_prefix_query(search_text)
+                .ok_or_else(|| "Search text did not contain searchable tokens.".to_string())
+        })
+        .transpose()?;
+    if let Some(search_query) = search_query.clone() {
         conditions.push("articles_search MATCH ?".to_string());
         bindings.push(Value::Text(search_query));
     }
+    // Search results list title/description/author matches before body-only
+    // matches, each tier in the usual date order, so keyset paging stays
+    // (tier, date, hash).
+    let search_tier = search_query.as_ref().map(|_| search_tier_sql("a.rowid"));
 
     let sort_order = if request.sort_order.as_deref() == Some("asc") {
         "ASC"
     } else {
         "DESC"
     };
-    let sort_last_read = request.sort_field.as_deref() == Some("last_read_at");
     let sort_expr = if sort_last_read {
         "a.last_read_at"
     } else if request.sort_field.as_deref() == Some("fetched_date") {
@@ -578,23 +765,12 @@ pub fn query_articles(
     let count_conditions = conditions.clone();
     let count_bindings = bindings.clone();
 
-    // Multi-feed/tag lists without article-level filters can dedupe and sort on
-    // the covering `idx_article_feed_items_feed_date` index alone, then join
-    // article/feed metadata for the final page only. The legacy shape joined
-    // `articles` + `feeds` for every station row before GROUP BY/ORDER BY —
-    // 0.3–0.9s per switch on a multi-GB library (H17: cold-switch skeleton
-    // stuck while the deferred page query sorted ~65k joined rows).
-    let grouped_source_fast_path = has_source_filter
-        && !single_feed_only
-        && !sort_last_read
-        && read_filter.is_none()
-        && request.starred.is_none()
-        && saved_filter.is_none();
-
     let mut having_conditions: Vec<String> = Vec::new();
-    if let Some(cursor_hash) = request.cursor_hash {
+    let (cursor_conditions_len, cursor_having_len, cursor_bindings_start) =
+        (conditions.len(), having_conditions.len(), bindings.len());
+    if let Some(cursor_hash) = request.cursor_hash.clone() {
         if sort_last_read {
-            if let Some(cursor_date) = request.cursor_date {
+            if let Some(cursor_date) = request.cursor_date.clone() {
                 let cursor_operator = if sort_order == "ASC" { ">" } else { "<" };
                 // DESC NULLS LAST: after a dated cursor, remaining dated rows
                 // plus the NULL tail must both qualify. SQLite `NULL < date` is
@@ -609,7 +785,7 @@ pub fn query_articles(
                 conditions.push(format!("{sort_expr} IS NULL AND {sort_hash_expr} > ?"));
                 bindings.push(Value::Text(cursor_hash));
             }
-        } else if let Some(cursor_date) = request.cursor_date {
+        } else if let Some(cursor_date) = request.cursor_date.clone() {
             let cursor_operator = if sort_order == "ASC" { ">" } else { "<" };
             if grouped_source_fast_path {
                 // The aggregated sort date only exists after GROUP BY, so cursor
@@ -627,6 +803,33 @@ pub fn query_articles(
             bindings.push(Value::Text(cursor_hash));
         }
     }
+    // Search pages resume after the cursor row's tier: every later tier,
+    // plus the rest of the cursor's own tier by the date/hash keyset above.
+    if let (Some(tier), Some(cursor_hash)) = (&search_tier, request.cursor_hash.as_ref()) {
+        let cursor_row_tier = search_tier_sql("c.rowid");
+        let in_having = having_conditions.len() > cursor_having_len;
+        let target = if in_having {
+            Some(&mut having_conditions)
+        } else if conditions.len() > cursor_conditions_len {
+            Some(&mut conditions)
+        } else {
+            None
+        };
+        if let Some(target) = target {
+            let keyset = target.pop().expect("cursor condition was just added");
+            let keyset_bindings = bindings.split_off(cursor_bindings_start);
+            let row_tier = if in_having { "search_tier" } else { tier.as_str() };
+            // A cursor row deleted since the last page resumes at tier 0.
+            let cursor_tier =
+                format!("COALESCE((SELECT {cursor_row_tier} FROM articles c WHERE c.hash = ?), 0)");
+            target.push(format!(
+                "({row_tier} > {cursor_tier} OR ({row_tier} = {cursor_tier} AND {keyset}))"
+            ));
+            bindings.push(Value::Text(cursor_hash.clone()));
+            bindings.push(Value::Text(cursor_hash.clone()));
+            bindings.extend(keyset_bindings);
+        }
+    }
 
     let article_source_sql = if has_source_filter {
         "article_feed_items afi JOIN articles a ON a.hash = afi.article_hash"
@@ -638,22 +841,17 @@ pub fn query_articles(
     } else {
         article_source_sql.to_string()
     };
-    let count_from_sql = if has_source_filter
+    // Fast-path flag filters are an EXISTS on `afi`, so the count can skip
+    // the `articles` join just like the unfiltered station count.
+    let count_on_mappings_only = has_source_filter
         && normalized_search_text.is_none()
-        && read_filter.is_none()
-        && request.starred.is_none()
-        && saved_filter.is_none()
-    {
+        && (!has_flag_filter || grouped_source_fast_path);
+    let count_from_sql = if count_on_mappings_only {
         "article_feed_items afi".to_string()
     } else {
         from_sql.clone()
     };
-    let count_distinct_expr = if has_source_filter
-        && normalized_search_text.is_none()
-        && read_filter.is_none()
-        && request.starred.is_none()
-        && saved_filter.is_none()
-    {
+    let count_distinct_expr = if count_on_mappings_only {
         "afi.article_hash"
     } else {
         "a.hash"
@@ -665,16 +863,8 @@ pub fn query_articles(
     };
 
     let count_where = where_clause(&count_conditions);
-    let total = if request.include_total != Some(false) {
-        let count_sql = format!("SELECT {count_expr} FROM {count_from_sql} {count_where}");
-        connection
-            .query_row(&count_sql, params_from_iter(count_bindings.iter()), |row| {
-                row.get::<_, i64>(0)
-            })
-            .map_err(|error| format!("Failed to count articles: {error}"))?
-    } else {
-        0
-    };
+    let count_sql = (request.include_total != Some(false))
+        .then(|| format!("SELECT {count_expr} FROM {count_from_sql} {count_where}"));
 
     let data_where = where_clause(&conditions);
     // Single-feed lists resolve metadata from the active subscription (afi), not the
@@ -699,6 +889,14 @@ pub fn query_articles(
         } else {
             format!(" HAVING {}", having_conditions.join(" AND "))
         };
+        let (page_tier_select, inner_tier_select, inner_tier_order) = match &search_query {
+            Some(_) => (
+                "\n              page.search_tier AS search_tier,".to_string(),
+                format!("\n                MIN({}) AS search_tier,", search_tier_sql("search_article.rowid")),
+                "search_tier ASC, ",
+            ),
+            None => (String::new(), String::new(), ""),
+        };
         let page_from_sql = if normalized_search_text.is_some() {
             "articles_search \
              JOIN articles search_article ON search_article.rowid = articles_search.rowid \
@@ -709,7 +907,7 @@ pub fn query_articles(
         };
         format!(
             r#"
-            SELECT
+            SELECT{page_tier_select}
               a.hash,
               a.feed_id AS feed_id,
               a.title,
@@ -734,13 +932,13 @@ pub fn query_articles(
               COALESCE(f.image, a.feed_image) AS feed_image
             FROM (
               SELECT
-                afi.article_hash AS article_hash,
+                afi.article_hash AS article_hash,{inner_tier_select}
                 MAX({page_sort_expr}) AS sort_date
               FROM {page_from_sql}
               {data_where}
               GROUP BY afi.article_hash
               {having_sql}
-              ORDER BY sort_date {sort_order}, article_hash ASC
+              ORDER BY {inner_tier_order}sort_date {sort_order}, article_hash ASC
             "#
         )
     } else {
@@ -749,9 +947,13 @@ pub fn query_articles(
         } else {
             ""
         };
+        let (tier_select, tier_order) = match &search_tier {
+            Some(tier) => (format!("\n              {tier} AS search_tier,"), "search_tier ASC, "),
+            None => (String::new(), ""),
+        };
         format!(
             r#"
-            SELECT
+            SELECT{tier_select}
               a.hash,
               {display_feed_id_sql} AS feed_id,
               a.title,
@@ -777,10 +979,14 @@ pub fn query_articles(
             FROM {from_sql}
             LEFT JOIN feeds f ON f.id = {display_feed_id_sql}
             {data_where}{group_by}
-            ORDER BY {sort_expr} {sort_order}, {sort_hash_expr} ASC
+            ORDER BY {tier_order}{sort_expr} {sort_order}, {sort_hash_expr} ASC
             "#
         )
     };
+
+    if let Some(search_query) = &search_query {
+        data_sql.insert_str(0, &search_meta_cte_sql("articles_search", search_query));
+    }
 
     if let Some(limit) = request.limit {
         data_sql.push_str(" LIMIT ?");
@@ -798,33 +1004,22 @@ pub fn query_articles(
             ) page
             JOIN articles a ON a.hash = page.article_hash
             LEFT JOIN feeds f ON f.id = a.feed_id
-            ORDER BY page.sort_date "#,
+            ORDER BY "#,
         );
+        if search_tier.is_some() {
+            data_sql.push_str("page.search_tier ASC, ");
+        }
+        data_sql.push_str("page.sort_date ");
         data_sql.push_str(sort_order);
         data_sql.push_str(", page.article_hash ASC");
     }
 
-    let mut statement = connection
-        .prepare(&data_sql)
-        .map_err(|error| format!("Failed to prepare article query: {error}"))?;
-    let rows = statement
-        .query_map(params_from_iter(bindings.iter()), ArticleRecord::from_row)
-        .map_err(|error| format!("Failed to query articles: {error}"))?;
-    let articles = rows
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("Failed to read article row: {error}"))?;
-    let has_more = request
-        .limit
-        .map(|limit| {
-            articles.len() >= limit as usize && total > (request.offset.unwrap_or(0) + limit)
-        })
-        .unwrap_or(false);
-
-    Ok(ArticleQueryResponse {
-        articles,
-        total,
-        has_more,
-        cancelled: false,
+    Ok(ArticleQuerySql {
+        is_search: search_tier.is_some(),
+        count_sql,
+        count_bindings,
+        data_sql,
+        data_bindings: bindings,
     })
 }
 
@@ -1316,6 +1511,7 @@ mod tests {
                 cursor_date: None,
                 cursor_hash: None,
                 include_total: Some(false),
+                today: None,
             },
         )
         .expect("query station search");
@@ -1477,6 +1673,7 @@ mod tests {
             cursor_date: cursor_date.map(str::to_string),
             cursor_hash: cursor_hash.map(str::to_string),
             include_total: Some(true),
+            today: None,
         }
     }
 
@@ -1715,5 +1912,740 @@ mod tests {
             .expect("count rows");
         assert_eq!(rows, 0, "the earlier article in the batch must roll back");
         assert!(connection.is_autocommit());
+    }
+
+    fn insert_dated_article(
+        connection: &Connection,
+        hash: &str,
+        feed_id: &str,
+        published_date: Option<&str>,
+        fetched_date: &str,
+        read: i64,
+    ) {
+        connection
+            .execute(
+                "INSERT INTO articles (hash, feed_id, published_date, fetched_date, read) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![hash, feed_id, published_date, fetched_date, read],
+            )
+            .expect("insert dated article");
+        connection
+            .execute(
+                "INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date) VALUES (?1, ?2, ?3, ?4)",
+                params![feed_id, hash, published_date, fetched_date],
+            )
+            .expect("insert dated mapping");
+    }
+
+    fn fixed_now() -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339("2026-10-22T12:00:00.000Z")
+            .expect("parse fixed now")
+            .with_timezone(&chrono::Utc)
+    }
+
+    fn today_query(read: Option<bool>) -> ArticleQueryRequest {
+        ArticleQueryRequest {
+            read,
+            limit: Some(100),
+            include_total: Some(true),
+            today: Some(true),
+            ..ArticleQueryRequest::default()
+        }
+    }
+
+    #[test]
+    fn today_query_keeps_last_24_hours_across_feeds_newest_first() {
+        let connection = setup_connection();
+        insert_feed(&connection, "f1");
+        insert_feed(&connection, "f2");
+        let fetched = "2026-10-22T11:59:00.000Z";
+        insert_dated_article(&connection, "edge-in", "f1", Some("2026-10-21T12:00:00.000Z"), fetched, 0);
+        insert_dated_article(&connection, "edge-out", "f1", Some("2026-10-21T11:59:59.999Z"), fetched, 0);
+        insert_dated_article(&connection, "fresh-read", "f2", Some("2026-10-22T11:00:00.000Z"), fetched, 1);
+        insert_dated_article(&connection, "fetched-only", "f2", None, "2026-10-22T06:00:00.000Z", 0);
+        // Effective date is the published date, so an old post fetched today stays out.
+        insert_dated_article(&connection, "old-post", "f1", Some("2026-10-01T00:00:00.000Z"), fetched, 0);
+        insert_dated_article(&connection, "shared", "f1", Some("2026-10-22T09:00:00.000Z"), fetched, 0);
+        connection
+            .execute(
+                "INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date) VALUES ('f2', 'shared', '2026-10-22T09:00:00.000Z', ?1)",
+                params![fetched],
+            )
+            .expect("second subscription for shared article");
+
+        let all = query_articles_at(&connection, today_query(None), fixed_now()).expect("today");
+        assert_eq!(
+            all.articles.iter().map(|article| article.hash.as_str()).collect::<Vec<_>>(),
+            vec!["fresh-read", "shared", "fetched-only", "edge-in"],
+            "read and unread from every feed, newest first, shared article once, 24h boundary inclusive"
+        );
+        assert_eq!(all.total, 4);
+
+        let unread = query_articles_at(
+            &connection,
+            ArticleQueryRequest { limit: Some(0), ..today_query(Some(false)) },
+            fixed_now(),
+        )
+        .expect("today unread count");
+        assert_eq!(unread.total, 3, "sidebar count is Today's unread articles");
+
+        let later = fixed_now() + chrono::Duration::hours(3);
+        let shifted = query_articles_at(&connection, today_query(None), later).expect("later");
+        assert_eq!(
+            shifted.articles.iter().map(|article| article.hash.as_str()).collect::<Vec<_>>(),
+            vec!["fresh-read", "shared", "fetched-only"],
+            "the window slides with the query time"
+        );
+    }
+
+    #[test]
+    fn today_queries_use_effective_date_indexes_not_scans() {
+        let connection = setup_connection();
+        let plan = |sql: &str, bindings: &[&dyn rusqlite::ToSql]| -> String {
+            connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .expect("prepare plan")
+                .query_map(bindings, |row| row.get::<_, String>(3))
+                .expect("query plan")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("plan rows")
+                .join(" | ")
+        };
+        let cutoff = today_cutoff(fixed_now());
+        // Same shape query_articles builds for `today: true` with no feed/tag source.
+        let page = plan(
+            "SELECT a.hash, COALESCE(f.title, a.feed_title) \
+             FROM articles a LEFT JOIN feeds f ON f.id = a.feed_id \
+             WHERE COALESCE(a.published_date, a.fetched_date) >= ?1 \
+             ORDER BY COALESCE(a.published_date, a.fetched_date) DESC, a.hash ASC LIMIT 100",
+            &[&cutoff],
+        );
+        let unread_count = plan(
+            "SELECT COUNT(*) FROM articles a \
+             WHERE COALESCE(a.published_date, a.fetched_date) >= ?1 AND a.read = ?2",
+            &[&cutoff, &0_i64],
+        );
+        println!("today page plan: {page}");
+        println!("today unread count plan: {unread_count}");
+        assert!(page.contains("idx_articles_effective_date"), "page must seek the effective-date index: {page}");
+        assert!(unread_count.contains("idx_articles_read"), "count must seek (read, effective date): {unread_count}");
+        for current in [&page, &unread_count] {
+            assert!(!current.contains("SCAN a"), "today query must not full-scan articles: {current}");
+            assert!(
+                !current.contains("USE TEMP B-TREE FOR ORDER BY"),
+                "today query must not sort the whole window: {current}"
+            );
+        }
+    }
+    fn list_request() -> ArticleQueryRequest {
+        ArticleQueryRequest {
+            feed_id: None,
+            feed_ids: None,
+            tag_name: None,
+            unread_only: None,
+            saved_only: None,
+            read: None,
+            starred: None,
+            saved: None,
+            sort_field: Some("published_date".to_string()),
+            sort_order: Some("desc".to_string()),
+            search_text: None,
+            search_epoch: None,
+            limit: Some(50),
+            offset: None,
+            cursor_date: None,
+            cursor_hash: None,
+            include_total: Some(true),
+            today: None,
+        }
+    }
+
+    fn query_plan(connection: &Connection, sql: &str, bindings: &[Value]) -> String {
+        connection
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .expect("prepare plan")
+            .query_map(params_from_iter(bindings.iter()), |row| row.get::<_, String>(3))
+            .expect("query plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("plan rows")
+            .join(" | ")
+    }
+
+    fn data_plan(connection: &Connection, request: &ArticleQueryRequest) -> String {
+        let sql = build_article_query_sql(request, true, chrono::Utc::now()).expect("build sql");
+        query_plan(connection, &sql.data_sql, &sql.data_bindings)
+    }
+
+    fn count_plan(connection: &Connection, request: &ArticleQueryRequest) -> String {
+        let sql = build_article_query_sql(request, true, chrono::Utc::now()).expect("build sql");
+        query_plan(
+            connection,
+            sql.count_sql.as_deref().expect("count sql"),
+            &sql.count_bindings,
+        )
+    }
+
+    #[test]
+    fn body_search_plans_drive_from_the_fts_index() {
+        let connection = setup_connection();
+        let search_request = |tag: Option<&str>, cursor: bool| {
+            let mut request = list_request();
+            request.search_text = Some("kestrel".to_string());
+            request.tag_name = tag.map(str::to_string);
+            if cursor {
+                request.cursor_date = Some("2026-05-01T00:00:00Z".to_string());
+                request.cursor_hash = Some("cursor".to_string());
+            }
+            request
+        };
+        let library = search_request(None, false);
+        let library_cursor = search_request(None, true);
+        let station = search_request(Some("Tech"), false);
+        let station_cursor = search_request(Some("Tech"), true);
+
+        for (label, request) in [
+            ("library", &library),
+            ("library cursor", &library_cursor),
+            ("station", &station),
+            ("station cursor", &station_cursor),
+        ] {
+            let plan = data_plan(&connection, request);
+            println!("{label} search plan: {plan}");
+            assert!(
+                plan.contains("articles_search VIRTUAL TABLE INDEX"),
+                "{label}: search must use the FTS index: {plan}"
+            );
+            assert!(
+                !plan.split(" | ").any(|step| step == "SCAN a" || step.starts_with("SCAN a ")),
+                "{label}: no full articles scan: {plan}"
+            );
+        }
+        let count = count_plan(&connection, &library);
+        assert!(count.contains("articles_search VIRTUAL TABLE INDEX"), "{count}");
+    }
+
+    #[test]
+    fn starred_and_saved_lists_stream_from_partial_date_indexes() {
+        let connection = setup_connection();
+        for (flag, index) in [
+            ("starred", "idx_articles_starred_date"),
+            ("saved", "idx_articles_saved_date"),
+        ] {
+            let mut request = list_request();
+            if flag == "starred" {
+                request.starred = Some(true);
+            } else {
+                request.saved = Some(true);
+            }
+            let first_page = data_plan(&connection, &request);
+            request.cursor_date = Some("2026-05-01T00:00:00Z".to_string());
+            request.cursor_hash = Some("cursor".to_string());
+            let cursor_page = data_plan(&connection, &request);
+            let count = count_plan(&connection, &request);
+            println!("{flag} page plan: {first_page}");
+            println!("{flag} cursor plan: {cursor_page}");
+            println!("{flag} count plan: {count}");
+            for plan in [&first_page, &cursor_page] {
+                assert!(plan.contains(index), "{flag} list must use {index}: {plan}");
+                assert!(!plan.contains("TEMP B-TREE"), "{flag} list must not sort: {plan}");
+            }
+            assert!(count.contains(index), "{flag} count must use {index}: {count}");
+        }
+
+        let mut unsaved = list_request();
+        unsaved.saved = Some(false);
+        unsaved.limit = Some(0);
+        let count = count_plan(&connection, &unsaved);
+        assert!(
+            count.contains("COVERING INDEX idx_articles_unsaved_hash"),
+            "unsaved count (clear-articles flow) must use the partial unsaved index: {count}"
+        );
+    }
+
+    #[test]
+    fn station_flag_filters_take_grouped_fast_path() {
+        let connection = setup_connection();
+        let mut request = list_request();
+        request.tag_name = Some("Tech".to_string());
+        request.read = Some(false);
+        let sql = build_article_query_sql(&request, true, chrono::Utc::now()).expect("build sql");
+        assert!(
+            sql.data_sql.contains("GROUP BY afi.article_hash"),
+            "station unread list must page keys from the mapping index: {}",
+            sql.data_sql
+        );
+        let data = data_plan(&connection, &request);
+        let count = count_plan(&connection, &request);
+        println!("station unread page plan: {data}");
+        println!("station unread count plan: {count}");
+        assert!(
+            data.contains("COVERING INDEX idx_article_feed_items_feed_date"),
+            "station keys must come from the covering mapping index: {data}"
+        );
+        assert!(
+            data.contains("SEARCH flag_article EXISTS USING INDEX sqlite_autoindex_articles_1 (hash=?)"),
+            "flag filter must be a by-hash probe, not a scan: {data}"
+        );
+        assert!(!data.contains("SCAN a "), "articles must not be scanned: {data}");
+        assert!(
+            count.contains("SEARCH afi USING COVERING INDEX")
+                && !count.contains("SCAN")
+                && !count.contains("SEARCH a "),
+            "station unread count must stay on the mapping index: {count}"
+        );
+
+        request.sort_field = Some("last_read_at".to_string());
+        let read_sorted = build_article_query_sql(&request, true, chrono::Utc::now()).expect("build sql");
+        assert!(
+            !read_sorted.data_sql.contains("GROUP BY afi.article_hash"),
+            "last-read sort keeps the joined path (NULLS-LAST cursor)"
+        );
+    }
+
+    #[test]
+    fn flag_list_plans_hold_after_analyze_on_realistic_library() {
+        let connection = setup_connection();
+        for feed in 0..40 {
+            insert_feed(&connection, &format!("f{feed}"));
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO tags (name, created_at) VALUES ('Tech', '2026-01-01');
+                 INSERT INTO feed_tags (feed_id, tag_name)
+                   SELECT id, 'Tech' FROM feeds WHERE CAST(SUBSTR(id, 2) AS INTEGER) % 4 = 0;",
+            )
+            .expect("station");
+        let transaction = connection.unchecked_transaction().expect("seed transaction");
+        for index in 0..4000_i64 {
+            let hash = format!("h{index:05}");
+            let feed = format!("f{}", index % 40);
+            let date = format!("2026-{:02}-{:02}T00:00:00Z", 1 + index % 9, 1 + index % 28);
+            transaction
+                .execute(
+                    "INSERT INTO articles (hash, feed_id, published_date, fetched_date, read, starred, saved)
+                     VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6)",
+                    params![hash, feed, date, i64::from(index % 5 != 0), i64::from(index % 97 == 0), i64::from(index % 211 == 0)],
+                )
+                .expect("article");
+            transaction
+                .execute(
+                    "INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date) VALUES (?1, ?2, ?3, ?3)",
+                    params![feed, hash, date],
+                )
+                .expect("mapping");
+        }
+        transaction.commit().expect("commit seed");
+        connection.execute_batch("ANALYZE").expect("analyze");
+
+        for (flag, index) in [
+            ("starred", "idx_articles_starred_date"),
+            ("saved", "idx_articles_saved_date"),
+        ] {
+            let mut request = list_request();
+            if flag == "starred" {
+                request.starred = Some(true);
+            } else {
+                request.saved = Some(true);
+            }
+            let plan = data_plan(&connection, &request);
+            assert!(plan.contains(index) && !plan.contains("TEMP B-TREE"), "{flag}: {plan}");
+        }
+
+        let mut station_unread = list_request();
+        station_unread.tag_name = Some("Tech".to_string());
+        station_unread.read = Some(false);
+        let plan = data_plan(&connection, &station_unread);
+        assert!(
+            plan.contains("SEARCH afi USING COVERING INDEX")
+                && plan.contains("SEARCH flag_article EXISTS USING INDEX")
+                && !plan.contains("SCAN a "),
+            "station unread after ANALYZE: {plan}"
+        );
+    }
+
+    struct SeedArticle {
+        hash: &'static str,
+        feeds: &'static [&'static str],
+        date: &'static str,
+        read: i64,
+        starred: i64,
+        saved: i64,
+    }
+
+    /// Two stations, multi-feed articles, and several articles sharing one date
+    /// so the hash tiebreaker decides order.
+    fn seed_flag_library(connection: &Connection) {
+        for feed_id in ["f1", "f2", "f3", "f4"] {
+            insert_feed(connection, feed_id);
+        }
+        for (name, feeds) in [("Tech", ["f1", "f2"]), ("News", ["f3", "f4"])] {
+            connection
+                .execute(
+                    "INSERT INTO tags (name, created_at) VALUES (?1, '2026-01-01T00:00:00Z')",
+                    params![name],
+                )
+                .expect("insert tag");
+            for feed_id in feeds {
+                connection
+                    .execute(
+                        "INSERT INTO feed_tags (feed_id, tag_name) VALUES (?1, ?2)",
+                        params![feed_id, name],
+                    )
+                    .expect("attach feed");
+            }
+        }
+        let tie = "2026-03-01T00:00:00Z";
+        let seed = [
+            SeedArticle { hash: "a01", feeds: &["f1"], date: "2026-03-05T00:00:00Z", read: 0, starred: 0, saved: 0 },
+            SeedArticle { hash: "a02", feeds: &["f1", "f2"], date: tie, read: 0, starred: 1, saved: 0 },
+            SeedArticle { hash: "a03", feeds: &["f2"], date: tie, read: 1, starred: 0, saved: 1 },
+            SeedArticle { hash: "a04", feeds: &["f1", "f2", "f3"], date: tie, read: 0, starred: 0, saved: 0 },
+            SeedArticle { hash: "a05", feeds: &["f2"], date: tie, read: 1, starred: 1, saved: 1 },
+            SeedArticle { hash: "a06", feeds: &["f1"], date: "2026-02-01T00:00:00Z", read: 0, starred: 1, saved: 0 },
+            SeedArticle { hash: "a07", feeds: &["f2", "f4"], date: "2026-02-01T00:00:00Z", read: 1, starred: 0, saved: 0 },
+            SeedArticle { hash: "a08", feeds: &["f1"], date: "2026-01-15T00:00:00Z", read: 0, starred: 0, saved: 1 },
+            SeedArticle { hash: "a09", feeds: &["f3"], date: tie, read: 0, starred: 1, saved: 0 },
+            SeedArticle { hash: "a10", feeds: &["f2", "f1"], date: "2026-01-10T00:00:00Z", read: 1, starred: 1, saved: 0 },
+            SeedArticle { hash: "a11", feeds: &["f1"], date: "2026-01-10T00:00:00Z", read: 0, starred: 0, saved: 0 },
+            SeedArticle { hash: "a12", feeds: &["f4"], date: "2026-01-05T00:00:00Z", read: 0, starred: 0, saved: 0 },
+        ];
+        for article in seed {
+            connection
+                .execute(
+                    "INSERT INTO articles (hash, feed_id, published_date, fetched_date, read, starred, saved)
+                     VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6)",
+                    params![article.hash, article.feeds[0], article.date, article.read, article.starred, article.saved],
+                )
+                .expect("insert article");
+            for feed_id in article.feeds {
+                connection
+                    .execute(
+                        "INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date)
+                         VALUES (?1, ?2, ?3, ?3)",
+                        params![feed_id, article.hash, article.date],
+                    )
+                    .expect("insert mapping");
+            }
+        }
+    }
+
+    /// Walks every page with the keyset cursor the list uses (effective date +
+    /// hash of the last row) and returns `(hashes, first-page total)`.
+    fn walk_pages(
+        connection: &Connection,
+        base: &ArticleQueryRequest,
+        flag_fast_path: bool,
+    ) -> (Vec<String>, i64) {
+        let mut hashes = Vec::new();
+        let mut cursor: Option<(String, String)> = None;
+        let mut total = None;
+        loop {
+            let request = ArticleQueryRequest {
+                feed_id: base.feed_id.clone(),
+                feed_ids: base.feed_ids.clone(),
+                tag_name: base.tag_name.clone(),
+                unread_only: base.unread_only,
+                saved_only: base.saved_only,
+                read: base.read,
+                starred: base.starred,
+                saved: base.saved,
+                sort_field: base.sort_field.clone(),
+                sort_order: base.sort_order.clone(),
+                search_text: None,
+                search_epoch: None,
+                limit: Some(2),
+                offset: None,
+                cursor_date: cursor.as_ref().map(|(date, _)| date.clone()),
+                cursor_hash: cursor.as_ref().map(|(_, hash)| hash.clone()),
+                include_total: Some(total.is_none()),
+                today: base.today,
+            };
+            let page = execute_article_query(connection, &request, flag_fast_path, chrono::Utc::now())
+                .expect("query page");
+            total.get_or_insert(page.total);
+            let Some(last) = page.articles.last() else {
+                break;
+            };
+            cursor = Some((
+                last.published_date.clone().unwrap_or_else(|| last.fetched_date.clone()),
+                last.hash.clone(),
+            ));
+            hashes.extend(page.articles.iter().map(|article| article.hash.clone()));
+            assert!(hashes.len() <= 64, "cursor paging must terminate");
+        }
+        (hashes, total.unwrap_or(0))
+    }
+
+    fn flag_filter_cases() -> Vec<(Option<bool>, Option<bool>, Option<bool>)> {
+        vec![
+            (Some(false), None, None),
+            (Some(true), None, None),
+            (None, Some(true), None),
+            (None, Some(false), None),
+            (None, None, Some(true)),
+            (None, None, Some(false)),
+            (Some(false), Some(true), None),
+            (Some(true), None, Some(true)),
+        ]
+    }
+
+    #[test]
+    fn station_flag_fast_path_matches_legacy_join_page_for_page() {
+        let connection = setup_connection();
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .expect("enable foreign keys like production connections");
+        seed_flag_library(&connection);
+
+        let sources: Vec<(Option<String>, Option<Vec<String>>)> = vec![
+            (Some("Tech".to_string()), None),
+            (Some("News".to_string()), None),
+            (None, Some(vec!["f1".to_string(), "f3".to_string()])),
+            (None, Some(vec!["f1".to_string(), "f2".to_string(), "f3".to_string(), "f4".to_string()])),
+        ];
+        let mut non_empty_cases = 0;
+        for (tag_name, feed_ids) in &sources {
+            for (read, starred, saved) in flag_filter_cases() {
+                let mut request = list_request();
+                request.tag_name = tag_name.clone();
+                request.feed_ids = feed_ids.clone();
+                request.read = read;
+                request.starred = starred;
+                request.saved = saved;
+                let fast = walk_pages(&connection, &request, true);
+                let legacy = walk_pages(&connection, &request, false);
+                assert_eq!(
+                    fast, legacy,
+                    "fast path must match the legacy join for {tag_name:?}/{feed_ids:?} read={read:?} starred={starred:?} saved={saved:?}"
+                );
+                if !fast.0.is_empty() {
+                    non_empty_cases += 1;
+                }
+            }
+        }
+        assert!(non_empty_cases >= 20, "fixture must exercise real pages: {non_empty_cases}");
+
+        // Ties on the shared date resolve by hash; multi-feed rows appear once.
+        let mut tech_unread = list_request();
+        tech_unread.tag_name = Some("Tech".to_string());
+        tech_unread.read = Some(false);
+        let (hashes, total) = walk_pages(&connection, &tech_unread, true);
+        assert_eq!(hashes, vec!["a01", "a02", "a04", "a06", "a08", "a11"]);
+        assert_eq!(total, 6);
+
+        // Search inside a station keeps the flag filter on the fast path too.
+        connection
+            .execute(
+                "UPDATE articles SET title = 'Rust release notes' WHERE hash IN ('a02', 'a03', 'a04', 'a12')",
+                [],
+            )
+            .expect("title searchable rows");
+        for read in [Some(false), Some(true), None] {
+            let mut search = list_request();
+            search.tag_name = Some("Tech".to_string());
+            search.read = read;
+            search.search_text = Some("rust".to_string());
+            let fast = execute_article_query(&connection, &search, true, chrono::Utc::now()).expect("fast search");
+            let legacy = execute_article_query(&connection, &search, false, chrono::Utc::now()).expect("legacy search");
+            let hashes = |page: &ArticleQueryResponse| {
+                page.articles.iter().map(|article| article.hash.clone()).collect::<Vec<_>>()
+            };
+            assert_eq!(hashes(&fast), hashes(&legacy), "search read={read:?}");
+            assert_eq!(fast.total, legacy.total, "search total read={read:?}");
+        }
+    }
+
+    #[test]
+    fn station_flag_filter_equals_unfiltered_station_list_filtered_by_flag() {
+        let connection = setup_connection();
+        seed_flag_library(&connection);
+        // Per-subscription dates differ for a multi-feed article: the fast path
+        // orders it by its newest mapping, same as the unfiltered station list.
+        connection
+            .execute(
+                "UPDATE article_feed_items SET published_date = '2026-04-01T00:00:00Z'
+                 WHERE feed_id = 'f2' AND article_hash = 'a10'",
+                [],
+            )
+            .expect("diverge per-feed date");
+
+        let mut unfiltered = list_request();
+        unfiltered.tag_name = Some("Tech".to_string());
+        unfiltered.limit = Some(100);
+        let all = query_articles(&connection, unfiltered).expect("unfiltered station");
+        for (read, starred, saved) in flag_filter_cases() {
+            let mut request = list_request();
+            request.tag_name = Some("Tech".to_string());
+            request.limit = Some(100);
+            request.read = read;
+            request.starred = starred;
+            request.saved = saved;
+            let filtered = query_articles(&connection, request).expect("filtered station");
+            let expected: Vec<&str> = all
+                .articles
+                .iter()
+                .filter(|article| read.map_or(true, |value| article.read == value))
+                .filter(|article| starred.map_or(true, |value| article.starred == value))
+                .filter(|article| saved.map_or(true, |value| article.saved == value))
+                .map(|article| article.hash.as_str())
+                .collect();
+            let actual: Vec<&str> = filtered.articles.iter().map(|article| article.hash.as_str()).collect();
+            assert_eq!(actual, expected, "read={read:?} starred={starred:?} saved={saved:?}");
+            assert_eq!(filtered.total, expected.len() as i64);
+        }
+    }
+
+    #[test]
+    fn starred_and_saved_library_lists_page_by_date_then_hash() {
+        let connection = setup_connection();
+        seed_flag_library(&connection);
+        let mut starred = list_request();
+        starred.starred = Some(true);
+        let (hashes, total) = walk_pages(&connection, &starred, true);
+        assert_eq!(hashes, vec!["a02", "a05", "a09", "a06", "a10"]);
+        assert_eq!(total, 5);
+
+        let mut saved = list_request();
+        saved.saved = Some(true);
+        let (hashes, total) = walk_pages(&connection, &saved, true);
+        assert_eq!(hashes, vec!["a03", "a05", "a08"]);
+        assert_eq!(total, 3);
+    }
+
+    /// Timing comparison on a synthetic ~100k-article library. Not a pass/fail
+    /// check: run with
+    /// `cargo test --manifest-path src-tauri/Cargo.toml article_query_timing -- --ignored --nocapture`.
+    /// Set `KIJI_BENCH_DB` to keep the database file for size inspection.
+    #[test]
+    #[ignore]
+    fn article_query_timing_on_synthetic_library() {
+        use std::time::Instant;
+
+        let path = std::env::var("KIJI_BENCH_DB").unwrap_or_else(|_| {
+            std::env::temp_dir()
+                .join("kiji-article-query-bench.sqlite")
+                .to_string_lossy()
+                .into_owned()
+        });
+        let _ = std::fs::remove_file(&path);
+        let mut connection = Connection::open(&path).expect("open bench db");
+        run_migrations(&mut connection).expect("migrate");
+
+        const ARTICLES: usize = 100_000;
+        const FEEDS: usize = 200;
+        let body = "x".repeat(3_000);
+        let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let transaction = connection.transaction().expect("seed transaction");
+        for feed in 0..FEEDS {
+            transaction
+                .execute(
+                    "INSERT INTO feeds (id, title, url, created_at) VALUES (?1, ?1, ?1, '2026-01-01')",
+                    params![format!("f{feed}")],
+                )
+                .expect("feed");
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO tags (name, created_at) VALUES (?1, '2026-01-01')",
+                    params![format!("t{}", feed % 10)],
+                )
+                .expect("tag");
+            transaction
+                .execute(
+                    "INSERT INTO feed_tags (feed_id, tag_name) VALUES (?1, ?2)",
+                    params![format!("f{feed}"), format!("t{}", feed % 10)],
+                )
+                .expect("feed tag");
+        }
+        for index in 0..ARTICLES {
+            let hash = format!("{:016x}{index:08}", next());
+            let feed = (next() % FEEDS as u64) as usize;
+            let date = format!(
+                "2026-{:02}-{:02}T{:02}:00:00Z",
+                1 + index % 9,
+                1 + (index / 9) % 28,
+                (index / 300) % 24
+            );
+            let roll = next() % 1000;
+            let read = i64::from(roll >= 200);
+            let starred = i64::from(next() % 100 == 0);
+            let saved = i64::from(next() % 200 == 0);
+            transaction
+                .execute(
+                    "INSERT INTO articles (hash, feed_id, title, description, content, published_date, fetched_date, read, starred, saved)
+                     VALUES (?1, ?2, 'Title', 'Description', ?3, ?4, ?4, ?5, ?6, ?7)",
+                    params![hash, format!("f{feed}"), body, date, read, starred, saved],
+                )
+                .expect("article");
+            transaction
+                .execute(
+                    "INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date) VALUES (?1, ?2, ?3, ?3)",
+                    params![format!("f{feed}"), hash, date],
+                )
+                .expect("mapping");
+            if next() % 20 == 0 {
+                transaction
+                    .execute(
+                        "INSERT INTO article_feed_items (feed_id, article_hash, published_date, fetched_date) VALUES (?1, ?2, ?3, ?3)",
+                        params![format!("f{}", (feed + 1) % FEEDS), hash, date],
+                    )
+                    .expect("second mapping");
+            }
+        }
+        transaction.commit().expect("commit seed");
+
+        let median_ms = |request: &ArticleQueryRequest, flag_fast_path: bool| -> f64 {
+            let mut samples: Vec<f64> = (0..7)
+                .map(|_| {
+                    let started = Instant::now();
+                    execute_article_query(&connection, request, flag_fast_path, chrono::Utc::now()).expect("query");
+                    started.elapsed().as_secs_f64() * 1000.0
+                })
+                .collect();
+            samples.sort_by(|a, b| a.partial_cmp(b).expect("finite"));
+            samples[samples.len() / 2]
+        };
+
+        let mut station_unread = list_request();
+        station_unread.tag_name = Some("t3".to_string());
+        station_unread.read = Some(false);
+        let mut small_unread = list_request();
+        small_unread.feed_ids = Some(vec!["f1".to_string(), "f2".to_string()]);
+        small_unread.read = Some(false);
+        let mut station_starred = list_request();
+        station_starred.tag_name = Some("t3".to_string());
+        station_starred.starred = Some(true);
+        for (label, request) in [
+            ("station (20 feeds) unread", &station_unread),
+            ("two-feed unread", &small_unread),
+            ("station (20 feeds) starred", &station_starred),
+        ] {
+            let legacy = median_ms(request, false);
+            let fast = median_ms(request, true);
+            println!("{label}: legacy join {legacy:.1} ms -> fast path {fast:.1} ms");
+        }
+
+        let mut starred = list_request();
+        starred.starred = Some(true);
+        let mut saved = list_request();
+        saved.saved = Some(true);
+        let new_starred = median_ms(&starred, true);
+        let new_saved = median_ms(&saved, true);
+        connection
+            .execute_batch(
+                "DROP INDEX idx_articles_starred_date;
+                 DROP INDEX idx_articles_saved_date;
+                 CREATE INDEX idx_articles_starred ON articles(starred);
+                 CREATE INDEX idx_articles_saved ON articles(saved);",
+            )
+            .expect("swap to v17 flag indexes");
+        let old_starred = median_ms(&starred, true);
+        let old_saved = median_ms(&saved, true);
+        println!("starred list: v17 index {old_starred:.1} ms -> v18 index {new_starred:.1} ms");
+        println!("saved list: v17 index {old_saved:.1} ms -> v18 index {new_saved:.1} ms");
     }
 }

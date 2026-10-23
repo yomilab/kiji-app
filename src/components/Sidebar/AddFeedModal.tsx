@@ -10,7 +10,13 @@ import { Modal } from '@/components/common/Modal';
 import { useFeedNavigation, useFeedUIActions } from '@/contexts/FeedContext';
 import * as articleStore from '@/stores/articleStore';
 import { feedsManager } from '@/services/feeds/feedsManager';
-import { feedsFetcher, type FeedFetchResult } from '@/services/feeds/feedsFetcher';
+import type { FeedFetchResult } from '@/services/feeds/feedsFetcher';
+import {
+  discoverFeeds,
+  fetchChosenFeed,
+  feedTypeLabel,
+  type FeedCandidate,
+} from '@/services/feeds/feedAutodiscovery';
 import { storeParsedFeedContent } from '@/services/feeds/feedRefreshPipeline';
 import { parseOpmlEntries } from '@/services/feeds/opmlImportService';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
@@ -53,14 +59,20 @@ interface FaviconLookup {
 type LinkPreview =
   | { kind: 'idle' }
   | { kind: 'checking'; url: string }
+  | { kind: 'choices'; url: string; candidates: FeedCandidate[] }
   | {
     kind: 'feed';
+    /** What the user typed; the preview only applies while it still matches. */
     url: string;
+    /** The feed address that is subscribed (differs from url after discovery). */
+    feedUrl: string;
     title: string | null;
     fetchResult: FeedFetchResult;
     xmlText: string;
     itemCount: number;
     recentTitles: string[];
+    /** Set when the page offered several feeds, so the user can pick another. */
+    choices?: FeedCandidate[];
   }
   | { kind: 'existing'; url: string; feed: { id: string; url: string; title: string; tags: string[] } }
   | { kind: 'opml'; url: string; opmlText: string; feedCount: number }
@@ -94,6 +106,34 @@ const lookUpFavicon = async (feedUrl: string, xmlText: string): Promise<FaviconL
 };
 
 const Spinner: React.FC = () => <span className="add-feed-spinner" aria-hidden="true" />;
+
+// SF Symbols–style line glyphs (24-unit grid, currentColor) for the feed pick list.
+const glyphProps = {
+  width: '1em',
+  height: '1em',
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  'aria-hidden': true,
+  focusable: false,
+};
+
+const FeedGlyph: React.FC = () => (
+  <svg {...glyphProps}>
+    <circle cx="6.5" cy="17.5" r="1.4" fill="currentColor" stroke="none" />
+    <path d="M5 11a8 8 0 0 1 8 8" />
+    <path d="M5 5a14 14 0 0 1 14 14" />
+  </svg>
+);
+
+const ChevronGlyph: React.FC = () => (
+  <svg {...glyphProps} className="add-feed-choice-chevron">
+    <path d="M9.5 6l6 6-6 6" />
+  </svg>
+);
 
 export const AddFeedModal: React.FC<AddFeedModalProps> = ({
   isOpen,
@@ -135,11 +175,96 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
     resetLink();
   }, [isOpen, resetLink]);
 
-  const lookUpLink = useCallback(async (url: string) => {
+  // Shows the preview for a found feed, or "already followed" when the
+  // discovered address is one the user has.
+  const showFeed = useCallback(async (
+    url: string,
+    feedUrl: string,
+    fetchResult: FeedFetchResult,
+    isCurrent: () => boolean,
+    choices?: FeedCandidate[],
+  ) => {
+    if (feedUrl !== url) {
+      const existingFeed = await feedsManager.getFeedByUrl(feedUrl);
+      if (!isCurrent()) return;
+      if (existingFeed) {
+        setPreview({
+          kind: 'existing',
+          url,
+          feed: {
+            id: existingFeed.id,
+            url: existingFeed.url,
+            title: existingFeed.title,
+            tags: existingFeed.tags ?? [],
+          },
+        });
+        return;
+      }
+    }
+
+    if (fetchResult.notModified || !fetchResult.data) {
+      throw new Error('Received empty response from feed URL');
+    }
+
+    const xmlText = fetchResult.data;
+    const items = fetchResult.items ?? [];
+    const faviconPromise = lookUpFavicon(feedUrl, xmlText);
+    faviconLookupRef.current = { url: feedUrl, promise: faviconPromise };
+    void faviconPromise
+      .then((result) => {
+        if (isCurrent() && result.favicon) setFaviconPreview(result.favicon);
+      })
+      .catch((error) => {
+        logger.warn('AddFeedModal', 'Favicon preview update failed', { error });
+      });
+
+    setPreview({
+      kind: 'feed',
+      url,
+      feedUrl,
+      title: extractFeedTitleFromXml(xmlText),
+      fetchResult,
+      xmlText,
+      itemCount: items.length,
+      recentTitles: items
+        .map((item) => item.title?.trim())
+        .filter((title): title is string => Boolean(title))
+        .slice(0, 3),
+      choices,
+    });
+  }, []);
+
+  // Each lookup (or pick from the list) takes a new token; see lookupTokenRef.
+  const startLookup = useCallback(() => {
     const token = ++lookupTokenRef.current;
-    const isCurrent = () => lookupTokenRef.current === token;
     faviconLookupRef.current = null;
     setFaviconPreview(null);
+    return () => lookupTokenRef.current === token;
+  }, []);
+
+  // A feed picked from the page's list: fetch it once; Add reuses that fetch.
+  const chooseFeed = async (url: string, candidate: FeedCandidate, choices: FeedCandidate[]) => {
+    const isCurrent = startLookup();
+    setPreview({ kind: 'checking', url });
+    try {
+      const chosen = await fetchChosenFeed(candidate.url, { isCurrent });
+      if (!isCurrent()) return;
+      await showFeed(url, chosen.feedUrl, chosen.fetchResult, isCurrent, choices);
+    } catch (error) {
+      if (!isCurrent()) return;
+      logger.warn('AddFeedModal', 'Chosen feed lookup failed', { url: candidate.url, error });
+      setPreview({ kind: 'error', url, message: describeLinkError(error) });
+    }
+  };
+
+  const showChoicesAgain = (feedPreview: Extract<LinkPreview, { kind: 'feed' }>) => {
+    if (!feedPreview.choices) return;
+    startLookup();
+    setPreview({ kind: 'choices', url: feedPreview.url, candidates: feedPreview.choices });
+  };
+
+  const lookUpLink = useCallback(async (url: string) => {
+    const isCurrent = startLookup();
     setPreview({ kind: 'checking', url });
 
     try {
@@ -167,42 +292,19 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
         return;
       }
 
-      const fetchResult = await feedsFetcher.fetchFeedWithCache(url);
+      const discovery = await discoverFeeds(url, { isCurrent });
       if (!isCurrent()) return;
-      if (fetchResult.notModified || !fetchResult.data) {
-        throw new Error('Received empty response from feed URL');
+      if (discovery.kind === 'choices') {
+        setPreview({ kind: 'choices', url, candidates: discovery.candidates });
+        return;
       }
-
-      const xmlText = fetchResult.data;
-      const items = fetchResult.items ?? [];
-      const faviconPromise = lookUpFavicon(url, xmlText);
-      faviconLookupRef.current = { url, promise: faviconPromise };
-      void faviconPromise
-        .then((result) => {
-          if (isCurrent() && result.favicon) setFaviconPreview(result.favicon);
-        })
-        .catch((error) => {
-          logger.warn('AddFeedModal', 'Favicon preview update failed', { error });
-        });
-
-      setPreview({
-        kind: 'feed',
-        url,
-        title: extractFeedTitleFromXml(xmlText),
-        fetchResult,
-        xmlText,
-        itemCount: items.length,
-        recentTitles: items
-          .map((item) => item.title?.trim())
-          .filter((title): title is string => Boolean(title))
-          .slice(0, 3),
-      });
+      await showFeed(url, discovery.feedUrl, discovery.fetchResult, isCurrent);
     } catch (error) {
       if (!isCurrent()) return;
       logger.warn('AddFeedModal', 'Link lookup failed', { url, error });
       setPreview({ kind: 'error', url, message: describeLinkError(error) });
     }
-  }, []);
+  }, [showFeed, startLookup]);
 
   // Look the link up shortly after the user stops typing or pastes.
   const normalizedLink = normalizeLinkInput(linkInput);
@@ -228,14 +330,14 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
 
   const addPreviewedFeed = async (feedPreview: Extract<LinkPreview, { kind: 'feed' }>) => {
     setBusy('adding');
-    const { url, title, fetchResult, xmlText, itemCount } = feedPreview;
+    const { url, feedUrl, title, fetchResult, xmlText, itemCount } = feedPreview;
 
     try {
-      const faviconLookup = faviconLookupRef.current?.url === url
+      const faviconLookup = faviconLookupRef.current?.url === feedUrl
         ? await faviconLookupRef.current.promise
-        : await lookUpFavicon(url, xmlText);
+        : await lookUpFavicon(feedUrl, xmlText);
 
-      const addedFeed = await feedsManager.addFeed(url, title || undefined, {
+      const addedFeed = await feedsManager.addFeed(feedUrl, title || undefined, {
         id: feedsManager.generateId(),
         skipMetadataFetch: true,
         skipFaviconRefresh: true,
@@ -298,7 +400,7 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
       onFeedAdded(addedFeed.id, addedFeed.url, addedFeed.title);
       finishAndClose();
     } catch (error) {
-      logger.warn('AddFeedModal', 'Adding feed failed', { url, error });
+      logger.warn('AddFeedModal', 'Adding feed failed', { url: feedUrl, error });
       setPreview({ kind: 'error', url, message: describeLinkError(error) });
       setBusy(null);
     }
@@ -424,7 +526,7 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
     if (!previewMatchesInput || preview.kind === 'idle') {
       return (
         <p className="add-feed-hint" id={`${baseId}-hint`}>
-          Paste a website&apos;s feed link, or a link to a feed list (.opml) to add many at once.
+          Paste a website or feed link, or a link to a feed list (.opml) to add many at once.
         </p>
       );
     }
@@ -443,6 +545,40 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
         <div className="add-feed-status add-feed-status-error" role="alert">
           <ErrorOutlineRoundedIcon className="add-feed-status-icon" aria-hidden="true" />
           <span>{preview.message}</span>
+        </div>
+      );
+    }
+
+    if (preview.kind === 'choices') {
+      const { url, candidates } = preview;
+      return (
+        <div className="add-feed-choices">
+          <p className="add-feed-choices-intro">
+            {hostLabel(url)} has {pluralize(candidates.length, 'feed')}. Choose one to preview.
+          </p>
+          <ul className="add-feed-choice-list" aria-label="Feeds on this page">
+            {candidates.map((candidate) => (
+              <li key={candidate.url}>
+                <button
+                  type="button"
+                  className="add-feed-choice"
+                  onClick={() => void chooseFeed(url, candidate, candidates)}
+                  disabled={isBusy}
+                >
+                  <span className="add-feed-choice-icon" aria-hidden="true"><FeedGlyph /></span>
+                  <span className="add-feed-choice-text">
+                    <span className="add-feed-choice-title">{candidate.title || hostLabel(candidate.url)}</span>
+                    <span className="add-feed-choice-meta">
+                      {feedTypeLabel(candidate.type)}
+                      {' · '}
+                      {hostLabel(candidate.url)}
+                    </span>
+                  </span>
+                  <ChevronGlyph />
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       );
     }
@@ -489,9 +625,9 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
             : <RssFeedRoundedIcon />}
         </div>
         <div className="add-feed-preview-text">
-          <div className="add-feed-preview-title">{preview.title || hostLabel(preview.url)}</div>
+          <div className="add-feed-preview-title">{preview.title || hostLabel(preview.feedUrl)}</div>
           <div className="add-feed-preview-meta">
-            {hostLabel(preview.url)}
+            {hostLabel(preview.feedUrl)}
             {' · '}
             {preview.itemCount > 0 ? pluralize(preview.itemCount, 'article') : 'No articles yet'}
           </div>
@@ -501,6 +637,16 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
                 <li key={`${index}-${title}`}>{title}</li>
               ))}
             </ul>
+          )}
+          {preview.choices && (
+            <button
+              type="button"
+              className="add-feed-link-button"
+              onClick={() => showChoicesAgain(preview)}
+              disabled={isBusy}
+            >
+              Other feeds on this page
+            </button>
           )}
         </div>
       </div>
@@ -519,7 +665,7 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
           autoComplete="off"
           spellCheck={false}
           className="modal-input add-feed-input"
-          placeholder="example.com/feed"
+          placeholder="example.com"
           aria-describedby={`${baseId}-hint`}
           value={linkInput}
           onChange={(event) => {
@@ -605,9 +751,10 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
       maxWidth="460px"
       closeOnBackdrop={!isBusy}
       closeOnEscape={!isBusy}
+      ariaLabelledBy={`${baseId}-title`}
     >
       <div className="add-feed-modal-body" aria-busy={isBusy}>
-        <h2 className="add-feed-modal-title">Add Feeds</h2>
+        <h2 className="add-feed-modal-title" id={`${baseId}-title`}>Add Feeds</h2>
 
         <div className="add-feed-tabs" role="tablist" aria-label="How to add">
           {TABS.map((tab) => {

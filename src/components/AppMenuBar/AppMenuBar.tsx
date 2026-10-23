@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFeedNavigation } from '@/contexts/FeedContext';
-import { isLibrarySmartViewId } from '@/constants';
+import { toAppMenuLibraryView } from '@/types/appMenu';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAppUpdatePrompt } from '@/hooks/useAppUpdatePrompt';
 import { isCloseOnEscapeShortcut, keybindingService } from '@/services/shortcuts/shortcutService';
@@ -104,7 +104,7 @@ export const AppMenuBar: React.FC = () => {
     () =>
       buildWindowsAppMenuTree({
         theme,
-        libraryView: isLibrarySmartViewId(selectedSmartView) ? selectedSmartView : null,
+        libraryView: toAppMenuLibraryView(selectedSmartView),
         updateAvailable: Boolean(availability),
       }),
     [availability, selectedSmartView, theme],

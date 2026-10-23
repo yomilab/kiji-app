@@ -3,10 +3,12 @@ import type { Decorator, Preview } from '@storybook/react-vite';
 import {
   selectThemeDebugVariant,
   selectThemeDebugTheme,
+  selectThemeDebugListDensity,
   type ThemeDebugVariant,
 } from '../src/stories/themeDebugRuntime';
 // Relative path: Storybook aliases `@/services/settings` (and its subpaths) to a data mock.
 import { findReaderTheme, READER_THEMES, type ReaderTheme } from '../src/services/settings/readerThemes';
+import { normalizeArticleListDensity } from '../src/lib/articleListDensity';
 import '../src/styles/google-sans.css';
 import '../src/styles/golos-text.css';
 import '../src/styles/aktiv-grotesk.css';
@@ -158,6 +160,7 @@ const withThemeDebug: Decorator = (Story, context) => {
   const accent = accentColor(context.globals.accent);
   const variant = (context.parameters.kiji?.variant ?? 'sidebar-default') as ThemeDebugVariant;
   selectThemeDebugVariant(variant);
+  selectThemeDebugListDensity(normalizeArticleListDensity(context.parameters.kiji?.listDensity));
   selectThemeDebugTheme(theme);
 
   return (

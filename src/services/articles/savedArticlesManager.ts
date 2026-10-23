@@ -117,6 +117,7 @@ class SavedArticlesManager {
       articles: result.articles.map(toSavedArticle),
       total: result.total,
       cancelled: result.cancelled,
+      searchSnippets: result.searchSnippets ?? {},
     };
   }
 
