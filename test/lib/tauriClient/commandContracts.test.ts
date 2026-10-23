@@ -18,7 +18,6 @@ const INVOKE_PATTERNS = [
 
 const STRUCT_ARGUMENT_EXPECTATIONS = [
   { command: "articles_query", argumentName: "request" },
-  { command: "articles_mark_read_scope", argumentName: "request" },
   { command: "saved_query", argumentName: "request" },
   { command: "diagnostics_log_write_entry", argumentName: "entry" },
   { command: "shell_menu_update_state", argumentName: "patch" },

@@ -107,15 +107,6 @@
   background-color: var(--theme-hover-overlay);
 }
 
-.app-menu-item:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.app-menu-item:disabled:hover {
-  background-color: transparent;
-}
-
 .app-menu-item-check {
   width: 14px;
   flex-shrink: 0;

@@ -1,25 +1,20 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
 import { NotificationToast } from '@/components/common/NotificationToast';
 import { findSeriousAxeViolations } from '../../helpers/axe';
 
 afterEach(cleanup);
 
 describe('NotificationToast accessibility', () => {
-  it('is a polite status whose Undo button is a reachable, named button', async () => {
-    const onAction = vi.fn();
-    const { container } = render(
-      <NotificationToast message="Marked 12 articles as read" actionLabel="Undo" onAction={onAction} />,
-    );
+  it('is announced as a polite status by default', async () => {
+    const { container } = render(<NotificationToast message="Imported 12 feeds." />);
     const status = screen.getByRole('status');
-    expect(status.textContent).toContain('Marked 12 articles as read');
-    const undo = screen.getByRole('button', { name: 'Undo' });
-    expect(status.contains(undo)).toBe(true);
-    expect(undo.tabIndex).toBe(0);
-    undo.focus();
-    expect(document.activeElement).toBe(undo);
-    fireEvent.click(undo);
-    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(status.textContent).toContain('Imported 12 feeds.');
     expect(await findSeriousAxeViolations(container)).toEqual([]);
+  });
+
+  it('can be an alert for errors', () => {
+    render(<NotificationToast message="Couldn’t import that file." role="alert" />);
+    expect(screen.getByRole('alert').textContent).toContain('Couldn’t import that file.');
   });
 });

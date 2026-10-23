@@ -186,7 +186,6 @@ export const logger = {
 
 export const appToastService = {
   show: noop,
-  showWithAction: noop,
   clear: noop,
 };
 

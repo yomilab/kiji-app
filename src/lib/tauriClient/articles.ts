@@ -111,18 +111,6 @@ export async function syncFeedCountsBatch(
   );
 }
 
-export async function markReadScope(
-  request: ArticlesContract["markReadScope"]["request"],
-): Promise<ArticlesContract["markReadScope"]["response"]> {
-  return invokeCommand<ArticlesContract["markReadScope"]["response"]>("articles_mark_read_scope", { request });
-}
-
-export async function restoreUnread(
-  request: ArticlesContract["restoreUnread"]["request"],
-): Promise<ArticlesContract["restoreUnread"]["response"]> {
-  return invokeContract<ArticlesContract["restoreUnread"]>("articles_restore_unread", request);
-}
-
 export async function updateFeedMeta(
   request: ArticlesContract["updateFeedMeta"]["request"],
 ): Promise<ArticlesContract["updateFeedMeta"]["response"]> {

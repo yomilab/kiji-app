@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import SearchIcon from '@mui/icons-material/Search';
-import { useFeedCollectionActions, useFeedNavigation, useFeedUI } from '@/contexts/FeedContext';
-import { canMarkSourceRead, type MarkReadOlderThanDays } from '@/services/articles/markReadScope';
+import { useFeedUI } from '@/contexts/FeedContext';
 import { TOOLTIPS } from '@/config/tooltips';
 import { SHORTCUT_LABELS, withShortcutHint } from '@/services/shortcuts/shortcutService';
 import { savedArticlesIOService } from '@/services/saved/savedArticlesIOService';
@@ -10,108 +9,11 @@ import { DropdownMenu } from '@/components/common/DropdownMenu/DropdownMenu';
 import { useWindowChromeDragDismiss } from '@/hooks/useWindowChromeDragDismiss';
 import { TAURI_DRAG_REGION_FALSE } from '@/services/ui/windowChromeDragRegion';
 import './ArticleListWidgets.css';
-import { shortcutKeyGroups } from '@/components/SettingsWindow/settingsControls';
 
 interface ArticleListWidgetsProps {
   onToggleSearch: () => void;
   isSavedView?: boolean;
 }
-
-/** SF Symbols–style "checkmark.circle" (regular weight, currentColor). */
-const MarkReadGlyph: React.FC = () => (
-  <svg
-    width="1em"
-    height="1em"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.6}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-    focusable="false"
-    style={{ fontSize: 'var(--widget-button-icon-size)', flexShrink: 0 }}
-  >
-    <circle cx="12" cy="12" r="8.6" />
-    <path d="M8.2 12.3l2.6 2.6 5-5.6" />
-  </svg>
-);
-
-const MARK_READ_ITEMS: ReadonlyArray<{ id: string; label: string; olderThanDays?: MarkReadOlderThanDays; hint?: string }> = [
-  { id: 'all', label: 'Mark All as Read', hint: SHORTCUT_LABELS.MARK_ALL_READ },
-  { id: 'day', label: 'Mark Older Than a Day as Read', olderThanDays: 1 },
-  { id: 'week', label: 'Mark Older Than a Week as Read', olderThanDays: 7 },
-];
-
-/** Menu-style shortcut text: "⌘⇧K" on macOS, "Ctrl+Shift+K" elsewhere. */
-const formatMenuShortcut = (label: string): string => shortcutKeyGroups(label)
-  .map((keys) => keys.join(keys.some((key) => /^[⌘⇧⌃⌥]$/.test(key)) ? '' : '+'))
-  .join(' / ');
-
-/** Mark All as Read / Older Than… for the list on screen (hidden in Saved and Read). */
-const MarkReadMenu: React.FC = () => {
-  const { selectedFeedId, selectedTag, selectedSmartView } = useFeedNavigation();
-  const { markCurrentSourceRead } = useFeedCollectionActions();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const close = useCallback(() => setIsOpen(false), []);
-  useWindowChromeDragDismiss(close);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current?.contains(event.target as Node)) return;
-      close();
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [close, isOpen]);
-
-  const source = selectedFeedId
-    ? { type: 'feed' as const, feedId: selectedFeedId }
-    : selectedTag
-      ? { type: 'tag' as const, tagName: selectedTag }
-      : selectedSmartView
-        ? { type: 'smart' as const, viewType: selectedSmartView }
-        : null;
-  if (!canMarkSourceRead(source)) return null;
-
-  return (
-    <div ref={containerRef} className="article-list-widgets-menu">
-      <button
-        className="button is-text is-small article-view-action-button article-list-widget-button"
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={() => setIsOpen((current) => !current)}
-        aria-label={TOOLTIPS.articleList.markRead}
-        aria-haspopup="menu"
-        aria-expanded={isOpen}
-        title={TOOLTIPS.articleList.markRead}
-        data-widget="mark-read"
-      >
-        <MarkReadGlyph />
-      </button>
-      <DropdownMenu isOpen={isOpen} onRequestClose={close} className="article-list-mark-read-menu">
-        {MARK_READ_ITEMS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="menuitem"
-            className="dropdown-menu-item article-list-mark-read-item"
-            data-mark-read={item.id}
-            onClick={(event) => {
-              event.stopPropagation();
-              close();
-              void markCurrentSourceRead(item.olderThanDays ? { olderThanDays: item.olderThanDays } : undefined);
-            }}
-          >
-            <span>{item.label}</span>
-            {item.hint && <span className="article-list-mark-read-hint">{formatMenuShortcut(item.hint)}</span>}
-          </button>
-        ))}
-      </DropdownMenu>
-    </div>
-  );
-};
 
 export const ArticleListWidgets: React.FC<ArticleListWidgetsProps> = ({
   onToggleSearch,
@@ -187,8 +89,6 @@ export const ArticleListWidgets: React.FC<ArticleListWidgetsProps> = ({
         >
           <SearchIcon sx={{ fontSize: 'var(--widget-button-icon-size)' }} />
         </button>
-
-        {!isSavedView && <MarkReadMenu />}
 
         {isSavedView && (
           <div className="article-list-widgets-group">

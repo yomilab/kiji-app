@@ -65,21 +65,3 @@
   opacity: var(--widget-button-disabled-opacity);
   cursor: not-allowed;
 }
-
-/* Mark as read menu: label left, shortcut hint right. */
-.article-list-mark-read-menu {
-  min-width: 236px;
-}
-
-.article-list-mark-read-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  white-space: nowrap;
-}
-
-.article-list-mark-read-hint {
-  color: var(--theme-text-secondary);
-  font-weight: 400;
-}

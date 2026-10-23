@@ -20,7 +20,6 @@ export type AppMenuCommand =
   | { type: 'clearArticlesOlderThan'; months: 3 }
   | { type: 'setTheme'; theme: Theme }
   | { type: 'selectLibraryView'; libraryView: AppMenuLibraryView }
-  | { type: 'markAllRead'; olderThanDays?: 1 | 7 }
   /** Article text size; `window` names the window it is for (absent = the window that receives it). */
   | { type: 'readerTextSize'; action: 'bigger' | 'smaller' | 'reset'; window?: 'main' | 'article' };
 

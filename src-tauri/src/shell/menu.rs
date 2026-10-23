@@ -31,9 +31,6 @@ const MENU_LIBRARY_SAVED: &str = "menu-library-saved";
 const MENU_LIBRARY_UNREAD: &str = "menu-library-unread";
 const MENU_LIBRARY_ALL: &str = "menu-library-all";
 const MENU_LIBRARY_READ: &str = "menu-library-read";
-const MENU_MARK_ALL_READ: &str = "menu-mark-all-read";
-const MENU_MARK_OLDER_DAY_READ: &str = "menu-mark-older-day-read";
-const MENU_MARK_OLDER_WEEK_READ: &str = "menu-mark-older-week-read";
 const MENU_ADD_SUBSCRIPTION: &str = "menu-add-subscription";
 const MENU_IMPORT_FEEDS: &str = "menu-import-feeds";
 const MENU_MANAGE_FEEDS: &str = "menu-manage-feeds";
@@ -61,10 +58,6 @@ pub enum AppMenuCommand {
         #[serde(rename = "libraryView")]
         library_view: String,
     },
-    MarkAllRead {
-        #[serde(rename = "olderThanDays", default, skip_serializing_if = "Option::is_none")]
-        older_than_days: Option<u16>,
-    },
     /// Article text size step; `window` is the window the renderer should apply it in.
     ReaderTextSize {
         action: String,
@@ -89,7 +82,6 @@ pub struct ApplicationMenu {
     library_all: CheckMenuItem<Wry>,
     library_read: CheckMenuItem<Wry>,
     check_updates: MenuItem<Wry>,
-    mark_read_items: [MenuItem<Wry>; 3],
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -142,18 +134,6 @@ impl ApplicationMenu {
             None::<&str>,
         )
         .map_err(menu_error)?;
-        let mark_read_items = [
-            MenuItem::with_id(
-                app,
-                MENU_MARK_ALL_READ,
-                "Mark All as Read",
-                true,
-                Some("CmdOrCtrl+Shift+K"),
-            )
-            .map_err(menu_error)?,
-            menu_command_item(app, MENU_MARK_OLDER_DAY_READ, "Mark Older Than a Day as Read")?,
-            menu_command_item(app, MENU_MARK_OLDER_WEEK_READ, "Mark Older Than a Week as Read")?,
-        ];
         let about_label = format!("About {APP_OFFICIAL_NAME}");
         let about_item =
             MenuItem::with_id(app, MENU_ABOUT, &about_label, true, None::<&str>).map_err(menu_error)?;
@@ -171,7 +151,6 @@ impl ApplicationMenu {
             library_all,
             library_read,
             check_updates,
-            mark_read_items,
         };
 
         let settings_item =
@@ -294,19 +273,6 @@ impl ApplicationMenu {
         )
         .map_err(menu_error)?;
 
-        let article_submenu = Submenu::with_items(
-            app,
-            "Article",
-            true,
-            &[
-                &handles.mark_read_items[0],
-                &PredefinedMenuItem::separator(app).map_err(menu_error)?,
-                &handles.mark_read_items[1],
-                &handles.mark_read_items[2],
-            ],
-        )
-        .map_err(menu_error)?;
-
         let subscriptions_submenu = Submenu::with_items(
             app,
             "Subscriptions",
@@ -403,7 +369,6 @@ impl ApplicationMenu {
         }
 
         top_level.push(&view_submenu);
-        top_level.push(&article_submenu);
         top_level.push(&subscriptions_submenu);
 
         if let Some(window_submenu) = &window_submenu {
@@ -495,24 +460,6 @@ impl ApplicationMenu {
                     },
                 );
             }
-            MENU_MARK_ALL_READ => emit_menu_command(
-                app,
-                AppMenuCommand::MarkAllRead {
-                    older_than_days: None,
-                },
-            ),
-            MENU_MARK_OLDER_DAY_READ => emit_menu_command(
-                app,
-                AppMenuCommand::MarkAllRead {
-                    older_than_days: Some(1),
-                },
-            ),
-            MENU_MARK_OLDER_WEEK_READ => emit_menu_command(
-                app,
-                AppMenuCommand::MarkAllRead {
-                    older_than_days: Some(7),
-                },
-            ),
             MENU_TEXT_BIGGER => emit_reader_text_size_command(app, "bigger"),
             MENU_TEXT_SMALLER => emit_reader_text_size_command(app, "smaller"),
             MENU_TEXT_ACTUAL_SIZE => emit_reader_text_size_command(app, "reset"),
@@ -554,11 +501,6 @@ impl ApplicationMenu {
         let _ = self
             .library_read
             .set_checked(library_view.as_deref() == Some("read"));
-        // Saved has no read state and Read is already read.
-        let can_mark_read = mark_read_available(library_view.as_deref());
-        for item in &self.mark_read_items {
-            let _ = item.set_enabled(can_mark_read);
-        }
     }
 
     pub fn apply_patch(&self, patch: AppMenuStatePatch) -> Result<(), String> {
@@ -626,10 +568,6 @@ fn emit_menu_command(app: &AppHandle, command: AppMenuCommand) {
     // Same path as the Dock/tray: unminimize, show, focus, update assistants.
     super::background::show_main_window(app);
     let _ = main_window.emit("app-menu:command", command);
-}
-
-fn mark_read_available(library_view: Option<&str>) -> bool {
-    !matches!(library_view, Some("saved") | Some("read"))
 }
 
 /// Text size applies to the focused reading window (main or the article window)
@@ -720,23 +658,7 @@ mod tests {
     }
 
     #[test]
-    fn mark_all_read_command_round_trips_and_is_off_in_saved_and_read() {
-        let all: AppMenuCommand =
-            serde_json::from_value(serde_json::json!({ "type": "markAllRead" })).expect("mark all");
-        assert!(matches!(all, AppMenuCommand::MarkAllRead { older_than_days: None }));
-        let week = serde_json::to_value(AppMenuCommand::MarkAllRead {
-            older_than_days: Some(7),
-        })
-        .expect("serialize");
-        assert_eq!(week, serde_json::json!({ "type": "markAllRead", "olderThanDays": 7 }));
-        assert!(mark_read_available(None));
-        assert!(mark_read_available(Some("unread")));
-        assert!(!mark_read_available(Some("saved")));
-        assert!(!mark_read_available(Some("read")));
-    }
-
-    #[test]
-    fn reader_text_size_command_names_its_window() {
+fn reader_text_size_command_names_its_window() {
         let value = serde_json::to_value(AppMenuCommand::ReaderTextSize {
             action: "bigger".into(),
             window: Some("article".into()),
@@ -769,7 +691,6 @@ mod tests {
             .split("#[cfg(test)]")
             .next()
             .expect("production source");
-        assert!(production.contains("Some(\"CmdOrCtrl+Shift+K\")"));
         for accelerator in ["Some(\"CmdOrCtrl+=\")", "Some(\"CmdOrCtrl+-\")", "Some(\"CmdOrCtrl+0\")"] {
             assert!(production.contains(accelerator), "missing {accelerator}");
         }

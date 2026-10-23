@@ -7,7 +7,6 @@ import { feedScheduler } from '@/services/scheduler/feedSchedulerService';
 import { opmlWorkflowService } from '@/services/feeds/opmlWorkflowService';
 import {
   isClearConfigsShortcut,
-  isMarkAllReadShortcut,
   isOpenFeedEditViewShortcut,
   isOpenSettingsShortcut,
   isRefreshCurrentFeedShortcut,
@@ -29,7 +28,6 @@ import { startRobustnessSummary } from '@/services/diagnostics/robustnessMetrics
 import { subscribeToWindowFocus } from '@/services/tauri/tauriEventSubscription';
 import { appToastService } from '@/services/ui/appToastService';
 import { confirmDialog } from '@/services/ui/confirmDialogService';
-import { publishAppMenuCommand } from '@/services/ui/appMenuCommandBus';
 import { openManageFeedsWindow } from '@/services/ui/openManageFeedsWindow';
 import { openSettingsWindow } from '@/services/ui/openSettingsWindow';
 import { isMainRendererWindow } from '@/utils/rendererWindow';
@@ -309,13 +307,6 @@ export const useAppShortcuts = ({
         if (isOpenSettingsShortcut(event)) {
           event.preventDefault();
           void openSettingsWindow();
-        }
-
-        if (isMarkAllReadShortcut(event)) {
-          event.preventDefault();
-          // Same path as the menu item; a duplicate from the native
-          // accelerator is ignored while the first run is in flight.
-          publishAppMenuCommand({ type: 'markAllRead' });
         }
 
         if (isResetSettingsShortcut(event)) {

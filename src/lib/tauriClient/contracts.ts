@@ -160,24 +160,6 @@ export interface FeedArticleCountsRecord {
   articleCount: number;
 }
 
-/** One list scope: a feed, a station, or the All/Unread views. */
-export interface MarkReadScopeRequest {
-  feedId?: string;
-  tagName?: string;
-  smartView?: 'all' | 'unread' | 'today';
-  /** ISO timestamp; only articles dated before it. */
-  olderThan?: string;
-  searchText?: string;
-}
-
-export interface MarkReadScopeResult {
-  changed: number;
-  /** Every changed hash when `undoable`, else empty. */
-  hashes: string[];
-  undoable: boolean;
-  feedCounts: FeedArticleCountsRecord[];
-}
-
 export interface ArticleRecord extends ArticleFeedMetadata {
   hash: string;
   feedId: string;
@@ -550,8 +532,6 @@ export type AppMenuCommand =
   | { type: "selectLibraryView"; libraryView: Exclude<AppMenuLibraryView, null> }
   | { type: "openAddSubscription" }
   | { type: "importFeeds" }
-  | { type: "markAllRead"; olderThanDays?: 1 | 7 }
-
   | { type: "readerTextSize"; action: "bigger" | "smaller" | "reset"; window?: "main" | "article" };
 
 export interface ArticleWindowPayload {
@@ -1020,14 +1000,6 @@ export interface ArticlesContract {
   };
   syncFeedCountsBatch: {
     request: { feedIds: string[] };
-    response: FeedArticleCountsRecord[];
-  };
-  markReadScope: {
-    request: MarkReadScopeRequest;
-    response: MarkReadScopeResult;
-  };
-  restoreUnread: {
-    request: { hashes: string[] };
     response: FeedArticleCountsRecord[];
   };
   updateFeedMeta: {

@@ -30,7 +30,6 @@ export const TOOLTIPS = {
   articleList: {
     search: 'Search articles',
     searchDisabled: 'Add feeds to search',
-    markRead: 'Mark as read',
   },
 
 } as const;

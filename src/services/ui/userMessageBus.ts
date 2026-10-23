@@ -1,21 +1,13 @@
-/** One button on a message (e.g. Undo). Dropped with the message when it expires. */
-export interface UserMessageAction {
-  label: string;
-  run: () => void;
-}
-
 export interface UserMessage {
   channel: string;
   text: string;
   expiresAt: number | null;
-  action?: UserMessageAction;
 }
 
 type Listener = () => void;
 
 interface PublishOptions {
   durationMs?: number;
-  action?: UserMessageAction;
 }
 
 class UserMessageBus {
@@ -53,7 +45,6 @@ class UserMessageBus {
       channel,
       text,
       expiresAt,
-      ...(options.action ? { action: options.action } : {}),
     });
 
     if (durationMs !== null) {

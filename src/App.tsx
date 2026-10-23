@@ -9,7 +9,7 @@ import { MainArea } from './components/MainArea/MainArea';
 import { ArticleView } from './components/MainArea/ArticleView';
 import { NotificationToast } from './components/common/NotificationToast';
 import { CommandPaletteHost } from './components/CommandPalette/CommandPaletteHost';
-import { useUserMessage } from './hooks/useUserMessageChannel';
+import { useUserMessageChannel } from './hooks/useUserMessageChannel';
 import { useSystemAccentColor } from './hooks/useSystemAccentColor';
 import { useDeckLayerInert } from './hooks/useDeckLayerInert';
 import {
@@ -106,12 +106,7 @@ export const App: React.FC = () => {
 
   useE2eHarness();
 
-  const {
-    refreshFeed,
-    updateArticleInList,
-    reloadCurrentSourceFromStore,
-    markCurrentSourceRead,
-  } = useFeedCollectionActions();
+  const { refreshFeed, updateArticleInList, reloadCurrentSourceFromStore } = useFeedCollectionActions();
   const { refreshTotalFeeds, notifyFeedLibraryChanged } = useFeedUIActions();
 
   const sidebarLayerRef = useRef<HTMLDivElement>(null);
@@ -120,7 +115,7 @@ export const App: React.FC = () => {
   const articleLayerRef = useRef<HTMLDivElement>(null);
   const opmlDragDepthRef = useRef(0);
   const [isOpmlDragActive, setIsOpmlDragActive] = useState(false);
-  const appToast = useUserMessage(APP_TOAST_CHANNEL);
+  const appToastMessage = useUserMessageChannel(APP_TOAST_CHANNEL);
   const isDeckOpen = useArticleDeckState({
     activeArticleHash,
     articleOpenTrigger,
@@ -146,7 +141,6 @@ export const App: React.FC = () => {
     notifyFeedLibraryChanged,
     updateArticleInList,
     reloadCurrentSourceFromStore,
-    markCurrentSourceRead,
     theme,
     setTheme,
   });
@@ -324,18 +318,8 @@ export const App: React.FC = () => {
           </div>
         )}
       </div>
-      {appToast && (
-        <NotificationToast
-          message={appToast.text}
-          data-component="app-toast"
-          actionLabel={appToast.action?.label}
-          onAction={appToast.action
-            ? () => {
-              appToastService.clear();
-              appToast.action?.run();
-            }
-            : undefined}
-        />
+      {appToastMessage && (
+        <NotificationToast message={appToastMessage} data-component="app-toast" />
       )}
       <CommandPaletteHost />
     </div>

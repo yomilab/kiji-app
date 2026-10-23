@@ -142,7 +142,6 @@ export const SHORTCUT_LABELS = {
   OPEN_FEED_EDIT_VIEW: 'Cmd + E',
   REFRESH_FEED: 'Cmd + R',
   SEARCH_ARTICLES: 'Cmd + F',
-  MARK_ALL_READ: 'Cmd + Shift + K',
   COMMAND_PALETTE: 'Cmd + K',
   OPEN_SETTINGS: 'Cmd + ,',
   OPEN_ARTICLE_IN_NEW_WINDOW: 'N',
@@ -224,14 +223,7 @@ export const isSaveArticleShortcut = (event: ShortcutKeyboardEvent): boolean =>
 export const isLoadFromClipboardShortcut = (event: ShortcutKeyboardEvent): boolean =>
   isArticleShortcutLayerActive() && isPlainKeyPress(event) && normalizedKey(event) === 'p';
 
-export const isMarkAllReadShortcut = (event: ShortcutKeyboardEvent): boolean =>
-  isAppShortcutLayerActive()
-  && isPrimaryModifierPressed(event)
-  && event.shiftKey
-  && !event.altKey
-  && normalizedKey(event) === 'k';
-
-/** ⌘K (Ctrl+K off macOS). ⇧⌘K belongs to Mark All as Read, so Shift must be up. */
+/** ⌘K (Ctrl+K off macOS). Shift must be up. */
 export const isOpenCommandPaletteShortcut = (event: ShortcutKeyboardEvent): boolean =>
   isAppShortcutLayerActive()
   && isPrimaryModifierPressed(event)

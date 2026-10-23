@@ -35,10 +35,6 @@ export function useUserMessageChannel(): null {
   return null;
 }
 
-export function useUserMessage(): null {
-  return null;
-}
-
 export function useAppUpdatePrompt() {
   const availability = {
     currentVersion: '1.3.0',
