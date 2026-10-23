@@ -262,21 +262,6 @@ impl DbState {
         action(&connection)
     }
 
-    /// Calls `listener` after every committed write (any transaction or
-    /// autocommit statement on the writer). It runs while the writer is
-    /// held, so it must only signal (e.g. wake a coalescing task), never
-    /// touch the database.
-    pub fn set_commit_listener(&self, listener: impl Fn() + Send + 'static) -> Result<(), String> {
-        self.with_writer(|connection| {
-            connection
-                .commit_hook(Some(move || {
-                    listener();
-                    false
-                }))
-                .map_err(|error| format!("Failed to install the commit listener: {error}"))
-        })
-    }
-
     fn with_search_reader<T>(
         &self,
         epoch: u64,

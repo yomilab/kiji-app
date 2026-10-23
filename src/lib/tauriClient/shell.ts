@@ -145,26 +145,6 @@ export interface BackgroundModeStatus {
   trayReady: boolean;
 }
 
-export interface AttentionStatus {
-  /** Unread count on the Dock / launcher icon. */
-  showUnreadBadge: boolean;
-  /** One summary notification after a background refresh. */
-  notifyNewArticles: boolean;
-  /** The app icon can show a count here (macOS, Linux; not Windows). */
-  badgeSupported: boolean;
-  /** The system refused notifications when they were turned on. */
-  notificationsBlocked: boolean;
-}
-
-export const attention = {
-  get(): Promise<AttentionStatus> {
-    return invokeCommand<AttentionStatus>("shell_attention_get");
-  },
-  set(patch: { showUnreadBadge?: boolean; notifyNewArticles?: boolean }): Promise<AttentionStatus> {
-    return invokeCommand<AttentionStatus>("shell_attention_set", patch);
-  },
-};
-
 export const backgroundMode = {
   get(): Promise<BackgroundModeStatus> {
     return invokeCommand<BackgroundModeStatus>("shell_background_mode_get");

@@ -68,10 +68,6 @@ pub struct SchedulerNativeCyclePreviewRequest {
     pub execute: Option<bool>,
     /// Renderer-assigned cycle identity for progress routing and cancellation.
     pub cycle_id: Option<String>,
-    /// A scheduled background pass (not a feed switch or manual refresh);
-    /// only these may post the "new articles" notification.
-    #[serde(default)]
-    pub background: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

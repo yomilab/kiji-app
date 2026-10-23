@@ -80,7 +80,6 @@ use mcp::{
     assistant_open_client_link, assistant_reset_access, assistant_set_current_article,
     assistant_update_settings, assistant_write_extension, AssistantState,
 };
-use shell::attention::{shell_attention_get, shell_attention_set};
 use shell::background::{shell_background_mode_get, shell_background_mode_set};
 use tauri::{webview::PageLoadEvent, Manager, RunEvent, WindowEvent};
 
@@ -187,7 +186,6 @@ pub fn run() {
                 AssistantState::load(&app.handle(), db_state.clone()).map_err(std::io::Error::other)?;
             assistant_state.apply();
             app.manage(assistant_state);
-            shell::attention::start(&app.handle(), &db_state);
             app.manage(db_state);
             app.manage(sync_state);
             app.manage(SavedExportState::new());
@@ -199,13 +197,10 @@ pub fn run() {
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_notification::init())
         .plugin(window_guards_plugin())
         .invoke_handler(tauri::generate_handler![
             articles_begin_search,
             articles_cancel_search,
-            shell_attention_get,
-            shell_attention_set,
             shell_background_mode_get,
             shell_background_mode_set,
             assistant_clear_current_article,

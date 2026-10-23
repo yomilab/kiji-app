@@ -711,8 +711,6 @@ export interface SchedulerNativeCyclePreviewRequest {
   execute?: boolean;
   /** Renderer-assigned cycle identity for progress routing and cancellation. */
   cycleId?: string;
-  /** Scheduled background pass; only these may post the new-articles notification. */
-  background?: boolean;
 }
 
 export interface SchedulerNativeCycleFeedResult {
