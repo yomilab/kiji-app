@@ -2,10 +2,7 @@ use crate::db::{
     get_feeds_by_ids, list_scheduler_feed_entries, update_feed, DbState, FeedRecord, FeedUpdate,
 };
 use crate::diagnostics::robustness::{record, record_many, RobustnessCounter};
-use crate::feeds::{
-    load_compiled_mute_rules, store_parsed_feed_content, CompiledMuteRules,
-    StoreParsedFeedRequest,
-};
+use crate::feeds::{store_parsed_feed_content, StoreParsedFeedRequest};
 use crate::net::{feeds_abort_request, fetch_with_cache, FeedFetchWithCacheRequest};
 use crate::scheduler::run_plan::{
     boosts_to_map, create_scheduler_run_plan, scheduler_feed_entry_from_scheduler_row,
@@ -23,7 +20,7 @@ use futures_util::stream::{FuturesUnordered, StreamExt};
 use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use tauri::AppHandle;
 
 const DEFAULT_NATIVE_CYCLE_CONCURRENCY: usize = 3;
@@ -187,9 +184,6 @@ pub async fn preview_native_refresh_cycle(
             .into_iter()
             .collect();
 
-        // Mute rules compile once per cycle, not per feed or article.
-        let mute_rules = load_compiled_mute_rules(app, db).await;
-        let mute_rules = &mute_rules;
         let force_refresh_feed_ids = &force_refresh_feed_ids;
         let boosts = &boosts;
         let feed_news = &mut feed_news;
@@ -229,7 +223,7 @@ pub async fn preview_native_refresh_cycle(
                         register_request_id(cid, rid);
                     }
                 }
-                refresh_single_feed_native(db, feed, force_refresh, request_id, mute_rules.clone())
+                refresh_single_feed_native(db, feed, force_refresh, request_id)
             },
             |entry, result: Result<NativeFeedRefreshOutcome, String>| {
                 let request_id = cycle_id
@@ -402,7 +396,6 @@ async fn refresh_single_feed_native(
     feed: FeedRecord,
     force_refresh: bool,
     request_id: Option<String>,
-    mute_rules: Option<Arc<CompiledMuteRules>>,
 ) -> Result<NativeFeedRefreshOutcome, String> {
     // A manual/forced refresh must bypass conditional GET so the server returns
     // 200 with a full body instead of a 304. The 60s cooldown + forceNetwork
@@ -464,7 +457,7 @@ async fn refresh_single_feed_native(
         last_fetched: Some(current_time_rfc3339()),
         previous_update_frequency_score: Some(feed.update_frequency_score),
     };
-    let stored = match store_parsed_feed_content(db, store_request, mute_rules).await {
+    let stored = match store_parsed_feed_content(db, store_request).await {
         Ok(response) => response,
         Err(error) => {
             record_feed_failure(db, &feed, &error).await?;

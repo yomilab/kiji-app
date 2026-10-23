@@ -4,18 +4,15 @@ use crate::db::{
 };
 use crate::feeds::convert::{convert_feed_items_to_articles, ConvertContext};
 use crate::feeds::frequency::compute_frequency_from_dates;
-use crate::feeds::mute::{compile_saved_rules, CompiledMuteRules};
 use crate::feeds::parse::parse_feed_preview;
 use chrono::Utc;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tauri::State;
 
 use crate::db::retention::{drop_purged_items, RetentionState};
 use crate::db::{with_savepoint, DbState};
 use crate::diagnostics::robustness::{record, RobustnessCounter};
-use crate::settings::SettingsState;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -64,12 +61,9 @@ struct PreparedFeedStore {
     last_modified: Option<String>,
 }
 
-/// Pure step: parse and convert without touching the database. Mute rules
-/// (compiled once per cycle) mark matching new articles read here, off the
-/// writer lock; `INSERT OR IGNORE` keeps existing rows untouched.
+/// Pure step: parse and convert without touching the database.
 fn prepare_parsed_feed_content(
     request: StoreParsedFeedRequest,
-    mute_rules: Option<&CompiledMuteRules>,
 ) -> Result<PreparedFeedStore, String> {
     let preview = parse_feed_preview(request.raw_text, request.feed_url.clone())?;
     let fetch_time = request
@@ -90,10 +84,7 @@ fn prepare_parsed_feed_content(
         fetch_time,
     };
 
-    let mut articles = convert_feed_items_to_articles(&preview.items, &context);
-    if let Some(rules) = mute_rules {
-        rules.apply_to_new_articles(&request.feed_id, &mut articles);
-    }
+    let articles = convert_feed_items_to_articles(&preview.items, &context);
     let update_frequency_score = derive_update_frequency_score(
         &articles,
         request.previous_update_frequency_score,
@@ -214,10 +205,9 @@ fn write_prepared_feed_content(
 pub async fn store_parsed_feed_content(
     db: &DbState,
     request: StoreParsedFeedRequest,
-    mute_rules: Option<Arc<CompiledMuteRules>>,
 ) -> Result<StoreParsedFeedResponse, String> {
     let prepared = tauri::async_runtime::spawn_blocking(move || {
-        prepare_parsed_feed_content(request, mute_rules.as_deref())
+        prepare_parsed_feed_content(request)
     })
     .await
     .map_err(|error| format!("Feed parse task failed: {error}"))??;
@@ -251,11 +241,9 @@ fn parse_timestamp(value: &str) -> Option<chrono::DateTime<Utc>> {
 pub async fn feeds_store_parsed_content(
     request: StoreParsedFeedRequest,
     state: State<'_, DbState>,
-    settings: State<'_, Arc<SettingsState>>,
 ) -> Result<StoreParsedFeedResponse, String> {
     let db = state.inner().clone();
-    let mute_rules = compile_saved_rules(settings.inner(), &db).await;
-    store_parsed_feed_content(&db, request, mute_rules).await
+    store_parsed_feed_content(&db, request).await
 }
 
 #[cfg(test)]
@@ -282,7 +270,7 @@ mod tests {
         request: StoreParsedFeedRequest,
         retention: &RetentionState,
     ) -> Result<StoreParsedFeedResponse, String> {
-        write_prepared_feed_content(connection, prepare_parsed_feed_content(request, None)?, retention)
+        write_prepared_feed_content(connection, prepare_parsed_feed_content(request)?, retention)
     }
 
     fn open_test_connection() -> Connection {
@@ -670,7 +658,7 @@ mod tests {
             let mut request = minimal_request("feed-1", Some("etag-1"));
             request.raw_text = "this is not a feed".to_string();
             let result = tauri::async_runtime::block_on(store_parsed_feed_content_async(
-                &store_db, request, None,
+                &store_db, request,
             ));
             let _ = result_tx.send(result);
         });
@@ -717,138 +705,5 @@ mod tests {
         assert!(response.parsed_item_count > 0);
         assert_eq!(response.inserted_count, response.parsed_item_count as i64);
         assert_eq!(response.article_count, response.inserted_count);
-    }
-
-    fn mute_rule(id: &str, text: &str, scope: crate::feeds::mute::MuteRuleScope) -> crate::feeds::MuteRule {
-        crate::feeds::MuteRule {
-            id: id.to_string(),
-            text: text.to_string(),
-            match_description: false,
-            scope,
-            action: crate::feeds::mute::MuteRuleAction::MarkRead,
-        }
-    }
-
-    fn read_flags(connection: &Connection) -> Vec<(String, i64)> {
-        let mut statement = connection
-            .prepare("SELECT title, read FROM articles ORDER BY title")
-            .unwrap();
-        statement
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-            .unwrap()
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap()
-    }
-
-    #[test]
-    fn mute_rules_mark_new_matching_articles_read_at_store_time() {
-        use crate::feeds::mute::MuteRuleScope;
-        let connection = open_test_connection();
-        insert_test_feed(&connection, "feed-1", "https://example.com/feed.xml");
-        let rules = CompiledMuteRules::compile_with_connection(
-            &connection,
-            &[mute_rule("1", "first", MuteRuleScope::All)],
-        )
-        .unwrap();
-
-        let response = write_prepared_feed_content(
-            &connection,
-            prepare_parsed_feed_content(minimal_request("feed-1", None), Some(&rules)).unwrap(),
-            &RetentionState::default(),
-        )
-        .unwrap();
-
-        assert_eq!(response.inserted_count, 2);
-        assert_eq!(response.unread_count, 1);
-        assert_eq!(
-            read_flags(&connection),
-            vec![("First Article".to_string(), 1), ("Second Article".to_string(), 0)]
-        );
-    }
-
-    #[test]
-    fn mute_rules_scoped_to_another_feed_or_station_leave_articles_unread() {
-        use crate::feeds::mute::MuteRuleScope;
-        let connection = open_test_connection();
-        insert_test_feed(&connection, "feed-1", "https://example.com/feed.xml");
-        let rules = CompiledMuteRules::compile_with_connection(
-            &connection,
-            &[
-                mute_rule("1", "first", MuteRuleScope::Feed { id: "feed-2".to_string() }),
-                mute_rule("2", "second", MuteRuleScope::Station { name: "Missing".to_string() }),
-            ],
-        )
-        .unwrap();
-
-        let response = write_prepared_feed_content(
-            &connection,
-            prepare_parsed_feed_content(minimal_request("feed-1", None), Some(&rules)).unwrap(),
-            &RetentionState::default(),
-        )
-        .unwrap();
-        assert_eq!(response.unread_count, 2);
-    }
-
-    #[test]
-    fn mute_rules_do_not_touch_existing_articles_on_restore_but_apply_to_existing_does() {
-        use crate::feeds::mute::{apply_mute_rules_to_existing, MuteRuleScope};
-        let connection = open_test_connection();
-        insert_test_feed(&connection, "feed-1", "https://example.com/feed.xml");
-        store_parsed_feed_content(&connection, minimal_request("feed-1", None)).unwrap();
-
-        // Rule added later: a re-store of the same items does not mark them read.
-        let rules = CompiledMuteRules::compile_with_connection(
-            &connection,
-            &[mute_rule("1", "second", MuteRuleScope::All)],
-        )
-        .unwrap();
-        let response = write_prepared_feed_content(
-            &connection,
-            prepare_parsed_feed_content(minimal_request("feed-1", None), Some(&rules)).unwrap(),
-            &RetentionState::default(),
-        )
-        .unwrap();
-        assert_eq!(response.unread_count, 2);
-
-        let result = apply_mute_rules_to_existing(&connection, &rules).unwrap();
-        assert_eq!(result.marked_count, 1);
-        assert_eq!(result.feeds.len(), 1);
-        assert_eq!(result.feeds[0].feed_id, "feed-1");
-        assert_eq!(result.feeds[0].unread_count, 1);
-        let stored_unread: i64 = connection
-            .query_row("SELECT unread_count FROM feeds WHERE id = 'feed-1'", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(stored_unread, 1);
-        assert_eq!(
-            read_flags(&connection),
-            vec![("First Article".to_string(), 0), ("Second Article".to_string(), 1)]
-        );
-
-        // Running it again finds nothing new.
-        assert_eq!(apply_mute_rules_to_existing(&connection, &rules).unwrap().marked_count, 0);
-    }
-
-    #[test]
-    fn mute_preview_counts_matches_among_recent_articles_using_the_date_index() {
-        use crate::feeds::mute::{preview_mute_rule, MuteRuleScope};
-        let connection = open_test_connection();
-        insert_test_feed(&connection, "feed-1", "https://example.com/feed.xml");
-        store_parsed_feed_content(&connection, minimal_request("feed-1", None)).unwrap();
-
-        let preview = preview_mute_rule(&connection, &mute_rule("1", "ARTICLE", MuteRuleScope::All)).unwrap();
-        assert_eq!((preview.matched, preview.scanned), (2, 2));
-        let preview = preview_mute_rule(&connection, &mute_rule("1", "first", MuteRuleScope::All)).unwrap();
-        assert_eq!((preview.matched, preview.scanned), (1, 2));
-
-        let plan: Vec<String> = connection
-            .prepare(&format!("EXPLAIN QUERY PLAN {}", crate::feeds::mute::PREVIEW_SQL))
-            .unwrap()
-            .query_map([500], |row| row.get::<_, String>(3))
-            .unwrap()
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-        let plan = plan.join(" | ");
-        assert!(plan.contains("idx_articles_effective_date"), "{plan}");
-        assert!(!plan.contains("TEMP B-TREE"), "{plan}");
     }
 }

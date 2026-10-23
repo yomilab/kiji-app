@@ -152,7 +152,7 @@ describe('ManageFeedsWindow', () => {
     await renderWindow();
     const nav = screen.getByRole('tablist', { name: 'Manage feeds' });
     expect(within(nav).getAllByRole('tab').map((tab) => tab.textContent?.trim()))
-      .toEqual(['Feeds', 'Stations', 'Library', 'Filters', 'Import & Export']);
+      .toEqual(['Feeds', 'Stations', 'Library', 'Import & Export']);
     expect(within(nav).getByRole('tab', { name: 'Feeds' })).toHaveAttribute('aria-selected', 'true');
 
     const list = await screen.findByRole('listbox', { name: 'Feeds' });
