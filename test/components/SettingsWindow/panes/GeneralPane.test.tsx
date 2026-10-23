@@ -3,12 +3,7 @@ import React from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 vi.mock("@/lib/tauriClient", () => ({
-  tauriClient: {
-    shell: {
-      backgroundMode: { get: vi.fn(() => new Promise(() => undefined)), set: vi.fn() },
-      attention: { get: vi.fn(() => new Promise(() => undefined)), set: vi.fn() },
-    },
-  },
+  tauriClient: { shell: { backgroundMode: { get: vi.fn(() => new Promise(() => undefined)), set: vi.fn() } } },
 }));
 vi.mock("@/services/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
