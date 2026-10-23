@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
-import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 
 const { queryMock, selectSmartView } = vi.hoisted(() => ({
   queryMock: vi.fn(),
@@ -39,8 +39,6 @@ vi.mock('@/stores/articleStore', () => ({
 }));
 
 import { SmartViews } from '@/components/Sidebar/SmartViews';
-import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
-import { notifyArticleReadChanged } from '@/services/articles/articleReadSignal';
 
 afterEach(() => {
   cleanup();
@@ -48,43 +46,24 @@ afterEach(() => {
 });
 
 describe('SmartViews Today row', () => {
-  it('renders Today after Unread with its unread count and refreshes after a refresh cycle', async () => {
+  it('renders Today after Unread with no count, like the other Library views', async () => {
     queryMock.mockResolvedValue({ articles: [], total: 7 });
     const { container } = render(<SmartViews />);
 
-    await waitFor(() => {
-      expect(container.querySelector('[data-smart-view-id="today"] [data-section="smart-view-unread-count"]')?.textContent)
-        .toBe('7');
-    });
-
+    const today = await screen.findByRole('button', { name: 'Today' });
     const ids = Array.from(container.querySelectorAll('[data-smart-view-id]'))
       .map((row) => row.getAttribute('data-smart-view-id'));
     expect(ids).toEqual(['saved', 'unread', 'today', 'all']);
 
     const todayRow = container.querySelector('[data-smart-view-id="today"]');
     expect(todayRow?.classList.contains('is-selected')).toBe(true);
-    expect(todayRow?.textContent).toContain('Today');
+    expect(today.textContent).toBe('Today');
     expect(todayRow?.querySelector('svg[data-glyph="today"]')).not.toBeNull();
-    expect(queryMock).toHaveBeenCalledWith({ today: true, filter: { read: false }, limit: 0 });
 
-    // A refresh cycle publishes feed counts; the window is re-evaluated natively.
-    queryMock.mockResolvedValue({ articles: [], total: 9 });
-    act(() => {
-      feedLibraryMutationBus.publishFeedsCountsUpdated([{ feedId: 'f1', unreadCount: 3, articleCount: 5 }]);
-    });
+    // No count badge, and the sidebar never queries for one.
     await waitFor(() => {
-      expect(container.querySelector('[data-smart-view-id="today"] [data-section="smart-view-unread-count"]')?.textContent)
-        .toBe('9');
+      expect(container.querySelector('[data-section="smart-view-unread-count"]')).toBeNull();
     });
-
-    // Reading an article updates the count; zero hides the badge.
-    queryMock.mockResolvedValue({ articles: [], total: 0 });
-    act(() => {
-      notifyArticleReadChanged();
-    });
-    await waitFor(() => {
-      expect(container.querySelector('[data-smart-view-id="today"] [data-section="smart-view-unread-count"]')).toBeNull();
-    });
-    expect(container.querySelector('[data-smart-view-id="unread"] [data-section="smart-view-unread-count"]')).toBeNull();
+    expect(queryMock).not.toHaveBeenCalled();
   });
 });

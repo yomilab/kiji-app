@@ -14,7 +14,6 @@ import { storage } from '@/services/storage/storageFactory';
 import type { SmartViewSettings } from '@/services/settings/types';
 import { persistSmartViewOrder } from '@/services/feeds/libraryOrderPersist';
 import { useSidebarReorder } from './useSidebarReorder';
-import { useTodayUnreadCount } from './useTodayUnreadCount';
 import { sidebarRowLabel } from './sidebarKeyboardNav';
 import './SmartViews.css';
 
@@ -83,7 +82,6 @@ interface SmartViewItemProps {
   view: SmartView;
   isSelected: boolean;
   isTabStop: boolean;
-  unreadCount?: number | null;
   onSelectView: (viewId: SmartViewId) => void;
   onOpenFeedEditView: (viewId: SmartViewId) => void;
   setRowRef: (id: string, node: HTMLElement | null) => void;
@@ -97,7 +95,6 @@ const SmartViewItem = React.memo<SmartViewItemProps>(({
   view,
   isSelected,
   isTabStop,
-  unreadCount,
   onSelectView,
   onOpenFeedEditView,
   setRowRef,
@@ -140,7 +137,7 @@ const SmartViewItem = React.memo<SmartViewItemProps>(({
         role="button"
         tabIndex={isTabStop ? 0 : -1}
         aria-current={isSelected ? 'page' : undefined}
-        aria-label={sidebarRowLabel(view.label, unreadCount)}
+        aria-label={sidebarRowLabel(view.label)}
         data-sidebar-nav-item=""
       >
         {view.emoji ? (
@@ -153,11 +150,6 @@ const SmartViewItem = React.memo<SmartViewItemProps>(({
         <span className="smart-view-label" data-section="smart-view-name">
           {view.label}
         </span>
-        {unreadCount ? (
-          <span className="smart-view-badge" data-section="smart-view-unread-count" aria-hidden="true">
-            {unreadCount}
-          </span>
-        ) : null}
       </div>
       <ButtonStack
         buttons={buttons}
@@ -174,7 +166,6 @@ export const SmartViews: React.FC = () => {
   const [smartViews, setSmartViews] = useState<SmartView[]>([]);
   const smartViewsPatched = useSmartViewsPatchedMutation();
   const emojisRef = useRef<Record<string, string>>({});
-  const todayUnreadCount = useTodayUnreadCount(smartViews.some((view) => view.id === 'today'));
 
   useEffect(() => {
     const loadSmartViews = async () => {
@@ -254,7 +245,6 @@ export const SmartViews: React.FC = () => {
             view={view}
             isSelected={selectedSmartView === view.id}
             isTabStop={selectedSmartView ? selectedSmartView === view.id : index === 0}
-            unreadCount={view.id === 'today' ? todayUnreadCount : undefined}
             onSelectView={handleSmartViewClick}
             onOpenFeedEditView={handleOpenFeedEditView}
             setRowRef={setRowRef}

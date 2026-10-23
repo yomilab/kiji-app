@@ -64,9 +64,9 @@ const renderLibrary = () => render(
 );
 
 describe('sidebar source list', () => {
-  it('Library rows have names, unread counts and aria-current, with no serious axe violations', async () => {
+  it('Library rows have names and aria-current, with no serious axe violations', async () => {
     const { container } = renderLibrary();
-    const today = await screen.findByRole('button', { name: 'Today, 12 unread' });
+    const today = await screen.findByRole('button', { name: 'Today' });
     expect(today.getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('button', { name: 'Unread' }).getAttribute('aria-current')).toBeNull();
     expect(await findSeriousAxeViolations(container)).toEqual([]);
@@ -74,7 +74,7 @@ describe('sidebar source list', () => {
 
   it('is one Tab stop; arrows move between rows; Enter and Space select', async () => {
     renderLibrary();
-    const today = await screen.findByRole('button', { name: 'Today, 12 unread' });
+    const today = await screen.findByRole('button', { name: 'Today' });
     const unread = screen.getByRole('button', { name: 'Unread' });
     const all = screen.getByRole('button', { name: 'All Items' });
     expect([unread, today, all].map((row) => row.tabIndex)).toEqual([-1, 0, -1]);

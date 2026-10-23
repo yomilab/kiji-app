@@ -30,7 +30,6 @@ import {
 import type { Article } from '@/types/article';
 import type { ArticleQuery } from '@/types/articleQuery';
 import { FEED_FETCH_COOLDOWN_MS, isLibrarySmartViewId } from '@/constants';
-import { notifyArticleReadChanged } from '@/services/articles/articleReadSignal';
 import { maybeRefreshFavicon } from '@/services/favicons/faviconRefreshService';
 import { getFeedRefreshBlock } from '@/services/feeds/feedRefreshPolicy';
 import type { Feed } from '@/services/feeds/feedsManager';
@@ -4768,9 +4767,6 @@ export const FeedProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     options?: { insertIntoSavedView?: boolean },
   ) => {
     const selected = navigationState.selectedSmartView;
-    if (updates.read !== undefined) {
-      notifyArticleReadChanged();
-    }
     const removeFromUnread = selected === 'unread' && updates.read === true;
     const removeFromSaved = selected === 'saved' && updates.saved === false;
     const removeFromRead = selected === 'read' && updates.read === false;
