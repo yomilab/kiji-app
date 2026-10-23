@@ -51,7 +51,6 @@ export const ArticleListScrollBranch = memo(function ArticleListScrollBranch({
   const {
     loadMoreArticles,
     syncArticleListViewport,
-    updateArticleInList,
   } = useFeedCollectionActions();
   const {
     activeArticleHash,
@@ -108,8 +107,6 @@ export const ArticleListScrollBranch = memo(function ArticleListScrollBranch({
       density={density}
       selectArticle={selectArticle}
       loadMoreArticles={handleLoadMoreArticles}
-      selectedSmartView={selectedSmartView}
-      updateArticleInList={updateArticleInList}
       syncArticleListViewport={syncArticleListViewport}
     />
   );

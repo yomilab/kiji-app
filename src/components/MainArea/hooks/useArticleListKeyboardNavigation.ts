@@ -3,8 +3,6 @@ import type { Article } from '@/types/article';
 import type { ArticleViewOverlayPhase } from '@/contexts/FeedContext';
 import {
   isOpenArticleShortcut,
-  isOpenNextUnreadShortcut,
-  isToggleReadShortcut,
   isScrollDownShortcut,
   isScrollUpShortcut,
   isVimScrollBottomShortcut,
@@ -27,10 +25,6 @@ interface UseArticleListKeyboardNavigationOptions {
   selectArticle: (hash: string) => void;
   setKeyboardFocusHash: (hash: string | null) => void;
   scrollKeyboardFocusIntoView: (hash: string) => void;
-  /** `m`: flip read/unread on the focused row. */
-  toggleArticleRead?: (hash: string) => void;
-  /** Space: open the next unread article after the focused row. */
-  openNextUnread?: (fromHash: string | null) => void;
 }
 
 export const useArticleListKeyboardNavigation = ({
@@ -42,8 +36,6 @@ export const useArticleListKeyboardNavigation = ({
   selectArticle,
   setKeyboardFocusHash,
   scrollKeyboardFocusIntoView,
-  toggleArticleRead,
-  openNextUnread,
 }: UseArticleListKeyboardNavigationOptions) => {
   const keyboardFocusHashRef = useRef(keyboardFocusHash);
   keyboardFocusHashRef.current = keyboardFocusHash;
@@ -65,12 +57,6 @@ export const useArticleListKeyboardNavigation = ({
 
   const scrollKeyboardFocusIntoViewRef = useRef(scrollKeyboardFocusIntoView);
   scrollKeyboardFocusIntoViewRef.current = scrollKeyboardFocusIntoView;
-
-  const toggleArticleReadRef = useRef(toggleArticleRead);
-  toggleArticleReadRef.current = toggleArticleRead;
-
-  const openNextUnreadRef = useRef(openNextUnread);
-  openNextUnreadRef.current = openNextUnread;
 
   const focusIndexRef = useRef(-1);
 
@@ -323,29 +309,6 @@ export const useArticleListKeyboardNavigation = ({
       if (isOwnedByFocusedControl(e)) return;
 
       if (handleVimScrollShortcut(e)) return;
-
-      if (isToggleReadShortcut(e) && toggleArticleReadRef.current) {
-        const focusedHash = resolveArticleListFocusHash(
-          keyboardFocusHashRef.current,
-          activeArticleHashRef.current,
-        );
-        if (focusedHash && filteredArticlesRef.current.some((article) => article.hash === focusedHash)) {
-          e.preventDefault();
-          toggleArticleReadRef.current(focusedHash);
-        }
-        return;
-      }
-
-      if (isOpenNextUnreadShortcut(e) && openNextUnreadRef.current) {
-        e.preventDefault();
-        if (e.repeat) return;
-        const focusedHash = resolveArticleListFocusHash(
-          keyboardFocusHashRef.current,
-          activeArticleHashRef.current,
-        );
-        openNextUnreadRef.current(focusedHash);
-        return;
-      }
 
       if (isOpenArticleShortcut(e)) {
         const articles = filteredArticlesRef.current;
