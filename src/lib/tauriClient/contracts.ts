@@ -423,7 +423,6 @@ export interface StoreParsedFeedRequest {
 export interface StoreParsedFeedResponse {
   feedId: string;
   insertedCount: number;
-  insertedUnreadCount?: number;
   parsedItemCount: number;
   updateFrequencyScore?: number;
   unreadCount: number;

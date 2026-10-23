@@ -40,9 +40,6 @@ pub struct StoreParsedFeedRequest {
 pub struct StoreParsedFeedResponse {
     pub feed_id: String,
     pub inserted_count: i64,
-    /// Newly inserted articles left unread (mute words mark matches read).
-    #[serde(default)]
-    pub inserted_unread_count: i64,
     pub parsed_item_count: usize,
     pub update_frequency_score: Option<f64>,
     pub unread_count: i64,
@@ -140,17 +137,11 @@ fn write_prepared_feed_content(
         // Items removed by automatic cleanup must not return as new unread.
         let articles = drop_purged_items(connection, retention, &feed_id, articles)?;
         // Articles first, then etag: order is kept inside the transaction too.
-        // Unread and muted (already read) articles go in separately so the
-        // new-article notice counts only what is still unread.
-        let (unread, muted): (Vec<_>, Vec<_>) =
-            articles.into_iter().partition(|article| !article.read);
-        let inserted_unread_count = if unread.is_empty() {
+        let inserted_count = if articles.is_empty() {
             0
         } else {
-            insert_articles_batch(connection, &unread)?
+            insert_articles_batch(connection, &articles)?
         };
-        let inserted_count = inserted_unread_count
-            + if muted.is_empty() { 0 } else { insert_articles_batch(connection, &muted)? };
 
         update_feed(
             connection,
@@ -192,10 +183,10 @@ fn write_prepared_feed_content(
             .first()
             .map(|entry| (entry.unread_count, entry.article_count))
             .unwrap_or((0, 0));
-        Ok((inserted_count, inserted_unread_count, unread_count, article_count))
+        Ok((inserted_count, unread_count, article_count))
     });
 
-    let (inserted_count, inserted_unread_count, unread_count, article_count) = match result {
+    let (inserted_count, unread_count, article_count) = match result {
         Ok(values) => values,
         Err(error) => {
             record(RobustnessCounter::StoreTransactionRollbacks);
@@ -206,7 +197,6 @@ fn write_prepared_feed_content(
     Ok(StoreParsedFeedResponse {
         feed_id,
         inserted_count,
-        inserted_unread_count,
         parsed_item_count,
         update_frequency_score,
         unread_count,
@@ -769,8 +759,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(response.inserted_count, 2);
-        // Only the unmuted article counts toward the new-article notice.
-        assert_eq!(response.inserted_unread_count, 1);
         assert_eq!(response.unread_count, 1);
         assert_eq!(
             read_flags(&connection),
