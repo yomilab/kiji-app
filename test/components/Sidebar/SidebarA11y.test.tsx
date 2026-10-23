@@ -117,5 +117,4 @@ describe('sidebar source list', () => {
       expect(await findSeriousAxeViolations(container)).toEqual([]);
     });
   });
-
 });
