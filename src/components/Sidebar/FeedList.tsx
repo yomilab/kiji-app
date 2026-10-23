@@ -30,13 +30,8 @@ import { FaviconImage } from '@/components/common/FaviconImage';
 import { appendPromotedFeedsToUnstationed, persistUnstationedOrder } from '@/services/feeds/libraryOrderPersist';
 import { mergeUnstationedSortIntoFeeds } from '@/services/feeds/libraryRank';
 import { useSidebarReorder } from './useSidebarReorder';
-import { FeedHealthMarker } from './FeedHealthMarker';
-import { describeFeedOutage, feedPatchFromHealth } from '@/services/feeds/feedHealth';
-import { appToastService } from '@/services/ui/appToastService';
 import { sidebarRowLabel } from './sidebarKeyboardNav';
 import './FeedList.css';
-
-export const FEED_DELETE_FAILED_TOAST = 'Couldn’t delete this feed. Try again.';
 
 interface Feed {
   id: string;
@@ -52,10 +47,6 @@ interface Feed {
   faviconStored?: boolean;
   emoji?: string;
   sortOrder?: number;
-  createdAt?: Date;
-  lastFetched?: Date;
-  lastFailedFetchAt?: Date;
-  consecutiveFailures?: number;
 }
 
 interface FeedListProps {
@@ -97,7 +88,6 @@ const FeedListItem = React.memo<FeedListItemProps>(({
       },
     },
   ], [feed.id, onOpenFeedEdit]);
-  const outage = describeFeedOutage(feed);
 
   return (
     <li
@@ -135,9 +125,6 @@ const FeedListItem = React.memo<FeedListItemProps>(({
           <span className="feed-list-item-title-text">{feed.title}</span>
         </span>
       </div>
-      {outage && (
-        <FeedHealthMarker message={outage} onShowInManageFeeds={() => onOpenFeedEdit(feed.id)} />
-      )}
       <ButtonStack
         buttons={buttons}
         direction="left"
@@ -322,22 +309,21 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
   useEffect(() => {
     if (!feedsCountsUpdated) return;
 
-    const byId = new Map(feedsCountsUpdated.feeds.map((entry) => [entry.id, entry]));
     setFeeds((current) => {
       let changed = false;
-      const nextFeeds = current.map((feed) => {
-        const feedCounts = byId.get(feed.id);
-        if (!feedCounts) {
-          return feed;
+      const nextFeeds = [...current];
+      for (const feedCounts of feedsCountsUpdated.feeds) {
+        const index = nextFeeds.findIndex((feed) => feed.id === feedCounts.id);
+        if (index < 0) {
+          continue;
         }
         changed = true;
-        return {
-          ...feed,
+        nextFeeds[index] = {
+          ...nextFeeds[index],
           unreadCount: feedCounts.unreadCount,
           articleCount: feedCounts.articleCount,
-          ...(feedCounts.health ? feedPatchFromHealth(feedCounts.health) : {}),
         };
-      });
+      }
       return changed ? nextFeeds : current;
     });
   }, [feedsCountsUpdated]);
@@ -461,9 +447,8 @@ export const FeedList: React.FC<FeedListProps> = ({ showAddModal, onCloseAddModa
       // Close confirmation dialog
       setFeedToDelete(null);
     } catch (error) {
-      logger.error('FeedList', 'Failed to delete feed', { error, feedId: feedToDelete.id });
-      setFeedToDelete(null);
-      appToastService.show(FEED_DELETE_FAILED_TOAST);
+      console.error('Error deleting feed:', error);
+      // TODO: Show error toast to user
     }
   };
 

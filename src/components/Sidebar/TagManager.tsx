@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import UnfoldMoreOutlined from '@mui/icons-material/UnfoldMoreOutlined';
 import UnfoldLessOutlined from '@mui/icons-material/UnfoldLessOutlined';
@@ -36,13 +36,6 @@ import { abortSidebarListDrag, mergePartialReorder } from './sidebarListDrag';
 import { persistNestedMembershipOrder, persistStationOrder } from '@/services/feeds/libraryOrderPersist';
 import { feedLibraryMutationBus } from '@/services/ui/feedLibraryMutationBus';
 import { useSidebarReorder } from './useSidebarReorder';
-import { FeedHealthMarker } from './FeedHealthMarker';
-import {
-  describeFeedOutage,
-  describeStationOutage,
-  feedPatchFromHealth,
-} from '@/services/feeds/feedHealth';
-import { getFailingFeedIds, subscribeFailingFeedIds } from '@/services/feeds/feedHealthSync';
 import {
   collectPinnedFeedIds,
   rememberFeedsInCache,
@@ -85,7 +78,6 @@ const StationFeedItem = React.memo<StationFeedItemProps>(({
         },
       },
   ], [feed.id, onOpenFeedEditView]);
-  const outage = describeFeedOutage(feed);
 
   return (
     <li
@@ -126,12 +118,6 @@ const StationFeedItem = React.memo<StationFeedItemProps>(({
           <span className="station-feed-item-title-text">{feed.title}</span>
         </span>
       </div>
-      {outage && (
-        <FeedHealthMarker
-          message={outage}
-          onShowInManageFeeds={() => onOpenFeedEditView({ kind: 'feed', id: feed.id })}
-        />
-      )}
       <ButtonStack
         buttons={buttons}
         direction="left"
@@ -147,8 +133,6 @@ interface StationListItemProps {
   isExpanded: boolean;
   isSelected: boolean;
   stationFeeds: Feed[];
-  /** Member feeds that can't update; the first is revealed from the station hint. */
-  failingFeedIds: string[];
   onToggleStation: (tagName: string) => void;
   onTagClick: (tagName: string) => void;
   onOpenFeedEditView: (target: ManageFeedsTarget) => void;
@@ -168,7 +152,6 @@ const StationListItem = React.memo<StationListItemProps>(({
   isExpanded,
   isSelected,
   stationFeeds,
-  failingFeedIds,
   onToggleStation,
   onTagClick,
   onOpenFeedEditView,
@@ -258,12 +241,6 @@ const StationListItem = React.memo<StationListItemProps>(({
             <span className="tag-name-text">{tag.name}</span>
           </span>
         </div>
-        {failingFeedIds.length > 0 && (
-          <FeedHealthMarker
-            message={describeStationOutage(failingFeedIds.length) ?? ''}
-            onShowInManageFeeds={() => onOpenFeedEditView({ kind: 'feed', id: failingFeedIds[0] })}
-          />
-        )}
         <ButtonStack
           buttons={stationButtons}
           direction="left"
@@ -298,14 +275,10 @@ const StationListItem = React.memo<StationListItemProps>(({
   );
 });
 
-const NO_FEED_IDS: string[] = [];
-
 export const TagManager: React.FC = () => {
   const [tags, setTags] = useState<Tag[]>([]);
   const [expandedStations, setExpandedStations] = useState<Set<string>>(new Set());
   const [feedCache, setFeedCache] = useState<Map<string, Feed>>(new Map());
-  // Every failing feed id (not only cached rows), so collapsed stations can show their hint.
-  const failingFeedIds = useSyncExternalStore(subscribeFailingFeedIds, getFailingFeedIds);
   const feedCacheRef = useRef(feedCache);
   const lastAppliedHydrateRevision = useRef(0);
   const expandedStationsRef = useRef(expandedStations);
@@ -520,7 +493,6 @@ export const TagManager: React.FC = () => {
           ...current,
           unreadCount: feedCounts.unreadCount,
           articleCount: feedCounts.articleCount,
-          ...(feedCounts.health ? feedPatchFromHealth(feedCounts.health) : {}),
         });
       }
       return changed ? next : prev;
@@ -637,16 +609,6 @@ export const TagManager: React.FC = () => {
     handleMembershipReordered(membershipReordered.stationName, membershipReordered.feedIds);
   }, [handleMembershipReordered, membershipReordered]);
 
-  const failingByStation = useMemo(() => {
-    const byStation = new Map<string, string[]>();
-    if (failingFeedIds.size === 0) return byStation;
-    for (const tag of tags) {
-      const failing = tag.feedIds.filter((id) => failingFeedIds.has(id));
-      if (failing.length > 0) byStation.set(tag.name, failing);
-    }
-    return byStation;
-  }, [failingFeedIds, tags]);
-
   if (tags.length === 0) {
     return null;
   }
@@ -668,7 +630,6 @@ export const TagManager: React.FC = () => {
               isExpanded={isExpanded}
               isSelected={selectedTag === tag.name}
               stationFeeds={stationFeeds}
-              failingFeedIds={failingByStation.get(tag.name) ?? NO_FEED_IDS}
               onToggleStation={toggleStation}
               onTagClick={handleTagClick}
               onOpenFeedEditView={handleOpenFeedEditView}

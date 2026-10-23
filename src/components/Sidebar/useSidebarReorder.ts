@@ -11,10 +11,6 @@ import {
   type SidebarDragGroup,
 } from './sidebarListDrag';
 import { shouldRollbackLibraryReorder } from '@/services/feeds/libraryRank';
-import { isLibraryReorderSupersededByImport } from '@/services/feeds/libraryReorderQueue';
-import { appToastService } from '@/services/ui/appToastService';
-
-export const SIDEBAR_REORDER_FAILED_TOAST = 'Couldn’t save the new order. Try again.';
 
 type DragState = {
   id: string;
@@ -144,11 +140,7 @@ export const useSidebarReorder = <T,>(options: {
       await persist(nextIds);
     } catch (error) {
       if (shouldRollbackLibraryReorder(error)) {
-        // Snap the dragged row back to what is saved, and say so instead of failing silently.
         onRollback();
-        if (!isLibraryReorderSupersededByImport(error)) {
-          appToastService.show(SIDEBAR_REORDER_FAILED_TOAST);
-        }
       }
     }
   }, [applyDragState]);

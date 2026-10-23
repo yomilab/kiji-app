@@ -1,7 +1,6 @@
 import type { Feed } from '@/services/feeds/feedsManager';
 import type { SmartViewSettings } from '@/services/settings/types';
 import type { Tag } from '@/types/tag';
-import type { FeedHealthFields } from '@/services/feeds/feedHealth';
 
 type Listener = () => void;
 
@@ -43,15 +42,7 @@ export interface FeedLibraryStationsReordered {
 
 export interface FeedLibraryFeedsCountsUpdated {
   revision: number;
-  /** `health` is set when a refresh changed whether the feed can update (see `feedHealthSync`). */
-  feeds: Array<Pick<Feed, 'id' | 'unreadCount' | 'articleCount'> & { health?: FeedHealthFields }>;
-}
-
-export interface FeedCountsEntry {
-  feedId: string;
-  unreadCount: number;
-  articleCount: number;
-  health?: FeedHealthFields;
+  feeds: Array<Pick<Feed, 'id' | 'unreadCount' | 'articleCount'>>;
 }
 
 export interface FeedLibraryStationDeleted {
@@ -93,7 +84,10 @@ export type FeedLibraryMutationMessage =
   | { kind: 'smartViewsPatched'; smartViews: SmartViewSettings[] }
   | { kind: 'stationsReordered'; stations: FeedLibraryStationsReordered['stations'] }
   | { kind: 'stationDeleted'; stationName: string; affectedFeedIds: string[] }
-  | { kind: 'feedsCountsUpdated'; feeds: FeedCountsEntry[] }
+  | {
+    kind: 'feedsCountsUpdated';
+    feeds: Array<{ feedId: string; unreadCount: number; articleCount: number }>;
+  }
   | { kind: 'stationsHydrated'; stations: Tag[] }
   | { kind: 'unstationedReordered'; feeds: FeedLibraryUnstationedReordered['feeds'] }
   | { kind: 'stationMembershipReordered'; stationName: string; feedIds: string[] }
@@ -312,7 +306,9 @@ class FeedLibraryMutationBus {
     this.dispatch({ kind: 'stationDeleted', stationName, affectedFeedIds });
   }
 
-  publishFeedsCountsUpdated(feeds: FeedCountsEntry[]): void {
+  publishFeedsCountsUpdated(
+    feeds: Array<{ feedId: string; unreadCount: number; articleCount: number }>,
+  ): void {
     if (feeds.length === 0) {
       return;
     }
@@ -324,7 +320,6 @@ class FeedLibraryMutationBus {
         id: feed.feedId,
         unreadCount: feed.unreadCount,
         articleCount: feed.articleCount,
-        ...(feed.health ? { health: feed.health } : {}),
       })),
     };
     this.emit();

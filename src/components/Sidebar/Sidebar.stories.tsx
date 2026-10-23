@@ -2,8 +2,6 @@ import { useEffect } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Sidebar } from './Sidebar';
 import { SharedArticleList } from '@/components/MainArea/SharedArticleList';
-import { seedFeedHealth } from '@/services/feeds/feedHealthSync';
-import { getThemeDebugFeeds } from '@/stories/themeDebugRuntime';
 
 const meta = {
   title: 'Theme Debug/Sidebar',
@@ -57,24 +55,6 @@ export const TodaySelected: Story = {
       </div>
     </div>
   ),
-};
-
-/** One unstationed feed and one feed in “Technology” can’t update: quiet marker + station hint. */
-export const FeedCannotUpdate: Story = {
-  parameters: {
-    kiji: { variant: 'sidebar-feed-health' },
-  },
-  render: () => {
-    // The app seeds this from its first library read; the story seeds it from the fixtures.
-    seedFeedHealth(getThemeDebugFeeds());
-    return (
-      <div className="theme-debug-surface">
-        <div className="theme-debug-sidebar-frame">
-          <Sidebar />
-        </div>
-      </div>
-    );
-  },
 };
 
 /**

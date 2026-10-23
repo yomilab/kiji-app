@@ -118,25 +118,4 @@ describe('sidebar source list', () => {
     });
   });
 
-  it('a feed that can\'t update keeps the row name and has a named marker, with no serious axe violations', async () => {
-    mocks.getAllFeedMetadataCached.mockResolvedValue([
-      {
-        id: 'feed-a',
-        title: 'Alpha',
-        url: 'https://a.example/feed',
-        tags: [],
-        unreadCount: 3,
-        consecutiveFailures: 4,
-        lastFailedFetchAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-    ]);
-    const { container } = render(<FeedList showAddModal={false} onCloseAddModal={vi.fn()} />);
-    await screen.findByRole('button', { name: 'Alpha, 3 unread' });
-    const marker = container.querySelector('.feed-health-marker');
-    expect(marker).not.toBeNull();
-    expect(marker?.getAttribute('aria-label') || marker?.getAttribute('title')).toBeTruthy();
-    await waitFor(async () => {
-      expect(await findSeriousAxeViolations(container)).toEqual([]);
-    });
-  });
 });
