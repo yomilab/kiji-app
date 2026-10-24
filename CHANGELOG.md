@@ -2,9 +2,27 @@
 
 ## Unreleased
 
+## [1.8.0] - 2026-10-24
+
 ### Added
 
 - KiJi can keep running after you close its window, so feeds keep updating and AI assistants can still reach it. Turn it on in Settings → General → Keep KiJi running when you close the window. On Mac it's on by default and KiJi stays in the Dock; on Windows and Linux it lives in the system tray, where you can open or quit it, and opening KiJi again brings back the running window.
+- A new **Today** view in the Library shows everything from the last 24 hours.
+- Press **⌘K** to jump to any feed, station or view, or to run an action, by typing a few letters.
+- Paste a website's address in Add Feeds and KiJi finds its feed for you. You no longer need the exact feed link.
+- Choose how the article list looks: **Compact**, **Comfortable** or **Large Images**.
+- Make article text bigger or smaller with **⌘+** and **⌘−**, and reset it with **⌘0**. A size control also sits in the reader.
+- KiJi can remove old read articles for you to keep your library small. Pick an age in Settings → General → Storage. It's off by default, and starred and saved articles are always kept.
+
+### Changed
+
+- Search now looks inside the full text of articles, not just titles. It works in the article list, in Saved, and for assistants. Title matches come first, and text matches show a short excerpt of where the word appears. Existing libraries are indexed in the background, and title search keeps working while that runs.
+- KiJi works better with VoiceOver and the keyboard. You can move through the sidebar and article list with arrow keys and Tab, VoiceOver reads names, unread counts and read state, focus returns to your place when you close an article, and Reduce Motion is respected.
+- Starred and unread views and stations with many articles open faster.
+
+### Fixed
+
+- On a narrow window, the article list keeps its side margins.
 
 ## [1.7.0] - 2026-10-19
 
