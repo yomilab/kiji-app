@@ -44,9 +44,9 @@ describe('useArticleListDensity', () => {
     expect(removeListener).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to Comfortable for an unknown stored value', () => {
+  it('falls back to Large Images for an unknown stored value', () => {
     mockSettings.articleListDensity = 'huge';
     const { result } = renderHook(() => useArticleListDensity());
-    expect(result.current).toBe('comfortable');
+    expect(result.current).toBe('large-images');
   });
 });

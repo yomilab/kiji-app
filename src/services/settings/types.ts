@@ -94,7 +94,7 @@ export interface UserSettings {
   uiThemeVariant: UiThemeVariant;
   /** Reader theme id (`default` = built-in palette); Light/Dark/Auto picks its light or dark version. */
   readerTheme: string;
-  /** Article list row density: Compact, Comfortable (default) or Large Images. */
+  /** Article list row density: Compact, Comfortable or Large Images (default). */
   articleListDensity: ArticleListDensity;
   /** Renderer-only pane fill. Absent = per-OS CSS defaults. Never persist a cross-OS literal. */
   surfaceFillOpacity?: number;

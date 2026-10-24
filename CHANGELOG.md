@@ -8,6 +8,7 @@
 
 ### Changed
 
+- The article list now shows large cover images by default. If you already picked a style in Settings → Appearance, KiJi keeps it.
 - The episode player in articles has a new look: the show's artwork and the episode name, a larger play button, skip back and ahead, time left, and playback speed. While another episode plays, **Play later** adds this one to the queue.
 
 ## [1.8.0] - 2026-10-24

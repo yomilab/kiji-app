@@ -406,7 +406,7 @@ class SettingsManager {
     return settings.articleListDensity;
   }
 
-  /** Sync read for the list's first render, so a saved density does not flash Comfortable. */
+  /** Sync read for the list's first render, so a saved density does not flash the default. */
   getArticleListDensityNow(): ArticleListDensity {
     return this.readRendererPreferencesSync().articleListDensity;
   }

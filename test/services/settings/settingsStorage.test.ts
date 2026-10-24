@@ -288,7 +288,7 @@ describe("settingsManager storage boundaries", () => {
     }));
 
     const { settingsManager } = await import("@/services/settings/settingsManager");
-    expect(await settingsManager.getArticleListDensity()).toBe("comfortable");
+    expect(await settingsManager.getArticleListDensity()).toBe("large-images");
 
     await settingsManager.setArticleListDensity("compact");
     const stored = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEYS.renderer) as string);
@@ -301,7 +301,7 @@ describe("settingsManager storage boundaries", () => {
     }
   });
 
-  it("falls back to Comfortable for a missing or unknown stored density", async () => {
+  it("falls back to Large Images for a missing or unknown stored density", async () => {
     vi.doMock("@/lib/tauriClient", () => ({
       tauriClient: {
         settings: {
@@ -313,6 +313,25 @@ describe("settingsManager storage boundaries", () => {
     localStorage.setItem(
       SETTINGS_STORAGE_KEYS.renderer,
       JSON.stringify({ articleListDensity: "tiny" }),
+    );
+
+    const { settingsManager } = await import("@/services/settings/settingsManager");
+    expect(await settingsManager.getArticleListDensity()).toBe("large-images");
+    expect(settingsManager.getArticleListDensityNow()).toBe("large-images");
+  });
+
+  it("keeps a density the user already chose", async () => {
+    vi.doMock("@/lib/tauriClient", () => ({
+      tauriClient: {
+        settings: {
+          get: vi.fn().mockResolvedValue(DEFAULT_NATIVE_SETTINGS),
+          update: vi.fn().mockResolvedValue(DEFAULT_NATIVE_SETTINGS),
+        },
+      },
+    }));
+    localStorage.setItem(
+      SETTINGS_STORAGE_KEYS.renderer,
+      JSON.stringify({ articleListDensity: "comfortable" }),
     );
 
     const { settingsManager } = await import("@/services/settings/settingsManager");

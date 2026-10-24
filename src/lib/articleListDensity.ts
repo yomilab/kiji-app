@@ -6,7 +6,7 @@
  */
 export type ArticleListDensity = 'compact' | 'comfortable' | 'large-images';
 
-export const DEFAULT_ARTICLE_LIST_DENSITY: ArticleListDensity = 'comfortable';
+export const DEFAULT_ARTICLE_LIST_DENSITY: ArticleListDensity = 'large-images';
 
 export const ARTICLE_LIST_DENSITY_OPTIONS: ReadonlyArray<{ value: ArticleListDensity; label: string }> = [
   { value: 'compact', label: 'Compact' },

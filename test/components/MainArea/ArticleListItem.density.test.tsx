@@ -45,8 +45,8 @@ const structure = (element: Element, depth = 0): string => {
 };
 
 describe('ArticleListItem density', () => {
-  it('keeps the Comfortable markup unchanged (default density)', () => {
-    const { container } = renderItem();
+  it('keeps the Comfortable markup unchanged', () => {
+    const { container } = renderItem({ density: 'comfortable' });
     expect(structure(container.firstElementChild!)).toMatchInlineSnapshot(`
       "div.article-list-item.is-unread
         div.article-list-item-content
@@ -104,13 +104,18 @@ describe('ArticleListItem density', () => {
 
   it('falls back to the Comfortable markup in Large Images when the row has no image', () => {
     const article = makeArticle({ previewImage: undefined });
-    const comfortable = renderItem({ article });
+    const comfortable = renderItem({ article, density: 'comfortable' });
     const comfortableStructure = structure(comfortable.container.firstElementChild!);
     comfortable.unmount();
 
     const { container } = renderItem({ article, density: 'large-images' });
     expect(container.querySelector('.article-list-item')).not.toHaveClass('article-list-item--large-image');
     expect(structure(container.firstElementChild!)).toBe(comfortableStructure);
+  });
+
+  it('renders Large Images when no density is passed', () => {
+    const { container } = renderItem();
+    expect(container.querySelector('.article-list-item')).toHaveClass('article-list-item--large-image');
   });
 
   it('re-renders a memoized row when only the density changes', () => {
