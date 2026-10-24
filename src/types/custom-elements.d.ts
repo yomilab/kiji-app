@@ -13,6 +13,11 @@ declare global {
       > & {
         src?: string;
         title?: string;
+        'episode-title'?: string;
+        subtitle?: string;
+        artwork?: string;
+        'article-hash'?: string;
+        'duration-hint'?: string;
       };
     }
   }

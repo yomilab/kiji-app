@@ -845,7 +845,7 @@ class ArticleContentElement extends HTMLElement {
       
       const title = audio.getAttribute('title') || audio.getAttribute('aria-label');
       if (title) {
-        player.setAttribute('title', title);
+        player.setAttribute('episode-title', title);
       }
 
       audio.replaceWith(player);

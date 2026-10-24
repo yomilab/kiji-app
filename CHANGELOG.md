@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Podcast episodes keep playing when you close the article. A small player sits in the bottom-right corner with play/pause, skip back 15 seconds, skip ahead 30 seconds and playback speed. Open its queue to go back to any episode you started; each one picks up where you left off, and the next one plays when an episode ends. Click the episode name to open its article again.
+
+### Changed
+
+- The episode player in articles has a new look: the show's artwork and the episode name, a larger play button, skip back and ahead, time left, and playback speed. While another episode plays, **Play later** adds this one to the queue.
+
 ## [1.8.0] - 2026-10-24
 
 ### Added

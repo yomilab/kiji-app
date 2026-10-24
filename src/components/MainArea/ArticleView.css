@@ -422,16 +422,6 @@ html[data-os="other"] .article-view.article-view-embedded {
   margin: 0 0 24px;
 }
 
-.article-view-audio-label {
-  margin-bottom: 8px;
-  font-family: var(--font-family-article-title);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--theme-text-tertiary);
-}
-
 .article-view-audio feed-audio-player {
   width: 100%;
 }

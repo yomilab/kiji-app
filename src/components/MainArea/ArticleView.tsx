@@ -162,14 +162,16 @@ function ArticlePodcastAudio({
   article: Article;
   enclosure: ArticleEnclosure;
 }) {
+  const durationHint = enclosure.duration || article.duration;
   return (
     <section className="article-view-audio" data-component="podcast-audio">
-      <div className="article-view-audio-label">
-        Episode audio
-      </div>
       <feed-audio-player
         src={enclosure.url}
-        title={article.title || enclosure.url}
+        episode-title={article.title || undefined}
+        subtitle={article.feedTitle || undefined}
+        artwork={article.feedImage || article.thumbnail?.url || article.previewImage || undefined}
+        article-hash={article.hash}
+        duration-hint={durationHint ? String(durationHint) : undefined}
         data-component="podcast-audio-player"
       />
     </section>

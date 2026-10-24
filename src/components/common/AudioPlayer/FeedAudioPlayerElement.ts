@@ -1,25 +1,39 @@
-import { Howl } from 'howler';
-
-const PLAY_ICON = 'M8 5v14l11-7z';
-const PAUSE_ICON = 'M6 19h4V5H6v14zm8-14v14h4V5h-4z';
-const VOLUME_UP_ICON = 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z';
-const VOLUME_OFF_ICON = 'M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z';
+import {
+  audioPlaybackService,
+  fileNameFromUrl,
+  formatPlaybackRate,
+  formatPlaybackTime,
+  SKIP_BACK_SECONDS,
+  SKIP_FORWARD_SECONDS,
+  type AudioTrackInput,
+} from '@/services/audio/audioPlaybackService';
+import { AUDIO_ICONS, iconSvg, skipIconSvg } from './audioIcons';
 
 /**
- * Custom element for audio playback using Howler.js
+ * Episode card inside an article. Playback lives in audioPlaybackService, so
+ * removing this element (closing the article) does not stop the audio; the
+ * mini player keeps control. Several cards for the same URL stay in sync.
  */
 class FeedAudioPlayerElement extends HTMLElement {
   private root: ShadowRoot;
-  private howl: Howl | null = null;
+  private player!: HTMLElement;
+  private artImage!: HTMLImageElement;
+  private titleEl!: HTMLElement;
+  private subtitleEl!: HTMLElement;
   private playBtn!: HTMLButtonElement;
+  private backBtn!: HTMLButtonElement;
+  private forwardBtn!: HTMLButtonElement;
+  private rateBtn!: HTMLButtonElement;
+  private queueBtn!: HTMLButtonElement;
   private progressRange!: HTMLInputElement;
-  private timeDisplay!: HTMLElement;
-  private volumeBtn!: HTMLButtonElement;
-  private animationId: number | null = null;
+  private elapsedEl!: HTMLElement;
+  private remainingEl!: HTMLElement;
+  private errorEl!: HTMLElement;
+  private unsubscribe: (() => void) | null = null;
   private isSeeking = false;
 
   static get observedAttributes() {
-    return ['src', 'title'];
+    return ['src', 'title', 'episode-title', 'subtitle', 'artwork', 'duration-hint'];
   }
 
   constructor() {
@@ -36,118 +50,191 @@ class FeedAudioPlayerElement extends HTMLElement {
         display: block;
         width: 100%;
         margin: 1rem 0;
+        container-type: inline-size;
         font-family: var(--ac-font-family, var(--font-family-ui, system-ui, sans-serif));
-        --audio-player-accent: var(--theme-primary, var(--system-accent-color, var(--ac-accent-color, #3273dc)));
-        --audio-player-accent-hover: var(--theme-primary-hover, color-mix(in srgb, var(--audio-player-accent) 82%, white));
-        --audio-player-surface: color-mix(in srgb, var(--theme-article-bg, transparent) 82%, var(--theme-text-primary, #333) 6%);
-        --audio-player-surface-elevated: color-mix(in srgb, var(--theme-article-bg, transparent) 72%, var(--theme-text-primary, #333) 10%);
-        --audio-player-border: color-mix(in srgb, var(--theme-border, rgba(127, 127, 127, 0.22)) 72%, transparent);
-        --audio-player-text-primary: var(--ac-text-primary, var(--theme-text-primary, #333));
-        --audio-player-text-secondary: var(--ac-text-secondary, var(--theme-text-secondary, #666));
-        --audio-player-track: color-mix(in srgb, var(--theme-text-primary, #333) 12%, transparent);
-        --audio-player-shadow: color-mix(in srgb, var(--theme-shadow, rgba(0, 0, 0, 0.14)) 62%, transparent);
-        --audio-player-progress: 0%;
+        --ap-accent: var(--theme-primary, var(--system-accent-color, var(--ac-accent-color, #3273dc)));
+        --ap-text: var(--ac-text-primary, var(--theme-text-primary, #333));
+        --ap-text-2: var(--ac-text-secondary, var(--theme-text-secondary, #666));
+        --ap-surface: color-mix(in srgb, var(--theme-text-primary, #333) 4.5%, transparent);
+        --ap-hover: color-mix(in srgb, var(--theme-text-primary, #333) 8%, transparent);
+        --ap-border: color-mix(in srgb, var(--theme-border, rgba(127, 127, 127, 0.22)) 70%, transparent);
+        --ap-track: color-mix(in srgb, var(--theme-text-primary, #333) 13%, transparent);
+        --ap-progress: 0%;
       }
 
-      .player-container {
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
-        padding: 16px;
+      .player {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas:
+          "art info aside"
+          "transport transport transport";
+        column-gap: 14px;
+        row-gap: 12px;
+        align-items: center;
+        padding: 14px 16px 12px;
+        border-radius: 16px;
+        border: 1px solid var(--ap-border);
         background:
-          linear-gradient(135deg, color-mix(in srgb, var(--audio-player-accent) 10%, transparent), transparent 46%),
-          var(--audio-player-surface);
-        border: 1px solid var(--audio-player-border);
-        border-radius: 18px;
-        box-shadow: 0 10px 28px var(--audio-player-shadow);
+          radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--ap-accent) 9%, transparent), transparent 60%),
+          var(--ap-surface);
+        color: var(--ap-text);
         box-sizing: border-box;
-        backdrop-filter: blur(18px) saturate(130%);
-        -webkit-backdrop-filter: blur(18px) saturate(130%);
       }
 
-      .controls-row {
+      .art {
+        grid-area: art;
+        position: relative;
+        width: 52px;
+        height: 52px;
+        border-radius: 11px;
+        overflow: hidden;
+        display: grid;
+        place-items: center;
+        color: var(--ap-accent);
+        background: color-mix(in srgb, var(--ap-accent) 14%, transparent);
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-text-primary, #333) 8%, transparent);
+      }
+
+      .art img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .art img[hidden] { display: none; }
+      .art > svg { width: 24px; height: 24px; fill: currentColor; }
+
+      .info { grid-area: info; min-width: 0; }
+
+      .title {
+        font-size: 14px;
+        font-weight: 650;
+        line-height: 1.3;
+        letter-spacing: -0.01em;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .subtitle {
+        margin-top: 3px;
+        font-size: 12px;
+        color: var(--ap-text-2);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .subtitle[data-empty="true"] { display: none; }
+
+      .now-playing {
+        display: none;
+        margin-right: 6px;
+        color: var(--ap-accent);
+        font-weight: 600;
+      }
+
+      .player[data-current="true"] .now-playing { display: inline; }
+
+      .aside { grid-area: aside; display: flex; gap: 4px; align-self: start; }
+
+      .transport {
+        grid-area: transport;
         display: flex;
         align-items: center;
-        gap: 14px;
+        gap: 6px;
       }
 
       button {
-        width: 36px;
-        height: 36px;
         flex: 0 0 auto;
-        background: color-mix(in srgb, var(--audio-player-surface-elevated) 88%, transparent);
-        border: none;
-        padding: 0;
-        cursor: pointer;
-        display: flex;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
-        color: var(--audio-player-text-primary);
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        border: none;
         border-radius: 50%;
-        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-border, rgba(127, 127, 127, 0.22)) 64%, transparent);
-        transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+        background: transparent;
+        color: var(--ap-text);
+        cursor: pointer;
+        font: inherit;
+        transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.12s ease;
       }
 
-      .play-pause-btn {
-        width: 44px;
-        height: 44px;
-        color: white;
-        background: linear-gradient(135deg, var(--audio-player-accent), var(--audio-player-accent-hover));
-        box-shadow:
-          0 8px 18px color-mix(in srgb, var(--audio-player-accent) 28%, transparent),
-          inset 0 0 0 1px color-mix(in srgb, white 22%, transparent);
-      }
-
-      button:hover {
-        background: color-mix(in srgb, var(--audio-player-accent) 13%, var(--audio-player-surface-elevated));
-        transform: translateY(-1px);
-      }
-
-      .play-pause-btn:hover {
-        background: linear-gradient(135deg, var(--audio-player-accent-hover), var(--audio-player-accent));
-      }
-
-      button:active {
-        transform: translateY(0) scale(0.98);
-      }
+      button:hover:not(:disabled) { background: var(--ap-hover); }
+      button:active:not(:disabled) { transform: scale(0.94); }
+      button:disabled { opacity: 0.35; cursor: default; }
+      button[hidden] { display: none; }
 
       button:focus-visible,
       input[type="range"]:focus-visible {
-        outline: 2px solid color-mix(in srgb, var(--audio-player-accent) 62%, transparent);
-        outline-offset: 3px;
+        outline: 2px solid color-mix(in srgb, var(--ap-accent) 62%, transparent);
+        outline-offset: 2px;
       }
 
-      svg {
-        width: 22px;
-        height: 22px;
-        fill: currentColor;
+      button svg { width: 22px; height: 22px; fill: currentColor; }
+
+      .play {
+        width: 40px;
+        height: 40px;
+        margin: 0 2px;
+        color: #fff;
+        background: var(--ap-accent);
+        box-shadow: 0 4px 12px color-mix(in srgb, var(--ap-accent) 30%, transparent);
       }
 
-      .play-pause-btn svg {
-        width: 26px;
+      .play:hover:not(:disabled) { background: color-mix(in srgb, var(--ap-accent) 88%, #fff); }
+      .play svg { width: 20px; height: 20px; }
+
+      .player[data-status="loading"] .play svg { animation: ap-pulse 1s ease-in-out infinite; }
+
+      @keyframes ap-pulse { 50% { opacity: 0.45; } }
+
+      .rate {
+        width: auto;
+        min-width: 38px;
         height: 26px;
-      }
-
-      .progress-container {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        min-width: 0;
-      }
-
-      .time-row {
-        display: flex;
-        justify-content: space-between;
-        font-size: 11px;
-        color: var(--audio-player-text-secondary);
+        padding: 0 8px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 650;
         font-variant-numeric: tabular-nums;
-        letter-spacing: 0.01em;
+        color: var(--ap-text-2);
+        box-shadow: inset 0 0 0 1px var(--ap-border);
       }
+
+      .rate[data-active="true"] { color: var(--ap-accent); }
+      .queue { width: 26px; height: 26px; color: var(--ap-text-2); }
+      .queue svg { width: 18px; height: 18px; }
+      .queue[aria-pressed="true"] { color: var(--ap-accent); }
+
+      .scrub {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-left: 6px;
+      }
+
+      .time {
+        flex: 0 0 auto;
+        min-width: 38px;
+        font-size: 11px;
+        color: var(--ap-text-2);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .time.remaining { text-align: right; }
 
       input[type="range"] {
-        width: 100%;
-        height: 6px;
+        flex: 1;
+        min-width: 0;
+        height: 4px;
         margin: 0;
         cursor: pointer;
         appearance: none;
@@ -155,222 +242,260 @@ class FeedAudioPlayerElement extends HTMLElement {
         border-radius: 999px;
         background: linear-gradient(
           90deg,
-          var(--audio-player-accent) 0%,
-          var(--audio-player-accent) var(--audio-player-progress),
-          var(--audio-player-track) var(--audio-player-progress),
-          var(--audio-player-track) 100%
+          var(--ap-accent) 0 var(--ap-progress),
+          var(--ap-track) var(--ap-progress) 100%
         );
-        accent-color: var(--audio-player-accent);
+        transition: height 0.12s ease;
       }
+
+      input[type="range"]:hover:not(:disabled) { height: 6px; }
+      input[type="range"]:disabled { cursor: default; opacity: 0.6; }
 
       input[type="range"]::-webkit-slider-thumb {
         appearance: none;
         -webkit-appearance: none;
-        width: 16px;
-        height: 16px;
-        border: 2px solid color-mix(in srgb, var(--theme-article-bg, white) 88%, white);
+        width: 12px;
+        height: 12px;
         border-radius: 50%;
-        background: var(--audio-player-accent);
-        box-shadow: 0 3px 10px color-mix(in srgb, var(--audio-player-accent) 34%, transparent);
+        background: var(--ap-accent);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--ap-accent) 18%, transparent);
+        opacity: 0;
+        transition: opacity 0.12s ease;
       }
+
+      .player[data-current="true"] input[type="range"]::-webkit-slider-thumb,
+      input[type="range"]:hover::-webkit-slider-thumb,
+      input[type="range"]:focus-visible::-webkit-slider-thumb { opacity: 1; }
 
       input[type="range"]::-moz-range-thumb {
-        width: 14px;
-        height: 14px;
-        border: 2px solid color-mix(in srgb, var(--theme-article-bg, white) 88%, white);
+        width: 12px;
+        height: 12px;
+        border: none;
         border-radius: 50%;
-        background: var(--audio-player-accent);
-        box-shadow: 0 3px 10px color-mix(in srgb, var(--audio-player-accent) 34%, transparent);
+        background: var(--ap-accent);
       }
 
-      .title {
-        font-size: 13px;
-        font-weight: 650;
-        line-height: 1.35;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        color: var(--audio-player-text-primary);
-        letter-spacing: -0.01em;
+      .error {
+        grid-column: 1 / -1;
+        font-size: 12px;
+        color: var(--theme-danger, #c0392b);
+      }
+
+      .error[hidden] { display: none; }
+
+      @container (max-width: 380px) {
+        .player { grid-template-areas: "art info aside" "transport transport transport"; }
+        .transport { flex-wrap: wrap; justify-content: center; }
+        .scrub { flex-basis: 100%; order: -1; margin: 0 0 4px; }
       }
     `;
 
     this.root.appendChild(style);
 
-    const container = document.createElement('div');
-    container.className = 'player-container';
-    container.innerHTML = `
-      <div class="title" id="title-display"></div>
-      <div class="controls-row">
-        <button class="play-pause-btn" aria-label="Play">
-          <svg viewBox="0 0 24 24"><path d="${PLAY_ICON}" /></svg>
-        </button>
-        <div class="progress-container">
-          <input type="range" class="progress-range" min="0" max="100" value="0" step="0.1">
-          <div class="time-row">
-            <span class="current-time">0:00</span>
-            <span class="duration">0:00</span>
-          </div>
-        </div>
-        <button class="volume-btn" aria-label="Mute">
-          <svg viewBox="0 0 24 24"><path d="${VOLUME_UP_ICON}" /></svg>
-        </button>
+    const player = document.createElement('div');
+    player.className = 'player';
+    player.setAttribute('role', 'group');
+    player.innerHTML = `
+      <div class="art">
+        ${iconSvg(AUDIO_ICONS.waveform)}
+        <img alt="" hidden />
       </div>
+      <div class="info">
+        <div class="title"></div>
+        <div class="subtitle-row subtitle"><span class="now-playing"></span><span class="subtitle-text"></span></div>
+      </div>
+      <div class="aside">
+        <button class="rate" type="button" aria-label="Playback speed"></button>
+        <button class="queue" type="button" aria-label="Play later" aria-pressed="false">${iconSvg(AUDIO_ICONS.playlistAdd)}</button>
+      </div>
+      <div class="transport">
+        <button class="back" type="button" aria-label="Back ${SKIP_BACK_SECONDS} seconds">${skipIconSvg(SKIP_BACK_SECONDS, 'back')}</button>
+        <button class="play" type="button" aria-label="Play">${iconSvg(AUDIO_ICONS.play)}</button>
+        <button class="forward" type="button" aria-label="Forward ${SKIP_FORWARD_SECONDS} seconds">${skipIconSvg(SKIP_FORWARD_SECONDS, 'forward')}</button>
+        <div class="scrub">
+          <span class="time elapsed">0:00</span>
+          <input type="range" class="progress" min="0" max="1000" value="0" step="1" aria-label="Seek" />
+          <span class="time remaining">--:--</span>
+        </div>
+      </div>
+      <div class="error" role="status" hidden>This episode couldn’t be played.</div>
     `;
 
-    this.root.appendChild(container);
+    this.root.appendChild(player);
   }
 
   private setupUI() {
-    this.playBtn = this.root.querySelector('.play-pause-btn')!;
-    this.progressRange = this.root.querySelector('.progress-range')!;
-    this.timeDisplay = this.root.querySelector('.current-time')!;
-    this.volumeBtn = this.root.querySelector('.volume-btn')!;
+    const $ = <T extends Element>(selector: string) => this.root.querySelector(selector) as T;
+    this.player = $('.player');
+    this.artImage = $('.art img');
+    this.titleEl = $('.title');
+    this.subtitleEl = $('.subtitle-text');
+    this.playBtn = $('.play');
+    this.backBtn = $('.back');
+    this.forwardBtn = $('.forward');
+    this.rateBtn = $('.rate');
+    this.queueBtn = $('.queue');
+    this.progressRange = $('.progress');
+    this.elapsedEl = $('.elapsed');
+    this.remainingEl = $('.remaining');
+    this.errorEl = $('.error');
 
-    this.playBtn.addEventListener('click', () => this.togglePlay());
-    this.volumeBtn.addEventListener('click', () => this.toggleMute());
+    this.artImage.addEventListener('load', () => { this.artImage.hidden = false; });
+    this.artImage.addEventListener('error', () => { this.artImage.hidden = true; });
+
+    this.playBtn.addEventListener('click', () => {
+      const track = this.track();
+      if (!track) return;
+      if (this.isCurrent()) {
+        audioPlaybackService.toggle();
+      } else {
+        audioPlaybackService.play(track);
+      }
+    });
+    this.backBtn.addEventListener('click', () => audioPlaybackService.skipBy(-SKIP_BACK_SECONDS));
+    this.forwardBtn.addEventListener('click', () => audioPlaybackService.skipBy(SKIP_FORWARD_SECONDS));
+    this.rateBtn.addEventListener('click', () => audioPlaybackService.cycleRate());
+    this.queueBtn.addEventListener('click', () => {
+      const track = this.track();
+      if (!track) return;
+      if (audioPlaybackService.isQueued(track.src)) {
+        audioPlaybackService.remove(track.src);
+      } else {
+        audioPlaybackService.enqueue(track);
+      }
+    });
 
     this.progressRange.addEventListener('input', () => {
       this.isSeeking = true;
-      const percent = parseFloat(this.progressRange.value);
-      this.setProgressVisual(percent);
-      this.updateTimeDisplay(percent);
+      const duration = this.duration();
+      const position = (Number(this.progressRange.value) / 1000) * duration;
+      this.paintProgress(position, duration);
     });
 
     this.progressRange.addEventListener('change', () => {
-      if (this.howl) {
-        const percent = parseFloat(this.progressRange.value);
-        this.howl.seek((percent / 100) * this.howl.duration());
-      }
+      const src = this.getAttribute('src');
+      const duration = this.duration();
       this.isSeeking = false;
+      if (!src || duration <= 0) return;
+      audioPlaybackService.setSavedPosition(src, (Number(this.progressRange.value) / 1000) * duration);
     });
   }
 
-  attributeChangedCallback(name: string, oldValue: string, newValue: string) {
-    if (name === 'src' && oldValue !== newValue) {
-      this.loadAudio(newValue);
-    }
-    if (name === 'title') {
-      const titleDisplay = this.root.getElementById('title-display');
-      if (titleDisplay) titleDisplay.textContent = newValue;
-    }
-  }
-
-  private loadAudio(src: string) {
-    if (this.howl) {
-      this.howl.unload();
-    }
-
-    this.howl = new Howl({
-      src: [src],
-      html5: true, // Prefer HTML5 for large audio files
-      onplay: () => this.onPlay(),
-      onpause: () => this.onPause(),
-      onstop: () => this.onPause(),
-      onend: () => this.onPause(),
-      onload: () => this.onLoad(),
-      onseek: () => {},
-    });
-
-    this.updateUI();
-  }
-
-  private togglePlay() {
-    if (!this.howl) return;
-
-    if (this.howl.playing()) {
-      this.howl.pause();
-    } else {
-      this.howl.play();
-    }
-  }
-
-  private toggleMute() {
-    if (!this.howl) return;
-    const muted = this.howl.mute();
-    this.howl.mute(!muted);
-    this.volumeBtn.querySelector('path')!.setAttribute('d', !muted ? VOLUME_OFF_ICON : VOLUME_UP_ICON);
-  }
-
-  private onPlay() {
-    this.playBtn.querySelector('path')!.setAttribute('d', PAUSE_ICON);
-    this.playBtn.setAttribute('aria-label', 'Pause');
-    this.startProgressTimer();
-  }
-
-  private onPause() {
-    this.playBtn.querySelector('path')!.setAttribute('d', PLAY_ICON);
-    this.playBtn.setAttribute('aria-label', 'Play');
-    this.stopProgressTimer();
-  }
-
-  private onLoad() {
-    const duration = this.howl?.duration() || 0;
-    this.root.querySelector('.duration')!.textContent = this.formatTime(duration);
-  }
-
-  private startProgressTimer() {
-    const step = () => {
-      if (!this.isSeeking) {
-        this.updateProgress();
-      }
-      this.animationId = requestAnimationFrame(step);
-    };
-    this.animationId = requestAnimationFrame(step);
-  }
-
-  private stopProgressTimer() {
-    if (this.animationId) {
-      cancelAnimationFrame(this.animationId);
-      this.animationId = null;
-    }
-  }
-
-  private updateProgress() {
-    if (!this.howl || !this.howl.playing()) return;
-
-    const seek = this.howl.seek() as number || 0;
-    const duration = this.howl.duration() || 0;
-    const percent = (seek / duration) * 100 || 0;
-
-    this.progressRange.value = percent.toString();
-    this.setProgressVisual(percent);
-    this.updateTimeDisplay(percent);
-  }
-
-  private setProgressVisual(percent: number) {
-    const clampedPercent = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
-    this.progressRange.style.setProperty('--audio-player-progress', `${clampedPercent}%`);
-  }
-
-  private updateTimeDisplay(percent: number) {
-    if (!this.howl) return;
-    const duration = this.howl.duration() || 0;
-    const current = (percent / 100) * duration;
-    this.timeDisplay.textContent = this.formatTime(current);
-  }
-
-  private formatTime(secs: number): string {
-    const minutes = Math.floor(secs / 60) || 0;
-    const seconds = Math.floor(secs - minutes * 60) || 0;
-    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-  }
-
-  private updateUI() {
-    this.playBtn.querySelector('path')!.setAttribute('d', PLAY_ICON);
-    this.progressRange.value = '0';
-    this.setProgressVisual(0);
-    this.timeDisplay.textContent = '0:00';
-    const title = this.getAttribute('title') || this.getAttribute('src')?.split('/').pop() || '';
-    const titleDisplay = this.root.getElementById('title-display');
-    if (titleDisplay) titleDisplay.textContent = title;
+  connectedCallback() {
+    this.unsubscribe?.();
+    this.unsubscribe = audioPlaybackService.subscribe(() => this.sync());
+    this.sync();
   }
 
   disconnectedCallback() {
-    if (this.howl) {
-      this.howl.unload();
+    // Leave playback running; the mini player takes over.
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+  }
+
+  attributeChangedCallback() {
+    this.syncMetadata();
+    this.sync();
+  }
+
+  private track(): AudioTrackInput | null {
+    const src = this.getAttribute('src');
+    if (!src) return null;
+    const durationHint = Number(this.getAttribute('duration-hint'));
+    return {
+      src,
+      title: this.displayTitle(),
+      subtitle: this.getAttribute('subtitle') || undefined,
+      artwork: this.getAttribute('artwork') || undefined,
+      articleHash: this.getAttribute('article-hash') || undefined,
+      durationHint: Number.isFinite(durationHint) && durationHint > 0 ? durationHint : undefined,
+    };
+  }
+
+  private displayTitle(): string {
+    const src = this.getAttribute('src') || '';
+    return this.getAttribute('episode-title') || this.getAttribute('title') || (src ? fileNameFromUrl(src) : '');
+  }
+
+  private isCurrent(): boolean {
+    const src = this.getAttribute('src');
+    return !!src && audioPlaybackService.getSnapshot().currentId === src;
+  }
+
+  private duration(): number {
+    const src = this.getAttribute('src');
+    if (!src) return 0;
+    const known = audioPlaybackService.getKnownDuration(src);
+    if (known > 0) return known;
+    const hint = Number(this.getAttribute('duration-hint'));
+    return Number.isFinite(hint) && hint > 0 ? hint : 0;
+  }
+
+  private syncMetadata() {
+    if (!this.titleEl) return;
+    const title = this.displayTitle();
+    this.titleEl.textContent = title;
+    this.player.setAttribute('aria-label', title ? `Episode audio: ${title}` : 'Episode audio');
+    this.subtitleEl.textContent = this.getAttribute('subtitle') || '';
+    const artwork = this.getAttribute('artwork');
+    if (artwork) {
+      if (this.artImage.getAttribute('src') !== artwork) {
+        this.artImage.hidden = true;
+        this.artImage.src = artwork;
+      }
+    } else {
+      this.artImage.hidden = true;
+      this.artImage.removeAttribute('src');
     }
-    this.stopProgressTimer();
+  }
+
+  private sync() {
+    const src = this.getAttribute('src');
+    const snapshot = audioPlaybackService.getSnapshot();
+    const current = !!src && snapshot.currentId === src;
+    const status = current ? snapshot.status : 'idle';
+    const playing = status === 'playing' || status === 'loading';
+    const duration = this.duration();
+    const position = src ? audioPlaybackService.getSavedPosition(src) : 0;
+
+    this.player.dataset.current = String(current);
+    const subtitle = this.getAttribute('subtitle') || '';
+    const subtitleRow = this.subtitleEl.parentElement!;
+    subtitleRow.dataset.empty = String(!current && !subtitle);
+    subtitleRow.querySelector('.now-playing')!.textContent = subtitle ? 'Now playing ·' : 'Now playing';
+    this.player.dataset.status = status;
+
+    this.playBtn.innerHTML = iconSvg(playing ? AUDIO_ICONS.pause : AUDIO_ICONS.play);
+    this.playBtn.setAttribute('aria-label', playing ? 'Pause' : position > 0 ? 'Resume' : 'Play');
+    this.playBtn.disabled = !src;
+    this.backBtn.disabled = !current;
+    this.forwardBtn.disabled = !current;
+    this.progressRange.disabled = duration <= 0;
+
+    this.rateBtn.textContent = formatPlaybackRate(snapshot.rate);
+    this.rateBtn.dataset.active = String(snapshot.rate !== 1);
+
+    // "Play later" only makes sense while something else is playing.
+    const queued = !!src && audioPlaybackService.isQueued(src);
+    this.queueBtn.hidden = current || !snapshot.currentId;
+    this.queueBtn.setAttribute('aria-pressed', String(queued));
+    this.queueBtn.setAttribute('aria-label', queued ? 'Remove from queue' : 'Play later');
+    this.queueBtn.innerHTML = iconSvg(queued ? AUDIO_ICONS.playlistAdded : AUDIO_ICONS.playlistAdd);
+
+    this.errorEl.hidden = !(current && snapshot.failed);
+
+    if (!this.isSeeking) {
+      this.progressRange.value = String(duration > 0 ? Math.round((position / duration) * 1000) : 0);
+      this.paintProgress(position, duration);
+    }
+  }
+
+  private paintProgress(position: number, duration: number) {
+    const percent = duration > 0 ? Math.max(0, Math.min(100, (position / duration) * 100)) : 0;
+    this.progressRange.style.setProperty('--ap-progress', `${percent}%`);
+    this.progressRange.setAttribute('aria-valuetext', `${formatPlaybackTime(position)} of ${formatPlaybackTime(duration)}`);
+    this.elapsedEl.textContent = formatPlaybackTime(position);
+    this.remainingEl.textContent = duration > 0 ? `-${formatPlaybackTime(duration - position)}` : '--:--';
   }
 }
 

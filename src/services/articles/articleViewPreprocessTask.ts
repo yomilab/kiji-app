@@ -216,7 +216,7 @@ export const preprocessArticleViewHtml = (
 
     const title = audio.attr('title') || audio.attr('aria-label');
     if (title) {
-      player.attr('title', title);
+      player.attr('episode-title', title);
     }
 
     audio.replaceWith(player);
