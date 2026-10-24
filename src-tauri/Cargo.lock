@@ -2230,7 +2230,7 @@ dependencies = [
 
 [[package]]
 name = "kiji-app"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "arboard",
  "base64 0.22.1",
