@@ -24,7 +24,7 @@ Free for Mac, Windows, and Linux. Opens fast, barely uses your computer, and eve
 
 ## Preview
 
-![KiJi article list with large cover images in the Awesome Tech station, light and dark](screenshots/article-list-light-dark.png)
+![KiJi in dark mode: article list with large cover images in the Awesome Tech station](screenshots/article-list-dark.png)
 
 ![KiJi reader mode, light and dark](screenshots/reader-mode-light-dark.png)
 
