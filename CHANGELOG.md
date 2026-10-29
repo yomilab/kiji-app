@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Pasting a feed link and pressing Enter no longer sometimes says no feed was found when the link works. Looking up a website without a feed also gives an answer much sooner.
+
 ## [1.8.1] - 2026-10-24
 
 ### Added
