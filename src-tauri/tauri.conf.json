@@ -122,7 +122,9 @@
       "icons/": "icons",
       "icons-dark/": "icons-dark",
       "icons-ripple/": "icons-ripple",
-      "icons-ripple-dark/": "icons-ripple-dark"
+      "icons-ripple-dark/": "icons-ripple-dark",
+      "icons-circle/": "icons-circle",
+      "icons-circle-dark/": "icons-circle-dark"
     },
     "icon": [
       "icons-ripple/32x32.png",

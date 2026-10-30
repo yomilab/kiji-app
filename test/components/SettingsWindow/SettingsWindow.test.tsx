@@ -285,14 +285,14 @@ describe("SettingsWindow", () => {
     expect(window.kijiAPI.notifySettingsChanged).toHaveBeenCalled();
   });
 
-  it("offers only Ripple, Ripple Dark, Light and Dark app icons", async () => {
+  it("offers Ripple, Ripple Dark, Light, Dark, Circle and Circle Dark app icons", async () => {
     render(<SettingsWindow />);
 
     clickSidebarCategory("Appearance");
 
     const iconGroup = await screen.findByRole("group", { name: "Default app icon" });
     const labels = within(iconGroup).getAllByRole("button").map((button) => button.textContent);
-    expect(labels).toEqual(["Ripple", "Ripple Dark", "Light", "Dark"]);
+    expect(labels).toEqual(["Ripple", "Ripple Dark", "Light", "Dark", "Circle", "Circle Dark"]);
     // The mocked stored state is "light", so Light stays selected.
     expect(within(iconGroup).getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "true");
 
@@ -300,6 +300,12 @@ describe("SettingsWindow", () => {
 
     await waitFor(() => {
       expect(window.kijiAPI.setSystemAppIconVariant).toHaveBeenCalledWith("ripple-dark");
+    });
+
+    fireEvent.click(within(iconGroup).getByRole("button", { name: "Circle Dark" }));
+
+    await waitFor(() => {
+      expect(window.kijiAPI.setSystemAppIconVariant).toHaveBeenCalledWith("circle-dark");
     });
   });
 

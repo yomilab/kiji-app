@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Two new app icons to choose from in Settings → Appearance → App icon: **Circle** and **Circle Dark**, the KiJi ripple inside a round outline. Ripple stays the default.
+
 ### Fixed
 
 - Pasting a feed link and pressing Enter no longer sometimes says no feed was found when the link works. Looking up a website without a feed also gives an answer much sooner.
