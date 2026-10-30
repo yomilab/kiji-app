@@ -41,8 +41,8 @@ import { ArticlePdfViewer } from '@/components/common/ArticlePdf';
 import { InteractionProfiler } from '@/components/common/InteractionProfiler';
 import {
   handleWindowChromeDragMouseDown,
-  TAURI_DRAG_REGION_DEEP,
-  TAURI_DRAG_REGION_FALSE,
+  WINDOW_DRAG_REGION_DEEP,
+  WINDOW_DRAG_REGION_FALSE,
 } from '@/services/ui/windowChromeDragRegion';
 import { TOOLTIPS } from '@/config/tooltips';
 import {
@@ -2354,7 +2354,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
           className={`article-view-header-bar ${hasScrollOffset ? 'article-view-header-bar-scrolled' : ''}`}
           data-section="article-view-header"
           data-component="article-header-bar"
-          data-tauri-drag-region={TAURI_DRAG_REGION_DEEP}
+          data-window-drag-region={WINDOW_DRAG_REGION_DEEP}
           onMouseDown={(event) => handleWindowChromeDragMouseDown(event, { closeSearch: true })}
         >
           <motion.div
@@ -2380,7 +2380,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
             <div
               className="article-view-actions has-no-drag"
               data-component="article-actions"
-              data-tauri-drag-region={TAURI_DRAG_REGION_FALSE}
+              data-window-drag-region={WINDOW_DRAG_REGION_FALSE}
             >
               {isFeedLinkedArticle && canToggleReaderMode && (
                 <StatefulButtonGroup

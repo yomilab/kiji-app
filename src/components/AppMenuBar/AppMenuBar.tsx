@@ -223,7 +223,7 @@ export const AppMenuBar: React.FC = () => {
         })}
       </div>
 
-      <div className="app-menu-bar-drag" data-tauri-drag-region />
+      <div className="app-menu-bar-drag" data-window-drag-region />
 
       <WindowCaptionButtons />
     </div>

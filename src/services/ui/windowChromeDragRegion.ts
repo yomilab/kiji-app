@@ -1,10 +1,16 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { notifyWindowChromeDragDismiss } from './windowChromeDragDismiss';
+import { startWindowDrag } from './windowDrag';
 
-/** Matches Tauri 2.11 injected `drag.js` (`data-tauri-drag-region`). */
-export const TAURI_DRAG_REGION_ATTR = 'data-tauri-drag-region';
-export const TAURI_DRAG_REGION_DEEP = 'deep';
-export const TAURI_DRAG_REGION_FALSE = 'false';
+/**
+ * Our own drag-region attribute, with the same values as Tauri 2.11's `data-tauri-drag-region`.
+ * Tauri's injected `drag.js` starts the drag through the async `startDragging`, which macOS 27
+ * ignores, so the strips use this attribute and `installWindowDragRegions` instead.
+ */
+export const WINDOW_DRAG_REGION_ATTR = 'data-window-drag-region';
+export const WINDOW_DRAG_REGION_DEEP = 'deep';
+export const WINDOW_DRAG_REGION_FALSE = 'false';
 
 const CLICKABLE_TAGS = new Set([
   'A',
@@ -34,11 +40,11 @@ const isClickableElement = (el: HTMLElement): boolean =>
   || INTERACTIVE_ROLES.has(el.getAttribute('role') ?? '');
 
 /**
- * Same walk as Tauri `drag.js` `isDragRegion`.
+ * Same walk as Tauri `drag.js` `isDragRegion`, on our attribute.
  * `"false"` blocks that node and the rest of the path; `"deep"` starts a window drag
  * from descendants; clickable tags without an explicit attr block drag.
  */
-export const isTauriWindowDragRegion = (event: Event): boolean => {
+export const isWindowDragRegion = (event: Event): boolean => {
   const composedPath = typeof event.composedPath === 'function' ? event.composedPath() : [];
 
   for (const node of composedPath) {
@@ -46,7 +52,7 @@ export const isTauriWindowDragRegion = (event: Event): boolean => {
       continue;
     }
 
-    const attr = node.getAttribute(TAURI_DRAG_REGION_ATTR);
+    const attr = node.getAttribute(WINDOW_DRAG_REGION_ATTR);
 
     if (isClickableElement(node) && attr === null) {
       return false;
@@ -54,10 +60,10 @@ export const isTauriWindowDragRegion = (event: Event): boolean => {
     if (attr === null) {
       continue;
     }
-    if (attr === TAURI_DRAG_REGION_FALSE) {
+    if (attr === WINDOW_DRAG_REGION_FALSE) {
       return false;
     }
-    if (attr === TAURI_DRAG_REGION_DEEP) {
+    if (attr === WINDOW_DRAG_REGION_DEEP) {
       return true;
     }
     if (attr === '' || attr === 'true') {
@@ -70,7 +76,7 @@ export const isTauriWindowDragRegion = (event: Event): boolean => {
 
 /**
  * Target-phase dismiss for menus that listen on document bubble.
- * Tauri `drag.js` `stopImmediatePropagation` would otherwise leave Saved ⋮ /
+ * The drag listener's `stopImmediatePropagation` would otherwise leave Saved ⋮ /
  * Windows File/Edit open. Does not start dragging and does not preventDefault.
  */
 export const handleWindowChromeDragMouseDown = (
@@ -80,8 +86,58 @@ export const handleWindowChromeDragMouseDown = (
   if (event.button !== 0) {
     return;
   }
-  if (!isTauriWindowDragRegion(event.nativeEvent)) {
+  if (!isWindowDragRegion(event.nativeEvent)) {
     return;
   }
   notifyWindowChromeDragDismiss(options);
+};
+
+/**
+ * Document listener that replaces Tauri's injected `drag.js` for our drag regions: same
+ * mouse-down rules, drag through `startWindowDrag`, double-click maximize (on mouse-up on
+ * macOS, cancelled if the mouse moved, as the system does). Returns the uninstall function.
+ */
+export const installWindowDragRegions = (os: string): (() => void) => {
+  const isMac = os === 'macos';
+  let initialX = 0;
+  let initialY = 0;
+
+  const onMouseDown = (event: MouseEvent): void => {
+    if (event.button !== 0 || (event.detail !== 1 && event.detail !== 2) || !isWindowDragRegion(event)) {
+      return;
+    }
+    if (isMac && event.detail === 2) {
+      initialX = event.clientX;
+      initialY = event.clientY;
+      return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.detail === 2) {
+      void getCurrentWindow().toggleMaximize();
+      return;
+    }
+    startWindowDrag();
+  };
+
+  const onMouseUp = (event: MouseEvent): void => {
+    if (
+      event.button === 0
+      && event.detail === 2
+      && event.clientX === initialX
+      && event.clientY === initialY
+      && isWindowDragRegion(event)
+    ) {
+      void getCurrentWindow().toggleMaximize();
+    }
+  };
+
+  document.addEventListener('mousedown', onMouseDown);
+  if (isMac) {
+    document.addEventListener('mouseup', onMouseUp);
+  }
+  return () => {
+    document.removeEventListener('mousedown', onMouseDown);
+    document.removeEventListener('mouseup', onMouseUp);
+  };
 };

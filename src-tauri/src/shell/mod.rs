@@ -4,6 +4,7 @@ mod menu;
 mod share;
 mod window;
 mod window_bounds;
+mod window_drag;
 mod window_guards;
 mod windows_chrome;
 
@@ -19,6 +20,7 @@ pub use window::{
     UserInitiatedWindowsState,
 };
 pub(crate) use window::should_destroy_session_restored_window;
+pub use window_drag::shell_window_drag_start;
 pub use window_guards::init as window_guards_plugin;
 
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
