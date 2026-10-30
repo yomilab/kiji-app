@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { AddFeedModal } from '@/components/Sidebar/AddFeedModal';
+import { AddFeedModal, LINK_LOOKUP_DEBOUNCE_MS } from '@/components/Sidebar/AddFeedModal';
 import { feedsManager } from '@/services/feeds/feedsManager';
 import { feedsFetcher, parseFeed } from '@/services/feeds/feedsFetcher';
 import { storeParsedFeedContent } from '@/services/feeds/feedRefreshPipeline';
@@ -166,6 +166,45 @@ describe('AddFeedModal', () => {
 
       expect(await screen.findByText('Example Feed', {}, { timeout: 2000 })).toBeTruthy();
       expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledWith(FEED_URL);
+    });
+
+    it('does not look a pasted link up a second time when Enter is pressed while it is checking', async () => {
+      // Real case: a site answered the repeat with an error page, so the
+      // second lookup replaced the found feed with "no feed found".
+      let resolveFirst: (value: unknown) => void = () => {};
+      vi.mocked(feedsFetcher.fetchFeedNetworkWithCache)
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }) as never)
+        .mockResolvedValue({ notModified: false, data: '<!DOCTYPE html><html><body>Error</body></html>' } as never);
+      renderModal();
+      fireEvent.change(linkInput(), { target: { value: FEED_URL } });
+      await waitFor(() => expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1), { timeout: 2000 });
+
+      fireEvent.keyDown(linkInput(), { key: 'Enter' });
+      resolveFirst({ notModified: false, data: RSS });
+
+      expect(await screen.findByText('Example Feed')).toBeTruthy();
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not look the link up again when the pause after Enter ends', async () => {
+      renderModal();
+      lookUp(FEED_URL);
+      expect(await screen.findByText('Example Feed')).toBeTruthy();
+      await new Promise((resolve) => setTimeout(resolve, LINK_LOOKUP_DEBOUNCE_MS + 100));
+
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(1);
+    });
+
+    it('looks the same link up again when Enter is pressed after a failure', async () => {
+      vi.mocked(feedsFetcher.fetchFeedNetworkWithCache).mockRejectedValueOnce(new Error('Feed request timed out.'));
+      renderModal();
+      lookUp(FEED_URL);
+      expect(await screen.findByText(/took too long/)).toBeTruthy();
+
+      fireEvent.keyDown(linkInput(), { key: 'Enter' });
+
+      expect(await screen.findByText('Example Feed')).toBeTruthy();
+      expect(feedsFetcher.fetchFeedNetworkWithCache).toHaveBeenCalledTimes(2);
     });
 
     it('adds https:// to a bare address', async () => {

@@ -152,6 +152,11 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
   // Each lookup gets a token; results for an older token are dropped so a
   // slow answer for a previous link never replaces the current preview.
   const lookupTokenRef = useRef(0);
+  // The link the current lookup is for. Enter right after a paste (or the
+  // debounce firing after Enter) must not look the same link up again: the
+  // repeat would replace a good answer, and some sites reply to a quick
+  // repeat with an error page instead of the feed.
+  const lookupUrlRef = useRef<string | null>(null);
   const faviconLookupRef = useRef<{ url: string; promise: Promise<FaviconLookup> } | null>(null);
   const savedFileInputRef = useRef<HTMLInputElement>(null);
   const tabRefs = useRef<Record<AddFeedTab, HTMLButtonElement | null>>({ link: null, file: null });
@@ -160,6 +165,7 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
 
   const resetLink = useCallback(() => {
     lookupTokenRef.current += 1;
+    lookupUrlRef.current = null;
     faviconLookupRef.current = null;
     setPreview({ kind: 'idle' });
     setFaviconPreview(null);
@@ -263,7 +269,9 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
     setPreview({ kind: 'choices', url: feedPreview.url, candidates: feedPreview.choices });
   };
 
-  const lookUpLink = useCallback(async (url: string) => {
+  const lookUpLink = useCallback(async (url: string, { retry = false } = {}) => {
+    if (!retry && lookupUrlRef.current === url) return;
+    lookupUrlRef.current = url;
     const isCurrent = startLookup();
     setPreview({ kind: 'checking', url });
 
@@ -454,7 +462,7 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
           : { label: 'Import', disabled: true };
       case 'error':
         return normalizedLink
-          ? { label: 'Try again', disabled: false, run: () => void lookUpLink(normalizedLink) }
+          ? { label: 'Try again', disabled: false, run: () => void lookUpLink(normalizedLink, { retry: true }) }
           : { label: 'Add feed', disabled: true };
       default:
         return { label: 'Add feed', disabled: true };
@@ -473,7 +481,8 @@ export const AddFeedModal: React.FC<AddFeedModalProps> = ({
       return;
     }
     if (normalizedLink) {
-      void lookUpLink(normalizedLink);
+      // Enter on a failed lookup tries again; otherwise it never repeats one.
+      void lookUpLink(normalizedLink, { retry: preview.kind === 'error' });
     }
   };
 
