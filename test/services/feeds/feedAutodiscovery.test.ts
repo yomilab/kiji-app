@@ -7,6 +7,7 @@ import {
   FeedDiscoveryCancelledError,
   FeedNotFoundError,
   knownSiteFeedUrl,
+  looksLikeFeedAddress,
   MAX_DISCOVERY_REQUESTS,
   type FeedDiscoveryDeps,
 } from '@/services/feeds/feedAutodiscovery';
@@ -84,6 +85,30 @@ describe('knownSiteFeedUrl', () => {
   });
 });
 
+describe('looksLikeFeedAddress', () => {
+  it.each([
+    'https://justmysocks.net/members/index.php?rp=/announcements/rss',
+    'https://example.com/feed',
+    'https://example.com/blog/rss/',
+    'https://example.com/atom.xml',
+    'https://example.com/index.php?format=feed&type=rss',
+    'https://example.com/posts.rdf',
+    'https://www.youtube.com/feeds/videos.xml?channel_id=x',
+  ])('%s is a feed address', (url) => {
+    expect(looksLikeFeedAddress(url)).toBe(true);
+  });
+
+  it.each([
+    'https://example.com/',
+    'https://example.com/feedback',
+    'https://example.com/press',
+    'https://example.com/blog/my-post',
+    'https://example.com/?q=%E0%A4%A',
+  ])('%s is not', (url) => {
+    expect(looksLikeFeedAddress(url)).toBe(false);
+  });
+});
+
 describe('extractYouTubeChannelId', () => {
   it('prefers the canonical channel link', () => {
     const html = page(`<link rel="canonical" href="https://www.youtube.com/channel/${CHANNEL_ID}">`, '"channelId":"UCzzzzzzzzzzzzzzzzzzzzzz"');
@@ -145,11 +170,47 @@ describe('discoverFeeds', () => {
     expect(result).toMatchObject({ kind: 'feed', feedUrl: 'https://example.com/rss.xml' });
     expect(fetchText.mock.calls.map(([url]) => url)).toEqual([
       'https://example.com/about',
-      'https://example.com/feed',
-      'https://example.com/rss',
-      'https://example.com/feed.xml',
-      'https://example.com/rss.xml',
+      ...COMMON_FEED_PATHS.slice(0, MAX_DISCOVERY_REQUESTS - 1).map((path) => `https://example.com${path}`),
     ]);
+  });
+
+  it('probes the common feed paths at the same time and keeps their order of preference', async () => {
+    const pending = new Map<string, (data: string) => void>();
+    const deps: FeedDiscoveryDeps = {
+      fetchText: vi.fn((url: string) => {
+        if (url === 'https://example.com/') return Promise.resolve({ notModified: false, data: page('<title>Home</title>') });
+        return new Promise((resolve, reject) => {
+          pending.set(url, (data) => (data ? resolve({ notModified: false, data }) : reject(new Error('HTTP 404'))));
+        });
+      }),
+      parse: fakeDeps({}).deps.parse,
+    };
+    const lookup = discoverFeeds('https://example.com/', { deps });
+    await vi.waitFor(() => expect(pending.size).toBe(MAX_DISCOVERY_REQUESTS - 1));
+
+    // A later path answering first does not beat an earlier one still in flight.
+    pending.get('https://example.com/feed.xml')!(RSS);
+    pending.get('https://example.com/feed')!('');
+    pending.get('https://example.com/rss')!(RSS);
+
+    // /atom.xml and /index.xml never answer; the lookup does not wait for them.
+    expect(await lookup).toMatchObject({ kind: 'feed', feedUrl: 'https://example.com/rss' });
+  });
+
+  it('tries a feed address once more when it answers with a web page', async () => {
+    const url = 'https://justmysocks.net/members/index.php?rp=/announcements/rss';
+    const { deps, fetchText } = fakeDeps({ [url]: RSS });
+    fetchText.mockImplementationOnce(async () => ({ notModified: false, data: page('<title>Error</title>') }));
+
+    expect(await discoverFeeds(url, { deps })).toMatchObject({ kind: 'feed', feedUrl: url });
+    expect(fetchText.mock.calls.map(([called]) => called)).toEqual([url, url]);
+  });
+
+  it('does not repeat a plain page address that has no feed', async () => {
+    const { deps, fetchText } = fakeDeps({ 'https://example.com/about': page('<title>About</title>') });
+
+    await expect(discoverFeeds('https://example.com/about', { deps })).rejects.toBeInstanceOf(FeedNotFoundError);
+    expect(fetchText.mock.calls.filter(([called]) => called === 'https://example.com/about')).toHaveLength(1);
   });
 
   it('caps the requests and then says no feed was found', async () => {

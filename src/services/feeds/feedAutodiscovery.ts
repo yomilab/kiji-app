@@ -2,9 +2,11 @@
  * Feed autodiscovery for the Add Feeds link lookup: turns a website address
  * into the feed(s) it publishes. Order: known-site rewrites (YouTube, Reddit,
  * GitHub, Mastodon) → the link itself as a feed → `<link rel="alternate">`
- * feeds declared by the page → a few common feed paths when none are
- * declared. Every request goes through the normal feed fetch (5 s timeout)
- * and the whole lookup is capped at {@link MAX_DISCOVERY_REQUESTS}.
+ * feeds declared by the page → one more try of the link when it looks like a
+ * feed address but answered with a page → a few common feed paths, probed at
+ * the same time, when none are declared. Every request goes through the
+ * normal feed fetch (5 s timeout) and the whole lookup is capped at
+ * {@link MAX_DISCOVERY_REQUESTS}.
  */
 import { feedsFetcher, parseFeed, type FeedFetchResult } from '@/services/feeds/feedsFetcher';
 
@@ -199,6 +201,37 @@ export const looksLikeHtml = (text: string): boolean => {
 
 const looksLikeHtmlAnywhere = (text: string): boolean => /<html[\s>]/i.test(text.slice(0, 65536));
 
+/**
+ * True when the address itself names a feed (`/rss`, `feed.xml`,
+ * `index.php?rp=/announcements/rss`). Such a link answering with a web page
+ * is usually a passing error or block page, so it earns one more try.
+ */
+export const looksLikeFeedAddress = (value: string): boolean => {
+  const url = parseUrl(value);
+  if (!url) return false;
+  let query = url.search;
+  try {
+    query = decodeURIComponent(query);
+  } catch {
+    // Malformed escapes: match the query as written.
+  }
+  return /(?:^|[/._=-])(?:rss|atom|feeds?)(?:$|[/._&-])|\.(?:xml|rdf)$/i.test(`${url.pathname}${query}`);
+};
+
+/**
+ * First non-null result in list order. Every task is already running; an
+ * earlier hit returns without waiting for slower later ones.
+ */
+const firstInOrder = async <T>(tasks: Array<Promise<T | null>>): Promise<T | null> => {
+  // Later tasks may still reject (a stale lookup) after an earlier hit returns.
+  for (const task of tasks) task.catch(() => undefined);
+  for (const task of tasks) {
+    const result = await task;
+    if (result) return result;
+  }
+  return null;
+};
+
 const parseHtml = (html: string): Document => new DOMParser().parseFromString(html, 'text/html');
 
 /**
@@ -323,15 +356,21 @@ export const discoverFeeds = async (
     throw new FeedNotFoundError();
   }
 
+  if (looksLikeFeedAddress(pageUrl)) {
+    const again = await tryFeed(pageUrl);
+    if (again) return again;
+  }
+
   const origin = parseUrl(pageUrl)?.origin;
   if (origin) {
-    for (const path of COMMON_FEED_PATHS) {
-      if (requestsLeft <= 0) break;
-      const guess = `${origin}${path}`;
-      if (sameAddress(guess, pageUrl)) continue;
-      const found = await tryFeed(guess);
-      if (found) return found;
-    }
+    // tryFeed takes from the request budget synchronously, so starting the
+    // guesses together still stays within the cap.
+    const guesses = COMMON_FEED_PATHS
+      .map((path) => `${origin}${path}`)
+      .filter((guess) => !sameAddress(guess, pageUrl))
+      .map((guess) => tryFeed(guess));
+    const found = await firstInOrder(guesses);
+    if (found) return found;
   }
   throw new FeedNotFoundError();
 };
