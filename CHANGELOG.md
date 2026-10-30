@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [1.9.0] - 2026-10-30
+
 ### Added
 
 - Two new app icons to choose from in Settings → Appearance → App icon: **Circle** and **Circle Dark**, the KiJi ripple inside a round outline. Ripple stays the default.
