@@ -14,7 +14,7 @@ import { useArticleListSearch } from './hooks/useArticleListSearch';
 import { useArticleListLayoutResize } from './hooks/useArticleListLayoutResize';
 import {
   handleWindowChromeDragMouseDown,
-  TAURI_DRAG_REGION_DEEP,
+  WINDOW_DRAG_REGION_DEEP,
 } from '@/services/ui/windowChromeDragRegion';
 import './ArticleList.css';
 
@@ -70,7 +70,7 @@ export const SharedArticleList: React.FC<SharedArticleListProps> = ({ layout = '
         <div
           className="article-list-title-section"
           data-section="article-list-title"
-          data-tauri-drag-region={TAURI_DRAG_REGION_DEEP}
+          data-window-drag-region={WINDOW_DRAG_REGION_DEEP}
           onMouseDown={(event) => handleWindowChromeDragMouseDown(event, { closeSearch: false })}
         >
           <ArticleListWidgets

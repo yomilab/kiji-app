@@ -9,6 +9,7 @@ import {
   downloadUpdateArtifact,
 } from '@/services/system/appUpdateService';
 import type { UpdateWindowPayload } from '@/services/system/appUpdateTypes';
+import { startWindowDrag } from '@/services/ui/windowDrag';
 import { UpdateWindowView, type UpdateWindowStatus } from './UpdateWindowView';
 
 const UPDATE_WINDOW_OPEN_EVENT = 'update-window:open';
@@ -100,7 +101,7 @@ export const UpdateWindow: React.FC = () => {
     if (target.closest('.has-no-drag')) {
       return;
     }
-    void getCurrentWindow().startDragging();
+    startWindowDrag();
   };
 
   const update = checkStatus.kind === 'available' ? checkStatus.update : null;

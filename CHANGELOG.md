@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- On macOS 27 you can move KiJi's windows by their top bars again, including the sidebar top, the list and article headers, Settings, Manage Feeds and the update window. A window behind another app also starts moving on the first click. Double-clicking a top bar still zooms the window.
+
 ## [1.9.0] - 2026-10-30
 
 ### Added
