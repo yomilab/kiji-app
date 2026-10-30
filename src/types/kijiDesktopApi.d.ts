@@ -22,7 +22,9 @@ type SystemAppIconVariant =
   | 'light'
   | 'dark'
   | 'ripple'
-  | 'ripple-dark';
+  | 'ripple-dark'
+  | 'circle'
+  | 'circle-dark';
 
 export interface KijiDesktopAPI {
   fetchFeed: (url: string, options?: { requestId?: string }) => Promise<string>;

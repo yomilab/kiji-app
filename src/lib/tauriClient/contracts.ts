@@ -560,6 +560,8 @@ export type SystemAppIconVariant =
   | "dark"
   | "ripple"
   | "ripple-dark"
+  | "circle"
+  | "circle-dark"
   | "custom";
 
 export interface SystemAppIconState {
@@ -1165,7 +1167,9 @@ export interface SystemContract {
         | "light"
         | "dark"
         | "ripple"
-        | "ripple-dark";
+        | "ripple-dark"
+        | "circle"
+        | "circle-dark";
     };
   };
   appIconSetVariant: {
@@ -1174,7 +1178,9 @@ export interface SystemContract {
         | "light"
         | "dark"
         | "ripple"
-        | "ripple-dark";
+        | "ripple-dark"
+        | "circle"
+        | "circle-dark";
     };
     response: SystemContract["appIconGetState"]["response"];
   };

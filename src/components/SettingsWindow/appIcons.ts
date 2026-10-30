@@ -2,12 +2,16 @@ import defaultAppIconPreview from '@/assets/images/kiji-logo.png';
 import defaultDarkAppIconPreview from '@/assets/images/kiji-logo-dark.png';
 import rippleAppIconPreview from '@/assets/images/kiji-logo-ripple.png';
 import rippleDarkAppIconPreview from '@/assets/images/kiji-logo-ripple-dark.png';
+import circleAppIconPreview from '@/assets/images/kiji-logo-circle.png';
+import circleDarkAppIconPreview from '@/assets/images/kiji-logo-circle-dark.png';
 
 export type SystemAppIconVariant =
   | 'light'
   | 'dark'
   | 'ripple'
-  | 'ripple-dark';
+  | 'ripple-dark'
+  | 'circle'
+  | 'circle-dark';
 
 export interface SystemAppIconState {
   iconPath: string | null;
@@ -28,6 +32,8 @@ export const APP_ICON_VARIANT_OPTIONS: ReadonlyArray<{
   { value: 'ripple-dark', label: 'Ripple Dark', source: rippleDarkAppIconPreview },
   { value: 'light', label: 'Light', source: defaultAppIconPreview },
   { value: 'dark', label: 'Dark', source: defaultDarkAppIconPreview },
+  { value: 'circle', label: 'Circle', source: circleAppIconPreview },
+  { value: 'circle-dark', label: 'Circle Dark', source: circleDarkAppIconPreview },
 ];
 
 export const getDefaultAppIconPreview = (variant: SystemAppIconVariant): string => (

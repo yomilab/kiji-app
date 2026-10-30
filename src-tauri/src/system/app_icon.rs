@@ -14,6 +14,8 @@ const LIGHT_ICON_RESOURCE_DIR: &str = "icons";
 const DARK_ICON_RESOURCE_DIR: &str = "icons-dark";
 const RIPPLE_ICON_RESOURCE_DIR: &str = "icons-ripple";
 const RIPPLE_DARK_ICON_RESOURCE_DIR: &str = "icons-ripple-dark";
+const CIRCLE_ICON_RESOURCE_DIR: &str = "icons-circle";
+const CIRCLE_DARK_ICON_RESOURCE_DIR: &str = "icons-circle-dark";
 const RUNTIME_ICON_FILE_NAME: &str = "icon.png";
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -23,6 +25,8 @@ pub enum SystemAppIconVariant {
     Dark,
     Ripple,
     RippleDark,
+    Circle,
+    CircleDark,
 }
 
 /// Packaged default: Ripple (light plate). Must match `bundle.icon` (`icons-ripple/*`)
@@ -358,6 +362,8 @@ fn built_in_icon_folder(variant: SystemAppIconVariant) -> &'static str {
         SystemAppIconVariant::Dark => DARK_ICON_RESOURCE_DIR,
         SystemAppIconVariant::Ripple => RIPPLE_ICON_RESOURCE_DIR,
         SystemAppIconVariant::RippleDark => RIPPLE_DARK_ICON_RESOURCE_DIR,
+        SystemAppIconVariant::Circle => CIRCLE_ICON_RESOURCE_DIR,
+        SystemAppIconVariant::CircleDark => CIRCLE_DARK_ICON_RESOURCE_DIR,
     }
 }
 
@@ -481,7 +487,10 @@ fn path_to_string(path: &Path) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{deserialize_stored_icon_variant, StoredAppIconState, SystemAppIconVariant};
+    use super::{
+        built_in_icon_folder, deserialize_stored_icon_variant, StoredAppIconState,
+        SystemAppIconVariant,
+    };
 
     #[test]
     fn default_icon_variant_is_ripple() {
@@ -549,6 +558,45 @@ mod tests {
                 .expect("ripple variants should deserialize");
             assert_eq!(variant, expected);
         }
+    }
+
+    #[test]
+    fn circle_variants_deserialize_and_resolve_to_their_icon_sets() {
+        for (raw, expected, folder) in [
+            (r#""circle""#, SystemAppIconVariant::Circle, "icons-circle"),
+            (r#""circle-dark""#, SystemAppIconVariant::CircleDark, "icons-circle-dark"),
+        ] {
+            let mut deserializer = serde_json::Deserializer::from_str(raw);
+            let variant = deserialize_stored_icon_variant(&mut deserializer)
+                .expect("circle variants should deserialize");
+            assert_eq!(variant, expected, "{raw}");
+            assert_eq!(built_in_icon_folder(variant), folder);
+            let icon = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(folder)
+                .join(super::RUNTIME_ICON_FILE_NAME);
+            assert!(icon.exists(), "{} is missing", icon.display());
+        }
+    }
+
+    /// Circle has the white outline, Circle Dark the blue gradient one. Samples the
+    /// outline at the top of the 512 px runtime icon (x 256, y 55).
+    #[test]
+    fn circle_has_the_white_outline_and_circle_dark_the_gradient() {
+        let outline_pixel = |folder: &str| {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(folder)
+                .join(super::RUNTIME_ICON_FILE_NAME);
+            let image = image::open(&path).expect("runtime icon should open").to_rgba8();
+            *image.get_pixel(256, 55)
+        };
+        let circle = outline_pixel("icons-circle");
+        assert!(circle.0[..3].iter().all(|&c| c > 240), "Circle outline should be white: {circle:?}");
+        let circle_dark = outline_pixel("icons-circle-dark");
+        assert_eq!(circle_dark.0[3], 255, "Circle Dark outline should be opaque");
+        assert!(
+            circle_dark.0[0] < 200 && circle_dark.0[2] > circle_dark.0[0],
+            "Circle Dark outline should be blue: {circle_dark:?}"
+        );
     }
 
     #[test]
