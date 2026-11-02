@@ -418,7 +418,10 @@ html[data-os="other"] .article-view.article-view-embedded {
   overflow: visible;
 }
 
+/* Explicit width: the loading state's flex column shrink-wraps this section,
+   and the player has no intrinsic width (container-type: inline-size). */
 .article-view-audio {
+  width: 100%;
   margin: 0 0 24px;
 }
 
