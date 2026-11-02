@@ -7,7 +7,7 @@ import { SHORTCUT_LABELS, withShortcutHint } from '@/services/shortcuts/shortcut
 import { savedArticlesIOService } from '@/services/saved/savedArticlesIOService';
 import { DropdownMenu } from '@/components/common/DropdownMenu/DropdownMenu';
 import { useWindowChromeDragDismiss } from '@/hooks/useWindowChromeDragDismiss';
-import { TAURI_DRAG_REGION_FALSE } from '@/services/ui/windowChromeDragRegion';
+import { WINDOW_DRAG_REGION_FALSE } from '@/services/ui/windowChromeDragRegion';
 import './ArticleListWidgets.css';
 
 interface ArticleListWidgetsProps {
@@ -73,7 +73,7 @@ export const ArticleListWidgets: React.FC<ArticleListWidgetsProps> = ({
     <div
       className="article-list-widgets"
       data-section="article-list-widgets"
-      data-tauri-drag-region={TAURI_DRAG_REGION_FALSE}
+      data-window-drag-region={WINDOW_DRAG_REGION_FALSE}
     >
       <div className="article-list-widgets-buttons has-no-drag">
         <button

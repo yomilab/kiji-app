@@ -14,6 +14,7 @@
         "shadow": true,
         "hiddenTitle": true,
         "titleBarStyle": "Overlay",
+        "acceptFirstMouse": true,
         "trafficLightPosition": {
           "x": 16,
           "y": 22
@@ -39,6 +40,7 @@
         "shadow": true,
         "hiddenTitle": true,
         "titleBarStyle": "Overlay",
+        "acceptFirstMouse": true,
         "trafficLightPosition": {
           "x": 16,
           "y": 20
@@ -66,6 +68,7 @@
         "shadow": true,
         "hiddenTitle": true,
         "titleBarStyle": "Overlay",
+        "acceptFirstMouse": true,
         "trafficLightPosition": {
           "x": 16,
           "y": 20
@@ -92,6 +95,7 @@
         "shadow": true,
         "hiddenTitle": true,
         "titleBarStyle": "Overlay",
+        "acceptFirstMouse": true,
         "trafficLightPosition": {
           "x": 16,
           "y": 22
@@ -117,6 +121,7 @@
         "shadow": true,
         "hiddenTitle": true,
         "titleBarStyle": "Overlay",
+        "acceptFirstMouse": true,
         "trafficLightPosition": {
           "x": 16,
           "y": 20

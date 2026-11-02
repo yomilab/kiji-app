@@ -47,13 +47,13 @@ describe('ArticleListHeaderSection window chrome drag', () => {
   afterEach(() => {
     cleanup();
   });
-  it('marks the title section as a Tauri deep drag region and widgets as false', () => {
+  it('marks the title section as a deep drag region and widgets as false', () => {
     renderHeader();
     const section = document.querySelector('[data-section="article-list-title"]');
     const widgets = document.querySelector('[data-section="article-list-widgets"]');
 
-    expect(section?.getAttribute('data-tauri-drag-region')).toBe('deep');
-    expect(widgets?.getAttribute('data-tauri-drag-region')).toBe('false');
+    expect(section?.getAttribute('data-window-drag-region')).toBe('deep');
+    expect(widgets?.getAttribute('data-window-drag-region')).toBe('false');
   });
 
   it('closes the Saved menu on empty-header mousedown but not on the ⋮ button', () => {

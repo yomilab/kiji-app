@@ -15,6 +15,7 @@ import { isInteractiveStationRefreshInProgress } from '@/services/feeds/feedRefr
 import { useUserMessageChannel } from '@/hooks/useUserMessageChannel';
 import { SIDEBAR_INDICATOR_CHANNEL } from '@/services/ui/sidebarIndicatorService';
 import { beginLayoutColumnResize, endLayoutColumnResize } from '@/services/ui/layoutColumnResize';
+import { startWindowDrag } from '@/services/ui/windowDrag';
 import { abortSidebarListDrag } from './sidebarListDrag';
 import { resolveHoveredSidebarSection } from './sidebarSectionHover';
 import { SidebarSyncIndicator } from './SidebarSyncIndicator';
@@ -288,7 +289,11 @@ export const Sidebar: React.FC = () => {
     event.preventDefault();
     event.stopPropagation();
     const currentWindow = getCurrentWindow();
-    void (event.detail === 2 ? currentWindow.toggleMaximize() : currentWindow.startDragging());
+    if (event.detail === 2) {
+      void currentWindow.toggleMaximize();
+      return;
+    }
+    startWindowDrag();
   };
 
   const syncHoveredSection = useCallback((clientX: number, clientY: number) => {

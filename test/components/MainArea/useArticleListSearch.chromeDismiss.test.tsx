@@ -24,14 +24,14 @@ const Probe = () => {
       </button>
       <div
         data-testid="list-header"
-        data-tauri-drag-region="deep"
+        data-window-drag-region="deep"
         onMouseDown={(event) => handleWindowChromeDragMouseDown(event, { closeSearch: false })}
       >
         list header
       </div>
       <div
         data-testid="article-header"
-        data-tauri-drag-region="deep"
+        data-window-drag-region="deep"
         onMouseDown={(event) => handleWindowChromeDragMouseDown(event, { closeSearch: true })}
       >
         article header
