@@ -5,6 +5,7 @@
 ### Fixed
 
 - On macOS 27 you can move KiJi's windows by their top bars again, including the sidebar top, the list and article headers, Settings, Manage Feeds and the update window. A window behind another app also starts moving on the first click. Double-clicking a top bar still zooms the window.
+- The article you have open now keeps a thin outline inside its row in the list, instead of showing one only now and then. Moving through the list with the keyboard shows the same thin outline in your accent color, replacing the thicker ring.
 
 ## [1.9.0] - 2026-10-30
 

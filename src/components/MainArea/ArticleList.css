@@ -474,16 +474,18 @@ html[data-os="other"] .article-list {
   background-color: color-mix(in srgb, var(--system-accent-color) 8%, transparent);
 }
 
+/* Thin inset edge on the active row, whether or not it holds DOM focus. */
+.article-list-item.is-active .article-list-item-content,
 .article-list-item:focus .article-list-item-content {
   outline: 1px solid var(--theme-article-bg);
   outline-offset: -1px;
 }
 
-/* Keyboard focus (Tab, j/k with a row focused, back from the reader): accent
-   ring on the visible card. */
+/* Keyboard focus (Tab, j/k with a row focused, back from the reader): same thin
+   inset edge in the accent color. */
 .article-list-item:focus-visible > .article-list-item-content {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: -2px;
+  outline: 1px solid var(--focus-ring-color);
+  outline-offset: -1px;
 }
 
 /* Read/Unread States */
