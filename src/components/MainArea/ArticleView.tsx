@@ -17,7 +17,7 @@ import { feedsManager } from '@/services/feeds/feedsManager';
 import { logger } from '@/services/logger';
 import { recordRobustnessEvent } from '@/services/diagnostics/robustnessMetrics';
 import { appToastService } from '@/services/ui/appToastService';
-import { readerModeService, type ReaderModeContent } from '@/services/articles/readerModeService';
+import { readerModeService, type ReaderModeContent, type ReaderModeFailure } from '@/services/articles/readerModeService';
 import { useE2eArticleViewProbes } from '@/hooks/useE2eArticleViewProbes';
 import { postlightParserService } from '@/services/articles/postlightParserService';
 import { faviconFetcher } from '@/services/favicons/faviconFetcher';
@@ -64,7 +64,7 @@ import {
 } from '@/services/shortcuts/shortcutService';
 import { subscribeArticleViewCommand } from '@/services/ui/articleViewCommandBus';
 import { ARTICLE_VIEW_CLOSE_ANIMATION_MS, ARTICLE_VIEW_OPENING_MS } from '@/constants';
-import { isArticleReaderModeRenderable } from './articleViewReaderMode';
+import { canRetryReaderFailure, isArticleReaderModeRenderable, readerFailureMessage } from './articleViewReaderMode';
 import type { Article } from '@/types/article';
 import { animateElementScrollTop, getScrollableBottom } from '@/utils/fixedTimeScroll';
 import { useDependencyEffect, useMountEffect, useUnmountEffect } from '@/hooks/useLifecycleEffects';
@@ -305,7 +305,7 @@ function useEmbeddedArticleOpenBootstrap(params: {
   setArticleToShow: React.Dispatch<React.SetStateAction<Article | null>>;
   clearCurrentReaderContent: () => void;
   setReaderContent: React.Dispatch<React.SetStateAction<ReaderModeContent | null>>;
-  setReaderError: React.Dispatch<React.SetStateAction<string | null>>;
+  setReaderError: React.Dispatch<React.SetStateAction<ReaderModeFailure | null>>;
   setReaderLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setArticleResourceType: React.Dispatch<React.SetStateAction<'html' | 'pdf' | 'unsupported' | null>>;
   modeRequestVersionRef: React.MutableRefObject<number>;
@@ -830,7 +830,7 @@ function useArticleBodyPreprocessing(params: {
   processedArticleBodyHtml: string | null;
   processedArticleBodyKey: string | null;
   rawArticleBodyHtml: string;
-  readerError: string | null;
+  readerError: ReaderModeFailure | null;
   readerLoading: boolean;
   currentBodyTaskIdRef: React.MutableRefObject<number>;
   currentBodyTaskCancelRef: React.MutableRefObject<null | (() => Promise<void>)>;
@@ -1095,7 +1095,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   const [articleDisplayMode, setArticleDisplayMode] = useState<ArticleDisplayMode>('basic');
   const [readerContent, setReaderContent] = useState<ReaderModeContent | null>(null);
   const [readerLoading, setReaderLoading] = useState(false);
-  const [readerError, setReaderError] = useState<string | null>(null);
+  const [readerError, setReaderError] = useState<ReaderModeFailure | null>(null);
   const [articleResourceType, setArticleResourceType] = useState<'html' | 'pdf' | 'unsupported' | null>(null);
   const [pdfViewerLoading, setPdfViewerLoading] = useState(false);
   const [clipboardLoading, setClipboardLoading] = useState(false);
@@ -1141,7 +1141,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
   );
   const articleBodyBaseUrl = articleToShow?.link || articleToShow?.feedUrl;
   const useSavedArticleSnapshot = shouldUseSavedArticleSnapshot(articleToShow, selectedSmartView);
-  const rawArticleBodyHtml = isReaderModeActive && !useSavedArticleSnapshot
+  const rawArticleBodyHtml = isReaderModeActive && !useSavedArticleSnapshot && !readerError
     ? (readerContent?.content || '')
     : (articleToShow?.content || '');
   useCurrentArticleForAssistants({
@@ -1672,7 +1672,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
       readerContentHashRef.current = hash;
       setReaderContent(result.content);
     } else {
-      setReaderError(result.error || 'Failed to fetch article');
+      setReaderError(result.failure ?? 'unreachable');
     }
 
     if (readerFetchKeyRef.current === fetchKey) {
@@ -2234,16 +2234,54 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
 
     if (isReaderModeActive) {
       if (readerError) {
+        // Body preprocessing is off while reader mode has failed, so the feed's copy renders from the first-paint HTML.
+        const feedCopyHtml = firstPaintSanitizedArticleBodyHtml.trim()
+          ? firstPaintSanitizedArticleBodyHtml
+          : (articleToShow.description || '');
+        const hasFeedCopy = !!feedCopyHtml.trim();
         return (
           <motion.div
             key="error"
-            className="reader-error"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
           >
             {podcastAudio}
-            <p>{readerError}</p>
+            <div className="reader-error" role="status" data-reader-failure={readerError}>
+              <p>{readerFailureMessage(readerError, hasFeedCopy)}</p>
+              <div className="reader-error-actions">
+                {canRetryReaderFailure(readerError) ? (
+                  <button
+                    type="button"
+                    className="button is-small"
+                    onClick={() => { void fetchReaderContent(articleToShow, modeRequestVersionRef.current); }}
+                  >
+                    Try again
+                  </button>
+                ) : null}
+                {articleToShow.link ? (
+                  <button
+                    type="button"
+                    className="button is-small"
+                    onClick={() => handleOpenInBrowser()}
+                  >
+                    Open in Browser
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {hasFeedCopy ? (
+              <ArticleContent
+                htmlContent={feedCopyHtml}
+                baseUrl={articleToShow?.link || articleToShow?.feedUrl}
+                onLinkClick={handleArticleLinkClick}
+                onArticleContextMenu={handleArticleContextMenu}
+                onContentMetrics={handleArticleContentMetrics}
+                onImageOpen={handleImageOpen}
+                mediaProcessingDelayMs={mediaProcessingDelayMs}
+                suspendProcessing={isClosing}
+              />
+            ) : null}
           </motion.div>
         );
       }

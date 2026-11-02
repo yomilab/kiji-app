@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- When a site won't let KiJi load the full article, reader mode now shows the version from the feed with an Open in Browser button, instead of a bare error. If a site can't be reached, KiJi tries once more on its own and offers Try again.
+
 ## [1.9.0] - 2026-10-30
 
 ### Added
