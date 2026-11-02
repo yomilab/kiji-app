@@ -64,7 +64,8 @@ import {
 } from '@/services/shortcuts/shortcutService';
 import { subscribeArticleViewCommand } from '@/services/ui/articleViewCommandBus';
 import { ARTICLE_VIEW_CLOSE_ANIMATION_MS, ARTICLE_VIEW_OPENING_MS } from '@/constants';
-import { canRetryReaderFailure, isArticleReaderModeRenderable, readerFailureMessage } from './articleViewReaderMode';
+import { isArticleReaderModeRenderable } from './articleViewReaderMode';
+import { ReaderFailureNotice } from './ReaderFailureNotice';
 import type { Article } from '@/types/article';
 import { animateElementScrollTop, getScrollableBottom } from '@/utils/fixedTimeScroll';
 import { useDependencyEffect, useMountEffect, useUnmountEffect } from '@/hooks/useLifecycleEffects';
@@ -2247,29 +2248,12 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article: propArticle, 
             exit={{ opacity: 0 }}
           >
             {podcastAudio}
-            <div className="reader-error" role="status" data-reader-failure={readerError}>
-              <p>{readerFailureMessage(readerError, hasFeedCopy)}</p>
-              <div className="reader-error-actions">
-                {canRetryReaderFailure(readerError) ? (
-                  <button
-                    type="button"
-                    className="button is-small"
-                    onClick={() => { void fetchReaderContent(articleToShow, modeRequestVersionRef.current); }}
-                  >
-                    Try again
-                  </button>
-                ) : null}
-                {articleToShow.link ? (
-                  <button
-                    type="button"
-                    className="button is-small"
-                    onClick={() => handleOpenInBrowser()}
-                  >
-                    Open in Browser
-                  </button>
-                ) : null}
-              </div>
-            </div>
+            <ReaderFailureNotice
+              failure={readerError}
+              hasFeedCopy={hasFeedCopy}
+              onRetry={() => { void fetchReaderContent(articleToShow, modeRequestVersionRef.current); }}
+              onOpenInBrowser={articleToShow.link ? () => handleOpenInBrowser() : undefined}
+            />
             {hasFeedCopy ? (
               <ArticleContent
                 htmlContent={feedCopyHtml}

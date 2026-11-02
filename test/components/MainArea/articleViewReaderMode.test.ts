@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canRetryReaderFailure,
   isArticleReaderModeRenderable,
+  READER_FEED_COPY_NOTE,
   readerFailureMessage,
 } from '@/components/MainArea/articleViewReaderMode';
 
@@ -22,14 +23,9 @@ describe('isArticleReaderModeRenderable', () => {
 });
 
 describe('reader failure copy', () => {
-  it('only mentions the feed version when there is one to show', () => {
-    expect(readerFailureMessage('blocked', true)).toContain('Showing the version from the feed.');
-    expect(readerFailureMessage('blocked', false)).not.toContain('feed');
-  });
-
   it('never shows raw status codes', () => {
     for (const failure of ['blocked', 'not-found', 'unreachable', 'unreadable'] as const) {
-      expect(readerFailureMessage(failure, true)).not.toMatch(/\d{3}|Error/);
+      expect(`${readerFailureMessage(failure)} ${READER_FEED_COPY_NOTE}`).not.toMatch(/\d{3}|Error/);
     }
   });
 

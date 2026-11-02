@@ -130,6 +130,31 @@ describe('ArticleView when reader mode cannot load the article', () => {
     expect(document.body.textContent).not.toMatch(/\b403\b|Error/);
   });
 
+  it('opens the article with the shortcut shown on the Open in Browser button', async () => {
+    mocks.fetchAndParse.mockResolvedValue(failedReaderResult('blocked'));
+
+    render(<ArticleView article={article} standalone />);
+
+    const button = await screen.findByRole('button', { name: 'Open in Browser' });
+    expect(button.getAttribute('aria-keyshortcuts')).toBe('O');
+    expect(button.querySelector('kbd')?.textContent).toBe('O');
+
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(window.kijiAPI.openExternal).toHaveBeenCalledWith(article.link);
+  });
+
+  it('leaves out the feed note when the feed has no copy of the article', async () => {
+    mocks.fetchAndParse.mockResolvedValue(failedReaderResult('blocked'));
+
+    render(<ArticleView article={{ ...article, content: '', description: '' }} standalone />);
+
+    const notice = await screen.findByRole('status');
+    expect(notice.textContent).toContain('We couldn’t load the full article');
+    expect(notice.textContent).not.toContain('feed');
+    expect(screen.queryByTestId('article-body')).toBeNull();
+  });
+
+
   it('offers Try again on a connection failure and shows the article once it succeeds', async () => {
     mocks.fetchAndParse.mockResolvedValueOnce(failedReaderResult('unreachable'));
     mocks.fetchAndParse.mockResolvedValueOnce({

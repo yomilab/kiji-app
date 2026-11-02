@@ -14,17 +14,15 @@ export const isArticleReaderModeRenderable = (
 ): boolean => displayMode === 'reader' && (standalone || overlayPhase === 'open');
 
 const READER_FAILURE_MESSAGES: Record<ReaderModeFailure, string> = {
-  blocked: 'This site doesn’t let apps load its full articles.',
+  blocked: 'We couldn’t load the full article from this site.',
   'not-found': 'This article is no longer on the site.',
-  unreachable: 'Couldn’t reach this site.',
-  unreadable: 'Couldn’t find the article text on this page.',
+  unreachable: 'We couldn’t reach this site.',
+  unreadable: 'We couldn’t find the article text on this page.',
 };
 
-export const readerFailureMessage = (failure: ReaderModeFailure, hasFeedCopy: boolean): string => (
-  hasFeedCopy
-    ? `${READER_FAILURE_MESSAGES[failure]} Showing the version from the feed.`
-    : READER_FAILURE_MESSAGES[failure]
-);
+export const READER_FEED_COPY_NOTE = 'Showing the version from the feed.';
+
+export const readerFailureMessage = (failure: ReaderModeFailure): string => READER_FAILURE_MESSAGES[failure];
 
 /** Only a connection problem can clear up on its own; a block or missing page won't. */
 export const canRetryReaderFailure = (failure: ReaderModeFailure): boolean => failure === 'unreachable';
