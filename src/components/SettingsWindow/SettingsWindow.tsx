@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { startWindowDrag } from '@/services/ui/windowDrag';
 import { useSystemAccentColor } from '@/hooks/useSystemAccentColor';
 import { isCloseOnEscapeShortcut, keybindingService } from '@/services/shortcuts/shortcutService';
 import { logger } from '@/services/logger';
@@ -55,7 +56,11 @@ const handleWindowDragMouseDown = (event: React.MouseEvent<HTMLElement>) => {
   event.preventDefault();
   event.stopPropagation();
   const currentWindow = getCurrentWindow();
-  void (event.detail === 2 ? currentWindow.toggleMaximize() : currentWindow.startDragging());
+  if (event.detail === 2) {
+    void currentWindow.toggleMaximize();
+    return;
+  }
+  startWindowDrag();
 };
 
 export const SettingsWindow: React.FC = () => {

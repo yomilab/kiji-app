@@ -4,11 +4,11 @@ import {
   subscribeWindowChromeDragDismiss,
 } from '@/services/ui/windowChromeDragDismiss';
 import {
-  TAURI_DRAG_REGION_ATTR,
-  TAURI_DRAG_REGION_DEEP,
-  TAURI_DRAG_REGION_FALSE,
+  WINDOW_DRAG_REGION_ATTR,
+  WINDOW_DRAG_REGION_DEEP,
+  WINDOW_DRAG_REGION_FALSE,
   handleWindowChromeDragMouseDown,
-  isTauriWindowDragRegion,
+  isWindowDragRegion,
 } from '@/services/ui/windowChromeDragRegion';
 
 const append = (parent: HTMLElement, tag: string): HTMLElement => {
@@ -30,27 +30,27 @@ describe('windowChromeDragRegion', () => {
 
   it('treats empty chrome and title text inside deep as a drag region', () => {
     const section = append(document.body, 'div');
-    section.setAttribute(TAURI_DRAG_REGION_ATTR, TAURI_DRAG_REGION_DEEP);
+    section.setAttribute(WINDOW_DRAG_REGION_ATTR, WINDOW_DRAG_REGION_DEEP);
     const title = append(section, 'h2');
     title.textContent = 'Daily';
 
     title.addEventListener('mousedown', (event) => {
-      expect(isTauriWindowDragRegion(event)).toBe(true);
+      expect(isWindowDragRegion(event)).toBe(true);
     });
     dispatchMouseDown(title);
   });
 
   it('blocks drag on BUTTON and INPUT even under deep', () => {
     const section = append(document.body, 'div');
-    section.setAttribute(TAURI_DRAG_REGION_ATTR, TAURI_DRAG_REGION_DEEP);
+    section.setAttribute(WINDOW_DRAG_REGION_ATTR, WINDOW_DRAG_REGION_DEEP);
     const button = append(section, 'button');
     const input = append(section, 'input');
 
     button.addEventListener('mousedown', (event) => {
-      expect(isTauriWindowDragRegion(event)).toBe(false);
+      expect(isWindowDragRegion(event)).toBe(false);
     });
     input.addEventListener('mousedown', (event) => {
-      expect(isTauriWindowDragRegion(event)).toBe(false);
+      expect(isWindowDragRegion(event)).toBe(false);
     });
     dispatchMouseDown(button);
     dispatchMouseDown(input);
@@ -58,13 +58,13 @@ describe('windowChromeDragRegion', () => {
 
   it('blocks drag on a false cluster including empty padding over the title', () => {
     const section = append(document.body, 'div');
-    section.setAttribute(TAURI_DRAG_REGION_ATTR, TAURI_DRAG_REGION_DEEP);
+    section.setAttribute(WINDOW_DRAG_REGION_ATTR, WINDOW_DRAG_REGION_DEEP);
     const widgets = append(section, 'div');
-    widgets.setAttribute(TAURI_DRAG_REGION_ATTR, TAURI_DRAG_REGION_FALSE);
+    widgets.setAttribute(WINDOW_DRAG_REGION_ATTR, WINDOW_DRAG_REGION_FALSE);
     const gap = append(widgets, 'span');
 
     gap.addEventListener('mousedown', (event) => {
-      expect(isTauriWindowDragRegion(event)).toBe(false);
+      expect(isWindowDragRegion(event)).toBe(false);
     });
     dispatchMouseDown(gap);
   });
@@ -73,7 +73,7 @@ describe('windowChromeDragRegion', () => {
     const listener = vi.fn();
     const unsubscribe = subscribeWindowChromeDragDismiss(listener);
     const section = append(document.body, 'div');
-    section.setAttribute(TAURI_DRAG_REGION_ATTR, TAURI_DRAG_REGION_DEEP);
+    section.setAttribute(WINDOW_DRAG_REGION_ATTR, WINDOW_DRAG_REGION_DEEP);
     const title = append(section, 'h2');
 
     title.addEventListener('mousedown', (event) => {
@@ -95,7 +95,7 @@ describe('windowChromeDragRegion', () => {
     const listener = vi.fn();
     const unsubscribe = subscribeWindowChromeDragDismiss(listener);
     const section = append(document.body, 'div');
-    section.setAttribute(TAURI_DRAG_REGION_ATTR, TAURI_DRAG_REGION_DEEP);
+    section.setAttribute(WINDOW_DRAG_REGION_ATTR, WINDOW_DRAG_REGION_DEEP);
     const button = append(section, 'button');
 
     button.addEventListener('mousedown', (event) => {

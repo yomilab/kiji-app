@@ -15,6 +15,7 @@ import { logger } from '@/services/logger';
 import { isCloseOnEscapeShortcut, keybindingService } from '@/services/shortcuts/shortcutService';
 import { createDeferredUnsubscribe } from '@/services/tauri/tauriEventSubscription';
 import { APP_TOAST_CHANNEL, appToastService } from '@/services/ui/appToastService';
+import { startWindowDrag } from '@/services/ui/windowDrag';
 import {
   installFeedLibraryWindowBridge,
   MAIN_WINDOW_LABEL,
@@ -56,7 +57,11 @@ const handleWindowDragMouseDown = (event: React.MouseEvent<HTMLElement>) => {
   }
   event.preventDefault();
   const currentWindow = getCurrentWindow();
-  void (event.detail === 2 ? currentWindow.toggleMaximize() : currentWindow.startDragging());
+  if (event.detail === 2) {
+    void currentWindow.toggleMaximize();
+    return;
+  }
+  startWindowDrag();
 };
 
 /**

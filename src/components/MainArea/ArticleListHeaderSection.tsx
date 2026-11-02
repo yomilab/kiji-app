@@ -1,7 +1,7 @@
 import { memo, type RefObject } from 'react';
 import {
   handleWindowChromeDragMouseDown,
-  TAURI_DRAG_REGION_DEEP,
+  WINDOW_DRAG_REGION_DEEP,
 } from '@/services/ui/windowChromeDragRegion';
 import { ArticleListWidgets } from './ArticleListWidgets';
 import { ArticleListSearchInput } from './ArticleListSearchInput';
@@ -45,8 +45,8 @@ export const ArticleListHeaderSection = memo(function ArticleListHeaderSection({
     <div
       className={titleSectionClassName}
       data-section="article-list-title"
-      // Tauri drag.js moves the window from empty chrome; buttons stay clickable.
-      data-tauri-drag-region={TAURI_DRAG_REGION_DEEP}
+      // The drag-region listener moves the window from empty chrome; buttons stay clickable.
+      data-window-drag-region={WINDOW_DRAG_REGION_DEEP}
       onMouseDown={(event) => handleWindowChromeDragMouseDown(event, { closeSearch: false })}
     >
       <ArticleListWidgets

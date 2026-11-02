@@ -30,6 +30,7 @@ import { installKijiDesktopApi } from "./services/tauri/kijiDesktopApi";
 import { createDeferredUnsubscribe } from "./services/tauri/tauriEventSubscription";
 import { installInteractionFreezeWatchdog } from "./services/performance/interactionFreezeWatchdog";
 import { isInAppMenuBarOs, readDocumentOs } from "./services/ui/appMenuModel";
+import { installWindowDragRegions } from "./services/ui/windowChromeDragRegion";
 import type { Article } from "./types/article";
 import { getRendererWindowType, type RendererWindowType } from "./utils/rendererWindow";
 import "./styles/google-sans.css";
@@ -235,6 +236,7 @@ function renderWindow(windowType: RendererWindowType): React.ReactElement {
 async function bootstrapRenderer(): Promise<void> {
   const windowType = getRendererWindowType();
   installKijiDesktopApi();
+  installWindowDragRegions(readDocumentOs());
   logger.info("Renderer", "Renderer bootstrap starting", { windowType });
 
   try {

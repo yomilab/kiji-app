@@ -6,24 +6,24 @@ const readSrc = (relativePath: string): string =>
   readFileSync(join(process.cwd(), relativePath), 'utf8');
 
 describe('window chrome drag-region contract', () => {
-  it('marks both list headers and the article chrome bar as Tauri deep drag regions', () => {
+  it('marks both list headers and the article chrome bar as deep drag regions', () => {
     const header = readSrc('src/components/MainArea/ArticleListHeaderSection.tsx');
     const shared = readSrc('src/components/MainArea/SharedArticleList.tsx');
     const articleView = readSrc('src/components/MainArea/ArticleView.tsx');
 
-    expect(header).toContain('data-tauri-drag-region={TAURI_DRAG_REGION_DEEP}');
-    expect(shared).toContain('data-tauri-drag-region={TAURI_DRAG_REGION_DEEP}');
-    expect(articleView).toContain('data-tauri-drag-region={TAURI_DRAG_REGION_DEEP}');
+    expect(header).toContain('data-window-drag-region={WINDOW_DRAG_REGION_DEEP}');
+    expect(shared).toContain('data-window-drag-region={WINDOW_DRAG_REGION_DEEP}');
+    expect(articleView).toContain('data-window-drag-region={WINDOW_DRAG_REGION_DEEP}');
     expect(articleView).toContain("data-component=\"article-header-bar\"");
-    expect(articleView).not.toMatch(/data-component="article-meta-header"[\s\S]{0,200}data-tauri-drag-region/);
+    expect(articleView).not.toMatch(/data-component="article-meta-header"[\s\S]{0,200}data-window-drag-region/);
   });
 
   it('opts widget and article-action clusters out of the drag walk', () => {
     const widgets = readSrc('src/components/MainArea/ArticleListWidgets.tsx');
     const articleView = readSrc('src/components/MainArea/ArticleView.tsx');
 
-    expect(widgets).toContain('data-tauri-drag-region={TAURI_DRAG_REGION_FALSE}');
-    expect(articleView).toContain('data-tauri-drag-region={TAURI_DRAG_REGION_FALSE}');
+    expect(widgets).toContain('data-window-drag-region={WINDOW_DRAG_REGION_FALSE}');
+    expect(articleView).toContain('data-window-drag-region={WINDOW_DRAG_REGION_FALSE}');
   });
 
   it('does not use CSS -webkit-app-region drag on the article chrome bar', () => {
