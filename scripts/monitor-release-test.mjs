@@ -17,7 +17,7 @@ import { spawnSync } from "node:child_process";
 import process from "node:process";
 
 const DEFAULTS = {
-  repo: "yomilab/kiji-app",
+  repo: "yomilab/yomi-rss-reader",
   workflowFile: "build-desktop.yml",
   ref: "dev",
   profile: "release",

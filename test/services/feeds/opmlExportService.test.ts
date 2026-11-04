@@ -63,7 +63,7 @@ describe("opmlExportService", () => {
     const xmlDoc = new DOMParser().parseFromString(opmlText, "text/xml");
 
     expect(xmlDoc.querySelector("parsererror")).toBeNull();
-    expect(xmlDoc.querySelector("opml > head > title")?.textContent).toBe("KiJi Feeds");
+    expect(xmlDoc.querySelector("opml > head > title")?.textContent).toBe("Yomi Reader Feeds");
 
     const body = xmlDoc.querySelector("opml > body");
     expect(body).not.toBeNull();

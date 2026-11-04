@@ -34,7 +34,7 @@ pub fn is_write_tool(name: &str) -> bool {
 }
 
 pub const CHANGES_OFF_MESSAGE: &str =
-    "Changes are turned off. The user can allow them in KiJi Settings -> Assistant -> Allow assistants to make changes.";
+    "Changes are turned off. The user can allow them in Yomi Reader Settings -> Assistant -> Allow assistants to make changes.";
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -92,7 +92,7 @@ fn target_properties() -> Map<String, Value> {
     let mut properties = Map::new();
     properties.insert(
         "hash".into(),
-        json!({ "type": "string", "description": "Article hash. Leave out (with `hashes`) to use the article open in KiJi." }),
+        json!({ "type": "string", "description": "Article hash. Leave out (with `hashes`) to use the article open in Yomi Reader." }),
     );
     properties.insert(
         "hashes".into(),
@@ -113,24 +113,24 @@ pub fn tool_definitions() -> Vec<Value> {
         json!({
             "name": "mark_read",
             "title": "Mark read",
-            "description": "Mark articles read (or unread with read=false) in KiJi. Only when the user asks.",
+            "description": "Mark articles read (or unread with read=false) in Yomi Reader. Only when the user asks.",
             "inputSchema": { "type": "object", "properties": read_properties },
             "annotations": annotations("Mark read", true)
         }),
         json!({
             "name": "set_starred",
             "title": "Star article",
-            "description": "Star or unstar articles in KiJi. Only when the user asks.",
+            "description": "Star or unstar articles in Yomi Reader. Only when the user asks.",
             "inputSchema": { "type": "object", "properties": star_properties, "required": ["starred"] },
             "annotations": annotations("Star article", true)
         }),
         json!({
             "name": "save_article",
             "title": "Save article",
-            "description": "Save an article to the user's Saved articles in KiJi (a snapshot of the stored text). Only when the user asks.",
+            "description": "Save an article to the user's Saved articles in Yomi Reader (a snapshot of the stored text). Only when the user asks.",
             "inputSchema": {
                 "type": "object",
-                "properties": { "hash": { "type": "string", "description": "Article hash. Leave out to save the article open in KiJi." } }
+                "properties": { "hash": { "type": "string", "description": "Article hash. Leave out to save the article open in Yomi Reader." } }
             },
             "annotations": annotations("Save article", true)
         }),
@@ -165,7 +165,7 @@ pub fn run(
         }
         "save_article" => {
             if !settings.share_saved_articles {
-                return Err("Saved articles aren't shared with assistants, so they can't save either. The user can turn on Saved articles in KiJi Settings -> Assistant.".to_string());
+                return Err("Saved articles aren't shared with assistants, so they can't save either. The user can turn on Saved articles in Yomi Reader Settings -> Assistant.".to_string());
             }
             let targets = resolve_targets(conn, &exposure, current, args, false)?;
             let hash = targets.found.into_iter().next().ok_or_else(|| not_found(&targets.missing))?;
@@ -188,7 +188,7 @@ fn not_found(missing: &[String]) -> String {
     }
 }
 
-/// The article open in KiJi, when it is a stored feed article.
+/// The article open in Yomi Reader, when it is a stored feed article.
 fn current_hash(current: Option<&CurrentArticle>) -> Option<&str> {
     let current = current?;
     match current.kind {
@@ -227,7 +227,7 @@ fn resolve_targets(
     let open_hash = current_hash(current);
     if requested.is_empty() {
         let hash = open_hash.ok_or_else(|| {
-            "Give an article `hash` (from list_articles), or open a feed article in KiJi.".to_string()
+            "Give an article `hash` (from list_articles), or open a feed article in Yomi Reader.".to_string()
         })?;
         requested.push(hash.to_string());
     }

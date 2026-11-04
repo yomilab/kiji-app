@@ -30,7 +30,7 @@ export function resolveArticleContentClick(target: HTMLElement): ArticleContentC
 
 /**
  * youtube.com/watch URL for a lite-youtube placeholder (honours `params` start).
- * Inline playback is not used: KiJi's tauri:// pages send no HTTP Referer, so
+ * Inline playback is not used: Yomi Reader's tauri:// pages send no HTTP Referer, so
  * YouTube's embedded player refuses with Error 153. Videos open on YouTube.
  */
 export function resolveLiteYoutubeWatchUrl(element: HTMLElement): string | null {

@@ -126,7 +126,7 @@ export const useFeedSchedulerLifecycle = (enabled = true): void => {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     // macOS keeps visibilityState "visible" while another app is focused, so
-    // switching back to an already-open KiJi window must also trigger catch-up
+    // switching back to an already-open Yomi Reader window must also trigger catch-up
     // (overnight sleep failures leave needsResumeCatchUp set).
     const removeFocusListener = subscribeToWindowFocus(() => {
       void feedScheduler.catchUpAfterResume();

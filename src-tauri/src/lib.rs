@@ -71,6 +71,7 @@ use system::{
     apply_app_appearance, start_accent_color_watch, start_system_power_watch,
     system_app_icon_get_state, system_app_icon_pick, system_app_icon_reset,
     system_app_icon_set_variant, system_app_relaunch, system_appearance_set,
+    system_auto_update_active,
     system_clipboard_read_text, system_clipboard_write_text, system_theme_get_accent_color,
     AppIconState, ResolvedAppearance,
 };
@@ -88,16 +89,24 @@ pub fn run_mcp_bridge() -> i32 {
     mcp::bridge::run_stdio_bridge()
 }
 
+/// Apps updating from 1.9 arrive as `KiJi.app`. True means a renamed copy took
+/// over and this process should exit.
+pub fn relaunch_under_new_name() -> bool {
+    system::relaunch_under_new_name()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
-    // Windows/Linux: a second launch (e.g. while KiJi sits in the tray)
+    // Windows/Linux: a second launch (e.g. while Yomi Reader sits in the tray)
     // brings back the running copy instead of opening the database twice.
     #[cfg(not(target_os = "macos"))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
         shell::background::show_main_window(app);
     }));
     builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(system::AutoUpdateState::default())
         .manage(UserInitiatedWindowsState::default())
         .on_page_load(|webview, payload| {
             if payload.event() != PageLoadEvent::Started {
@@ -110,7 +119,7 @@ pub fn run() {
             }
             // Secondary window recreated by macOS session restore: tear it
             // down before it boots a full renderer.
-            eprintln!("[KiJi] Destroying session-restored window: {label}");
+            eprintln!("[Yomi Reader] Destroying session-restored window: {label}");
             tauri::async_runtime::spawn(async move {
                 if !should_destroy_session_restored_window(
                     app.state::<UserInitiatedWindowsState>().is_allowed(&label),
@@ -136,7 +145,7 @@ pub fn run() {
             let settings_state =
                 Arc::new(SettingsState::load(&app.handle()).map_err(std::io::Error::other)?);
             let db_state = DbState::load(&app.handle()).map_err(|error| {
-                eprintln!("[KiJi] Database startup failed: {error}");
+                eprintln!("[Yomi Reader] Database startup failed: {error}");
                 std::io::Error::other(error)
             })?;
             let sync_state =
@@ -193,6 +202,8 @@ pub fn run() {
             app.manage(Arc::new(FeedSchedulerState::new()));
             app.manage(app_icon_state);
             db::retention::spawn_retention_loop(&app.handle());
+            system::offer_to_remove_legacy_app(&app.handle());
+            system::start_auto_update(&app.handle());
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -325,6 +336,7 @@ pub fn run() {
             system_app_icon_reset,
             system_app_icon_set_variant,
             system_app_relaunch,
+            system_auto_update_active,
             system_appearance_set,
             system_clipboard_read_text,
             system_clipboard_write_text,
@@ -335,7 +347,7 @@ pub fn run() {
         .run(|app_handle, event| {
             // macOS: clicking the Dock icon while the window is hidden.
             #[cfg(target_os = "macos")]
-            // Show main even when another KiJi window (Settings, an article)
+            // Show main even when another Yomi Reader window (Settings, an article)
             // is visible: there is no other way back to it from the Dock.
             if let RunEvent::Reopen { .. } = &event {
                 if !shell::background::main_window_is_visible(app_handle) {
@@ -351,10 +363,11 @@ pub fn run() {
                 }
                 if let Some(db_state) = app_handle.try_state::<DbState>() {
                     if let Err(error) = db_state.checkpoint_wal() {
-                        eprintln!("[KiJi] Failed to checkpoint database WAL on exit: {error}");
+                        eprintln!("[Yomi Reader] Failed to checkpoint database WAL on exit: {error}");
                     }
                     db_state.mark_clean_shutdown();
                 }
+                system::install_staged_update(app_handle);
             }
         });
 }

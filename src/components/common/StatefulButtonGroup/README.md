@@ -161,8 +161,8 @@ See `StatefulButtonGroup.examples.tsx` for complete examples of:
 - **Fixed dimensions**: Button maintains constant size during animations (no layout shifts)
 - **Index validation**: Ensures `currentStateIndex` stays within bounds
 - **Performant**: Uses hardware-accelerated transforms for smooth animations
-- **Follows project guidelines**: Adheres to KiJi animation best practices
+- **Follows project guidelines**: Adheres to Yomi Reader animation best practices
 
-## Current Usage in KiJi
+## Current Usage in Yomi Reader
 
 - **ArticleView**: Reader mode / basic view toggle with auto animation (slides down when enabling reader mode, slides up when disabling)

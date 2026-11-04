@@ -94,6 +94,7 @@ const normalizeSettings = (settings: Partial<UserSettings>): UserSettings => ({
   articleRetention: isArticleRetention(settings.articleRetention)
     ? settings.articleRetention
     : DEFAULT_SETTINGS.articleRetention,
+  autoInstallUpdates: settings.autoInstallUpdates ?? DEFAULT_SETTINGS.autoInstallUpdates,
   sidebarLibrary: {
     ...DEFAULT_SETTINGS.sidebarLibrary,
     ...settings.sidebarLibrary,
@@ -526,6 +527,10 @@ class SettingsManager {
 
   async setArticleRetention(retention: UserSettings['articleRetention']): Promise<void> {
     await this.updateNativeSettings({ articleRetention: retention });
+  }
+
+  async setAutoInstallUpdates(enabled: boolean): Promise<void> {
+    await this.updateNativeSettings({ autoInstallUpdates: enabled });
   }
 
   async resetSettings(): Promise<void> {

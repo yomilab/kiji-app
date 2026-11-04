@@ -26,6 +26,6 @@ export type AppMenuCommand =
 export interface AppMenuState {
   theme: Theme;
   libraryView: AppMenuLibraryView | null;
-  /** When true, Check for Updates becomes Update KiJi Reader. */
+  /** When true, Check for Updates becomes Update Yomi Reader. */
   updateAvailable?: boolean;
 }

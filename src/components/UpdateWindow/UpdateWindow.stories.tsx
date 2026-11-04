@@ -37,7 +37,7 @@ const AVAILABLE_UPDATE = {
     },
   ],
   downloadUrl: 'https://example.com/kiji-1.6.0.dmg',
-  notesUrl: 'https://kiji.yomilab.app/changelog/#v1.6.0',
+  notesUrl: 'https://reader.yomilab.app/changelog/#v1.6.0',
 };
 
 const meta = {
@@ -98,7 +98,7 @@ export const LegacyManifest: Story = {
       update: {
         ...AVAILABLE_UPDATE,
         sections: [],
-        summary: 'See release notes on https://kiji.yomilab.app.',
+        summary: 'See release notes on https://reader.yomilab.app.',
       },
     },
   },

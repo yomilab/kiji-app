@@ -1,5 +1,5 @@
 /**
- * Shared KiJi real-app E2E helpers.
+ * Shared Yomi Reader real-app E2E helpers.
  *
  * macOS uses a file-based harness (not tauri-driver): Apple provides no WKWebView
  * WebDriver. Official tauri-driver supports Linux + Windows only.
@@ -22,7 +22,7 @@ export function getE2eSkipReason() {
   }
 
   if (process.platform !== "darwin") {
-    return "Scheduler E2E requires a macOS KiJi.app bundle (no WKWebView WebDriver)";
+    return "Scheduler E2E requires a macOS Yomi Reader.app bundle (no WKWebView WebDriver)";
   }
 
   return null;
@@ -38,16 +38,16 @@ export function resolveE2eBundledBinary() {
   }
 
   const candidates = [
-    path.join(rootDir, "src-tauri/target/debug/bundle/macos/KiJi.app/Contents/MacOS/kiji-app"),
+    path.join(rootDir, "src-tauri/target/debug/bundle/macos/Yomi Reader.app/Contents/MacOS/kiji-app"),
     path.join(
       rootDir,
-      "src-tauri/target/aarch64-apple-darwin/debug/bundle/macos/KiJi.app/Contents/MacOS/kiji-app",
+      "src-tauri/target/aarch64-apple-darwin/debug/bundle/macos/Yomi Reader.app/Contents/MacOS/kiji-app",
     ),
     path.join(
       rootDir,
-      "src-tauri/target/x86_64-apple-darwin/debug/bundle/macos/KiJi.app/Contents/MacOS/kiji-app",
+      "src-tauri/target/x86_64-apple-darwin/debug/bundle/macos/Yomi Reader.app/Contents/MacOS/kiji-app",
     ),
-    path.join(rootDir, "src-tauri/target/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app"),
+    path.join(rootDir, "src-tauri/target/release/bundle/macos/Yomi Reader.app/Contents/MacOS/kiji-app"),
   ];
 
   return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;

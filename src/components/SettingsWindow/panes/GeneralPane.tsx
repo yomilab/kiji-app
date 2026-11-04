@@ -14,7 +14,7 @@ export const GeneralPane: React.FC<{ state: SettingsWindowState['general'] }> = 
       <SettingsGroup title="Updates">
         <SettingsRow
           label="Check for new articles"
-          description="How often KiJi looks for new articles in your feeds."
+          description="How often Yomi Reader looks for new articles in your feeds."
           htmlFor="settings-background-update"
           control={(
             <SettingsSelect
@@ -34,7 +34,7 @@ export const GeneralPane: React.FC<{ state: SettingsWindowState['general'] }> = 
         />
         <SettingsRow
           label="Article cleanup"
-          description="How KiJi pulls the article text out of a web page."
+          description="How Yomi Reader pulls the article text out of a web page."
           htmlFor="settings-content-parser"
           control={(
             <SettingsSelect
@@ -72,6 +72,17 @@ export const GeneralPane: React.FC<{ state: SettingsWindowState['general'] }> = 
 
       <SettingsGroup title="App">
         <BackgroundModeRow />
+        <SettingsRow
+          label="Install updates automatically"
+          description="New versions download in the background and install when you quit Yomi Reader."
+          control={(
+            <SettingsSwitch
+              label="Install updates automatically"
+              checked={state.autoInstallUpdates}
+              onChange={(checked) => void state.onAutoInstallUpdatesChange(checked)}
+            />
+          )}
+        />
       </SettingsGroup>
 
       <SettingsGroup title="Saved Articles">

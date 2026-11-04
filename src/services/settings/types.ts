@@ -88,6 +88,7 @@ export interface UserSettings {
   contentParser: ContentParser; // Engine used to extract article content from a page URL
   savedArticlesSyncFolder: string | null; // Optional folder that mirrors saved articles as markdown files
   articleRetention: ArticleRetention; // Remove old read articles (never for every install unless chosen)
+  autoInstallUpdates: boolean; // Download new versions in the background and install them on quit
   sidebarLibrary: SidebarLibrarySettings;
   sidebarSectionFold: SidebarSectionFoldSettings;
   smartViews: SmartViewSettings[];
@@ -129,6 +130,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   contentParser: DEFAULT_CONTENT_PARSER,
   savedArticlesSyncFolder: null,
   articleRetention: 'never',
+  autoInstallUpdates: true,
   sidebarLibrary: {
     title: 'Library',
     visible: true,

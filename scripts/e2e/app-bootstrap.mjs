@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * E2E: app bootstrap — real KiJi.app starts, imports mock feed, mounts shell, shows articles.
+ * E2E: app bootstrap — real Yomi Reader.app starts, imports mock feed, mounts shell, shows articles.
  */
 import { pathToFileURL } from "node:url";
 import path from "node:path";
@@ -28,8 +28,8 @@ export async function runAppBootstrapE2e() {
   const binaryPath = await ensureE2eBundledBinary();
   if (!binaryPath) {
     const reason = isE2eRequired()
-      ? "KiJi.app debug bundle missing — run npm run build:debug"
-      : "No KiJi debug bundle available";
+      ? "Yomi Reader.app debug bundle missing — run npm run build:debug"
+      : "No Yomi Reader debug bundle available";
     return { skipped: true, reason };
   }
 

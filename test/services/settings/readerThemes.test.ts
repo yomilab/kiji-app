@@ -32,7 +32,7 @@ describe("reader theme registry", () => {
     expect(ids).not.toContain("dusk");
   });
 
-  it("defaults to the built-in KiJi palette", () => {
+  it("defaults to the built-in Yomi Reader palette", () => {
     expect(DEFAULT_SETTINGS.readerTheme).toBe("default");
   });
 });

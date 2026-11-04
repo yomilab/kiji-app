@@ -50,7 +50,7 @@ export const ASSISTANT_CLIENT_ROWS: AssistantClientRow[] = [
   {
     id: 'cursor',
     name: 'Cursor',
-    description: 'Opens Cursor so you can add KiJi.',
+    description: 'Opens Cursor so you can add Yomi Reader.',
     copiedHint: "Paste it into Cursor's tool settings.",
     primary: 'install',
     primaryLabel: 'Add to Cursor',
@@ -59,7 +59,7 @@ export const ASSISTANT_CLIENT_ROWS: AssistantClientRow[] = [
   {
     id: 'vscode',
     name: 'VS Code',
-    description: 'Opens VS Code so you can add KiJi.',
+    description: 'Opens VS Code so you can add Yomi Reader.',
     copiedHint: "Paste it into VS Code's tool settings.",
     primary: 'install',
     primaryLabel: 'Add to VS Code',
@@ -119,7 +119,7 @@ export const AssistantConnectList: React.FC<AssistantConnectListProps> = ({
     <h3 className="settings-group-title" id="assistant-connect-title">Connect an Assistant</h3>
     <p className={`assistant-connect-helper${accessEnabled ? '' : ' is-access-off'}`}>
       {accessEnabled
-        ? 'Pick the app you use. KiJi needs to be open with access turned on.'
+        ? 'Pick the app you use. Yomi Reader needs to be open with access turned on.'
         : 'Access is off. Turn it on above so assistants can connect. You can still set up an app now.'}
     </p>
     <div className={`settings-group-body assistant-client-list${accessEnabled ? '' : ' is-access-off'}`}>
