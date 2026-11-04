@@ -20,6 +20,8 @@ export interface ArticleListPaintGateOptions {
 let paintGateRafId: number | null = null;
 let paintGateFallbackTimerId: number | null = null;
 let refreshDebounceTimerId: number | null = null;
+// Bumped on every cancel, so a paint gate already waiting can tell it was cancelled.
+let scheduleGeneration = 0;
 
 const clearPaintGateStart = (): void => {
   if (paintGateRafId !== null) {
@@ -34,6 +36,7 @@ const clearPaintGateStart = (): void => {
 };
 
 export const cancelSourceSelectionRefreshSchedule = (): void => {
+  scheduleGeneration += 1;
   clearPaintGateStart();
 
   if (refreshDebounceTimerId !== null) {
@@ -119,6 +122,8 @@ export const scheduleSourceRefreshAfterPaint = (
   },
 ): void => {
   cancelSourceSelectionRefreshSchedule();
+  const generation = scheduleGeneration;
+  const isCancelled = (): boolean => generation !== scheduleGeneration;
   sourceSelectionBus.publishLocalReady(payload);
   sidebarSwitchTrace.mark(payload.token, 'paint-gate-scheduled');
   const paintGateStartedAt = performance.now();
@@ -139,7 +144,11 @@ export const scheduleSourceRefreshAfterPaint = (
     }
 
     void (async () => {
-      const painted = await waitForArticleListPaintGate(options.isSelectionActive, payload.token);
+      const painted = await waitForArticleListPaintGate(
+        options.isSelectionActive,
+        payload.token,
+        { isCancelled },
+      );
       if (!painted) {
         sourceSelectionBus.publishRefreshAborted(
           payload.token,
