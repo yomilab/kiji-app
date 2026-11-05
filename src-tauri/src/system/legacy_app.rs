@@ -1,11 +1,11 @@
-//! Up to 1.9 the app was `KiJi.app`. Apps on 1.9 get a download whose bundle is
-//! still called `KiJi.app`, so dragging it in replaces the old copy as usual;
-//! its first launch then renames it to `Yomi Reader.app`, with no prompt.
-//!
-//! Someone who downloads `Yomi Reader.app` from the website instead ends up with
-//! two copies on one library, so that case offers once to move the old copy to
+//! Up to 1.9 the app was `KiJi.app`. Installing `Yomi Reader.app` leaves two
+//! copies on one library, so first launch offers once to move the old copy to
 //! the Trash. The bundle identifier never changed: that is why the library
 //! carries over, and how the old copy is recognized here.
+//!
+//! The 2.0.0 release also shipped a `KiJi-2.0.0` disk image whose bundle kept the
+//! old name, and it was offered to 1.9 apps for a while. A copy from that image
+//! renames itself to `Yomi Reader.app` on first launch, with no prompt.
 
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
