@@ -12,7 +12,7 @@ import type {
 } from './types';
 
 /**
- * Storage boundaries for KiJi Tauri (see kiji-doc docs/tauri/architecture-tauri-app.md):
+ * Storage boundaries for Yomi Reader Tauri (see kiji-doc docs/tauri/architecture-tauri-app.md):
  *
  * - SQLite (`kiji.db`): feeds, articles, tags, saved articles
  * - Rust JSON (`user-settings.json`): native app config consumed by the Rust runtime
@@ -35,6 +35,7 @@ export const NATIVE_APP_SETTING_KEYS = [
   'contentParser',
   'savedArticlesSyncFolder',
   'articleRetention',
+  'autoInstallUpdates',
 ] as const satisfies readonly (keyof AppSettings)[];
 
 export interface RendererPreferences {
@@ -66,6 +67,7 @@ export function toNativeAppSettings(settings: UserSettings): AppSettings {
     contentParser: settings.contentParser,
     savedArticlesSyncFolder: settings.savedArticlesSyncFolder,
     articleRetention: settings.articleRetention,
+    autoInstallUpdates: settings.autoInstallUpdates,
   };
 }
 
@@ -119,6 +121,7 @@ export function mergeUserSettings(
     contentParser: native.contentParser,
     savedArticlesSyncFolder: native.savedArticlesSyncFolder,
     articleRetention: native.articleRetention,
+    autoInstallUpdates: native.autoInstallUpdates,
     fontFamilies: renderer.fontFamilies,
     readingLayout: renderer.readingLayout,
     sidebarLibrary: renderer.sidebarLibrary,
@@ -148,6 +151,7 @@ export function extractNativeFieldsFromPartial(
     patch.savedArticlesSyncFolder = settings.savedArticlesSyncFolder;
   }
   if (settings.articleRetention !== undefined) patch.articleRetention = settings.articleRetention;
+  if (settings.autoInstallUpdates !== undefined) patch.autoInstallUpdates = settings.autoInstallUpdates;
   if (settings.windowSize !== undefined) {
     patch.windowSize = {
       width: settings.windowSize.width,

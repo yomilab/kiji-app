@@ -8,9 +8,9 @@ use tauri::{
 use tauri_plugin_opener::OpenerExt;
 
 const APP_MENU_NAME: &str = "Reader";
-const APP_OFFICIAL_NAME: &str = "KiJi Reader";
+const APP_OFFICIAL_NAME: &str = "Yomi Reader";
 const CONTACT_EMAIL: &str = "hello@yomilab.app";
-const APP_WEBSITE_URL: &str = "https://kiji.yomilab.app";
+const APP_WEBSITE_URL: &str = "https://reader.yomilab.app";
 
 const MENU_SETTINGS: &str = "menu-settings";
 const MENU_ABOUT: &str = "menu-about";
@@ -467,7 +467,7 @@ impl ApplicationMenu {
             MENU_IMPORT_FEEDS => emit_menu_command(app, AppMenuCommand::ImportFeeds),
             MENU_MANAGE_FEEDS => {
                 if let Err(error) = open_manage_feeds_window(app, None) {
-                    eprintln!("[KiJi] Failed to open Manage Feeds from the menu: {error}");
+                    eprintln!("[Yomi Reader] Failed to open Manage Feeds from the menu: {error}");
                 }
             }
             MENU_HELP_SUPPORT => {

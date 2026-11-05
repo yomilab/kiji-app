@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Brief desktop launch smoke for KiJi (todo 22).
+ * Brief desktop launch smoke for Yomi Reader (todo 22).
  *
- * Starts a built KiJi binary with an isolated HOME profile, verifies the process
+ * Starts a built Yomi Reader binary with an isolated HOME profile, verifies the process
  * stays alive briefly, then terminates it cleanly. Supports macOS, Windows, and Linux.
  */
 import { spawn } from "node:child_process";
@@ -127,7 +127,7 @@ export async function runLaunchSmoke() {
   if (!binaryPath) {
     return {
       skipped: true,
-      reason: "No built KiJi binary found (run npm run build first)",
+      reason: "No built Yomi Reader binary found (run npm run build first)",
     };
   }
 
@@ -177,7 +177,7 @@ export async function runLaunchSmoke() {
     if (exitedEarly) {
       const stderrSuffix = stderr.trim() ? `\nstderr:\n${stderr.trim()}` : "";
       throw new Error(
-        `KiJi exited early during launch smoke (code ${exitCode ?? "unknown"})${stderrSuffix}`,
+        `Yomi Reader exited early during launch smoke (code ${exitCode ?? "unknown"})${stderrSuffix}`,
       );
     }
 
@@ -188,7 +188,7 @@ export async function runLaunchSmoke() {
           const stderrSuffix = stderr.trim() ? `\nstderr:\n${stderr.trim()}` : "";
           reject(
             new Error(
-              `KiJi exited unexpectedly during launch smoke (code ${code ?? "unknown"})${stderrSuffix}`,
+              `Yomi Reader exited unexpectedly during launch smoke (code ${code ?? "unknown"})${stderrSuffix}`,
             ),
           );
         });

@@ -22,5 +22,5 @@ if (process.platform === "darwin") {
     KIJI_E2E_REQUIRED: "1",
   });
 } else {
-  console.log("[verify:local] Skipping E2E on non-macOS (scheduler harness needs KiJi.app)");
+  console.log("[verify:local] Skipping E2E on non-macOS (scheduler harness needs Yomi Reader.app)");
 }

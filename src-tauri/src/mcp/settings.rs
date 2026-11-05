@@ -168,7 +168,7 @@ pub fn settings_path(config_dir: &Path) -> PathBuf {
 pub fn load_settings(path: &Path) -> Result<AssistantSettings, String> {
     match fs::read_to_string(path) {
         Ok(raw) => serde_json::from_str(&raw).or_else(|error| {
-            eprintln!("[KiJi] Assistant settings were unreadable, using defaults: {error}");
+            eprintln!("[Yomi Reader] Assistant settings were unreadable, using defaults: {error}");
             Ok(AssistantSettings::default())
         }),
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(AssistantSettings::default()),

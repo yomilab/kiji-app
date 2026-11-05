@@ -61,12 +61,12 @@ describe('release-notes script', () => {
 
   it('renders the GitHub body with the original Markdown and site links', () => {
     const markdown = renderReleaseNotesMarkdown(extractReleaseNotes(CHANGELOG, '1.6.0'), {
-      websiteUrl: 'https://kiji.yomilab.app',
+      websiteUrl: 'https://reader.yomilab.app',
       version: '1.6.0',
     });
     expect(markdown).toContain('### New\n\n- Reader themes in `Settings → Appearance`.');
     expect(markdown).toContain('- Feeds in **Japanese** no longer fail. Continued on a wrapped line.');
-    expect(markdown).toContain('https://kiji.yomilab.app/changelog/#v1.6.0');
+    expect(markdown).toContain('https://reader.yomilab.app/changelog/#v1.6.0');
     expect(markdown.indexOf('### New')).toBeLessThan(markdown.indexOf('### Fixed'));
   });
 

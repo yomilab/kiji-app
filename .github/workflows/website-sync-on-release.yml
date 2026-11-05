@@ -61,8 +61,8 @@ jobs:
             echo "WEBSITE_DISPATCH_TOKEN is not configured; skipping website metadata sync."
             exit 0
           fi
-          MANIFEST_URL="https://github.com/yomilab/kiji-app/releases/download/${TAG_NAME}/release.json"
-          gh api repos/yomilab/kiji-website/dispatches \
+          MANIFEST_URL="https://github.com/yomilab/yomi-rss-reader/releases/download/${TAG_NAME}/release.json"
+          gh api repos/yomilab/yomi-rss-reader-website/dispatches \
             --method POST \
             -f event_type=kiji-release-published \
             -f "client_payload[tag]=${TAG_NAME}" \

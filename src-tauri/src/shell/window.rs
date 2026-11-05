@@ -262,7 +262,7 @@ pub fn open_manage_feeds_window(app: &AppHandle, target: Option<JsonValue>) -> R
     if let Err(error) =
         emit_secondary_window_open(app, MANAGE_FEEDS_WINDOW_LABEL, MANAGE_FEEDS_WINDOW_OPEN_EVENT)
     {
-        eprintln!("[KiJi] Failed to emit {MANAGE_FEEDS_WINDOW_OPEN_EVENT}: {error}");
+        eprintln!("[Yomi Reader] Failed to emit {MANAGE_FEEDS_WINDOW_OPEN_EVENT}: {error}");
     }
     Ok(())
 }
@@ -503,7 +503,7 @@ pub async fn shell_update_window_open(
         if let Err(error) =
             emit_secondary_window_open(&app, UPDATE_WINDOW_LABEL, UPDATE_WINDOW_OPEN_EVENT)
         {
-            eprintln!("[KiJi] Failed to emit {UPDATE_WINDOW_OPEN_EVENT}: {error}");
+            eprintln!("[Yomi Reader] Failed to emit {UPDATE_WINDOW_OPEN_EVENT}: {error}");
         }
         Ok(())
     })

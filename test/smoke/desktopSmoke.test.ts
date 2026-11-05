@@ -93,7 +93,7 @@ describeWithFixtures("Desktop smoke (todo 22)", () => {
 });
 
 describe("Desktop launch smoke (todo 22)", () => {
-  it("launches KiJi briefly when a built binary exists", async () => {
+  it("launches Yomi Reader briefly when a built binary exists", async () => {
     const { runLaunchSmoke } = await import("../../scripts/smoke-launch.mjs");
     const result = await runLaunchSmoke();
 

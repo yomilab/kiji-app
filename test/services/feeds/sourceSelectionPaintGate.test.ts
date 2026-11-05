@@ -48,6 +48,50 @@ describe('sourceSelectionPaintGate', () => {
     vi.useRealTimers();
   });
 
+  it('does not start the refresh when cancelled while the paint gate is waiting', async () => {
+    const onRefreshRequested = vi.fn();
+
+    scheduleSourceRefreshAfterPaint(createFeedPayload(1), {
+      isSelectionActive: () => true,
+      onRefreshRequested,
+    });
+    // Past the frame that starts the gate, so it is now waiting on its own timers.
+    await vi.advanceTimersByTimeAsync(1);
+    cancelSourceSelectionRefreshSchedule();
+    await vi.advanceTimersByTimeAsync(SOURCE_SELECTION_PAINT_GATE_MAX_WAIT_MS * 2);
+
+    expect(onRefreshRequested).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('runs only the newest refresh when a second selection replaces a waiting one', async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const aborted: number[] = [];
+    const unsubscribe = sourceSelectionBus.subscribe((event) => {
+      if (event.type === 'source-refresh-aborted') {
+        aborted.push(event.payload.token);
+      }
+    });
+
+    scheduleSourceRefreshAfterPaint(createFeedPayload(1), {
+      isSelectionActive: () => true,
+      onRefreshRequested: first,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    scheduleSourceRefreshAfterPaint(createFeedPayload(2), {
+      isSelectionActive: () => true,
+      onRefreshRequested: second,
+    });
+    await vi.advanceTimersByTimeAsync(SOURCE_SELECTION_PAINT_GATE_MAX_WAIT_MS * 2);
+
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+    // Listeners still hear that the replaced selection won't refresh.
+    expect(aborted).toEqual([1]);
+    unsubscribe();
+  });
+
   it('publishes local-ready immediately and refresh-requested after paint gate + debounce', async () => {
     const events: string[] = [];
     const unsubscribe = sourceSelectionBus.subscribe((event) => {

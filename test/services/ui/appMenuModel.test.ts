@@ -98,7 +98,7 @@ describe('appMenuModel', () => {
     expect(isInAppMenuBarOs('macos')).toBe(false);
   });
 
-  it('groups About KiJi Reader and Check for Updates above Settings in Reader', () => {
+  it('groups About Yomi Reader and Check for Updates above Settings in Reader', () => {
     const tree = buildWindowsAppMenuTree({ theme: 'auto', libraryView: null });
     const kiji = tree.find((menu) => menu.id === 'kiji');
     expect(kiji).toBeDefined();
@@ -116,7 +116,7 @@ describe('appMenuModel', () => {
     const checkUpdates = kiji?.items.find(
       (item) => item.kind === 'item' && item.id === 'check-updates',
     );
-    expect(about?.kind === 'item' && about.label).toBe('About KiJi Reader');
+    expect(about?.kind === 'item' && about.label).toBe('About Yomi Reader');
     expect(checkUpdates?.kind === 'item' && checkUpdates.label).toBe('Check for Updates');
     const quit = kiji?.items.find((item) => item.kind === 'item' && item.id === 'quit');
     expect(quit?.kind === 'item' && quit.label).toBe('Quit Reader');
@@ -131,7 +131,7 @@ describe('appMenuModel', () => {
     expect(help?.items.some((item) => item.id === 'about')).toBe(false);
   });
 
-  it('renames Check for Updates to Update KiJi Reader when an update is available', () => {
+  it('renames Check for Updates to Update Yomi Reader when an update is available', () => {
     const tree = buildWindowsAppMenuTree({
       theme: 'auto',
       libraryView: null,
@@ -141,7 +141,7 @@ describe('appMenuModel', () => {
     const checkUpdates = kiji?.items.find(
       (item) => item.kind === 'item' && item.id === 'check-updates',
     );
-    expect(checkUpdates?.kind === 'item' && checkUpdates.label).toBe('Update KiJi Reader');
+    expect(checkUpdates?.kind === 'item' && checkUpdates.label).toBe('Update Yomi Reader');
 
     const file = tree.find((menu) => menu.id === 'file');
     expect(file?.items.some((item) => item.id === 'check-updates')).toBe(false);

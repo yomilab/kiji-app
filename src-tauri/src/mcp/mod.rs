@@ -192,7 +192,7 @@ impl AssistantState {
         if let Ok(handle) = self.app.lock() {
             if let Some(app) = handle.as_ref() {
                 if let Err(error) = app.emit(write::LIBRARY_CHANGED_EVENT, change) {
-                    eprintln!("[KiJi] Assistant library change event failed: {error}");
+                    eprintln!("[Yomi Reader] Assistant library change event failed: {error}");
                 }
             }
         }
@@ -469,7 +469,7 @@ impl AssistantState {
     pub(crate) async fn handle(self: &Arc<Self>, session: &Arc<Mutex<Session>>, message: Value) -> Option<Value> {
         let id = message.as_object().and_then(|object| object.get("id")).cloned();
         if !self.is_enabled() {
-            return id.map(|id| rpc_error(id, -32000, "Assistant access is turned off in KiJi."));
+            return id.map(|id| rpc_error(id, -32000, "Assistant access is turned off in Yomi Reader."));
         }
         let settings = self.settings_snapshot();
         let current = if settings.share_current_article { self.current.current() } else { None };
@@ -493,7 +493,7 @@ impl AssistantState {
                 let response = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     protocol::handle_message(&mut working, &ctx, &message)
                 }))
-                .map_err(|_| "KiJi hit an unexpected problem answering that request.".to_string())?;
+                .map_err(|_| "Yomi Reader hit an unexpected problem answering that request.".to_string())?;
                 Ok((response, working))
             })
             .await;
@@ -529,7 +529,7 @@ impl AssistantState {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     write::run(conn, &settings, current.as_ref(), &name, &args)
                 }))
-                .map_err(|_| "KiJi hit an unexpected problem making that change.".to_string())
+                .map_err(|_| "Yomi Reader hit an unexpected problem making that change.".to_string())
             })
             .await;
         let outcome = match result {

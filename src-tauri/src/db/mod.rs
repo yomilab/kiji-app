@@ -127,7 +127,7 @@ impl DbState {
         };
 
         if let Err(error) = fs::write(&dirty_marker, b"") {
-            eprintln!("[KiJi] Failed to create database dirty marker: {error}");
+            eprintln!("[Yomi Reader] Failed to create database dirty marker: {error}");
         }
 
         // Readers open after the writer so the schema and WAL sidecars exist.
@@ -164,7 +164,7 @@ impl DbState {
         let marker = dirty_marker_path(&self.inner.path);
         if marker.exists() {
             if let Err(error) = fs::remove_file(&marker) {
-                eprintln!("[KiJi] Failed to remove database dirty marker: {error}");
+                eprintln!("[Yomi Reader] Failed to remove database dirty marker: {error}");
             }
         }
     }
@@ -202,10 +202,10 @@ impl DbState {
                 }),
             };
             if let Err(log_error) = diagnostics.log_internal(payload) {
-                eprintln!("[KiJi] Failed to log database integrity outcome: {log_error}");
+                eprintln!("[Yomi Reader] Failed to log database integrity outcome: {log_error}");
             }
             if let Err(error) = outcome {
-                eprintln!("[KiJi] Database integrity check failed: {error}");
+                eprintln!("[Yomi Reader] Database integrity check failed: {error}");
             }
         });
     }
@@ -399,7 +399,7 @@ impl DbState {
         let db = self.clone();
         std::thread::spawn(move || {
             if let Err(error) = db.with_writer(run_data_repairs) {
-                eprintln!("[KiJi] Feed count repair failed: {error}");
+                eprintln!("[Yomi Reader] Feed count repair failed: {error}");
             }
         });
     }
@@ -415,7 +415,7 @@ impl DbState {
             Ok(true) => {}
             Ok(false) => return,
             Err(error) => {
-                eprintln!("[KiJi] Search backfill check failed: {error}");
+                eprintln!("[Yomi Reader] Search backfill check failed: {error}");
                 return;
             }
         }
@@ -434,10 +434,10 @@ impl DbState {
                     Err(error) => {
                         failures += 1;
                         let Some(delay) = search_backfill_retry_delay(failures) else {
-                            eprintln!("[KiJi] Search backfill stopped after {failures} failures: {error}");
+                            eprintln!("[Yomi Reader] Search backfill stopped after {failures} failures: {error}");
                             break;
                         };
-                        eprintln!("[KiJi] Search backfill failed, retrying in {}s: {error}", delay.as_secs());
+                        eprintln!("[Yomi Reader] Search backfill failed, retrying in {}s: {error}", delay.as_secs());
                         std::thread::sleep(delay);
                     }
                 }
@@ -488,7 +488,7 @@ pub(crate) fn with_savepoint<T>(
             if self.armed {
                 let sql = format!("ROLLBACK TO {0}; RELEASE {0};", self.name);
                 if let Err(error) = self.connection.execute_batch(&sql) {
-                    eprintln!("[KiJi] Failed to roll back savepoint {}: {error}", self.name);
+                    eprintln!("[Yomi Reader] Failed to roll back savepoint {}: {error}", self.name);
                 }
             }
         }
@@ -593,7 +593,7 @@ fn run_background_integrity_check(path: &Path) -> Result<(), String> {
         path,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
-    .map_err(|error| format!("Failed to open the KiJi database for integrity check: {error}"))?;
+    .map_err(|error| format!("Failed to open the Yomi Reader database for integrity check: {error}"))?;
     connection
         .busy_timeout(std::time::Duration::from_millis(BUSY_TIMEOUT_MS))
         .map_err(|error| format!("Failed to set integrity check busy timeout: {error}"))?;
@@ -638,14 +638,14 @@ fn remove_wal_sidecars(path: &Path) -> Result<(), String> {
 fn verify_database_integrity(connection: &Connection, path: &Path) -> Result<(), String> {
     let result = connection
         .query_row("PRAGMA quick_check", [], |row| row.get::<_, String>(0))
-        .map_err(|error| format!("Failed to verify KiJi database integrity: {error}"))?;
+        .map_err(|error| format!("Failed to verify Yomi Reader database integrity: {error}"))?;
 
     if result == "ok" {
         return Ok(());
     }
 
     Err(format!(
-        "KiJi database at {} failed integrity check: {result}. If you replaced kiji.db manually, copy it with `sqlite3 source.db \".backup 'dest.db'\"` while the source app is closed, then remove any stale kiji.db-wal and kiji.db-shm files.",
+        "Yomi Reader database at {} failed integrity check: {result}. If you replaced kiji.db manually, copy it with `sqlite3 source.db \".backup 'dest.db'\"` while the source app is closed, then remove any stale kiji.db-wal and kiji.db-shm files.",
         path.display()
     ))
 }
@@ -654,7 +654,7 @@ fn open_connection(path: &Path) -> Result<Connection, String> {
     let connection = Connection::open(path)
         .map_err(|error| {
             format!(
-                "Failed to open the KiJi database at {}: {error}. If you replaced kiji.db manually, use `sqlite3 source.db \".backup 'dest.db'\"` while the source app is closed and remove stale kiji.db-wal and kiji.db-shm files.",
+                "Failed to open the Yomi Reader database at {}: {error}. If you replaced kiji.db manually, use `sqlite3 source.db \".backup 'dest.db'\"` while the source app is closed and remove stale kiji.db-wal and kiji.db-shm files.",
                 path.display()
             )
         })?;

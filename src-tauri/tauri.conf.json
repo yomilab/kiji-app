@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "KiJi",
-  "version": "1.9.0",
+  "productName": "Yomi Reader",
+  "version": "2.0.0",
   "identifier": "com.yomilab.kiji",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "KiJi",
+        "title": "Yomi Reader",
         "width": 800,
         "height": 600,
         "minWidth": 600,
@@ -24,7 +24,11 @@
         "transparent": true,
         "dragDropEnabled": false,
         "windowEffects": {
-          "effects": ["mica", "acrylic", "sidebar"],
+          "effects": [
+            "mica",
+            "acrylic",
+            "sidebar"
+          ],
           "state": "active",
           "radius": 14
         }
@@ -32,7 +36,7 @@
       {
         "label": "settings",
         "create": false,
-        "title": "KiJi Settings",
+        "title": "Yomi Reader Settings",
         "url": "index.html?window=settings",
         "width": 700,
         "height": 660,
@@ -42,7 +46,11 @@
         "transparent": true,
         "dragDropEnabled": false,
         "windowEffects": {
-          "effects": ["mica", "acrylic", "sidebar"],
+          "effects": [
+            "mica",
+            "acrylic",
+            "sidebar"
+          ],
           "state": "active",
           "radius": 14
         }
@@ -50,7 +58,7 @@
       {
         "label": "manage-feeds",
         "create": false,
-        "title": "KiJi Feeds",
+        "title": "Yomi Reader Feeds",
         "url": "index.html?window=manage-feeds",
         "width": 880,
         "height": 640,
@@ -62,7 +70,11 @@
         "transparent": true,
         "dragDropEnabled": false,
         "windowEffects": {
-          "effects": ["mica", "acrylic", "sidebar"],
+          "effects": [
+            "mica",
+            "acrylic",
+            "sidebar"
+          ],
           "state": "active",
           "radius": 14
         }
@@ -70,7 +82,7 @@
       {
         "label": "article",
         "create": false,
-        "title": "KiJi Article",
+        "title": "Yomi Reader Article",
         "url": "index.html?window=article",
         "width": 1000,
         "height": 720,
@@ -81,7 +93,10 @@
         "transparent": true,
         "dragDropEnabled": false,
         "windowEffects": {
-          "effects": ["acrylic", "underWindowBackground"],
+          "effects": [
+            "acrylic",
+            "underWindowBackground"
+          ],
           "state": "active",
           "radius": 14
         }
@@ -89,7 +104,7 @@
       {
         "label": "update",
         "create": false,
-        "title": "KiJi Update",
+        "title": "Yomi Reader Update",
         "url": "index.html?window=update",
         "width": 460,
         "height": 440,
@@ -99,7 +114,11 @@
         "transparent": true,
         "dragDropEnabled": false,
         "windowEffects": {
-          "effects": ["mica", "acrylic", "sidebar"],
+          "effects": [
+            "mica",
+            "acrylic",
+            "sidebar"
+          ],
           "state": "active",
           "radius": 14
         }
@@ -132,6 +151,43 @@
       "icons-ripple/128x128@2x.png",
       "icons-ripple/icon.icns",
       "icons-ripple/icon.ico"
-    ]
+    ],
+    "windows": {
+      "wix": {
+        "upgradeCode": "DB5CC356-37B3-51DC-AA1E-D7EA8134702E"
+      },
+      "nsis": {
+        "installerHooks": "./windows/installer-hooks.nsh"
+      }
+    },
+    "linux": {
+      "deb": {
+        "conflicts": [
+          "ki-ji"
+        ],
+        "replaces": [
+          "ki-ji"
+        ]
+      },
+      "rpm": {
+        "conflicts": [
+          "ki-ji"
+        ],
+        "obsoletes": [
+          "ki-ji"
+        ]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRDM0VCRTQ1MjFFMDE0QkYKUldTL0ZPQWhSYjQrVExRejhTZ0pkYzFtbkFtdXV2NmlxNS9MTDk2UERONk5WakMvU3RXRFY5dEEK",
+      "endpoints": [
+        "https://github.com/yomilab/yomi-rss-reader/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "quiet"
+      }
+    }
   }
 }

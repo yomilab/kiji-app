@@ -7,7 +7,7 @@ import type { ArticleRecord } from '@/lib/tauriClient/contracts';
 import type { Article } from '@/types/article';
 import { recordToArticle } from '@/stores/articleStore';
 
-/** Mirrors production Tech-station scale from the local KiJi library. */
+/** Mirrors production Tech-station scale from the local Yomi Reader library. */
 export const TECH_STATION_SCENARIO = {
   feedCount: 148,
   articleCount: 6341,

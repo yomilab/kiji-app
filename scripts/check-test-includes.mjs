@@ -59,7 +59,7 @@ const e2eOnDisk = listFiles(path.join(rootDir, "test/e2e"), /\.e2e\.test\.ts$/);
 const unitListed = vitestList("vitest.config.ts");
 const e2eListed = vitestList("vitest.e2e.config.ts");
 
-console.log("=== KiJi test include audit ===\n");
+console.log("=== Yomi Reader test include audit ===\n");
 console.log(`Unit files on disk (excl. e2e): ${unitOnDisk.length}`);
 console.log(`E2E files on disk: ${e2eOnDisk.length}`);
 console.log("");

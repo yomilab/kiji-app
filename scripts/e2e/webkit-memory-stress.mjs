@@ -177,8 +177,8 @@ export async function runWebKitMemoryStressE2e() {
   const binaryPath = await ensureE2eBundledBinary();
   if (!binaryPath) {
     const reason = isE2eRequired()
-      ? "KiJi.app debug bundle missing — run npm run build:debug"
-      : "No KiJi debug bundle available";
+      ? "Yomi Reader.app debug bundle missing — run npm run build:debug"
+      : "No Yomi Reader debug bundle available";
     return { skipped: true, reason };
   }
 
@@ -868,7 +868,7 @@ function assertStressResult({ summary, profile, attributionSummary, artifactsDir
     if ((attributionSummary?.nativeFeedRefreshCount ?? 0) < 1
       && (attributionSummary?.feedParseAttributionCount ?? 0) > 0) {
       throw new Error(
-        `Native attribution missing and renderer parse attribution present — rebuild KiJi.app with native ingestion enabled artifacts=${artifactsDir}`,
+        `Native attribution missing and renderer parse attribution present — rebuild Yomi Reader.app with native ingestion enabled artifacts=${artifactsDir}`,
       );
     }
     if ((attributionSummary?.postImportLargeRendererFeedNetworkCount ?? 0) > 0) {

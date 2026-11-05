@@ -3,7 +3,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "KiJi",
+        "title": "Yomi Reader",
         "width": 800,
         "height": 600,
         "minWidth": 600,
@@ -29,7 +29,7 @@
       {
         "label": "settings",
         "create": false,
-        "title": "KiJi Settings",
+        "title": "Yomi Reader Settings",
         "url": "index.html?window=settings",
         "width": 700,
         "height": 660,
@@ -55,7 +55,7 @@
       {
         "label": "manage-feeds",
         "create": false,
-        "title": "KiJi Feeds",
+        "title": "Yomi Reader Feeds",
         "url": "index.html?window=manage-feeds",
         "width": 880,
         "height": 640,
@@ -83,7 +83,7 @@
       {
         "label": "article",
         "create": false,
-        "title": "KiJi Article",
+        "title": "Yomi Reader Article",
         "url": "index.html?window=article",
         "width": 1000,
         "height": 720,
@@ -110,7 +110,7 @@
       {
         "label": "update",
         "create": false,
-        "title": "KiJi Update",
+        "title": "Yomi Reader Update",
         "url": "index.html?window=update",
         "width": 460,
         "height": 440,

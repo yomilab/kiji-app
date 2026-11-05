@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Phase 0: correlate KiJi resource-usage samples with app-log scheduler and
+ * Phase 0: correlate Yomi Reader resource-usage samples with app-log scheduler and
  * WebKitAttribution events.
  *
  * Usage:
@@ -55,7 +55,7 @@ function parseArgs(argv) {
       console.log(`Usage: node scripts/analyze-memory-logs.mjs [options]
 
 Options:
-  --logs-dir <path>       KiJi logs directory (default: Application Support)
+  --logs-dir <path>       Yomi Reader logs directory (default: Application Support)
   --date YYYY-MM-DD       Analyze one calendar day
   --days <n>              Analyze resource logs modified in the last N days
   --window-minutes <n>    Event correlation window (default: 5)

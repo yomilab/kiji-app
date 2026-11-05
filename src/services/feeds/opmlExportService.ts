@@ -140,7 +140,7 @@ class OpmlExportService {
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<opml version="2.0">',
       '<head>',
-      '<title>KiJi Feeds</title>',
+      '<title>Yomi Reader Feeds</title>',
       '</head>',
       '<body>',
       ...bodyLines,
