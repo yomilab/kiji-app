@@ -25,6 +25,9 @@ export const app = {
   relaunch(): Promise<SystemContract["appRelaunch"]["response"]> {
     return invokeContract<SystemContract["appRelaunch"]>("system_app_relaunch");
   },
+  autoUpdateActive(): Promise<SystemContract["appAutoUpdateActive"]["response"]> {
+    return invokeContract<SystemContract["appAutoUpdateActive"]>("system_auto_update_active");
+  },
 };
 
 export const theme = {

@@ -58,7 +58,7 @@ describe('openSettingsWindow', () => {
     expect(show).toHaveBeenCalledWith(SETTINGS_WINDOW_OPEN_FAILED_TOAST);
   });
 
-  it('KiJi → Settings uses the toasting helper', async () => {
+  it('Yomi Reader → Settings uses the toasting helper', async () => {
     const openSettings = vi.fn().mockRejectedValue(new Error('create failed'));
     const show = vi.spyOn(appToastService, 'show');
     Object.defineProperty(window, 'kijiAPI', {
@@ -70,7 +70,7 @@ describe('openSettingsWindow', () => {
     expect(show).toHaveBeenCalledWith(SETTINGS_WINDOW_OPEN_FAILED_TOAST);
   });
 
-  it('gear, KiJi menu, and Ctrl+, all call openSettingsWindow', () => {
+  it('gear, Yomi Reader menu, and Ctrl+, all call openSettingsWindow', () => {
     const root = process.cwd();
     const gear = readFileSync(join(root, 'src/components/Sidebar/BottomWidget.tsx'), 'utf8');
     const menu = readFileSync(join(root, 'src/services/ui/dispatchAppMenuAction.ts'), 'utf8');

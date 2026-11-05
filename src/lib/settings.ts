@@ -46,6 +46,7 @@ export interface AppSettings {
   contentParser: ContentParser;
   savedArticlesSyncFolder: string | null;
   articleRetention: ArticleRetention;
+  autoInstallUpdates: boolean;
 }
 
 export interface AppSettingsPatch {
@@ -58,6 +59,7 @@ export interface AppSettingsPatch {
   contentParser?: ContentParser;
   savedArticlesSyncFolder?: string | null;
   articleRetention?: ArticleRetention;
+  autoInstallUpdates?: boolean;
 }
 
 export const THEME_OPTIONS: ReadonlyArray<{ value: Theme; label: string }> = [
@@ -105,5 +107,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   contentParser: "defuddle",
   savedArticlesSyncFolder: null,
   articleRetention: "never",
+  autoInstallUpdates: true,
 };
 

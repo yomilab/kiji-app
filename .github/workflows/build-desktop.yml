@@ -102,14 +102,14 @@ jobs:
             rust_target: aarch64-apple-darwin
             profile: release
             bundle_args: ""
-            launch_binary: src-tauri/target/aarch64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app
+            launch_binary: src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Yomi Reader.app/Contents/MacOS/kiji-app
             launch_use_xvfb: "false"
           - os: macos-14
             platform_id: macos-x86_64
             rust_target: x86_64-apple-darwin
             profile: release
             bundle_args: ""
-            launch_binary: src-tauri/target/x86_64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app
+            launch_binary: src-tauri/target/x86_64-apple-darwin/release/bundle/macos/Yomi Reader.app/Contents/MacOS/kiji-app
             launch_use_xvfb: "false"
           - os: windows-latest
             platform_id: windows-x86_64
@@ -225,6 +225,8 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
@@ -242,13 +244,22 @@ jobs:
             ARGS+=("${EXTRA[@]}")
           fi
 
+          # Update files need the signing key. A tagged release can't go without
+          # them, or installed apps would never update themselves.
+          if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+            ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY secret is empty or not set."
+            exit 1
+          fi
+
           npx tauri build "${ARGS[@]}"
 
       - name: Verify macOS bundle signature
         if: startsWith(matrix.platform_id, 'macos-') && matrix.profile == 'release'
         run: |
           set -euo pipefail
-          APP="src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/KiJi.app"
+          APP="src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/Yomi Reader.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
           codesign --display --verbose=2 "$APP" 2>&1 | tee /tmp/codesign-info.txt
           grep -q "Developer ID Application" /tmp/codesign-info.txt
@@ -313,7 +324,7 @@ jobs:
           CI: true
           VITE_KIJI_E2E: "1"
           VITE_KIJI_E2E_SCHEDULER_INTERVAL_MS: "500"
-        # E2E launches KiJi.app directly; skip DMG (common for CI/test builds).
+        # E2E launches Yomi Reader.app directly; skip DMG (common for CI/test builds).
         run: npm run build:debug:app
 
       - name: Run macOS real-app E2E
@@ -439,7 +450,7 @@ jobs:
           # Same confirmed CHANGELOG.md notes as the app and website (fails if missing).
           node scripts/release-notes.mjs \
             --version "$VERSION" \
-            --website-url "https://kiji.yomilab.app" \
+            --website-url "https://reader.yomilab.app" \
             --output release-notes.md
 
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -448,7 +459,7 @@ jobs:
             gh release edit "$TAG" --notes-file release-notes.md
           else
             gh release create "$TAG" "${ASSETS[@]}" \
-              --title "KiJi ${VERSION}" \
+              --title "Yomi Reader ${VERSION}" \
               --notes-file release-notes.md \
               --verify-tag \
               "${PRERELEASE_ARGS[@]}"
@@ -469,6 +480,21 @@ jobs:
             --output release.json
           gh release upload "$TAG" release.json --clobber
 
+      # Last, so installed apps never see a version whose files aren't all up.
+      - name: Generate and attach latest.json
+        if: ${{ !startsWith(github.ref_name, 'v0.') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          node scripts/generate-updater-manifest.mjs \
+            --dir release-assets \
+            --tag "$TAG" \
+            --output latest.json
+          gh release upload "$TAG" latest.json --clobber
+
       - name: Dispatch kiji-website release sync
         if: ${{ !startsWith(github.ref_name, 'v0.') }}
         env:
@@ -481,8 +507,8 @@ jobs:
             echo "WEBSITE_DISPATCH_TOKEN is not configured; skipping website metadata sync."
             exit 0
           fi
-          MANIFEST_URL="https://github.com/yomilab/kiji-app/releases/download/${TAG_NAME}/release.json"
-          gh api repos/yomilab/kiji-website/dispatches \
+          MANIFEST_URL="https://github.com/yomilab/yomi-rss-reader/releases/download/${TAG_NAME}/release.json"
+          gh api repos/yomilab/yomi-rss-reader-website/dispatches \
             --method POST \
             -f event_type=kiji-release-published \
             -f "client_payload[tag]=${TAG_NAME}" \

@@ -1,10 +1,10 @@
 //! `kiji-app --mcp`: stdio bridge for MCP clients. Forwards newline-delimited
-//! JSON-RPC between the client's stdin/stdout and KiJi's local socket (or
+//! JSON-RPC between the client's stdin/stdout and Yomi Reader's local socket (or
 //! named pipe). Runs without Tauri and never opens the database.
 //!
-//! While KiJi is closed (or assistant access is off) the bridge still
+//! While Yomi Reader is closed (or assistant access is off) the bridge still
 //! answers `initialize` and the list methods, and tells the agent to open
-//! KiJi on tool calls. Once KiJi is reachable it reconnects, replaying the
+//! Yomi Reader on tool calls. Once Yomi Reader is reachable it reconnects, replaying the
 //! client's `initialize` so the session continues.
 
 use super::{endpoint, protocol, transport::read_message};
@@ -21,7 +21,7 @@ const DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 /// dropped.
 const REPLAY_ID_PREFIX: &str = "kiji-bridge-replay";
 pub const OFFLINE_MESSAGE: &str =
-    "KiJi isn't open, or assistant access is off. Ask the user to open KiJi and turn on Settings -> Assistant -> \"Let assistants read your KiJi library\", then try again.";
+    "Yomi Reader isn't open, or assistant access is off. Ask the user to open Yomi Reader and turn on Settings -> Assistant -> \"Let assistants read your Yomi Reader library\", then try again.";
 
 type BoxedWriter = Box<dyn AsyncWrite + Send + Unpin>;
 type BoxedReader = Box<dyn AsyncRead + Send + Unpin>;
@@ -30,7 +30,7 @@ pub fn run_stdio_bridge() -> i32 {
     let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
         Ok(runtime) => runtime,
         Err(error) => {
-            eprintln!("kiji-mcp: failed to start: {error}");
+            eprintln!("yomi-reader-mcp: failed to start: {error}");
             return 1;
         }
     };
@@ -140,7 +140,7 @@ where
                 if let Some(key) = &id_key {
                     pending.lock().map(|mut set| set.remove(key)).ok();
                 }
-                // Answer requests KiJi will never reply to before dropping
+                // Answer requests Yomi Reader will never reply to before dropping
                 // the connection (dropping aborts its reader).
                 fail_pending(&pending, &out_tx);
                 upstream = None;
@@ -153,7 +153,7 @@ where
         }
     }
 
-    // Input closed: give requests already sent to KiJi a moment to answer
+    // Input closed: give requests already sent to Yomi Reader a moment to answer
     // (e.g. `printf … | kiji-app --mcp`), then exit.
     if upstream.is_some() {
         let deadline = tokio::time::Instant::now() + DRAIN_TIMEOUT;
@@ -193,7 +193,7 @@ fn fail_pending(pending: &Pending, out_tx: &mpsc::UnboundedSender<String>) {
         let id: Value = serde_json::from_str(&raw_id).unwrap_or(Value::Null);
         let response = json!({
             "jsonrpc": "2.0", "id": id,
-            "error": { "code": -32000, "message": "KiJi closed before answering. Open KiJi and try again." }
+            "error": { "code": -32000, "message": "Yomi Reader closed before answering. Open Yomi Reader and try again." }
         });
         let _ = out_tx.send(response.to_string());
     }
@@ -239,13 +239,13 @@ fn start_upstream(
             }
         }
         reader_alive.store(false, std::sync::atomic::Ordering::Release);
-        // KiJi closed mid-request: answer whatever is still waiting.
+        // Yomi Reader closed mid-request: answer whatever is still waiting.
         fail_pending(&pending, &out_tx);
     });
     Upstream { writer, alive, reader_task }
 }
 
-/// Answers while KiJi can't be reached.
+/// Answers while Yomi Reader can't be reached.
 pub(crate) fn offline_response(message: &Value) -> Option<Value> {
     let id = message.get("id")?.clone();
     let method = message.get("method").and_then(Value::as_str).unwrap_or_default();
@@ -329,7 +329,7 @@ mod tests {
 
     #[tokio::test]
     async fn answers_already_sent_requests_after_stdin_closes() {
-        // Fake KiJi that answers after a short delay.
+        // Fake Yomi Reader that answers after a short delay.
         let (bridge_side, kiji_side) = duplex(64 * 1024);
         tokio::spawn(async move {
             let (read_half, mut write_half) = tokio::io::split(kiji_side);
@@ -379,13 +379,13 @@ mod tests {
         assert_eq!(responses[0]["result"]["protocolVersion"], "2025-06-18");
         assert!(responses[1]["result"]["tools"].as_array().unwrap().len() >= 8);
         assert_eq!(responses[2]["result"]["isError"], true);
-        assert!(responses[2]["result"]["content"][0]["text"].as_str().unwrap().contains("open KiJi"));
+        assert!(responses[2]["result"]["content"][0]["text"].as_str().unwrap().contains("open Yomi Reader"));
         assert_eq!(responses[3]["error"]["code"], -32700);
     }
 
     #[tokio::test]
     async fn bridge_forwards_to_kiji_and_replays_initialize_after_reconnect() {
-        // Fake KiJi: echoes every request id back as a result and records lines.
+        // Fake Yomi Reader: echoes every request id back as a result and records lines.
         let (bridge_side, kiji_side) = duplex(64 * 1024);
         let received = Arc::new(Mutex::new(Vec::<Value>::new()));
         let record = Arc::clone(&received);
@@ -413,7 +413,7 @@ mod tests {
                 let socket = Arc::clone(&socket);
                 let calls = Arc::clone(&calls);
                 async move {
-                    // First attempt: KiJi closed. Second: KiJi is up.
+                    // First attempt: Yomi Reader closed. Second: Yomi Reader is up.
                     if calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
                         return None;
                     }
@@ -445,7 +445,7 @@ mod tests {
         reader.read_line(&mut line).await.unwrap();
         let second: Value = serde_json::from_str(line.trim()).unwrap();
         assert_eq!(second["id"], 2);
-        assert_eq!(second["result"]["from"], "kiji", "forwarded once KiJi is up");
+        assert_eq!(second["result"]["from"], "kiji", "forwarded once Yomi Reader is up");
 
         drop(client_in);
         bridge.await.unwrap();

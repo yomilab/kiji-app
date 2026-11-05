@@ -30,7 +30,7 @@ pub(super) fn spawn_http_listener(
         let listener = match TcpListener::bind(("127.0.0.1", port)).await {
             Ok(listener) => listener,
             Err(error) => {
-                eprintln!("[KiJi] Assistant web address failed to start on port {port}: {error}");
+                eprintln!("[Yomi Reader] Assistant web address failed to start on port {port}: {error}");
                 state.set_http_status(generation, ListenerState::Error(format!(
                     "Port {port} is in use by another app. Choose a different port."
                 )));

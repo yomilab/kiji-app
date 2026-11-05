@@ -1,8 +1,8 @@
 #!/bin/sh
-# Starts KiJi's assistant bridge (MCP over stdio). Needs the KiJi app.
+# Starts Yomi Reader's assistant bridge (MCP over stdio). Needs the Yomi Reader app.
 for app in '__KIJI_LAUNCHER__' \
-  "/Applications/KiJi.app/Contents/MacOS/kiji-app" \
-  "$HOME/Applications/KiJi.app/Contents/MacOS/kiji-app"; do
+  "/Applications/Yomi Reader.app/Contents/MacOS/kiji-app" \
+  "$HOME/Applications/Yomi Reader.app/Contents/MacOS/kiji-app"; do
   if [ -x "$app" ]; then
     exec "$app" --mcp "$@"
   fi
@@ -11,5 +11,5 @@ found=$(mdfind "kMDItemCFBundleIdentifier == 'com.yomilab.kiji'" 2>/dev/null | h
 if [ -n "$found" ] && [ -x "$found/Contents/MacOS/kiji-app" ]; then
   exec "$found/Contents/MacOS/kiji-app" --mcp "$@"
 fi
-echo "KiJi isn't installed. Get it from https://kiji.yomilab.app" >&2
+echo "Yomi Reader isn't installed. Get it from https://reader.yomilab.app" >&2
 exit 1

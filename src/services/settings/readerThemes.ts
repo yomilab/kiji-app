@@ -30,7 +30,7 @@ export interface ReaderTheme {
   contentLineHeight: number;
 }
 
-/** `default` keeps the built-in KiJi palette in both schemes. */
+/** `default` keeps the built-in Yomi Reader palette in both schemes. */
 export const DEFAULT_READER_THEME = 'default';
 
 export const READER_THEMES: readonly ReaderTheme[] = [

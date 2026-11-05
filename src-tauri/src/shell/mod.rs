@@ -128,7 +128,7 @@ pub fn shell_dialog_confirm(request: ConfirmDialogRequest) -> Result<bool, Strin
     let title = request
         .title
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "KiJi".to_string());
+        .unwrap_or_else(|| "Yomi Reader".to_string());
 
     let confirmed = MessageDialog::new()
         .set_level(MessageLevel::Warning)

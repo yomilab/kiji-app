@@ -1,22 +1,22 @@
 {
   "manifest_version": "0.3",
-  "name": "kiji",
-  "display_name": "KiJi",
+  "name": "yomi-reader",
+  "display_name": "Yomi Reader",
   "version": "__VERSION__",
-  "description": "Let Claude read your KiJi RSS library and the article you're reading.",
-  "long_description": "Read your KiJi library from Claude: stations, feeds, articles by time range, saved articles with highlights, and the article open in KiJi right now. Requires the KiJi app with Settings → Assistant → \"Let assistants read your KiJi library\" turned on. Read-only unless you also turn on \"Allow assistants to make changes\" (mark read, star, save); you choose which stations assistants can see.",
-  "author": { "name": "Yomi Lab", "url": "https://kiji.yomilab.app" },
-  "homepage": "https://kiji.yomilab.app",
-  "support": "https://kiji.yomilab.app",
-  "privacy_policies": ["https://kiji.yomilab.app/privacy"],
+  "description": "Let Claude read your Yomi Reader RSS library and the article you're reading.",
+  "long_description": "Read your Yomi Reader library from Claude: stations, feeds, articles by time range, saved articles with highlights, and the article open in Yomi Reader right now. Requires the Yomi Reader app with Settings → Assistant → \"Let assistants read your Yomi Reader library\" turned on. Read-only unless you also turn on \"Allow assistants to make changes\" (mark read, star, save); you choose which stations assistants can see.",
+  "author": { "name": "Yomi Lab", "url": "https://reader.yomilab.app" },
+  "homepage": "https://reader.yomilab.app",
+  "support": "https://reader.yomilab.app",
+  "privacy_policies": ["https://reader.yomilab.app/privacy"],
   "icon": "icon.png",
   "server": {
     "type": "binary",
-    "entry_point": "server/kiji-mcp",
-    "mcp_config": { "command": "${__dirname}/server/kiji-mcp", "args": [] }
+    "entry_point": "server/yomi-reader-mcp",
+    "mcp_config": { "command": "${__dirname}/server/yomi-reader-mcp", "args": [] }
   },
   "tools": [
-    { "name": "get_current_article", "description": "The article open in KiJi right now" },
+    { "name": "get_current_article", "description": "The article open in Yomi Reader right now" },
     { "name": "list_stations", "description": "Your stations with feed and unread counts" },
     { "name": "list_feeds", "description": "Subscribed feeds, optionally by station" },
     { "name": "list_articles", "description": "Articles by station, feed or library for a time range" },
@@ -26,9 +26,9 @@
     { "name": "get_digest", "description": "Digest grouped by station and feed" },
     { "name": "list_saved_articles", "description": "Your saved articles" },
     { "name": "get_saved_article", "description": "A saved article with highlights and notes" },
-    { "name": "mark_read", "description": "Mark articles read or unread (only when you allow changes in KiJi)" },
-    { "name": "set_starred", "description": "Star or unstar articles (only when you allow changes in KiJi)" },
-    { "name": "save_article", "description": "Save an article to Saved articles (only when you allow changes in KiJi)" }
+    { "name": "mark_read", "description": "Mark articles read or unread (only when you allow changes in Yomi Reader)" },
+    { "name": "set_starred", "description": "Star or unstar articles (only when you allow changes in Yomi Reader)" },
+    { "name": "save_article", "description": "Save an article to Saved articles (only when you allow changes in Yomi Reader)" }
   ],
   "tools_generated": true,
   "prompts": [

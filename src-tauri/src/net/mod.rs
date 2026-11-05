@@ -30,7 +30,7 @@ const FEED_BODY_HARD_CAP_BYTES: u64 = 32 * 1024 * 1024;
 const FEED_BODY_SOFT_WARN_BYTES: u64 = 10 * 1024 * 1024;
 const PDF_MAGIC: &[u8] = b"%PDF-";
 const CHROME_LIKE_USER_AGENT: &str =
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 KiJi/0.1";
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 YomiReader/0.1";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

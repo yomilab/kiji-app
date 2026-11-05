@@ -9,7 +9,7 @@ export const ContactPane: React.FC<{ state: SettingsWindowState['contact'] }> = 
     <SettingsGroup title="Email">
       <SettingsRow
         label="Support email"
-        description="Opens a new message to the KiJi team in your email app."
+        description="Opens a new message to the Yomi Reader team in your email app."
         status={state.emailStatus}
         control={(
           <button

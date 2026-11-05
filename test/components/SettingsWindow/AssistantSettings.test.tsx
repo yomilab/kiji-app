@@ -78,7 +78,7 @@ describe("AssistantSettings", () => {
     });
     assistant.getClientSetup.mockResolvedValue({
       client: "claude-code",
-      text: "claude mcp add --scope user kiji -- '/Applications/KiJi.app/Contents/MacOS/kiji-app' --mcp",
+      text: "claude mcp add --scope user kiji -- '/Applications/Yomi Reader.app/Contents/MacOS/kiji-app' --mcp",
       hint: "Run this once in Terminal.",
       hasInstallLink: false,
     });
@@ -92,11 +92,11 @@ describe("AssistantSettings", () => {
 
   it("starts with access off and turns it on", async () => {
     render(<AssistantSettings />);
-    const toggle = await screen.findByLabelText("Let assistants read your KiJi library");
+    const toggle = await screen.findByLabelText("Let assistants read your Yomi Reader library");
     expect((toggle as HTMLInputElement).checked).toBe(false);
     fireEvent.click(toggle);
     await waitFor(() => expect(assistant.updateSettings).toHaveBeenCalledWith({ enabled: true }));
-    expect(await screen.findByText("Ready. Assistants can connect while KiJi is open.")).toBeTruthy();
+    expect(await screen.findByText("Ready. Assistants can connect while Yomi Reader is open.")).toBeTruthy();
   });
 
   it("keeps changes off by default and only allows them once access is on", async () => {
@@ -105,7 +105,7 @@ describe("AssistantSettings", () => {
     expect(changes.checked).toBe(false);
     expect(changes.disabled).toBe(true);
 
-    fireEvent.click(screen.getByLabelText("Let assistants read your KiJi library"));
+    fireEvent.click(screen.getByLabelText("Let assistants read your Yomi Reader library"));
     await waitFor(() => expect((screen.getByLabelText("Allow assistants to make changes") as HTMLInputElement).disabled).toBe(false));
     assistant.updateSettings.mockClear();
     fireEvent.click(screen.getByLabelText("Allow assistants to make changes"));
@@ -218,17 +218,17 @@ describe("AssistantSettings", () => {
     expect(await screen.findByText(/Access is off\. Turn it on above/)).toBeTruthy();
     const download = screen.getByRole("button", { name: "Download Extension" }) as HTMLButtonElement;
     expect(download.disabled).toBe(false);
-    fireEvent.click(screen.getByLabelText("Let assistants read your KiJi library"));
-    expect(await screen.findByText("Pick the app you use. KiJi needs to be open with access turned on.")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Let assistants read your Yomi Reader library"));
+    expect(await screen.findByText("Pick the app you use. Yomi Reader needs to be open with access turned on.")).toBeTruthy();
   });
 
   it("saves the Claude Desktop extension where the user picks", async () => {
-    saveFile.mockResolvedValue({ canceled: false, filePath: "/Users/me/Downloads/KiJi.mcpb" });
+    saveFile.mockResolvedValue({ canceled: false, filePath: "/Users/me/Downloads/Yomi Reader.mcpb" });
     assistant.writeExtension.mockResolvedValue(undefined);
     render(<AssistantSettings />);
     fireEvent.click(await screen.findByRole("button", { name: "Download Extension" }));
-    await waitFor(() => expect(assistant.writeExtension).toHaveBeenCalledWith("/Users/me/Downloads/KiJi.mcpb"));
-    expect(await screen.findByText(/Double-click KiJi.mcpb/)).toBeTruthy();
+    await waitFor(() => expect(assistant.writeExtension).toHaveBeenCalledWith("/Users/me/Downloads/Yomi Reader.mcpb"));
+    expect(await screen.findByText(/Double-click Yomi Reader.mcpb/)).toBeTruthy();
     expect(within(clientRow("claude-desktop")).getByRole("status").textContent).toMatch(/Double-click/);
   });
 
@@ -242,7 +242,7 @@ describe("AssistantSettings", () => {
   });
 
   it("explains a failed extension save without the raw error", async () => {
-    saveFile.mockResolvedValue({ canceled: false, filePath: "/Volumes/ro/KiJi.mcpb" });
+    saveFile.mockResolvedValue({ canceled: false, filePath: "/Volumes/ro/Yomi Reader.mcpb" });
     assistant.writeExtension.mockRejectedValue("Permission denied (os error 13)");
     render(<AssistantSettings />);
     fireEvent.click(await screen.findByRole("button", { name: "Download Extension" }));
@@ -275,24 +275,24 @@ describe("AssistantSettings", () => {
     expect(await screen.findAllByText("Claude Code")).toHaveLength(2);
     expect(await screen.findByText(/listed articles/)).toBeTruthy();
   });
-  it("tells the user to keep KiJi running when closing the window would quit it", async () => {
+  it("tells the user to keep Yomi Reader running when closing the window would quit it", async () => {
     const status = baseStatus();
     status.settings.enabled = true;
     status.local = { state: "ready" };
     assistant.getStatus.mockResolvedValue(status);
     backgroundModeGet.mockResolvedValue({ enabled: false, platform: "windows", trayReady: false });
     render(<AssistantSettings />);
-    expect(await screen.findByText(/Assistants can reach KiJi only while it's running/)).toBeTruthy();
+    expect(await screen.findByText(/Assistants can reach Yomi Reader only while it's running/)).toBeTruthy();
   });
 
-  it("hides that hint when KiJi keeps running in the background", async () => {
+  it("hides that hint when Yomi Reader keeps running in the background", async () => {
     const status = baseStatus();
     status.settings.enabled = true;
     status.local = { state: "ready" };
     assistant.getStatus.mockResolvedValue(status);
     backgroundModeGet.mockResolvedValue({ enabled: true, platform: "macos", trayReady: false });
     render(<AssistantSettings />);
-    expect(await screen.findByText("Ready. Assistants can connect while KiJi is open.")).toBeTruthy();
+    expect(await screen.findByText("Ready. Assistants can connect while Yomi Reader is open.")).toBeTruthy();
     await waitFor(() => expect(backgroundModeGet).toHaveBeenCalled());
     expect(screen.queryByText(/only while it's running/)).toBeNull();
   });

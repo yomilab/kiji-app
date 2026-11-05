@@ -20,8 +20,8 @@ pub const MAX_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
 /// Responses and notifications queued per connection before backpressure.
 const OUTGOING_QUEUE: usize = 64;
 const AUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-const CONNECTION_FAILED: &str = "KiJi couldn't start assistant access. Try turning it off and on again.";
-const ALREADY_SHARING: &str = "Another copy of KiJi is already sharing with assistants.";
+const CONNECTION_FAILED: &str = "Yomi Reader couldn't start assistant access. Try turning it off and on again.";
+const ALREADY_SHARING: &str = "Another copy of Yomi Reader is already sharing with assistants.";
 
 pub(super) fn spawn_local_listener(
     state: Arc<AssistantState>,
@@ -30,7 +30,7 @@ pub(super) fn spawn_local_listener(
 ) -> tauri::async_runtime::JoinHandle<()> {
     tauri::async_runtime::spawn(async move {
         if let Err(message) = run_local_listener(Arc::clone(&state), shutdown, generation).await {
-            eprintln!("[KiJi] Assistant connection point failed: {message}");
+            eprintln!("[Yomi Reader] Assistant connection point failed: {message}");
             state.set_local_status(generation, ListenerState::Error(CONNECTION_FAILED.to_string()));
         }
     })
@@ -72,7 +72,7 @@ async fn run_local_listener(
                     tauri::async_runtime::spawn(serve_stream(Arc::clone(&state), stream));
                 }
                 Err(error) => {
-                    eprintln!("[KiJi] Assistant connection failed: {error}");
+                    eprintln!("[Yomi Reader] Assistant connection failed: {error}");
                     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                 }
             }
@@ -193,7 +193,7 @@ async fn authenticate<R: AsyncBufRead + Unpin>(reader: &mut R, key: &str) -> boo
         .unwrap_or(false)
 }
 
-/// Whether a live KiJi answers on this port with this key.
+/// Whether a live Yomi Reader answers on this port with this key.
 async fn probe_kiji(port: u16, key: &str) -> bool {
     let Ok(Ok(mut stream)) = tokio::time::timeout(
         std::time::Duration::from_millis(500),

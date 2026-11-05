@@ -3,15 +3,15 @@
  * Pack the Claude Desktop extension (.mcpb) and render the MCP Registry
  * server.json for a release.
  *
- * The bundle holds only a launcher script that runs `KiJi.app/.../kiji-app --mcp`;
+ * The bundle holds only a launcher script that runs `Yomi Reader.app/.../kiji-app --mcp`;
  * the server itself lives in the app. Templates: src-tauri/mcp/.
  *
  * Usage:
  *   node scripts/build-mcpb.mjs [--out dist/mcp] [--repo yomilab/kiji-release] [--tag v1.7.0]
  *
  * Outputs (in --out):
- *   kiji-mcp-<version>-darwin.mcpb   (file name must contain "mcp" for the registry)
- *   kiji-mcp-<version>-darwin.mcpb.sha256
+ *   yomi-reader-mcp-<version>-darwin.mcpb   (file name must contain "mcp" for the registry)
+ *   yomi-reader-mcp-<version>-darwin.mcpb.sha256
  *   server.json                      (upload with `mcp-publisher publish`)
  */
 import fs from "node:fs";
@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const templateDir = path.join(rootDir, "src-tauri/mcp");
 const version = JSON.parse(fs.readFileSync(path.join(rootDir, "src-tauri/tauri.conf.json"), "utf8")).version;
-const DEFAULT_LAUNCHER = "/Applications/KiJi.app/Contents/MacOS/kiji-app";
+const DEFAULT_LAUNCHER = "/Applications/Yomi Reader.app/Contents/MacOS/kiji-app";
 
 function parseArgs(argv) {
   const options = { out: path.join(rootDir, "dist/mcp"), repo: "yomilab/kiji-release", tag: `v${version}` };
@@ -53,17 +53,17 @@ function main() {
   const options = parseArgs(process.argv.slice(2));
   fs.mkdirSync(options.out, { recursive: true });
 
-  const staging = fs.mkdtempSync(path.join(os.tmpdir(), "kiji-mcpb-"));
+  const staging = fs.mkdtempSync(path.join(os.tmpdir(), "yomi-reader-mcpb-"));
   fs.mkdirSync(path.join(staging, "server"));
   const manifest = render("manifest.json", { __VERSION__: version });
   JSON.parse(manifest); // must stay valid JSON
   fs.writeFileSync(path.join(staging, "manifest.json"), manifest);
-  const launcherPath = path.join(staging, "server/kiji-mcp");
-  fs.writeFileSync(launcherPath, render("kiji-mcp.sh", { __KIJI_LAUNCHER__: DEFAULT_LAUNCHER }));
+  const launcherPath = path.join(staging, "server/yomi-reader-mcp");
+  fs.writeFileSync(launcherPath, render("yomi-reader-mcp.sh", { __KIJI_LAUNCHER__: DEFAULT_LAUNCHER }));
   fs.chmodSync(launcherPath, 0o755);
   fs.copyFileSync(path.join(rootDir, "src-tauri/icons/icon.png"), path.join(staging, "icon.png"));
 
-  const fileName = `kiji-mcp-${version}-darwin.mcpb`;
+  const fileName = `yomi-reader-mcp-${version}-darwin.mcpb`;
   const bundlePath = path.join(options.out, fileName);
   fs.rmSync(bundlePath, { force: true });
   // `zip -X` keeps the launcher's executable bit and drops extra attributes.
