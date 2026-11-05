@@ -1258,6 +1258,7 @@ mod tests {
                         .by_index(index)
                         .expect("read zip entry")
                         .name()
+                        .expect("read zip entry name")
                         .to_string()
                 })
                 .collect()

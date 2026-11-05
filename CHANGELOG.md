@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Updated the libraries the app uses for zip files and secure connections, to pick up their security fixes.
+
 ## [2.0.0] - 2026-11-05
 
 ### Changed
