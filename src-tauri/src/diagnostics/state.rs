@@ -90,7 +90,7 @@ pub struct PerformanceSnapshot {
 pub struct DiagnosticsState {
     logs_dir: PathBuf,
     recent_entries: Mutex<Vec<LogEntry>>,
-    /// Date (YYYY-MM-DD) old logs were last pruned. KiJi can now run for
+    /// Date (YYYY-MM-DD) old logs were last pruned. Yomi Reader can now run for
     /// weeks in the background, so pruning also runs when the day changes.
     last_cleanup_date: Mutex<String>,
 }
@@ -170,7 +170,7 @@ impl DiagnosticsState {
         *last = log_date.to_string();
         drop(last);
         if let Err(error) = cleanup_old_logs(&self.logs_dir) {
-            eprintln!("[KiJi] Log cleanup failed: {error}");
+            eprintln!("[Yomi Reader] Log cleanup failed: {error}");
         }
     }
 

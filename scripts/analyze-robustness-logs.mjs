@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Robustness check-in report: reads KiJi app logs and verifies the invariants
+ * Robustness check-in report: reads Yomi Reader app logs and verifies the invariants
  * from the FeedContext/scheduler/import robustness work (kiji-doc
  * `docs/core/robustness-metrics.md`). Prints PASS / WARN / FAIL per check.
  *
@@ -268,7 +268,7 @@ function main() {
   const result = analyze(files);
   const checks = buildChecks(result);
 
-  console.log(`KiJi robustness report — ${files.map((file) => path.basename(file)).join(", ")}`);
+  console.log(`Yomi Reader robustness report — ${files.map((file) => path.basename(file)).join(", ")}`);
   console.log(`${result.sessions.length} renderer session(s)\n`);
   for (const check of checks) {
     console.log(`[${check.status}] ${check.name}: ${check.detail}`);

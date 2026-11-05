@@ -144,10 +144,12 @@ pub struct AppSettings {
     /// refreshing, assistants can connect). On by default on macOS only.
     pub keep_running_in_background: bool,
     pub article_retention: ArticleRetention,
+    /// Download new versions in the background and install them on quit.
+    pub auto_install_updates: bool,
 }
 
 /// macOS apps keep running after their window closes; Windows/Linux users
-/// opt in (KiJi then lives in the system tray).
+/// opt in (Yomi Reader then lives in the system tray).
 pub fn default_keep_running_in_background() -> bool {
     cfg!(target_os = "macos")
 }
@@ -165,6 +167,7 @@ impl Default for AppSettings {
             saved_articles_sync_folder: None,
             keep_running_in_background: default_keep_running_in_background(),
             article_retention: ArticleRetention::Never,
+            auto_install_updates: true,
         }
     }
 }
@@ -221,6 +224,10 @@ impl AppSettings {
             self.article_retention = article_retention;
         }
 
+        if let Some(auto_install_updates) = patch.auto_install_updates {
+            self.auto_install_updates = auto_install_updates;
+        }
+
         Ok(())
     }
 }
@@ -247,6 +254,7 @@ pub struct AppSettingsPatch {
     pub saved_articles_sync_folder: Option<Option<String>>,
     pub keep_running_in_background: Option<bool>,
     pub article_retention: Option<ArticleRetention>,
+    pub auto_install_updates: Option<bool>,
 }
 
 pub struct SettingsState {
@@ -474,7 +482,19 @@ mod tests {
     }
 
     #[test]
-fn article_retention_defaults_to_never_for_existing_files() {
+fn auto_install_updates_defaults_to_on_for_existing_files() {
+        let parsed: AppSettings = serde_json::from_str("{}").unwrap();
+        assert!(parsed.auto_install_updates);
+
+        let mut settings = parsed;
+        settings
+            .apply_patch(serde_json::from_str(r#"{"autoInstallUpdates":false}"#).unwrap())
+            .unwrap();
+        assert!(!settings.auto_install_updates);
+    }
+
+    #[test]
+    fn article_retention_defaults_to_never_for_existing_files() {
         let parsed: AppSettings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
         assert_eq!(parsed.article_retention, ArticleRetention::Never);
         let mut settings = AppSettings::default();

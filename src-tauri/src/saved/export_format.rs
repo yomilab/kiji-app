@@ -93,7 +93,7 @@ pub fn create_saved_article_markdown(article: &SavedArticleRecord) -> String {
     )
 }
 
-/// Saved-article markdown export format used by KiJi desktop.
+/// Saved-article markdown export format used by Yomi Reader desktop.
 /// convert stored HTML bodies to markdown before writing `.md` export/sync files.
 pub(crate) fn content_to_markdown_body(content: &str) -> String {
     if content.is_empty() {

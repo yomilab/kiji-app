@@ -65,7 +65,7 @@ export const ImportExportPane: React.FC<{ feedCount: number; stationCount: numbe
           <SettingsGroup title="Add">
             <SettingsRow
               label="Add a feed"
-              description="Paste a link to a site or a feed. KiJi finds the feed and shows a preview first."
+              description="Paste a link to a site or a feed. Yomi Reader finds the feed and shows a preview first."
               status={status?.row === 'add' ? status.text : null}
               control={(
                 <button

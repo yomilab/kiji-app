@@ -161,7 +161,7 @@ export const READER_HTML = `<!DOCTYPE html>
 <body>
   <article>
     <h1>E2E Reader Article</h1>
-    <p>This is readable fixture content for KiJi reader-mode E2E harness testing.</p>
+    <p>This is readable fixture content for Yomi Reader reader-mode E2E harness testing.</p>
     <p>It should parse into reader mode with a non-zero word count.</p>
   </article>
 </body>

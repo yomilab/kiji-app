@@ -76,7 +76,7 @@ const Switch: React.FC<SwitchProps> = ({ checked, disabled, label, onChange }) =
 
 export const AssistantSettings: React.FC = () => {
   const [status, setStatus] = useState<AssistantStatus | null>(null);
-  // null until known; false = closing the window quits KiJi.
+  // null until known; false = closing the window quits Yomi Reader.
   const [keepsRunning, setKeepsRunning] = useState<boolean | null>(null);
   const [stations, setStations] = useState<TagRecord[]>([]);
   const [saving, setSaving] = useState(false);
@@ -188,7 +188,7 @@ export const AssistantSettings: React.FC = () => {
   const openInstallLink = async (client: AssistantClientId, name: string) => {
     try {
       await tauriClient.assistant.openClientLink(client);
-      showClientNotice(client, `Opening ${name}… Confirm there to add KiJi.`);
+      showClientNotice(client, `Opening ${name}… Confirm there to add Yomi Reader.`);
     } catch (error) {
       showClientNotice(client, `Couldn't open ${name}. Is it installed? You can copy the setup instead.`);
       logger.warn('AssistantSettings', 'Failed to open install link', { error, client });
@@ -199,12 +199,12 @@ export const AssistantSettings: React.FC = () => {
     try {
       const result = await tauriClient.shell.dialog.saveFile({
         title: 'Save Claude Desktop Extension',
-        fileName: 'KiJi.mcpb',
+        fileName: 'Yomi Reader.mcpb',
         filters: [{ name: 'Claude Desktop extension', extensions: ['mcpb'] }],
       });
       if (result.canceled || !result.filePath) return;
       await tauriClient.assistant.writeExtension(result.filePath);
-      showClientNotice('extension', 'Saved. Double-click KiJi.mcpb to add it to Claude Desktop.');
+      showClientNotice('extension', 'Saved. Double-click Yomi Reader.mcpb to add it to Claude Desktop.');
     } catch (error) {
       showClientNotice('extension', "Couldn't save the extension. Try another folder.");
       logger.warn('AssistantSettings', 'Failed to save Claude Desktop extension', { error });
@@ -263,7 +263,7 @@ export const AssistantSettings: React.FC = () => {
     if (!settings.enabled) return null;
     switch (status.local.state) {
       case 'ready':
-        return 'Ready. Assistants can connect while KiJi is open.';
+        return 'Ready. Assistants can connect while Yomi Reader is open.';
       case 'starting':
         return 'Starting…';
       case 'error':
@@ -289,7 +289,7 @@ export const AssistantSettings: React.FC = () => {
         <div className="settings-group-body">
           <div className="settings-item">
             <div className="settings-item-info">
-              <label className="settings-item-label">Let assistants read your KiJi library</label>
+              <label className="settings-item-label">Let assistants read your Yomi Reader library</label>
               <p className="settings-item-description">
                 AI apps such as Claude, Cursor, or VS Code can read the stations and articles you choose below. They can't change anything unless you allow it.
               </p>
@@ -300,7 +300,7 @@ export const AssistantSettings: React.FC = () => {
               ) : null}
               {settings.enabled && keepsRunning === false ? (
                 <p className="settings-inline-status">
-                  Assistants can reach KiJi only while it's running. To keep it available after you close the window, turn on “Keep KiJi running when you close the window” in General.
+                  Assistants can reach Yomi Reader only while it's running. To keep it available after you close the window, turn on “Keep Yomi Reader running when you close the window” in General.
                 </p>
               ) : null}
             </div>
@@ -308,7 +308,7 @@ export const AssistantSettings: React.FC = () => {
               <Switch
                 checked={settings.enabled}
                 disabled={saving}
-                label="Let assistants read your KiJi library"
+                label="Let assistants read your Yomi Reader library"
                 onChange={(checked) => void update({ enabled: checked })}
               />
             </div>
@@ -340,7 +340,7 @@ export const AssistantSettings: React.FC = () => {
             <div className="settings-item-info">
               <label className="settings-item-label">The article I'm reading</label>
               <p className="settings-item-description">
-                The article open in KiJi, so you can ask “explain this” — even if its station isn't shared.
+                The article open in Yomi Reader, so you can ask “explain this” — even if its station isn't shared.
               </p>
             </div>
             <div className="settings-item-control">

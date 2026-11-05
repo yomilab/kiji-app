@@ -129,7 +129,7 @@ describe('articleListMemory load + RAM scenarios', () => {
   });
 });
 
-describe('articleListMemory optional KiJi DB RAM fixtures', () => {
+describe('articleListMemory optional Yomi Reader DB RAM fixtures', () => {
   beforeEach(() => {
     clearArticleListMemoryCaches();
   });

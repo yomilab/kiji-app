@@ -528,7 +528,7 @@ describe('AddFeedModal', () => {
 
       const alert = await screen.findByRole('alert');
       expect(alert.textContent).toBe(
-        'That file is not a feed list KiJi can read. Choose an .opml file exported from another reader.',
+        'That file is not a feed list Yomi Reader can read. Choose an .opml file exported from another reader.',
       );
       expect(onClose).not.toHaveBeenCalled();
     });

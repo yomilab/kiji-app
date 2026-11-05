@@ -1,6 +1,6 @@
 //! Automatic removal of old read articles (Settings → General → "Remove old
 //! read articles"). Runs natively at most once a day, after launch and while
-//! KiJi keeps running in the background, in short writer batches.
+//! Yomi Reader keeps running in the background, in short writer batches.
 //!
 //! Only read, unsaved, unstarred articles whose own published date is older
 //! than the cutoff are removed. Removed items that are still in a feed's XML
@@ -328,10 +328,10 @@ pub fn spawn_retention_loop(app: &AppHandle) {
                 .await;
                 match result {
                     Ok(Ok(RetentionOutcome::Ran { removed })) if removed > 0 => {
-                        eprintln!("[KiJi] Removed {removed} old read articles");
+                        eprintln!("[Yomi Reader] Removed {removed} old read articles");
                     }
-                    Ok(Err(error)) => eprintln!("[KiJi] Article cleanup failed: {error}"),
-                    Err(error) => eprintln!("[KiJi] Article cleanup task failed: {error}"),
+                    Ok(Err(error)) => eprintln!("[Yomi Reader] Article cleanup failed: {error}"),
+                    Err(error) => eprintln!("[Yomi Reader] Article cleanup task failed: {error}"),
                     _ => {}
                 }
             }

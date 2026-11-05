@@ -3,7 +3,7 @@ import { logger } from '@/services/logger';
 import { recordRobustnessEvent } from '@/services/diagnostics/robustnessMetrics';
 
 /**
- * Library changes an assistant made through KiJi's write tools (Settings →
+ * Library changes an assistant made through Yomi Reader's write tools (Settings →
  * Assistant → Allow assistants to make changes). Native has already persisted
  * every field, including feed counts; windows only apply the change to what
  * they show and never write these fields again (one writer per field).

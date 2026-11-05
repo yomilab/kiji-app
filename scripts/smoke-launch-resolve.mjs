@@ -42,10 +42,10 @@ export function resolveLaunchBinary({
 
   if (resolvedPlatform.startsWith("macos") || process.platform === "darwin") {
     return firstExisting([
-      path.join(bundleDir, "macos/KiJi.app/Contents/MacOS/kiji-app"),
-      path.join(rootDir, "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app"),
-      path.join(rootDir, "src-tauri/target/x86_64-apple-darwin/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app"),
-      path.join(rootDir, "src-tauri/target/release/bundle/macos/KiJi.app/Contents/MacOS/kiji-app"),
+      path.join(bundleDir, "macos/Yomi Reader.app/Contents/MacOS/kiji-app"),
+      path.join(rootDir, "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Yomi Reader.app/Contents/MacOS/kiji-app"),
+      path.join(rootDir, "src-tauri/target/x86_64-apple-darwin/release/bundle/macos/Yomi Reader.app/Contents/MacOS/kiji-app"),
+      path.join(rootDir, "src-tauri/target/release/bundle/macos/Yomi Reader.app/Contents/MacOS/kiji-app"),
       path.join(base, "kiji-app"),
     ]);
   }

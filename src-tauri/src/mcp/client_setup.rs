@@ -6,7 +6,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Serialize;
 use serde_json::json;
 
-pub const SERVER_NAME: &str = "kiji";
+pub const SERVER_NAME: &str = "yomi-reader";
 pub const BRIDGE_ARG: &str = "--mcp";
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -22,7 +22,7 @@ pub struct ClientSetup {
 }
 
 pub fn launcher_path() -> Result<String, String> {
-    let path = std::env::current_exe().map_err(|_| "KiJi couldn't find its own location.".to_string())?;
+    let path = std::env::current_exe().map_err(|_| "Yomi Reader couldn't find its own location.".to_string())?;
     // Resolve symlinks so configs keep working from the real bundle path.
     let path = std::fs::canonicalize(&path).unwrap_or(path);
     Ok(path.to_string_lossy().to_string())
@@ -130,21 +130,21 @@ pub(crate) fn install_link_for(client: &str, launcher: &str) -> Result<String, S
 mod tests {
     use super::*;
 
-    const LAUNCHER: &str = "/Applications/KiJi.app/Contents/MacOS/kiji-app";
+    const LAUNCHER: &str = "/Applications/Yomi Reader.app/Contents/MacOS/kiji-app";
 
     #[test]
     fn stdio_snippets_point_at_the_bridge() {
         let settings = AssistantSettings::default();
         let code = build_for("claude-code", &settings, LAUNCHER).unwrap();
-        assert_eq!(code.text, format!("claude mcp add --scope user kiji -- '{LAUNCHER}' --mcp"));
+        assert_eq!(code.text, format!("claude mcp add --scope user yomi-reader -- '{LAUNCHER}' --mcp"));
 
         let desktop = build_for("claude-desktop", &settings, LAUNCHER).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&desktop.text).unwrap();
-        assert_eq!(parsed["mcpServers"]["kiji"]["command"], LAUNCHER);
-        assert_eq!(parsed["mcpServers"]["kiji"]["args"][0], "--mcp");
+        assert_eq!(parsed["mcpServers"]["yomi-reader"]["command"], LAUNCHER);
+        assert_eq!(parsed["mcpServers"]["yomi-reader"]["args"][0], "--mcp");
 
         let codex = build_for("codex", &settings, LAUNCHER).unwrap();
-        assert!(codex.text.contains("[mcp_servers.kiji]"));
+        assert!(codex.text.contains("[mcp_servers.yomi-reader]"));
         assert!(build_for("nope", &settings, LAUNCHER).is_err());
     }
 
@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn install_links_encode_the_config() {
         let cursor = install_link_for("cursor", LAUNCHER).unwrap();
-        assert!(cursor.starts_with("cursor://anysphere.cursor-deeplink/mcp/install?name=kiji&config="));
+        assert!(cursor.starts_with("cursor://anysphere.cursor-deeplink/mcp/install?name=yomi-reader&config="));
         let encoded = cursor.split("config=").nth(1).unwrap();
         let decoded: String = url::form_urlencoded::parse(format!("c={encoded}").as_bytes())
             .next()

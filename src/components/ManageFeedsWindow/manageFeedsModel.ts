@@ -92,7 +92,7 @@ export const describeFeedStatus = (
     return {
       health: 'failing',
       label: 'Can’t update',
-      detail: `KiJi couldn’t update this feed ${times}${tried ? `, most recently ${tried}` : ''}.${lastGood} Check the address, or try again later.`,
+      detail: `Yomi Reader couldn’t update this feed ${times}${tried ? `, most recently ${tried}` : ''}.${lastGood} Check the address, or try again later.`,
     };
   }
   if (!updated) {

@@ -169,8 +169,8 @@ export async function runStationSwitchPerformanceE2e() {
     return {
       skipped: true,
       reason: isE2eRequired()
-        ? "KiJi.app debug bundle missing — run npm run build:debug"
-        : "No KiJi debug bundle available",
+        ? "Yomi Reader.app debug bundle missing — run npm run build:debug"
+        : "No Yomi Reader debug bundle available",
     };
   }
 

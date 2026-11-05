@@ -1,12 +1,14 @@
-# KiJi
+# Yomi RSS Reader
 
-### <ruby>記事<rt>きじ</rt></ruby> · A local, modern RSS reader.
+*Formerly KiJi.*
 
-[![Build](https://github.com/yomilab/kiji-app/actions/workflows/build-desktop.yml/badge.svg)](https://github.com/yomilab/kiji-app/actions/workflows/build-desktop.yml)
+### A local, modern RSS reader.
+
+[![Build](https://github.com/yomilab/yomi-rss-reader/actions/workflows/build-desktop.yml/badge.svg)](https://github.com/yomilab/yomi-rss-reader/actions/workflows/build-desktop.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](./LICENSE)
 [![Data: 100% local](https://img.shields.io/badge/data-100%25%20local-ff8a3d.svg)](#privacy)
 
-**[kiji.yomilab.app](https://kiji.yomilab.app)** · [Download](https://kiji.yomilab.app/download/) · [Changelog](./CHANGELOG.md)
+**[reader.yomilab.app](https://reader.yomilab.app)** · [Download](https://reader.yomilab.app/download/) · [Changelog](./CHANGELOG.md)
 
 Free for Mac, Windows, and Linux. Opens fast, barely uses your computer, and everything you read stays on your machine.
 
@@ -24,9 +26,9 @@ Free for Mac, Windows, and Linux. Opens fast, barely uses your computer, and eve
 
 ## Preview
 
-![KiJi in dark mode: article list with large cover images in the Awesome Tech station](screenshots/article-list-dark.png)
+![Yomi Reader in dark mode: article list with large cover images in the Awesome Tech station](screenshots/article-list-dark.png)
 
-![KiJi reader mode, light and dark](screenshots/reader-mode-light-dark.png)
+![Yomi Reader reader mode, light and dark](screenshots/reader-mode-light-dark.png)
 
 ## Theme development
 
@@ -36,7 +38,7 @@ light/dark color theme, Modern/Classic surface style, and platform CSS.
 
 Use `npm run build:storybook` to verify the static Storybook bundle.
 Storybook uses deterministic browser-only fixtures: it does not connect to
-KiJi's database, scheduler, filesystem, network services, or Tauri APIs, and it
+Yomi Reader's database, scheduler, filesystem, network services, or Tauri APIs, and it
 cannot reproduce native macOS vibrancy or WKWebView compositing.
 
 
@@ -47,5 +49,5 @@ cannot reproduce native macOS vibrancy or WKWebView compositing.
 - Saved articles sync to your local machine
 
 <p align="center">
-  <sub>📰 KiJi · <a href="https://kiji.yomilab.app">kiji.yomilab.app</a></sub>
+  <sub>📰 Yomi Reader · <a href="https://reader.yomilab.app">reader.yomilab.app</a></sub>
 </p>

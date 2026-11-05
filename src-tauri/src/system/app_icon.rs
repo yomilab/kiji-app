@@ -65,7 +65,7 @@ where
         Ok(variant) => Ok(variant),
         Err(_) => {
             eprintln!(
-                "[KiJi] Unknown app icon variant {value}; falling back to {:?}",
+                "[Yomi Reader] Unknown app icon variant {value}; falling back to {:?}",
                 SystemAppIconVariant::default()
             );
             Ok(SystemAppIconVariant::default())

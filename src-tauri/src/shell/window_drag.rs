@@ -1,6 +1,6 @@
 //! Start a window drag from a mouse-down in one of the drag strips.
 //!
-//! Origin: KiJi Pocket `start_window_drag`, as ported to Highlights (`window_drag.rs`).
+//! Origin: Yomi Reader Pocket `start_window_drag`, as ported to Highlights (`window_drag.rs`).
 //!
 //! The window API's `startDragging()` (and Tauri's `data-tauri-drag-region` script, which calls it)
 //! is an `async` plugin command: it runs on the async runtime and tao then hands
