@@ -48,7 +48,7 @@ export const AppearancePane: React.FC<{ state: SettingsWindowState['appearance']
               value={state.readerTheme}
               onChange={(e) => void state.onReaderThemeChange(e.target.value)}
             >
-              <option value={DEFAULT_READER_THEME}>KiJi (default)</option>
+              <option value={DEFAULT_READER_THEME}>Yomi Reader (default)</option>
               {READER_THEMES.map((theme) => (
                 <option key={theme.id} value={theme.id} title={theme.inspiration}>
                   {theme.label}
@@ -151,7 +151,7 @@ export const AppearancePane: React.FC<{ state: SettingsWindowState['appearance']
           <div className="settings-item-info">
             <span className="settings-item-label">Custom icon</span>
             <p className="settings-item-description">
-              Use your own PNG, JPG, ICO or ICNS image. Relaunch KiJi to see it in the Dock.
+              Use your own PNG, JPG, ICO or ICNS image. Relaunch Yomi Reader to see it in the Dock.
             </p>
           </div>
           <div className="settings-item-control settings-app-icon-actions">
@@ -182,7 +182,7 @@ export const AppearancePane: React.FC<{ state: SettingsWindowState['appearance']
         </div>
         <div className="settings-item settings-app-icon-relaunch">
           <div className="settings-item-info">
-            <span className="settings-item-label">Relaunch KiJi</span>
+            <span className="settings-item-label">Relaunch Yomi Reader</span>
             <p className="settings-item-description">The Dock picks up a new icon after a relaunch.</p>
           </div>
           <div className="settings-item-control">

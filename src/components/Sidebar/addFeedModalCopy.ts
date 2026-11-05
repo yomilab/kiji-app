@@ -96,7 +96,7 @@ export const describeLinkError = (error: unknown): string => {
     return 'There is no feed at this link. Try the site\'s RSS or Atom link instead.';
   }
   if (message.includes('only available in the desktop app')) {
-    return 'Adding feeds works in the KiJi app only.';
+    return 'Adding feeds works in the Yomi Reader app only.';
   }
   return 'This link could not be opened. Check the address and try again.';
 };
@@ -106,13 +106,13 @@ export const describeFileImportError = (error: unknown): string => {
   const message = errorText(error).toLowerCase();
 
   if (message.includes('only available in the desktop app')) {
-    return 'Importing works in the KiJi app only.';
+    return 'Importing works in the Yomi Reader app only.';
   }
   if (message.includes('empty')) {
     return 'That file is empty. Choose another feed list.';
   }
   if (message.includes('opml') || message.includes('xml') || message.includes('body')) {
-    return 'That file is not a feed list KiJi can read. Choose an .opml file exported from another reader.';
+    return 'That file is not a feed list Yomi Reader can read. Choose an .opml file exported from another reader.';
   }
   return 'The import did not finish. Please try again.';
 };

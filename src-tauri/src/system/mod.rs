@@ -1,9 +1,15 @@
 mod accent;
 mod appearance;
+mod auto_update;
+mod legacy_app;
 mod app_icon;
 mod power;
 
 pub use accent::{start_accent_color_watch, system_theme_get_accent_color};
+pub use auto_update::{
+    install_staged_update, start_auto_update, system_auto_update_active, AutoUpdateState,
+};
+pub use legacy_app::{offer_to_remove_legacy_app, relaunch_under_new_name};
 pub use appearance::{apply_app_appearance, system_appearance_set, ResolvedAppearance};
 pub use power::{start_system_power_watch, SCHEDULER_SYSTEM_RESUME_EVENT};
 pub use app_icon::{

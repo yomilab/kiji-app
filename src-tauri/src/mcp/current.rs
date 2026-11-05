@@ -1,4 +1,4 @@
-//! The article open in each KiJi window, pushed by the article view.
+//! The article open in each Yomi Reader window, pushed by the article view.
 //! Held in memory only; the most recently focused window wins.
 
 use serde::{Deserialize, Serialize};

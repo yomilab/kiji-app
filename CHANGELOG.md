@@ -4,8 +4,21 @@
 
 ### Fixed
 
-- On macOS 27 you can move KiJi's windows by their top bars again, including the sidebar top, the list and article headers, Settings, Manage Feeds and the update window. A window behind another app also starts moving on the first click. Double-clicking a top bar still zooms the window.
 - The article you have open now keeps a thin outline inside its row in the list, instead of showing one only now and then. Moving through the list with the keyboard shows the same thin outline in your accent color, replacing the thicker ring.
+
+## [2.0.0] - 2026-11-05
+
+### Changed
+
+- KiJi is now Yomi Reader. Your feeds, articles, saved items and settings stay where they are. If an assistant app was connected to KiJi, connect it again from Settings → Assistant.
+
+### Added
+
+- Updates can now install by themselves: new versions download in the background and install when you quit. You can turn this off in Settings → General.
+
+### Fixed
+
+- On macOS 27 you can move the app's windows by their top bars again, including the sidebar top, the list and article headers, Settings, Manage Feeds and the update window. A window behind another app also starts moving on the first click. Double-clicking a top bar still zooms the window.
 
 ## [1.9.0] - 2026-10-30
 

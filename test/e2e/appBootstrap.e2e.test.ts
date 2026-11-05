@@ -4,7 +4,7 @@ import { runAppBootstrapE2e } from "../../scripts/e2e/app-bootstrap.mjs";
 
 describe("App bootstrap E2E", () => {
   it(
-    "starts KiJi, mounts the main shell, and shows imported feed articles in the list",
+    "starts Yomi Reader, mounts the main shell, and shows imported feed articles in the list",
     async () => {
       const result = await runAppBootstrapE2e();
       assertE2eNotSkipped(result);

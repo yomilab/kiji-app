@@ -11,7 +11,7 @@ vi.mock("@/services/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), er
 
 import { BackgroundModeRow } from "@/components/SettingsWindow/BackgroundModeRow";
 
-const toggle = () => screen.findByRole("switch", { name: "Keep KiJi running when you close the window" });
+const toggle = () => screen.findByRole("switch", { name: "Keep Yomi Reader running when you close the window" });
 
 describe("BackgroundModeRow", () => {
   afterEach(() => {
@@ -36,7 +36,7 @@ describe("BackgroundModeRow", () => {
     render(<BackgroundModeRow />);
     expect(await screen.findByText(/system tray/)).toBeTruthy();
     fireEvent.click(await toggle());
-    expect(await screen.findByText(/closing the window still quits KiJi/)).toBeTruthy();
+    expect(await screen.findByText(/closing the window still quits Yomi Reader/)).toBeTruthy();
   });
 
   it("shows plain words when saving fails", async () => {

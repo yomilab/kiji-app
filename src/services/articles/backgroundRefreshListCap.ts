@@ -2,7 +2,7 @@ import type { Article } from '@/types/article';
 import { mergeUniqueArticlesByHash } from './mergeUniqueArticlesByHash';
 
 /**
- * Background refresh while the window is hidden (KiJi kept running after its
+ * Background refresh while the window is hidden (Yomi Reader kept running after its
  * window closed) must not grow the visible list for days:
  * - hidden and scrolled to the top → keep just the first page;
  * - hidden and scrolled down → keep the current length (newest win, the

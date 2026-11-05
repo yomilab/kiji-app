@@ -14,6 +14,7 @@ describe("settings storage model", () => {
     expect(Object.keys(toNativeAppSettings(DEFAULT_SETTINGS)).sort()).toEqual([
       "articleListWidth",
       "articleRetention",
+      "autoInstallUpdates",
       "backgroundUpdate",
       "contentParser",
       "layout",

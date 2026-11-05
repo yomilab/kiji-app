@@ -12,9 +12,10 @@ import { fileURLToPath } from "node:url";
 import { extractReleaseNotes, extractTranslations, readChangelog, toManifestNotes } from "./release-notes.mjs";
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PRODUCT_NAME = "KiJi";
-const REPO = "yomilab/kiji-app";
-const WEBSITE_URL = "https://kiji.yomilab.app";
+const PRODUCT_NAME = "Yomi Reader";
+const ASSET_PREFIX = "Yomi-Reader";
+const REPO = "yomilab/yomi-rss-reader";
+const WEBSITE_URL = "https://reader.yomilab.app";
 
 const args = new Map();
 for (let index = 0; index < process.argv.length; index += 1) {
@@ -151,7 +152,7 @@ function extensionOf(fileName) {
 }
 
 function platformKey(fileName, releaseVersion) {
-  const prefix = `${PRODUCT_NAME}-${releaseVersion}-`;
+  const prefix = `${ASSET_PREFIX}-${releaseVersion}-`;
   if (!fileName.startsWith(prefix)) {
     return null;
   }
@@ -193,7 +194,7 @@ for (const asset of release.assets ?? []) {
 }
 
 if (downloadOptions.length === 0) {
-  console.error(`No recognized KiJi release assets found for ${tag}`);
+  console.error(`No recognized Yomi Reader release assets found for ${tag}`);
   process.exit(1);
 }
 
@@ -208,6 +209,25 @@ if (missingTranslations.length) {
   console.warn(`No ${missingTranslations.join(", ")} release notes for ${version}; the website shows English for those locales.`);
 }
 
+// Downloads for apps still on 1.9: same app, bundle still named KiJi.app. The
+// website publishes these at /release.json, the only address those apps read.
+const LEGACY_MAC_ASSETS = { "mac-arm64": "macos-aarch64", "mac-x64": "macos-x86_64" };
+const legacyMacDownloads = [];
+for (const [id, platform] of Object.entries(LEGACY_MAC_ASSETS)) {
+  const fileName = `KiJi-${version}-${platform}.dmg`;
+  const asset = (release.assets ?? []).find((candidate) => candidate.name === fileName);
+  if (!asset) {
+    console.warn(`No ${fileName} in ${tag}; apps on 1.9 will download Yomi Reader.app on this Mac type.`);
+    continue;
+  }
+  legacyMacDownloads.push({
+    id,
+    fileName,
+    url: `https://github.com/${REPO}/releases/download/${release.tagName}/${fileName}`,
+    size: asset.size,
+  });
+}
+
 const manifest = {
   productName: PRODUCT_NAME,
   version,
@@ -219,6 +239,7 @@ const manifest = {
   updatesFeedUrl: `${WEBSITE_URL}/feed.xml`,
   checksumsUrl: `https://github.com/${REPO}/releases/tag/${release.tagName}`,
   downloadOptions,
+  legacyMacDownloads,
 };
 
 fs.writeFileSync(outputPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");

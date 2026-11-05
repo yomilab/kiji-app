@@ -1196,6 +1196,9 @@ export interface SystemContract {
   appRelaunch: {
     response: void;
   };
+  appAutoUpdateActive: {
+    response: boolean;
+  };
   themeGetAccentColor: {
     response: string | null;
   };

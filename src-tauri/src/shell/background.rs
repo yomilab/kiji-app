@@ -1,11 +1,11 @@
-//! Keep KiJi running when the main window is closed, so feeds keep
+//! Keep Yomi Reader running when the main window is closed, so feeds keep
 //! refreshing and assistants can still connect.
 //!
-//! - macOS: closing hides the window; KiJi stays in the Dock and the Dock
+//! - macOS: closing hides the window; Yomi Reader stays in the Dock and the Dock
 //!   icon (RunEvent::Reopen) brings it back. Quit with ⌘Q / the menu.
 //! - Windows/Linux: closing hides the window behind a tray icon (Open /
 //!   Quit). Without a working tray (e.g. a Linux desktop with no tray
-//!   support) closing quits as before, so KiJi never becomes invisible.
+//!   support) closing quits as before, so Yomi Reader never becomes invisible.
 //!   A second launch focuses the running copy (single-instance plugin).
 
 use crate::settings::SettingsState;
@@ -131,13 +131,13 @@ fn finish_hide(app: &AppHandle, window: &tauri::WebviewWindow) {
     if let Some(assistant) = app.try_state::<Arc<crate::mcp::AssistantState>>() {
         assistant.window_hidden(MAIN_WINDOW_LABEL);
     }
-    // While hidden, KiJi may be ended without a normal quit (logout,
+    // While hidden, Yomi Reader may be ended without a normal quit (logout,
     // shutdown, force quit). Checkpoint now so the database file is current.
     if let Some(db) = app.try_state::<crate::db::DbState>() {
         let db = db.inner().clone();
         std::thread::spawn(move || {
             if let Err(error) = db.checkpoint_wal() {
-                eprintln!("[KiJi] Checkpoint on hide failed: {error}");
+                eprintln!("[Yomi Reader] Checkpoint on hide failed: {error}");
             }
         });
     }
@@ -172,15 +172,15 @@ pub fn apply(app: &AppHandle) {
         match (keep, tray.is_some()) {
             (true, false) => {
                 if !tray_host_available() {
-                    eprintln!("[KiJi] No system tray on this desktop; closing the window will quit.");
+                    eprintln!("[Yomi Reader] No system tray on this desktop; closing the window will quit.");
                     return;
                 }
                 // libappindicator panics (instead of returning an error) when
                 // its library is missing: never let that take the app down.
                 match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| build_tray(app))) {
                     Ok(Ok(icon)) => *tray = Some(icon),
-                    Ok(Err(error)) => eprintln!("[KiJi] System tray unavailable: {error}"),
-                    Err(_) => eprintln!("[KiJi] System tray unavailable on this desktop."),
+                    Ok(Err(error)) => eprintln!("[Yomi Reader] System tray unavailable: {error}"),
+                    Err(_) => eprintln!("[Yomi Reader] System tray unavailable on this desktop."),
                 }
             }
             (false, true) => {
@@ -240,11 +240,11 @@ fn build_tray(app: &AppHandle) -> tauri::Result<tauri::tray::TrayIcon> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
-    let open = MenuItem::with_id(app, "kiji-tray-open", "Open KiJi", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "kiji-tray-quit", "Quit KiJi", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "kiji-tray-open", "Open Yomi Reader", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "kiji-tray-quit", "Quit Yomi Reader", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &PredefinedMenuItem::separator(app)?, &quit])?;
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("KiJi")
+        .tooltip("Yomi Reader")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -308,7 +308,7 @@ pub fn shell_background_mode_set(
     settings.set_keep_running_in_background(enabled)?;
     apply(&app);
     // Turning it off while the main window is hidden (e.g. from Settings)
-    // must not leave KiJi running with no window and no tray.
+    // must not leave Yomi Reader running with no window and no tray.
     if !enabled && !main_window_is_visible(&app) {
         show_main_window(&app);
     }

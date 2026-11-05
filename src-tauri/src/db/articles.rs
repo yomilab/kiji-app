@@ -285,7 +285,7 @@ pub async fn articles_delete_by_feeds(
                     .map_err(|error| format!("Failed to vacuum database after clearing articles: {error}"))
             });
             if let Err(error) = result {
-                eprintln!("[KiJi] {error}");
+                eprintln!("[Yomi Reader] {error}");
             }
         });
     }
@@ -326,7 +326,7 @@ pub async fn articles_clean_old_across_feeds(
                     .map_err(|error| format!("Failed to vacuum database after cleanup: {error}"))
             });
             if let Err(error) = result {
-                eprintln!("[KiJi] {error}");
+                eprintln!("[Yomi Reader] {error}");
             }
         });
     }

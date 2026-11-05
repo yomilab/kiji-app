@@ -186,7 +186,7 @@ const ARTICLE_LIST_FRAME_YIELD_MAX_WAIT_MS = 100;
 const yieldToArticleListPrefetchFrame = async (): Promise<void> => {
   await new Promise<void>((resolve) => {
     // A hidden window never paints: waiting for a frame only adds 100 ms and
-    // a misleading frameYield.timeout event (KiJi kept running in background).
+    // a misleading frameYield.timeout event (Yomi Reader kept running in background).
     if (typeof window.requestAnimationFrame !== 'function' || isDocumentHidden()) {
       window.setTimeout(resolve, 0);
       return;

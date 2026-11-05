@@ -60,6 +60,7 @@ export function useSettingsWindowState() {
   );
   const [contentParser, setContentParser] = useState<ContentParser>(DEFAULT_SETTINGS.contentParser);
   const [articleRetention, setArticleRetention] = useState<ArticleRetention>('never');
+  const [autoInstallUpdates, setAutoInstallUpdates] = useState<boolean>(DEFAULT_SETTINGS.autoInstallUpdates);
   const [uiThemeVariant, setUiThemeVariant] = useState<UiThemeVariant>(DEFAULT_SETTINGS.uiThemeVariant);
   const [readerTheme, setReaderTheme] = useState<string>(DEFAULT_READER_THEME);
   const [articleListDensity, setArticleListDensity] = useState<ArticleListDensity>(DEFAULT_ARTICLE_LIST_DENSITY);
@@ -113,6 +114,7 @@ export function useSettingsWindowState() {
         setBackgroundUpdate(settings.backgroundUpdate ?? DEFAULT_SETTINGS.backgroundUpdate);
         setContentParser(settings.contentParser ?? DEFAULT_SETTINGS.contentParser);
         setArticleRetention(settings.articleRetention ?? 'never');
+        setAutoInstallUpdates(settings.autoInstallUpdates ?? DEFAULT_SETTINGS.autoInstallUpdates);
         setUiThemeVariant(settings.uiThemeVariant ?? DEFAULT_SETTINGS.uiThemeVariant);
         setReaderTheme(normalizeReaderTheme(settings.readerTheme));
         setArticleListDensity(normalizeArticleListDensity(settings.articleListDensity));
@@ -227,6 +229,16 @@ export function useSettingsWindowState() {
       notifySettingsChanged();
     } catch (error) {
       console.error('Error saving article retention:', error);
+    }
+  };
+
+  const handleAutoInstallUpdatesChange = async (enabled: boolean) => {
+    try {
+      await settingsManager.setAutoInstallUpdates(enabled);
+      setAutoInstallUpdates(enabled);
+      notifySettingsChanged();
+    } catch (error) {
+      console.error('Error saving automatic updates:', error);
     }
   };
 
@@ -577,11 +589,13 @@ export function useSettingsWindowState() {
       backgroundUpdate,
       contentParser,
       articleRetention,
+      autoInstallUpdates,
       savedArticlesSyncFolder,
       isPickingSavedArticlesSyncFolder,
       onBackgroundUpdateChange: handleBackgroundUpdateChange,
       onContentParserChange: handleContentParserChange,
       onArticleRetentionChange: handleArticleRetentionChange,
+      onAutoInstallUpdatesChange: handleAutoInstallUpdatesChange,
       onSavedArticlesSyncToggle: handleSavedArticlesSyncToggle,
       onSavedArticlesSyncFolderPick: handleSavedArticlesSyncFolderPick,
     },

@@ -8,18 +8,18 @@ import { SettingsRow, SettingsSwitch } from './settingsControls';
 
 const DESCRIPTIONS: Record<BackgroundModeStatus['platform'], string> = {
   macos:
-    'KiJi stays in the Dock and keeps checking for new articles, and assistants can still reach it. Click the Dock icon to bring the window back; quit with ⌘Q.',
+    'Yomi Reader stays in the Dock and keeps checking for new articles, and assistants can still reach it. Click the Dock icon to bring the window back; quit with ⌘Q.',
   windows:
-    'KiJi keeps running in the notification area and keeps checking for new articles, and assistants can still reach it. Click its icon to open it again, or right-click it to quit.',
+    'Yomi Reader keeps running in the notification area and keeps checking for new articles, and assistants can still reach it. Click its icon to open it again, or right-click it to quit.',
   linux:
-    "KiJi keeps running in the system tray and keeps checking for new articles, and assistants can still reach it. Use the tray icon's menu to open or quit it.",
+    "Yomi Reader keeps running in the system tray and keeps checking for new articles, and assistants can still reach it. Use the tray icon's menu to open or quit it.",
 };
 
 const NO_TRAY_NOTICE =
-  "Your desktop doesn't show tray icons, so closing the window still quits KiJi.";
+  "Your desktop doesn't show tray icons, so closing the window still quits Yomi Reader.";
 const SAVE_FAILED = "Couldn't change this setting. Please try again.";
 
-/** "Keep KiJi running when you close the window" (General pane). */
+/** "Keep Yomi Reader running when you close the window" (General pane). */
 export const BackgroundModeRow: React.FC = () => {
   const [status, setStatus] = useState<BackgroundModeStatus | null>(null);
   const [saving, setSaving] = useState(false);
@@ -66,12 +66,12 @@ export const BackgroundModeRow: React.FC = () => {
 
   return (
     <SettingsRow
-      label="Keep KiJi running when you close the window"
+      label="Keep Yomi Reader running when you close the window"
       description={DESCRIPTIONS[status.platform]}
       status={notice}
       control={(
         <SettingsSwitch
-          label="Keep KiJi running when you close the window"
+          label="Keep Yomi Reader running when you close the window"
           checked={status.enabled}
           disabled={saving}
           onChange={(checked) => void onToggle(checked)}
