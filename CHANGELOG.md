@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- When a site won't let Yomi Reader load the full article, reader mode now shows the version from the feed with an Open in Browser button, instead of a bare error. If a site can't be reached, Yomi Reader tries once more on its own and offers Try again.
+
 ## [2.0.0] - 2026-11-05
 
 ### Changed
