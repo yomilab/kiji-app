@@ -1,5 +1,7 @@
 # Changelog
 
+<!-- New notes go in changes/, one file per PR (see changes/README.md). Leave ## Unreleased empty. -->
+
 ## Unreleased
 
 ## [2.0.1] - 2026-11-06
