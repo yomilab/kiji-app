@@ -20,6 +20,10 @@
  *
  * `--article-media-bleed` is computed by the host from the scroll width, so it
  * shrinks to keep an edge gap when the window narrows.
+ *
+ * Before any of that, the `auto` keyword is dropped from `sizes` (WordPress emits
+ * it on lazy images). The sanitizer strips width/height, and WebKit then lays
+ * such an image out at the 150px fallback height, squashing it into its width.
  */
 
 export const MEDIA_BLEED_CLASS = 'ac-media-bleed';
@@ -147,6 +151,20 @@ export function applyIntrinsicMediaSize(
   }
 }
 
+/** Removes a leading `auto` from `sizes`, keeping the author's fallback sizes when present. */
+function removeAutoImageSizes(container: Element): void {
+  container.querySelectorAll('img[sizes], source[sizes]').forEach((element) => {
+    const [first, ...fallback] = (element.getAttribute('sizes') ?? '').split(',');
+    if (first.trim().toLowerCase() !== 'auto') return;
+    const fallbackSizes = fallback.join(',').trim();
+    if (fallbackSizes) {
+      element.setAttribute('sizes', fallbackSizes);
+    } else {
+      element.removeAttribute('sizes');
+    }
+  });
+}
+
 function markImageLoading(image: HTMLImageElement): void {
   if (image.complete && image.naturalWidth > 0) return;
   image.classList.add(IMG_PENDING_CLASS);
@@ -215,6 +233,7 @@ function classifyTopLevelBlocks(container: Element): void {
  * are sized by the host's capturing `load` listener via `handleStandaloneMediaLoad`.
  */
 export function classifyStandaloneMedia(container: Element, columnWidth: number): void {
+  removeAutoImageSizes(container);
   classifyTopLevelBlocks(container);
   classifyImages(container, columnWidth);
   classifyEmbeds(container);
