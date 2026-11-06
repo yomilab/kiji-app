@@ -9,7 +9,8 @@
  *   node scripts/release-notes.mjs --version 1.6.0 --output notes.md
  *
  * Exits non-zero when CHANGELOG.md has no `## [<version>]` section or it is empty,
- * so a release cannot ship without confirmed notes.
+ * so a release cannot ship without confirmed notes. Unreleased notes live in
+ * `changes/`; `scripts/release-changes.mjs` writes them into that section.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -18,7 +19,7 @@ import { fileURLToPath } from "node:url";
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /** CHANGELOG headings → user-facing group titles, in display order. */
-const SECTION_TITLES = [
+export const SECTION_TITLES = [
   ["Added", "New"],
   ["Changed", "Improved"],
   ["Fixed", "Fixed"],
@@ -68,15 +69,11 @@ export function findVersionSection(changelog, version) {
 }
 
 /**
- * @returns {{ summary?: string, sections: { title: string, items: string[] }[] } | null}
- *   Items are plain text; `markdownSections` keeps the original Markdown for GitHub.
+ * Intro lines and `###` groups of one section; bullets keep their Markdown and
+ * wrapped lines are joined.
+ * @returns {{ summaryLines: string[], groups: Map<string, string[]> }}
  */
-export function extractReleaseNotes(changelog, version, { locale } = {}) {
-  const sectionLines = findVersionSection(changelog, version);
-  if (!sectionLines) {
-    return null;
-  }
-
+export function parseSectionLines(sectionLines) {
   const summaryLines = [];
   /** @type {Map<string, string[]>} */
   const groups = new Map();
@@ -118,7 +115,20 @@ export function extractReleaseNotes(changelog, version, { locale } = {}) {
     }
   }
   flushItem();
+  return { summaryLines, groups };
+}
 
+/**
+ * @returns {{ summary?: string, sections: { title: string, items: string[] }[] } | null}
+ *   Items are plain text; `markdownSections` keeps the original Markdown for GitHub.
+ */
+export function extractReleaseNotes(changelog, version, { locale } = {}) {
+  const sectionLines = findVersionSection(changelog, version);
+  if (!sectionLines) {
+    return null;
+  }
+
+  const { summaryLines, groups } = parseSectionLines(sectionLines);
   const knownOrder = SECTION_TITLES.map(([heading]) => heading);
   const headings = [...groups.keys()]
     .filter((heading) => groups.get(heading).length > 0)
