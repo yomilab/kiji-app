@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isArticleReaderModeRenderable } from '@/components/MainArea/articleViewReaderMode';
+import {
+  canRetryReaderFailure,
+  isArticleReaderModeRenderable,
+  READER_FEED_COPY_NOTE,
+  readerFailureMessage,
+} from '@/components/MainArea/articleViewReaderMode';
 
 describe('isArticleReaderModeRenderable', () => {
   it('renders reader mode only after the embedded overlay is fully open', () => {
@@ -14,5 +19,20 @@ describe('isArticleReaderModeRenderable', () => {
 
   it('keeps basic mode off the reader render path', () => {
     expect(isArticleReaderModeRenderable('basic', 'open', false)).toBe(false);
+  });
+});
+
+describe('reader failure copy', () => {
+  it('never shows raw status codes', () => {
+    for (const failure of ['blocked', 'not-found', 'unreachable', 'unreadable'] as const) {
+      expect(`${readerFailureMessage(failure)} ${READER_FEED_COPY_NOTE}`).not.toMatch(/\d{3}|Error/);
+    }
+  });
+
+  it('only offers a retry for connection problems', () => {
+    expect(canRetryReaderFailure('unreachable')).toBe(true);
+    expect(canRetryReaderFailure('blocked')).toBe(false);
+    expect(canRetryReaderFailure('not-found')).toBe(false);
+    expect(canRetryReaderFailure('unreadable')).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { Readability } from '@mozilla/readability';
 import DOMPurify from 'dompurify';
 import { logger } from '../logger/logger';
+import { parseStructuredCommandError } from '@/lib/tauriClient/commandError';
 import {
   estimateUtf8Bytes,
   logReaderDomAttribution,
@@ -19,12 +20,59 @@ export interface ReaderModeContent {
   siteName?: string;
 }
 
+/**
+ * Why reader mode has no article to show. `blocked` means the site refuses non-browser
+ * clients (bot protection, paywall); retrying won't help, so the UI falls back to the feed's copy.
+ */
+export type ReaderModeFailure = 'blocked' | 'not-found' | 'unreachable' | 'unreadable';
+
 export interface ReaderModeResult {
   success: boolean;
   content?: ReaderModeContent;
   resourceType?: 'html' | 'pdf' | 'unsupported';
   error?: string;
+  failure?: ReaderModeFailure;
 }
+
+const BLOCKED_HTTP_STATUSES = new Set([401, 402, 403, 451]);
+const MISSING_HTTP_STATUSES = new Set([404, 410]);
+const RETRYABLE_HTTP_STATUSES = new Set([502, 503, 504]);
+const RETRYABLE_ERROR_CODES = new Set([
+  'FEED_NETWORK_TIMEOUT',
+  'FEED_NETWORK_CONNECT',
+  'FEED_NETWORK_ERROR',
+]);
+const FETCH_RETRY_DELAY_MS = 400;
+
+const httpStatusFromError = (error: unknown): number | null => {
+  const structured = parseStructuredCommandError(error);
+  if (structured?.httpStatus != null) {
+    return structured.httpStatus;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  const statusMatch = message.match(/\bHTTP\s+(\d{3})\b/i);
+  return statusMatch?.[1] ? Number(statusMatch[1]) : null;
+};
+
+const isRetryableFetchError = (error: unknown): boolean => {
+  const code = parseStructuredCommandError(error)?.code;
+  if (code && RETRYABLE_ERROR_CODES.has(code)) {
+    return true;
+  }
+  const status = httpStatusFromError(error);
+  return status !== null && RETRYABLE_HTTP_STATUSES.has(status);
+};
+
+const classifyFetchFailure = (error: unknown): ReaderModeFailure => {
+  const status = httpStatusFromError(error);
+  if (status !== null && BLOCKED_HTTP_STATUSES.has(status)) {
+    return 'blocked';
+  }
+  if (status !== null && MISSING_HTTP_STATUSES.has(status)) {
+    return 'not-found';
+  }
+  return 'unreachable';
+};
 
 class ReaderModeService {
   private cache: Map<string, ReaderModeContent> = new Map();
@@ -44,12 +92,22 @@ class ReaderModeService {
   }
 
   private formatReaderError(error: unknown): string {
-    const message = error instanceof Error ? error.message : String(error);
-    const statusMatch = message.match(/\bHTTP\s+(\d{3})\b/i);
-    if (statusMatch?.[1]) {
-      return `Error ${statusMatch[1]}`;
+    const status = httpStatusFromError(error);
+    return status !== null ? `Error ${status}` : 'Error';
+  }
+
+  // Slow or flaky sites often answer on a second try; a refusal from the site won't change.
+  private async fetchHtmlWithRetry(url: string) {
+    try {
+      return await window.kijiAPI.fetchHtmlSafe(url);
+    } catch (error) {
+      if (!isRetryableFetchError(error)) {
+        throw error;
+      }
+      logger.info('ReaderMode', 'Retrying article fetch', { url });
+      await new Promise((resolve) => setTimeout(resolve, FETCH_RETRY_DELAY_MS));
+      return window.kijiAPI.fetchHtmlSafe(url);
     }
-    return 'Error';
   }
 
   async fetchAndParse(url: string): Promise<ReaderModeResult> {
@@ -66,10 +124,10 @@ class ReaderModeService {
 
       if (!window.kijiAPI?.fetchHtmlSafe) {
         logger.error('ReaderMode', 'fetchHtmlSafe not available', { url });
-        return { success: false, error: 'Error' };
+        return { success: false, error: 'Error', failure: 'unreachable' };
       }
 
-      const fetchResult = await window.kijiAPI.fetchHtmlSafe(url);
+      const fetchResult = await this.fetchHtmlWithRetry(url);
 
       // Handle non-HTML resource types
       if (fetchResult.resourceType === 'pdf') {
@@ -88,7 +146,8 @@ class ReaderModeService {
         logger.error('ReaderMode', 'Failed to fetch article content', { url, reason: 'Empty or invalid response' });
         return {
           success: false,
-          error: 'Error'
+          error: 'Error',
+          failure: 'unreadable'
         };
       }
 
@@ -111,7 +170,8 @@ class ReaderModeService {
         logger.error('ReaderMode', 'Invalid HTML format', { url, parserError: parserError.textContent });
         return {
           success: false,
-          error: 'Error'
+          error: 'Error',
+          failure: 'unreadable'
         };
       }
 
@@ -126,7 +186,8 @@ class ReaderModeService {
         logger.error('ReaderMode', 'Unable to extract article content', { url, reason: 'Readability returned null' });
         return {
           success: false,
-          error: 'Error'
+          error: 'Error',
+          failure: 'unreadable'
         };
       }
 
@@ -191,7 +252,8 @@ class ReaderModeService {
 
       return {
         success: false,
-        error: this.formatReaderError(error)
+        error: this.formatReaderError(error),
+        failure: classifyFetchFailure(error)
       };
     }
   }

@@ -94,6 +94,73 @@ describe("readerModeService", () => {
       expect(result.error).toBe("Error 404");
     });
 
+    const structuredError = (code: string, httpStatus?: number) =>
+      new Error(JSON.stringify({ code, message: "Request failed.", httpStatus }));
+
+    const ARTICLE_HTML = `<html><body><article><h1>Title</h1>${"<p>Some readable article text that goes on for a while.</p>".repeat(8)}</article></body></html>`;
+
+    it.each([
+      [403, "blocked"],
+      [401, "blocked"],
+      [404, "not-found"],
+      [410, "not-found"],
+      [500, "unreachable"],
+    ])("classifies a site answering HTTP %i as %s without retrying", async (status, failure) => {
+      mockFetchHtmlSafe.mockRejectedValue(structuredError("FEED_HTTP_STATUS", status));
+
+      const { readerModeService } = await import("@/services/articles/readerModeService");
+      readerModeService.clearCache();
+
+      const result = await readerModeService.fetchAndParse(`https://example.com/status-${status}`);
+
+      expect(result.success).toBe(false);
+      expect(result.failure).toBe(failure);
+      expect(result.error).toBe(`Error ${status}`);
+      expect(mockFetchHtmlSafe).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ["FEED_NETWORK_TIMEOUT", undefined],
+      ["FEED_NETWORK_CONNECT", undefined],
+      ["FEED_HTTP_STATUS", 503],
+    ])("retries %s %s once and returns the article", async (code, status) => {
+      mockFetchHtmlSafe.mockRejectedValueOnce(structuredError(code, status));
+      mockFetchHtmlSafe.mockResolvedValueOnce({ html: ARTICLE_HTML, resourceType: "html" });
+
+      const { readerModeService } = await import("@/services/articles/readerModeService");
+      readerModeService.clearCache();
+
+      const result = await readerModeService.fetchAndParse("https://example.com/flaky");
+
+      expect(result.success).toBe(true);
+      expect(mockFetchHtmlSafe).toHaveBeenCalledTimes(2);
+    });
+
+    it("reports a site as unreachable when the retry fails too", async () => {
+      mockFetchHtmlSafe.mockRejectedValue(structuredError("FEED_NETWORK_TIMEOUT"));
+
+      const { readerModeService } = await import("@/services/articles/readerModeService");
+      readerModeService.clearCache();
+
+      const result = await readerModeService.fetchAndParse("https://example.com/down");
+
+      expect(result.success).toBe(false);
+      expect(result.failure).toBe("unreachable");
+      expect(mockFetchHtmlSafe).toHaveBeenCalledTimes(2);
+    });
+
+    it("reports a page with no article text as unreadable", async () => {
+      mockFetchHtmlSafe.mockResolvedValue({ html: "", resourceType: "html" });
+
+      const { readerModeService } = await import("@/services/articles/readerModeService");
+      readerModeService.clearCache();
+
+      const result = await readerModeService.fetchAndParse("https://example.com/empty");
+
+      expect(result.success).toBe(false);
+      expect(result.failure).toBe("unreadable");
+    });
+
     it("handles invalid HTML", async () => {
       mockFetchHtmlSafe.mockResolvedValue({ html: "<invalid><unclosed>", resourceType: "html" });
 
