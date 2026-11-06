@@ -30,6 +30,13 @@ describe('keyboard focus ring contract', () => {
     // After the row's own :focus rule, which would otherwise win.
     expect(articleList.indexOf('.article-list-item:focus-visible > .article-list-item-content {'))
       .toBeGreaterThan(articleList.indexOf('.article-list-item:focus .article-list-item-content {'));
-    expect(articleList).toMatch(/\.article-list-item:focus-visible > \.article-list-item-content \{\s*outline: 2px solid var\(--focus-ring-color\);/);
+  });
+
+  it('keeps the article row ring thin and inside the row', () => {
+    expect(articleList).toMatch(/\.article-list-item:focus-visible > \.article-list-item-content \{\s*outline: 1px solid var\(--focus-ring-color\);\s*outline-offset: -1px;/);
+  });
+
+  it('shows the thin inset edge on the active row without needing DOM focus', () => {
+    expect(articleList).toMatch(/\.article-list-item\.is-active \.article-list-item-content,\s*\.article-list-item:focus \.article-list-item-content \{\s*outline: 1px solid var\(--theme-article-bg\);\s*outline-offset: -1px;/);
   });
 });

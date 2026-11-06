@@ -64,6 +64,30 @@ describe('classifyStandaloneMedia', () => {
     expect(block.classList.contains(MEDIA_BLEED_CLASS)).toBe(false);
     expect(block.classList.contains(MEDIA_NATURAL_CLASS)).toBe(true);
   });
+
+  // WebKit lays out `sizes="auto"` images with no width/height attributes (the
+  // sanitizer strips them) at the 150px fallback height: a 16:9 hero rendered 960x150.
+  it('drops the auto keyword from sizes so images keep their aspect ratio', () => {
+    const container = render(`
+      <img id="hero" src="a.jpg" loading="lazy" srcset="a.jpg 768w, b.jpg 1600w" sizes="auto, (max-width: 768px) 100vw, 768px">
+      <p>Text <img id="inline" src="b.jpg" sizes="AUTO, 100vw"></p>
+      <img id="only" src="c.jpg" srcset="c.jpg 768w" sizes="auto">
+      <picture><source id="source" srcset="d.webp 768w" sizes="auto, 50vw"><img id="fallback" src="d.jpg"></picture>
+    `);
+    classifyStandaloneMedia(container, 720);
+    expect(container.querySelector('#hero')?.getAttribute('sizes')).toBe('(max-width: 768px) 100vw, 768px');
+    expect(container.querySelector('#inline')?.getAttribute('sizes')).toBe('100vw');
+    expect(container.querySelector('#only')?.hasAttribute('sizes')).toBe(false);
+    expect(container.querySelector('#source')?.getAttribute('sizes')).toBe('50vw');
+  });
+
+  it('leaves sizes without the auto keyword untouched', () => {
+    const sizes = '(max-width: 768px) 100vw, 768px';
+    const container = render(`<img src="a.jpg" srcset="a.jpg 768w" sizes="${sizes}">`);
+    classifyStandaloneMedia(container, 720);
+    classifyStandaloneMedia(container, 720);
+    expect(container.querySelector('img')?.getAttribute('sizes')).toBe(sizes);
+  });
 });
 
 describe('applyIntrinsicMediaSize', () => {

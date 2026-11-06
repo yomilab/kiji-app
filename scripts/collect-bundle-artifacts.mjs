@@ -7,7 +7,6 @@
  *   node scripts/collect-bundle-artifacts.mjs --profile debug --platform linux-x86_64 --target x86_64-unknown-linux-gnu
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -15,9 +14,6 @@ import { fileURLToPath } from "node:url";
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const productName = "Yomi Reader";
 const artifactPrefix = "Yomi-Reader";
-// Apps on 1.9 get a disk image whose bundle keeps the old name, so dragging it
-// in replaces their copy. The app renames itself on first launch.
-const legacyBundleName = "KiJi";
 const version = JSON.parse(
   fs.readFileSync(path.join(rootDir, "src-tauri/tauri.conf.json"), "utf8"),
 ).version;
@@ -117,30 +113,6 @@ function copyWithSignature(sourcePath, destinationPath) {
   return copied;
 }
 
-function createLegacyMacDmg(appPath, dmgPath) {
-  const stagingDir = fs.mkdtempSync(path.join(os.tmpdir(), "yomi-reader-legacy-dmg-"));
-  try {
-    const stagedApp = path.join(stagingDir, `${legacyBundleName}.app`);
-    const copied = spawnSync("ditto", [appPath, stagedApp], { stdio: "inherit" });
-    if (copied.status !== 0) {
-      throw new Error(`Failed to stage legacy app bundle: ${appPath}`);
-    }
-    fs.symlinkSync("/Applications", path.join(stagingDir, "Applications"));
-    ensureDir(path.dirname(dmgPath));
-    const created = spawnSync(
-      "hdiutil",
-      ["create", "-volname", legacyBundleName, "-srcfolder", stagingDir, "-ov", "-format", "UDZO", dmgPath],
-      { stdio: "inherit" },
-    );
-    if (created.status !== 0) {
-      throw new Error(`Failed to create legacy disk image: ${dmgPath}`);
-    }
-    return dmgPath;
-  } finally {
-    fs.rmSync(stagingDir, { recursive: true, force: true });
-  }
-}
-
 function collectArtifacts({ profile, platform, target, outDir }) {
   const bundleDir = bundleRoot(profile, target);
   const outputDir =
@@ -183,14 +155,6 @@ function collectArtifacts({ profile, platform, target, outDir }) {
       );
     }
 
-    if (profile === "release") {
-      artifacts.push(
-        createLegacyMacDmg(
-          appPath,
-          path.join(outputDir, `${legacyBundleName}-${version}-${platform}.dmg`),
-        ),
-      );
-    }
     return { bundleDir, outputDir, artifacts };
   }
 

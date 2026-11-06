@@ -209,25 +209,6 @@ if (missingTranslations.length) {
   console.warn(`No ${missingTranslations.join(", ")} release notes for ${version}; the website shows English for those locales.`);
 }
 
-// Downloads for apps still on 1.9: same app, bundle still named KiJi.app. The
-// website publishes these at /release.json, the only address those apps read.
-const LEGACY_MAC_ASSETS = { "mac-arm64": "macos-aarch64", "mac-x64": "macos-x86_64" };
-const legacyMacDownloads = [];
-for (const [id, platform] of Object.entries(LEGACY_MAC_ASSETS)) {
-  const fileName = `KiJi-${version}-${platform}.dmg`;
-  const asset = (release.assets ?? []).find((candidate) => candidate.name === fileName);
-  if (!asset) {
-    console.warn(`No ${fileName} in ${tag}; apps on 1.9 will download Yomi Reader.app on this Mac type.`);
-    continue;
-  }
-  legacyMacDownloads.push({
-    id,
-    fileName,
-    url: `https://github.com/${REPO}/releases/download/${release.tagName}/${fileName}`,
-    size: asset.size,
-  });
-}
-
 const manifest = {
   productName: PRODUCT_NAME,
   version,
@@ -239,7 +220,6 @@ const manifest = {
   updatesFeedUrl: `${WEBSITE_URL}/feed.xml`,
   checksumsUrl: `https://github.com/${REPO}/releases/tag/${release.tagName}`,
   downloadOptions,
-  legacyMacDownloads,
 };
 
 fs.writeFileSync(outputPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
