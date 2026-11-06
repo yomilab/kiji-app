@@ -97,14 +97,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             platform_id: macos-aarch64
             rust_target: aarch64-apple-darwin
             profile: release
             bundle_args: ""
             launch_binary: src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Yomi Reader.app/Contents/MacOS/kiji-app
             launch_use_xvfb: "false"
-          - os: macos-14
+          - os: macos-15
             platform_id: macos-x86_64
             rust_target: x86_64-apple-darwin
             profile: release
@@ -298,7 +298,7 @@ jobs:
   e2e-macos:
     name: E2E macOS (debug)
     needs: verify
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
