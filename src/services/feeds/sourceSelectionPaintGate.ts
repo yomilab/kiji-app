@@ -149,7 +149,9 @@ export const scheduleSourceRefreshAfterPaint = (
         payload.token,
         { isCancelled },
       );
-      if (!painted) {
+      // Re-check after the await: a cancel can land between the gate resolving
+      // and this continuation running.
+      if (!painted || isCancelled()) {
         sourceSelectionBus.publishRefreshAborted(
           payload.token,
           payload.sourceKey,

@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { TextDecoder, TextEncoder } from "node:util";
 import { webcrypto } from "node:crypto";
 import { ReadableStream } from "node:stream/web";
-import { beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
 
 if (typeof globalThis.ReadableStream === "undefined") {
   (globalThis as unknown as Record<string, unknown>).ReadableStream = ReadableStream;
@@ -33,6 +33,21 @@ Object.defineProperty(globalThis, "localStorage", {
 
 beforeEach(() => {
   localStorageStore.clear();
+});
+
+// Any suite that renders FeedProvider schedules the paint gate. Cancel it after
+// each test so a gate still waiting can't call window.setTimeout after jsdom is gone.
+// Imported lazily so the gate's dependencies load after each test file's vi.mock calls.
+afterEach(async () => {
+  let gate: typeof import("@/services/feeds/sourceSelectionPaintGate");
+  try {
+    gate = await import("@/services/feeds/sourceSelectionPaintGate");
+  } catch {
+    // The suite's mocks leave out exports the gate needs, so it never loaded the
+    // gate and has nothing to cancel.
+    return;
+  }
+  gate.cancelSourceSelectionRefreshSchedule();
 });
 
 Object.defineProperty(globalThis, "TextEncoder", {
