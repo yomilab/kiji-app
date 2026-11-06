@@ -6,6 +6,7 @@
 
 - When a site won't let Yomi Reader load the full article, reader mode now shows the version from the feed with an Open in Browser button, instead of a bare error. If a site can't be reached, Yomi Reader tries once more on its own and offers Try again.
 - The article you have open now keeps a thin outline inside its row in the list, instead of showing one only now and then. Moving through the list with the keyboard shows the same thin outline in your accent color, replacing the thicker ring.
+- The episode player keeps its full width while an article is loading, instead of getting squeezed until the text appears.
 
 ## [2.0.0] - 2026-11-05
 
