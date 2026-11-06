@@ -20,8 +20,8 @@ export interface SystemAppIconState {
   iconVariant: SystemAppIconVariant;
 }
 
-// Must match the Rust `SystemAppIconVariant::default()` and `bundle.icon` (icons-ripple).
-export const DEFAULT_SYSTEM_APP_ICON_VARIANT: SystemAppIconVariant = 'ripple';
+// Must match the Rust `SystemAppIconVariant::default()` and `bundle.icon` (icons-circle).
+export const DEFAULT_SYSTEM_APP_ICON_VARIANT: SystemAppIconVariant = 'circle';
 
 export const APP_ICON_VARIANT_OPTIONS: ReadonlyArray<{
   value: SystemAppIconVariant;
@@ -38,5 +38,5 @@ export const APP_ICON_VARIANT_OPTIONS: ReadonlyArray<{
 
 export const getDefaultAppIconPreview = (variant: SystemAppIconVariant): string => (
   APP_ICON_VARIANT_OPTIONS.find((option) => option.value === variant)?.source
-    ?? rippleAppIconPreview
+    ?? circleAppIconPreview
 );

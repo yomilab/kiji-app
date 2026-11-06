@@ -309,6 +309,18 @@ describe("SettingsWindow", () => {
     });
   });
 
+  it("selects Circle as the default app icon until a stored choice loads", async () => {
+    vi.mocked(window.kijiAPI.getSystemAppIconState).mockReturnValue(new Promise(() => {}));
+    render(<SettingsWindow />);
+
+    clickSidebarCategory("Appearance");
+
+    const iconGroup = await screen.findByRole("group", { name: "Default app icon" });
+    expect(within(iconGroup).getByRole("button", { name: "Circle" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(iconGroup).getByRole("button", { name: "Ripple" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("Circle is the default. Picking one clears a custom icon.")).toBeTruthy();
+  });
+
   it("places the Assistant tab between Shortcuts and Contact", () => {
     render(<SettingsWindow />);
     const nav = document.querySelector(".settings-sidebar nav") as HTMLElement;

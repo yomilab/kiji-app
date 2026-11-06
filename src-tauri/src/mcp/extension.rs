@@ -8,7 +8,8 @@ use zip::write::SimpleFileOptions;
 
 const MANIFEST_TEMPLATE: &str = include_str!("../../mcp/manifest.json");
 const LAUNCHER_TEMPLATE: &str = include_str!("../../mcp/yomi-reader-mcp.sh");
-const ICON_PNG: &[u8] = include_bytes!("../../icons/icon.png");
+// Same art as the packaged default app icon (Circle).
+const ICON_PNG: &[u8] = include_bytes!("../../icons-circle/icon.png");
 
 pub fn render_manifest(version: &str) -> String {
     MANIFEST_TEMPLATE.replace("__VERSION__", version)
@@ -80,5 +81,20 @@ mod tests {
         drop(entry);
 
         assert!(archive.by_name("icon.png").unwrap().size() > 1000);
+    }
+
+    /// The extension used to ship the old bar tile (`icons/icon.png`); it must show
+    /// the Circle app icon, the packaged default.
+    #[test]
+    fn extension_icon_is_the_circle_app_icon() {
+        let bytes = build_extension_bytes("9.9.9", "/Apps/Yomi Reader.app/Contents/MacOS/kiji-app").unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut icon = Vec::new();
+        archive.by_name("icon.png").unwrap().read_to_end(&mut icon).unwrap();
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let circle = std::fs::read(manifest_dir.join("icons-circle/icon.png")).unwrap();
+        let old_tile = std::fs::read(manifest_dir.join("icons/icon.png")).unwrap();
+        assert!(icon == circle, "extension icon should be the Circle app icon");
+        assert!(icon != old_tile, "extension icon should not be the old bar tile");
     }
 }

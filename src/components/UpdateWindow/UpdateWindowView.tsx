@@ -1,5 +1,5 @@
 import React from 'react';
-import rippleAppIcon from '@/assets/images/kiji-logo-ripple.png';
+import circleAppIcon from '@/assets/images/kiji-logo-circle.png';
 import { APP_OFFICIAL_NAME } from '@/config/appIdentity';
 import type { ReaderAccent } from '@/contexts/ThemeContext';
 import type { ReleaseNotesSection, UpdateAvailability } from '@/services/system/appUpdateTypes';
@@ -22,7 +22,7 @@ export interface UpdateWindowViewProps {
    * primary color matches the main window, while the palette stays built-in.
    */
   readerAccent?: ReaderAccent | null;
-  /** Defaults to the packaged Ripple icon. */
+  /** Defaults to the packaged Circle icon. */
   appIconSrc?: string;
   onDownload?: () => void;
   onOpenNotes?: () => void;
@@ -195,7 +195,7 @@ function UpdateActions({
 export const UpdateWindowView: React.FC<UpdateWindowViewProps> = ({
   currentVersion,
   status,
-  appIconSrc = rippleAppIcon,
+  appIconSrc = circleAppIcon,
   readerAccent,
   onDownload,
   onOpenNotes,
