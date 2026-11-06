@@ -64,6 +64,44 @@ describe('sourceSelectionPaintGate', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('sets no refresh timer when the schedule is cancelled as the paint gate resolves', async () => {
+    const onRefreshRequested = vi.fn();
+    const aborted: string[] = [];
+    const unsubscribe = sourceSelectionBus.subscribe((event) => {
+      if (event.type === 'source-refresh-aborted') {
+        aborted.push(event.payload.reason);
+      }
+    });
+    let cancelOnNextCheck = false;
+
+    scheduleSourceRefreshAfterPaint(createFeedPayload(1), {
+      isSelectionActive: () => {
+        // The gate's last check passes, but the schedule is cancelled before
+        // its continuation runs (as a test teardown or a new selection would).
+        if (cancelOnNextCheck) {
+          cancelOnNextCheck = false;
+          cancelSourceSelectionRefreshSchedule();
+        }
+        return true;
+      },
+      onRefreshRequested,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    const setTimeoutSpy = vi.spyOn(window, 'setTimeout');
+    cancelOnNextCheck = true;
+    await vi.advanceTimersByTimeAsync(SOURCE_SELECTION_PAINT_GATE_TIMEOUT_MS);
+
+    expect(setTimeoutSpy).not.toHaveBeenCalledWith(
+      expect.any(Function),
+      SOURCE_SELECTION_REFRESH_DEBOUNCE_MS,
+    );
+    await vi.advanceTimersByTimeAsync(SOURCE_SELECTION_REFRESH_DEBOUNCE_MS * 2);
+    expect(onRefreshRequested).not.toHaveBeenCalled();
+    // FeedContext still hears that this selection won't refresh.
+    expect(aborted).toEqual(['paint-gate-aborted']);
+    unsubscribe();
+  });
+
   it('runs only the newest refresh when a second selection replaces a waiting one', async () => {
     const first = vi.fn();
     const second = vi.fn();
