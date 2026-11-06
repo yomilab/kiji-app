@@ -61,7 +61,7 @@ function main() {
   const launcherPath = path.join(staging, "server/yomi-reader-mcp");
   fs.writeFileSync(launcherPath, render("yomi-reader-mcp.sh", { __KIJI_LAUNCHER__: DEFAULT_LAUNCHER }));
   fs.chmodSync(launcherPath, 0o755);
-  fs.copyFileSync(path.join(rootDir, "src-tauri/icons/icon.png"), path.join(staging, "icon.png"));
+  fs.copyFileSync(path.join(rootDir, "src-tauri/icons-circle/icon.png"), path.join(staging, "icon.png"));
 
   const fileName = `yomi-reader-mcp-${version}-darwin.mcpb`;
   const bundlePath = path.join(options.out, fileName);

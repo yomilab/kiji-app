@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- **Circle** is now the default app icon, and the Claude Desktop extension from Settings → Assistant shows it too instead of the old tile with blue bars. If you already picked an icon in Settings → Appearance, you keep it, and Ripple is still in the list.
+
 ### Fixed
 
 - When a site won't let Yomi Reader load the full article, reader mode now shows the version from the feed with an Open in Browser button, instead of a bare error. If a site can't be reached, Yomi Reader tries once more on its own and offers Try again.

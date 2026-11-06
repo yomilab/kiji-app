@@ -112,7 +112,7 @@ export const AppearancePane: React.FC<{ state: SettingsWindowState['appearance']
       <SettingsGroup title="App Icon">
         <SettingsRow
           label="App icon"
-          description="Ripple is the default. Picking one clears a custom icon."
+          description="Circle is the default. Picking one clears a custom icon."
           status={state.appIconStatus}
           stacked
           control={(

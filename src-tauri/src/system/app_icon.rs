@@ -29,11 +29,11 @@ pub enum SystemAppIconVariant {
     CircleDark,
 }
 
-/// Packaged default: Ripple (light plate). Must match `bundle.icon` (`icons-ripple/*`)
-/// and Settings `DEFAULT_SYSTEM_APP_ICON_VARIANT`.
+/// Packaged default: Circle (white outline). Must match `bundle.icon` (`icons-circle/*`),
+/// Settings `DEFAULT_SYSTEM_APP_ICON_VARIANT` and the Claude Desktop extension icon.
 impl Default for SystemAppIconVariant {
     fn default() -> Self {
-        Self::Ripple
+        Self::Circle
     }
 }
 
@@ -493,8 +493,33 @@ mod tests {
     };
 
     #[test]
-    fn default_icon_variant_is_ripple() {
-        assert_eq!(SystemAppIconVariant::default(), SystemAppIconVariant::Ripple);
+    fn default_icon_variant_is_circle() {
+        assert_eq!(SystemAppIconVariant::default(), SystemAppIconVariant::Circle);
+        assert_eq!(built_in_icon_folder(SystemAppIconVariant::default()), "icons-circle");
+    }
+
+    /// Finder and the Dock show `bundle.icon` before the app runs, so it must be the
+    /// same set as the runtime default.
+    #[test]
+    fn packaged_bundle_icon_matches_the_default_variant() {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../../tauri.conf.json"))
+            .expect("tauri.conf.json should parse");
+        let folder = built_in_icon_folder(SystemAppIconVariant::default());
+        let icons = conf["bundle"]["icon"].as_array().expect("bundle.icon should be a list");
+        assert!(!icons.is_empty());
+        for icon in icons {
+            let icon = icon.as_str().expect("bundle.icon entries should be paths");
+            assert!(icon.starts_with(&format!("{folder}/")), "{icon} should come from {folder}");
+        }
+    }
+
+    /// Someone who picked Ripple while it was the default keeps it.
+    #[test]
+    fn stored_ripple_choice_survives_default_change() {
+        let stored: StoredAppIconState =
+            serde_json::from_str(r#"{"iconPath":null,"iconVariant":"ripple"}"#)
+                .expect("explicit ripple should parse");
+        assert_eq!(stored.icon_variant, SystemAppIconVariant::Ripple);
     }
 
     #[test]

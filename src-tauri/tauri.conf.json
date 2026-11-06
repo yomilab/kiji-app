@@ -146,11 +146,11 @@
       "icons-circle-dark/": "icons-circle-dark"
     },
     "icon": [
-      "icons-ripple/32x32.png",
-      "icons-ripple/128x128.png",
-      "icons-ripple/128x128@2x.png",
-      "icons-ripple/icon.icns",
-      "icons-ripple/icon.ico"
+      "icons-circle/32x32.png",
+      "icons-circle/128x128.png",
+      "icons-circle/128x128@2x.png",
+      "icons-circle/icon.icns",
+      "icons-circle/icon.ico"
     ],
     "windows": {
       "wix": {
